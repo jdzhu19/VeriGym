@@ -1,0 +1,411 @@
+"""External-path VerilogEval V2 spec-to-RTL suite adapter."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from verigym.core.errors import ConfigurationError
+from verigym.core.hashing import hash_bytes
+from verigym.registry.base import PluginRegistry
+from verigym.runtimes.base import Runtime
+from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
+from verigym.schemas.common import (
+    AssetRef,
+    InteractionMode,
+    RuntimeRequirement,
+    SuiteDescriptor,
+    TaskType,
+    ToolchainProfile,
+    ToolRequirement,
+    ToolVisibility,
+)
+from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
+from verigym.schemas.task import (
+    BudgetSpec,
+    Candidate,
+    ConformanceCase,
+    InteractionSpec,
+    ObservationPolicy,
+    ResolvedTaskAssets,
+    ScoringSpec,
+    SourceSpec,
+    SubmissionPolicy,
+    TaskRef,
+    ValidationIssue,
+    ValidationReport,
+    VeriTask,
+    WorkspaceSpec,
+)
+from verigym.schemas.verifier import VerifierGraph, VerifierNode
+from verigym.suites.base import SuiteAdapter
+from verigym.suites.verilog_eval.layout import inspect_layout, validation_report
+from verigym.suites.verilog_eval.normalization import transform_reference_candidate
+from verigym.suites.verilog_eval.schemas import (
+    IcarusCompatibility,
+    VerilogEvalCatalog,
+    VerilogEvalProblem,
+)
+from verigym.suites.verilog_eval.source import build_source_snapshot, resolve_layout
+from verigym.suites.verilog_eval.toolchain import detect_icarus
+
+ADAPTER_VERSION = "0.1.0"
+SUITE_VERSION = "v2-spec-to-rtl-compat-1"
+
+
+class VerilogEvalSuite(SuiteAdapter):
+    descriptor = SuiteDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="verilog-eval",
+        version=ADAPTER_VERSION,
+        api_version=PLUGIN_API_VERSION,
+        provider="verigym",
+        capabilities=[
+            "external_source",
+            "v2-spec-to-rtl",
+            "generation",
+            "native_mismatch_regression",
+            "conformance",
+        ],
+        title="VerilogEval V2",
+        description=(
+            "External-path compatibility adapter for VerilogEval V2 specification-to-RTL."
+        ),
+        suite_version=SUITE_VERSION,
+        license=None,
+    )
+
+    def __init__(self, config: SuiteSourceConfig | None = None) -> None:
+        self._config = config
+        self._catalog_cache: VerilogEvalCatalog | None = None
+        self._snapshot_cache: SuiteSourceSnapshot | None = None
+        self._workspace_root = Path(__file__).parent / "assets" / "workspace"
+
+    def with_source(self, config: SuiteSourceConfig) -> VerilogEvalSuite:
+        return VerilogEvalSuite(config.model_copy(deep=True))
+
+    def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
+        adapter = self._adapter_for_optional_root(source_root)
+        catalog = adapter._valid_catalog()
+        return [
+            TaskRef(
+                id=f"verilog-eval/{catalog.layout.variant.value}/{problem.native_id}",
+                suite="verilog-eval",
+                native_id=problem.native_id,
+            )
+            for problem in catalog.problems
+        ]
+
+    def load_task(self, ref: TaskRef) -> VeriTask:
+        catalog = self._valid_catalog()
+        problem = next(
+            (problem for problem in catalog.problems if problem.native_id == ref.native_id),
+            None,
+        )
+        if problem is None:
+            raise ConfigurationError(f"unknown VerilogEval task: {ref.native_id}")
+        snapshot = self._snapshot(catalog)
+        return self._normalize_task(problem, snapshot)
+
+    def resolve_assets(self, task: VeriTask) -> ResolvedTaskAssets:
+        if self._config is None:
+            raise ConfigurationError("VerilogEval requires an explicit external source path")
+        catalog = inspect_layout(resolve_layout(self._config))
+        report = validation_report(catalog)
+        if not report.valid:
+            preview = "; ".join(report.errors[:3])
+            raise ConfigurationError(f"VerilogEval source changed or is invalid: {preview}")
+        if task.metadata.get("dataset_content_hash") != catalog.dataset_content_hash:
+            raise ConfigurationError(
+                "VerilogEval dataset content differs from the frozen task snapshot"
+            )
+        native_id = task.metadata.get("native_task_id")
+        if not isinstance(native_id, str):
+            raise ConfigurationError("frozen VerilogEval task has no native task identifier")
+        problem = next(
+            (problem for problem in catalog.problems if problem.native_id == native_id),
+            None,
+        )
+        if problem is None:
+            raise ConfigurationError(f"VerilogEval source no longer contains {native_id!r}")
+        if task.source.content_hash != problem.content_hash:
+            raise ConfigurationError(
+                "VerilogEval source task content differs from the frozen task snapshot"
+            )
+        return ResolvedTaskAssets(
+            visible_root=str(self._workspace_root.resolve(strict=True)),
+            hidden_assets=[
+                AssetRef(
+                    kind="inline",
+                    content=problem.reference,
+                    content_hash=hash_bytes(problem.reference.encode("utf-8")),
+                    mount_path="verifier/golden.sv",
+                ),
+                AssetRef(
+                    kind="inline",
+                    content=problem.testbench,
+                    content_hash=hash_bytes(problem.testbench.encode("utf-8")),
+                    mount_path="verifier/testbench.sv",
+                ),
+            ],
+        )
+
+    def validate_source(self, source_root: Path | None = None) -> ValidationReport:
+        try:
+            adapter = self._adapter_for_optional_root(source_root)
+            catalog = adapter._catalog()
+        except ConfigurationError as exc:
+            issue = ValidationIssue(
+                level="error",
+                code="source_configuration",
+                message=str(exc),
+            )
+            return ValidationReport(
+                valid=False,
+                errors=[f"[source_configuration] {exc}"],
+                issues=[issue],
+            )
+        return validation_report(catalog)
+
+    def reference_solution(self, task: VeriTask) -> Candidate | None:
+        catalog = self._valid_catalog()
+        native_id = task.metadata.get("native_task_id")
+        problem = next(
+            (problem for problem in catalog.problems if problem.native_id == native_id),
+            None,
+        )
+        if problem is None:
+            return None
+        return Candidate(
+            files={"rtl/TopModule.sv": transform_reference_candidate(problem.reference)},
+            label="reference-derived",
+        )
+
+    def conformance_cases(self) -> Iterable[ConformanceCase]:
+        catalog = self._valid_catalog()
+        if not catalog.problems:
+            return []
+        task = self._normalize_task(catalog.problems[0], self._snapshot(catalog))
+        reference = self.reference_solution(task)
+        if reference is None:
+            return []
+        return [
+            ConformanceCase(
+                name=f"{catalog.problems[0].native_id}-reference",
+                candidate=reference,
+                expected_resolved=True,
+            ),
+            ConformanceCase(
+                name=f"{catalog.problems[0].native_id}-wrong",
+                candidate=Candidate(
+                    files={"rtl/TopModule.sv": "module TopModule; endmodule\n"},
+                    label="known-bad",
+                ),
+                expected_resolved=False,
+            ),
+        ]
+
+    def source_snapshot(self) -> SuiteSourceSnapshot | None:
+        if self._config is None:
+            return None
+        return self._snapshot(self._valid_catalog()).model_copy(deep=True)
+
+    def toolchain_profile(
+        self,
+        runtime: Runtime,
+        tools: PluginRegistry[Any],
+    ) -> ToolchainProfile | None:
+        compiler = tools.get("verilog_eval.v2.compile").health_check()
+        runner = tools.get("verilog_eval.v2.regression").health_check()
+        compiler_info = detect_icarus("iverilog")
+        runner_info = detect_icarus("vvp")
+        statuses = {compiler_info.compatibility, runner_info.compatibility}
+        if IcarusCompatibility.INCOMPATIBLE in statuses:
+            compatibility = IcarusCompatibility.INCOMPATIBLE
+        elif statuses == {IcarusCompatibility.REFERENCE_COMPATIBLE}:
+            compatibility = IcarusCompatibility.REFERENCE_COMPATIBLE
+        else:
+            compatibility = IcarusCompatibility.UNVERIFIED
+        return ToolchainProfile(
+            id="verilog-eval-v2-icarus",
+            version="1.0.0",
+            description=("VerilogEval V2 Icarus profile; upstream reference is Icarus v12."),
+            tools=[
+                ToolRequirement(name="iverilog", version=compiler.version),
+                ToolRequirement(name="vvp", version=runner.version),
+            ],
+            runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+            deterministic=True,
+            reproducibility_scope="public",
+            compatibility_status=compatibility.value,
+        )
+
+    def _adapter_for_optional_root(self, source_root: Path | None) -> VerilogEvalSuite:
+        if source_root is None:
+            return self
+        variant = self._config.variant if self._config is not None else None
+        strict = self._config.strict_compatibility if self._config is not None else True
+        return self.with_source(
+            SuiteSourceConfig(
+                source_root=source_root,
+                variant=variant,
+                strict_compatibility=strict,
+            )
+        )
+
+    def _catalog(self) -> VerilogEvalCatalog:
+        if self._config is None:
+            raise ConfigurationError(
+                "VerilogEval requires an explicit external source path and variant"
+            )
+        if self._catalog_cache is None:
+            self._catalog_cache = inspect_layout(resolve_layout(self._config))
+        return self._catalog_cache
+
+    def _valid_catalog(self) -> VerilogEvalCatalog:
+        catalog = self._catalog()
+        report = validation_report(catalog)
+        if not report.valid:
+            preview = "; ".join(report.errors[:3])
+            raise ConfigurationError(f"invalid VerilogEval source: {preview}")
+        return catalog
+
+    def _snapshot(self, catalog: VerilogEvalCatalog) -> SuiteSourceSnapshot:
+        assert self._config is not None
+        if self._snapshot_cache is None:
+            self._snapshot_cache = build_source_snapshot(self._config, catalog)
+        return self._snapshot_cache
+
+    def _normalize_task(
+        self,
+        problem: VerilogEvalProblem,
+        snapshot: SuiteSourceSnapshot,
+    ) -> VeriTask:
+        variant = snapshot.variant
+        task_id = f"verilog-eval/{variant}/{problem.native_id}"
+        hidden_assets = [
+            AssetRef(
+                kind="inline",
+                content_hash=hash_bytes(problem.reference.encode("utf-8")),
+                mount_path="verifier/golden.sv",
+            ),
+            AssetRef(
+                kind="inline",
+                content_hash=hash_bytes(problem.testbench.encode("utf-8")),
+                mount_path="verifier/testbench.sv",
+            ),
+        ]
+        return VeriTask(
+            id=task_id,
+            suite="verilog-eval",
+            suite_version=SUITE_VERSION,
+            task_type=TaskType.GENERATION,
+            title=f"VerilogEval V2 {problem.native_id}",
+            description=problem.prompt,
+            source=SourceSpec(
+                kind="synthetic" if snapshot.synthetic_fixture else "benchmark",
+                uri=f"verilog-eval://{variant}/{problem.native_id}",
+                revision=SUITE_VERSION,
+                commit=snapshot.git_commit,
+                license=snapshot.license_id,
+                attribution=(
+                    "Synthetic layout-conformance fixture; not an official benchmark task."
+                    if snapshot.synthetic_fixture
+                    else "Externally supplied VerilogEval V2 checkout."
+                ),
+                content_hash=problem.content_hash,
+            ),
+            workspace=WorkspaceSpec(
+                base=AssetRef(kind="directory", path="workspace"),
+                editable_globs=["rtl/TopModule.sv"],
+                readonly_globs=["README.md"],
+                excluded_globs=["verifier", "verifier/**", "hidden", "hidden/**"],
+                entrypoints=["rtl/TopModule.sv"],
+                hidden_assets=hidden_assets,
+                max_changed_files=1,
+                max_patch_lines=2_000,
+            ),
+            interaction=InteractionSpec(
+                supported_modes=[InteractionMode.CHAT, InteractionMode.AGENT],
+                default_mode=InteractionMode.CHAT,
+                allowed_tools=[
+                    "file.list",
+                    "file.read",
+                    "file.apply_patch",
+                    "file.diff",
+                ],
+                denied_tools=[],
+                allow_general_shell=False,
+                network_policy="none",
+                initial_observation=ObservationPolicy(
+                    include_tree=True,
+                    include_readme=True,
+                    include_entrypoints=False,
+                ),
+                final_submission=SubmissionPolicy(kind="file", path="rtl/TopModule.sv"),
+            ),
+            budget=BudgetSpec(
+                max_turns=20,
+                max_tool_calls=40,
+                max_model_calls=20,
+                max_wall_time_s=300,
+                max_tool_time_s=30,
+                max_output_tokens=16_384,
+                max_output_bytes_per_tool=1_000_000,
+                max_workspace_bytes=2_000_000,
+            ),
+            verifier=VerifierGraph(
+                nodes=[
+                    VerifierNode(
+                        id="compile_hidden",
+                        plugin="verilog_eval.v2.compile",
+                        gate=True,
+                        required=True,
+                        visibility=ToolVisibility.VERIFIER_ONLY,
+                        timeout_s=30,
+                        request={
+                            "sources": [
+                                "verifier/golden.sv",
+                                "verifier/testbench.sv",
+                                "rtl/TopModule.sv",
+                            ],
+                            "candidate": "rtl/TopModule.sv",
+                            "top": problem.testbench_top,
+                            "output": ".verigym_internal/verilog_eval/simv",
+                            "language": "2012",
+                        },
+                    ),
+                    VerifierNode(
+                        id="run_hidden",
+                        plugin="verilog_eval.v2.regression",
+                        depends_on=["compile_hidden"],
+                        gate=True,
+                        required=True,
+                        visibility=ToolVisibility.VERIFIER_ONLY,
+                        timeout_s=30,
+                        request={"executable_from": "compile_hidden"},
+                    ),
+                ]
+            ),
+            scoring=ScoringSpec(
+                correctness_required_nodes=["compile_hidden", "run_hidden"],
+                ppa_enabled=False,
+            ),
+            metadata={
+                "benchmark_variant": variant,
+                "native_layout": snapshot.native_layout,
+                "native_task_id": problem.native_id,
+                "candidate_top": "TopModule",
+                "golden_top": "RefModule",
+                "testbench_top": problem.testbench_top,
+                "language": "systemverilog",
+                "dataset_content_hash": snapshot.dataset_content_hash,
+                "task_content_hash": problem.content_hash,
+                "adapter_version": ADAPTER_VERSION,
+                "synthetic_fixture": snapshot.synthetic_fixture,
+            },
+        )
+
+
+__all__ = ["ADAPTER_VERSION", "SUITE_VERSION", "VerilogEvalSuite"]

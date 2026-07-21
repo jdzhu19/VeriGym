@@ -1,0 +1,485 @@
+"""Reusable end-to-end run orchestration behind both API and CLI."""
+
+from __future__ import annotations
+
+import platform
+import tempfile
+import time
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
+from verigym.core.artifact_policy import bound_value
+from verigym.core.artifacts import RunLayout
+from verigym.core.environment import VeriGymEnv
+from verigym.core.episode import EpisodeState, TerminationReason
+from verigym.core.errors import ConfigurationError
+from verigym.core.hashing import content_hash, hash_bytes, hash_directory
+from verigym.core.loaders import dump_json
+from verigym.core.logging import append_json_log
+from verigym.core.model_gateway import ModelGateway
+from verigym.core.scoring import build_scorecard
+from verigym.core.trace import TraceWriter
+from verigym.core.verifier_dag import VerifierExecutor
+from verigym.core.workspace import copy_tree_safely, merge_tree_safely, normalize_relative_path
+from verigym.models.base import ModelClient
+from verigym.prompts.builder import PromptBuilder
+from verigym.registry.collections import Registries, build_registries
+from verigym.runtimes.base import Runtime, RuntimeSession
+from verigym.schemas.agent import EpisodeResult
+from verigym.schemas.common import (
+    InteractionMode,
+    RuntimeRequirement,
+    ToolchainProfile,
+    ToolchainProfileRef,
+    ToolRequirement,
+)
+from verigym.schemas.model import GenerationParameters
+from verigym.schemas.prompt import ToolPolicySnapshot
+from verigym.schemas.run import RunConfig, RunManifest, RunResult
+from verigym.schemas.runtime import SessionSpec
+from verigym.schemas.sampling import SampleSetResult
+from verigym.schemas.score import EpisodeFailure
+from verigym.schemas.suite import SuiteSourceConfig
+from verigym.schemas.task import ResolvedTaskAssets, VeriTask
+from verigym.schemas.verifier import VerifierResult
+from verigym.version import __version__
+
+
+class VeriGym:
+    """High-level service for deterministic task execution."""
+
+    def __init__(self, registries: Registries | None = None) -> None:
+        self.registries = registries or build_registries()
+
+    @classmethod
+    def from_config(cls, path: str | Path = "verigym.yaml") -> VeriGym:
+        """Create a service; project configuration expansion begins after Milestone 4."""
+
+        config_path = Path(path)
+        if config_path.exists() and not config_path.is_file():
+            raise ConfigurationError(f"configuration path is not a file: {config_path}")
+        return cls()
+
+    def load_task(
+        self,
+        task_id: str,
+        suite_source: SuiteSourceConfig | None = None,
+    ) -> tuple[Any, VeriTask, ResolvedTaskAssets]:
+        if "/" not in task_id:
+            raise ConfigurationError("task_id must be '<suite>/<task>'")
+        suite_id, native_id = task_id.split("/", 1)
+        suite = self.registries.suites.get(suite_id)
+        if suite_source is not None:
+            suite = suite.with_source(suite_source)
+        reference = next(
+            (ref for ref in suite.discover() if ref.id == task_id or ref.native_id == native_id),
+            None,
+        )
+        if reference is None:
+            raise ConfigurationError(f"task {task_id!r} was not found in suite {suite_id!r}")
+        task = suite.load_task(reference)
+        assets = suite.resolve_assets(task)
+        return suite, task, assets
+
+    def run(self, config: RunConfig) -> RunResult:
+        if config.suite_source is None:
+            suite, task, assets = self.load_task(config.task_id)
+        else:
+            suite, task, assets = self.load_task(config.task_id, config.suite_source)
+        if config.mode not in task.interaction.supported_modes:
+            raise ConfigurationError(
+                f"task {task.id} does not support interaction mode {config.mode.value}"
+            )
+        runtime: Runtime = self.registries.runtimes.get(config.runtime)
+        agent: AgentAdapter = self.registries.agents.get(config.agent)
+        if config.mode not in agent.supported_modes:
+            supported = ", ".join(sorted(mode.value for mode in agent.supported_modes))
+            raise ConfigurationError(
+                f"agent {config.agent!r} does not support mode {config.mode.value!r}; "
+                f"supported: {supported}"
+            )
+        model_client: ModelClient | None = None
+        prompt_builder: PromptBuilder | None = None
+        if agent.requires_model:
+            if config.model is None:
+                raise ConfigurationError(f"model-backed agent {config.agent!r} requires --model")
+            configured_model: ModelClient = self.registries.models.get(config.model)
+            model_options = config.model_options.model_copy(
+                update={"sample_index": config.sample_index}
+            )
+            model_client = configured_model.clone_for_run(model_options)
+            prompt_builder = PromptBuilder(config.mode)
+        elif config.model is not None:
+            raise ConfigurationError(f"agent {config.agent!r} does not use a model; omit --model")
+        allowed_tools = (
+            []
+            if config.mode == InteractionMode.CHAT
+            else sorted(
+                tool
+                for tool in task.interaction.allowed_tools
+                if tool not in task.interaction.denied_tools
+            )
+        )
+        denied_tools = sorted(
+            set(task.interaction.denied_tools)
+            | (
+                set(task.interaction.allowed_tools)
+                if config.mode == InteractionMode.CHAT
+                else set()
+            )
+        )
+        tool_policy = ToolPolicySnapshot(
+            allowed_tools=allowed_tools,
+            denied_tools=denied_tools,
+            allow_general_shell=(
+                False
+                if config.mode == InteractionMode.CHAT
+                else task.interaction.allow_general_shell
+            ),
+            network_policy=task.interaction.network_policy,
+        )
+        run_id = self._new_run_id(task.id)
+        layout = RunLayout.create(config.output.expanduser().resolve() / run_id)
+        trace = TraceWriter(layout.trace, run_id)
+        task_hash = content_hash(task)
+        verifier_hash = content_hash(task.verifier)
+        run_config_hash = content_hash(config)
+        profile = suite.toolchain_profile(runtime, self.registries.tools)
+        if profile is None:
+            profile = self._toolchain_profile(runtime)
+        profile_ref = ToolchainProfileRef(
+            id=profile.id,
+            version=profile.version,
+            content_hash=content_hash(profile),
+        )
+        source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
+        manifest = RunManifest(
+            run_id=run_id,
+            created_at_utc=datetime.now(UTC),
+            verigym_version=__version__,
+            verigym_commit=None,
+            task_id=task.id,
+            task_hash=task_hash,
+            source_hash=source_hash,
+            verifier_hash=verifier_hash,
+            run_config_hash=run_config_hash,
+            suite=task.suite,
+            suite_version=task.suite_version,
+            interaction_mode=config.mode.value,
+            seed=config.seed,
+            sample_index=config.sample_index,
+            model=model_client.descriptor if model_client is not None else None,
+            agent=agent.descriptor,
+            agent_harness=agent.descriptor,
+            prompt_policy=prompt_builder.descriptor if prompt_builder is not None else None,
+            tool_policy=tool_policy,
+            generation=(
+                GenerationParameters(
+                    temperature=config.model_options.temperature,
+                    top_p=config.model_options.top_p,
+                    max_output_tokens=task.budget.max_output_tokens,
+                )
+                if model_client is not None
+                else None
+            ),
+            suite_source=suite.source_snapshot(),
+            runtime=runtime.descriptor,
+            toolchain_profiles=[profile_ref],
+            budget=task.budget,
+            prompt_policy_hash=(
+                prompt_builder.descriptor.configuration_fingerprint
+                if prompt_builder is not None
+                else None
+            ),
+            environment_summary={
+                "python": platform.python_version(),
+                "platform": platform.platform(),
+                "python_implementation": platform.python_implementation(),
+                "network_policy": task.interaction.network_policy,
+                "unsafe_local_runtime": runtime.descriptor.isolation_level == "local_trusted",
+                "verifier_isolation": "separate_runtime_session",
+            },
+        )
+        dump_json(layout.manifest, manifest)
+        dump_json(layout.task_snapshot, task)
+        dump_json(layout.artifacts / "toolchain_profile.json", profile)
+        append_json_log(
+            layout.logs / "runtime.log",
+            event="runtime_created",
+            run_id=run_id,
+            task_id=task.id,
+            level="warning" if runtime.descriptor.isolation_level == "local_trusted" else "info",
+            runtime=runtime.descriptor.name,
+            isolation_level=runtime.descriptor.isolation_level,
+            warning=(
+                "LocalRuntime is for trusted toy tasks only."
+                if runtime.descriptor.isolation_level == "local_trusted"
+                else None
+            ),
+        )
+
+        env = VeriGymEnv(
+            task=task,
+            assets=assets,
+            runtime=runtime,
+            tools=self.registries.tools,
+            mode=config.mode,
+        )
+        verifier_results: list[VerifierResult] = []
+        episode_failure: EpisodeFailure | None = None
+        try:
+            observation, _ = env.reset(run_id=run_id, trace=trace)
+            assert env.tracker is not None
+            model_gateway = (
+                ModelGateway(
+                    run_id=run_id,
+                    client=model_client,
+                    trace=trace,
+                    tracker=env.tracker,
+                    max_visible_bytes=task.budget.max_output_bytes_per_tool,
+                    temperature=config.model_options.temperature,
+                    top_p=config.model_options.top_p,
+                )
+                if model_client is not None
+                else None
+            )
+            agent.start(
+                AgentContext(
+                    run_id=run_id,
+                    task=task,
+                    seed=config.seed,
+                    model_gateway=model_gateway,
+                    prompt_builder=prompt_builder,
+                    max_invalid_actions=config.max_invalid_actions,
+                )
+            )
+            agent_log = layout.logs / "agent.log"
+            while env.state == EpisodeState.RUNNING:
+                assert env.tracker is not None
+                exhausted = env.tracker.exhausted_before_turn()
+                if exhausted is not None:
+                    observation, _, _, _, _ = env._truncate(exhausted)
+                    break
+                started = time.monotonic()
+                try:
+                    action = agent.act(observation)
+                except AgentTerminationError as exc:
+                    env.tracker.agent_time_s += time.monotonic() - started
+                    episode_failure = exc.failure
+                    observation = env.terminate(exc.reason, exc.failure.message)
+                    trace.emit(
+                        "agent_terminated",
+                        {
+                            "termination_reason": exc.reason.value,
+                            "failure": exc.failure.model_dump(mode="json"),
+                        },
+                    )
+                    append_json_log(
+                        agent_log,
+                        event="agent_terminated",
+                        run_id=run_id,
+                        task_id=task.id,
+                        termination_reason=exc.reason.value,
+                        failure=exc.failure.model_dump(mode="json"),
+                    )
+                    break
+                env.tracker.agent_time_s += time.monotonic() - started
+                logged_action, action_truncated = bound_value(
+                    action.model_dump(mode="json"),
+                    task.budget.max_output_bytes_per_tool,
+                )
+                append_json_log(
+                    agent_log,
+                    event="agent_action",
+                    run_id=run_id,
+                    task_id=task.id,
+                    action=logged_action,
+                    content_truncated=action_truncated,
+                )
+                observation, _, terminated, truncated, _ = env.step(action)
+                if terminated or truncated:
+                    break
+            if env.termination_reason is None:
+                env.termination_reason = TerminationReason.RUNTIME_ERROR
+            assert env.session is not None and env.tracker is not None
+            diff = env.session.snapshot_diff()
+            layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
+            layout.export_candidate(env.session.root)
+            candidate_hash = hash_directory(layout.candidate)
+            manifest.candidate_hash = candidate_hash
+            dump_json(layout.manifest, manifest)
+            trace.emit(
+                "artifact_created",
+                {"kind": "candidate", "path": "candidate", "content_hash": candidate_hash},
+            )
+            trace.emit("verifier_started", {"graph_hash": verifier_hash})
+            verifier_started = time.monotonic()
+            verifier_results = self._verify_candidate(
+                task=task,
+                assets=assets,
+                runtime=runtime,
+                candidate_dir=layout.candidate,
+                artifact_root=layout.artifacts,
+                agent_session=env.session,
+            )
+            env.tracker.verifier_time_s = time.monotonic() - verifier_started
+            for result in verifier_results:
+                trace.emit(
+                    "verifier_node_result",
+                    {
+                        "node_id": result.node_id,
+                        "plugin": result.plugin,
+                        "status": result.status.value,
+                        "error_category": result.error_category.value,
+                        "message": result.message,
+                        "duration_s": result.duration_s,
+                        "artifacts": result.artifacts,
+                    },
+                )
+            for result in verifier_results:
+                append_json_log(
+                    layout.logs / "verifier.log",
+                    event="verifier_node_result",
+                    run_id=run_id,
+                    task_id=task.id,
+                    node_id=result.node_id,
+                    status=result.status.value,
+                    error_category=result.error_category.value,
+                    message=result.message,
+                )
+            scorecard = build_scorecard(
+                run_id=run_id,
+                task=task,
+                results=verifier_results,
+                diff=diff,
+                tracker=env.tracker,
+                termination_reason=env.termination_reason,
+                task_hash=task_hash,
+                candidate_hash=candidate_hash,
+                run_config_hash=run_config_hash,
+                profile_refs=[profile_ref],
+                isolation_level=runtime.descriptor.isolation_level,
+                episode_failure=episode_failure,
+            )
+            dump_json(layout.scorecard, scorecard)
+            trace.emit(
+                "artifact_created",
+                {"kind": "scorecard", "path": "scorecard.json"},
+            )
+            final_state = (
+                EpisodeState.COMPLETED if scorecard.status == "completed" else EpisodeState.FAILED
+            )
+            env.state = final_state
+            trace.emit(
+                "episode_terminated",
+                {
+                    "state": final_state.value,
+                    "termination_reason": env.termination_reason.value,
+                    "resolved": scorecard.resolved,
+                    "scorecard_status": scorecard.status,
+                },
+            )
+            agent.finish(
+                EpisodeResult(
+                    run_id=run_id,
+                    resolved=scorecard.resolved,
+                    termination_reason=env.termination_reason.value,
+                )
+            )
+            return RunResult(run_dir=layout.root, manifest=manifest, scorecard=scorecard)
+        finally:
+            env.close()
+
+    def run_samples(
+        self,
+        config: RunConfig,
+        *,
+        samples: int,
+        pass_k: list[int] | tuple[int, ...] = (1,),
+    ) -> SampleSetResult:
+        """Run independent ChatEval children and emit a canonical pass@k report."""
+
+        from verigym.core.sampling import run_sample_set
+
+        return run_sample_set(self, config, samples=samples, pass_k=pass_k)
+
+    def _verify_candidate(
+        self,
+        *,
+        task: VeriTask,
+        assets: ResolvedTaskAssets,
+        runtime: Runtime,
+        candidate_dir: Path,
+        artifact_root: Path,
+        agent_session: RuntimeSession | None = None,
+    ) -> list[VerifierResult]:
+        verifier_session: RuntimeSession | None = None
+        with tempfile.TemporaryDirectory(prefix="verigym-verifier-staging-") as temporary:
+            staging = Path(temporary)
+            copy_tree_safely(candidate_dir, staging)
+            for index, hidden_root in enumerate(assets.hidden_roots):
+                asset = (
+                    task.workspace.hidden_assets[index]
+                    if index < len(task.workspace.hidden_assets)
+                    else None
+                )
+                mount_path = asset.mount_path if asset and asset.mount_path else "hidden"
+                merge_tree_safely(Path(hidden_root), staging, mount_path=mount_path)
+            for asset in assets.hidden_assets:
+                if asset.kind != "inline" or asset.content is None or asset.mount_path is None:
+                    raise ConfigurationError(
+                        "resolved inline hidden assets require content and a mount path"
+                    )
+                mount_path = normalize_relative_path(asset.mount_path)
+                payload = asset.content.encode("utf-8")
+                if asset.content_hash is not None and hash_bytes(payload) != asset.content_hash:
+                    raise ConfigurationError(
+                        f"resolved hidden asset hash mismatch at {mount_path!r}"
+                    )
+                destination = staging / mount_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(payload)
+            verifier_session = runtime.create_session(
+                SessionSpec(
+                    source_dir=str(staging),
+                    label="verifier",
+                    max_output_bytes=task.budget.max_output_bytes_per_tool,
+                )
+            )
+        try:
+            if agent_session is not None and verifier_session.root == agent_session.root:
+                raise RuntimeError("agent and verifier sessions must be physically distinct")
+            executor = VerifierExecutor(self.registries.tools)
+            return executor.execute(
+                task.verifier,
+                verifier_session,
+                artifact_root,
+                max_output_bytes=task.budget.max_output_bytes_per_tool,
+            )
+        finally:
+            verifier_session.close()
+
+    def _toolchain_profile(self, runtime: Runtime) -> ToolchainProfile:
+        compiler_health = self.registries.tools.get("iverilog.compile").health_check()
+        runner_health = self.registries.tools.get("iverilog.run").health_check()
+        return ToolchainProfile(
+            id="toy-iverilog-v1",
+            version="1.0.0",
+            description="Public deterministic Icarus profile for the toy RTL counter.",
+            tools=[
+                ToolRequirement(name="iverilog", version=compiler_health.version),
+                ToolRequirement(name="vvp", version=runner_health.version),
+            ],
+            runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+            deterministic=True,
+            reproducibility_scope="public",
+        )
+
+    @staticmethod
+    def _new_run_id(task_id: str) -> str:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        slug = task_id.replace("/", "-")
+        return f"{timestamp}-{slug}-{uuid.uuid4().hex[:8]}"

@@ -1,0 +1,1 @@
+Implement a SystemVerilog module named TopModule with inputs clk and reset and a three-bit output q. On each rising edge of clk, synchronously set q to zero when reset is high; otherwise increment q by one with three-bit wraparound.

@@ -1,0 +1,44 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.verigym/
+runs/
+verigym.yaml
+
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime files
+nohup.out
+*.log
+*.pid
+.verigym_internal/
+
+# Coverage reports
+.coverage.*
+coverage.xml
+
+# OS and editor metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local implementation plans and coding-agent instructions
+/VERIGYM_*.md
+/AGENTS.md
+/AGENTS.override.md
+/CLAUDE.md
