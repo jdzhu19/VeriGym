@@ -5,6 +5,7 @@ from verigym.schemas.common import SuiteDescriptor, ToolchainProfile, ToolDescri
 from verigym.schemas.model import ModelRequest, ModelResponse
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
+from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import PassAtKReport, SampleSetManifest, SampleSetResult
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.task import VeriTask
@@ -16,6 +17,7 @@ __all__ = [
     "AgentAction",
     "AgentDescriptor",
     "EpisodeEvent",
+    "DockerRuntimeConfig",
     "Observation",
     "PassAtKReport",
     "ModelRequest",

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 from verigym.schemas.common import RuntimeDescriptor
-from verigym.schemas.runtime import SessionSpec, WorkspaceDiff
+from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec, WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
 
 
@@ -32,13 +33,21 @@ class RuntimeSession(ABC):
     def snapshot_diff(self) -> WorkspaceDiff:
         """Compare the session to its initial source snapshot."""
 
+    def freeze(self) -> None:
+        """Prevent further mutation before the canonical candidate handoff."""
+
+        return None
+
     @abstractmethod
     def close(self) -> None:
         """Destroy all ephemeral session state."""
 
 
 class Runtime(ABC):
-    descriptor: RuntimeDescriptor
+    @property
+    @abstractmethod
+    def descriptor(self) -> RuntimeDescriptor:
+        """Stable runtime plugin and effective run descriptor."""
 
     @abstractmethod
     def health_check(self) -> HealthCheckResult:
@@ -47,3 +56,32 @@ class Runtime(ABC):
     @abstractmethod
     def create_session(self, spec: SessionSpec) -> RuntimeSession:
         """Create one isolated episode or verifier session."""
+
+    def configure(self, config: DockerRuntimeConfig | None) -> Runtime:
+        """Return a per-run runtime instance configured through a strict schema."""
+
+        if config is not None:
+            raise ValueError(f"runtime {self.descriptor.name!r} does not accept Docker options")
+        return self
+
+    def configure_for_replay(self, descriptor: RuntimeDescriptor) -> Runtime:
+        """Return a runtime constrained by a stored descriptor."""
+
+        if descriptor.name != self.descriptor.name:
+            raise ValueError("stored runtime descriptor does not match the selected plugin")
+        return self
+
+    def prepare(self, run_id: str) -> None:
+        """Resolve immutable run-level state before an agent or model action."""
+
+        return None
+
+    def environment_summary(self) -> dict[str, Any]:
+        """Return credential-free runtime provenance for a run manifest."""
+
+        return {}
+
+    def close(self) -> None:
+        """Release run-level resources; implementations must be idempotent."""
+
+        return None

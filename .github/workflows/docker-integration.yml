@@ -1,0 +1,72 @@
+name: Optional Docker integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-runtime:
+    name: Linux DockerRuntime conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install base package and test tools
+        run: python -m pip install -e '.[dev]'
+
+      - name: Build explicit Icarus 12 reference image
+        run: >-
+          docker build
+          -f docker/iverilog12/Dockerfile
+          -t verigym/rtl-iverilog:12.0
+          docker/iverilog12
+
+      - name: Run opt-in Docker integration tests
+        env:
+          VERIGYM_RUN_DOCKER_TESTS: "1"
+          VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
+        run: pytest -m docker
+
+  docker-yosys:
+    name: Pinned Docker Yosys area profile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install base package and test tools
+        run: python -m pip install -e '.[dev]'
+
+      - name: Build explicitly pinned open RTL tools image
+        run: >-
+          docker build
+          -f docker/open-rtl-tools/Dockerfile
+          -t verigym/open-rtl-tools:iverilog12-yosys067
+          docker/open-rtl-tools
+
+      - name: Resolve the profile without a model
+        run: >-
+          verigym profiles resolve open-yosys-toy-area-v1
+          --runtime docker
+          --docker-image verigym/open-rtl-tools:iverilog12-yosys067
+
+      - name: Run opt-in Docker-Yosys integration tests
+        env:
+          VERIGYM_RUN_DOCKER_YOSYS_TESTS: "1"
+          VERIGYM_DOCKER_YOSYS_IMAGE: verigym/open-rtl-tools:iverilog12-yosys067
+        run: pytest -m docker_yosys

@@ -1,0 +1,19 @@
+Base image repository digest:
+  debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+
+Yosys official release:
+  release: v0.67
+  release page: https://github.com/YosysHQ/yosys/releases/tag/v0.67
+  asset: yosys.tar.gz
+  asset SHA-256: 608d758a6efc73c9f866b0a822aa2f788c2889fcb70dcdcc0e758009465049f6
+  v0.67 tag peeled commit: 2d1509d1bcb8df0723f6790057e3b1d21c876683
+  vendored archive .gitcommit: b8e7da6f40ae8f552c116bf6c359b07c6533e159
+  vendored ABC .gitcommit: e026ed5380f3bdc3beea2ff9ffc23236fc549d5b
+
+Icarus Verilog:
+  tag: v12_0
+  peeled commit: 4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf
+
+These are observed upstream identities, not values inferred from the image tag.
+The actual compiler versions and final immutable image ID must be queried from
+the built image and recorded by VeriGym.

@@ -7,6 +7,7 @@ from typing import Literal
 from verigym.core.episode import BudgetTracker, TerminationReason
 from verigym.core.hashing import content_hash
 from verigym.core.verifier_dag import has_infrastructure_error
+from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.schemas.common import ToolchainProfileRef
 from verigym.schemas.runtime import WorkspaceDiff
 from verigym.schemas.score import (
@@ -14,10 +15,12 @@ from verigym.schemas.score import (
     EfficiencyMetrics,
     EpisodeFailure,
     PatchMetrics,
+    PPAMetrics,
     QualityMetrics,
     ReproducibilityMetrics,
     ScoreCard,
 )
+from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 
@@ -36,15 +39,19 @@ def build_scorecard(
     profile_refs: list[ToolchainProfileRef],
     isolation_level: str,
     episode_failure: EpisodeFailure | None = None,
+    resolved_profile: ResolvedToolchainProfile | None = None,
+    candidate_synthesis: SynthesisMetrics | None = None,
+    reference_synthesis: SynthesisMetrics | None = None,
 ) -> ScoreCard:
     by_id = {result.node_id: result for result in results}
     required = [by_id[node_id] for node_id in task.scoring.correctness_required_nodes]
-    resolved = episode_failure is None and all(
+    functional_resolved = episode_failure is None and all(
         result.status == VerifierStatus.PASSED for result in required
     )
-    infrastructure_error = has_infrastructure_error(required) or bool(
-        episode_failure and episode_failure.infrastructure
-    )
+    infrastructure_error = has_infrastructure_error(
+        results if resolved_profile is not None else required
+    ) or bool(episode_failure and episode_failure.infrastructure)
+    resolved = functional_resolved and not infrastructure_error
     compile_result = next((r for r in results if "compile" in r.plugin), None)
     run_result = next(
         (r for r in results if r.plugin in {"iverilog.run", "verilog_eval.v2.regression"}),
@@ -57,8 +64,9 @@ def build_scorecard(
         hidden_regression_status=run_result.status.value if run_result else None,
         tests_passed=tests_passed if tests_total else None,
         tests_total=tests_total if tests_total else None,
-        resolved=resolved,
-        infrastructure_error=infrastructure_error,
+        resolved=functional_resolved,
+        infrastructure_error=has_infrastructure_error(required)
+        or bool(episode_failure and episode_failure.infrastructure),
     )
     status: Literal["error", "failed", "completed"] = (
         "error" if infrastructure_error else "failed" if episode_failure else "completed"
@@ -68,13 +76,97 @@ def build_scorecard(
         warnings.append(
             "LocalRuntime is for trusted development fixtures and is not an untrusted-code sandbox."
         )
+    quality = QualityMetrics(ppa=None, synthesis=None, reference_synthesis=None)
+    if resolved_profile is not None:
+        reasons: list[str] = []
+        if not functional_resolved:
+            reasons.append("correctness_gate_failed")
+        if candidate_synthesis is None or not candidate_synthesis.synthesis_ok:
+            reasons.append("candidate_synthesis_not_passed")
+        elif candidate_synthesis.mapped_area_raw is None:
+            reasons.append("candidate_area_missing")
+        if reference_synthesis is None or not reference_synthesis.synthesis_ok:
+            reasons.append("reference_contract_not_satisfied")
+        elif reference_synthesis.mapped_area_raw is None:
+            reasons.append("reference_area_missing")
+        if (
+            candidate_synthesis is not None
+            and candidate_synthesis.synthesis_ok
+            and (
+                candidate_synthesis.resolved_profile_hash != resolved_profile.resolved_profile_hash
+            )
+        ):
+            reasons.append("candidate_profile_identity_mismatch")
+        if (
+            reference_synthesis is not None
+            and reference_synthesis.synthesis_ok
+            and (
+                reference_synthesis.resolved_profile_hash != resolved_profile.resolved_profile_hash
+            )
+        ):
+            reasons.append("reference_profile_identity_mismatch")
+        if (
+            candidate_synthesis is not None
+            and candidate_synthesis.synthesis_ok
+            and (candidate_synthesis.mapped_area_unit != resolved_profile.area_unit)
+        ):
+            reasons.append("candidate_area_unit_mismatch")
+        if (
+            reference_synthesis is not None
+            and reference_synthesis.synthesis_ok
+            and (reference_synthesis.mapped_area_unit != resolved_profile.area_unit)
+        ):
+            reasons.append("reference_area_unit_mismatch")
+        if resolved_profile.reference_candidate_hash is None:
+            reasons.append("reference_identity_missing")
+        reasons = list(dict.fromkeys(reasons))
+        eligible = not reasons
+        candidate_area = (
+            candidate_synthesis.mapped_area_raw
+            if eligible and candidate_synthesis is not None
+            else None
+        )
+        reference_area = (
+            reference_synthesis.mapped_area_raw
+            if eligible and reference_synthesis is not None
+            else None
+        )
+        ratio = (
+            reference_area / candidate_area
+            if reference_area is not None and candidate_area is not None
+            else None
+        )
+        quality = QualityMetrics(
+            ppa=PPAMetrics(
+                profile_id=resolved_profile.profile_id,
+                profile_version=resolved_profile.profile_version,
+                resolved_profile_hash=resolved_profile.resolved_profile_hash,
+                scope="synthesis_area_only",
+                eligible=eligible,
+                ineligible_reasons=reasons,
+                area=candidate_area,
+                area_unit=resolved_profile.area_unit,
+                reference_area=reference_area,
+                area_ratio=ratio,
+                delay=None,
+                frequency=None,
+                power=None,
+                worst_negative_slack=None,
+                total_negative_slack=None,
+            ),
+            synthesis=candidate_synthesis,
+            reference_synthesis=reference_synthesis,
+        )
+        warnings.append(
+            "Synthesis quality is educational, profile-relative, area-only, and non-signoff."
+        )
     return ScoreCard(
         run_id=run_id,
         task_id=task.id,
         status=status,
         resolved=resolved,
         correctness=correctness,
-        quality=QualityMetrics(ppa=None, synthesis=None),
+        quality=quality,
         efficiency=EfficiencyMetrics(
             wall_time_s=tracker.wall_time_s,
             agent_time_s=tracker.agent_time_s,
@@ -101,6 +193,9 @@ def build_scorecard(
             verifier_hash=content_hash(task.verifier),
             run_config_hash=run_config_hash,
             toolchain_profile_ids=[ref.id for ref in profile_refs],
+            resolved_toolchain_profile_hashes=(
+                [resolved_profile.resolved_profile_hash] if resolved_profile is not None else []
+            ),
             deterministic=True,
             isolation_level=isolation_level,
         ),

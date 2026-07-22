@@ -168,6 +168,9 @@ def regenerate_sample_report(group_dir: Path) -> SampleSetResult:
 def manifest_configuration_fingerprint(manifest: RunManifest) -> str:
     """Hash every score-relevant homogeneous field, excluding sample seed/index."""
 
+    runtime = manifest.runtime.model_dump(mode="json")
+    runtime.pop("sessions", None)
+    runtime.pop("cleanup", None)
     payload: dict[str, Any] = {
         "task_id": manifest.task_id,
         "task_hash": manifest.task_hash,
@@ -182,7 +185,7 @@ def manifest_configuration_fingerprint(manifest: RunManifest) -> str:
         "tool_policy": manifest.tool_policy,
         "generation": manifest.generation,
         "suite_source": manifest.suite_source,
-        "runtime": manifest.runtime,
+        "runtime": runtime,
         "toolchain_profiles": manifest.toolchain_profiles,
         "budget": manifest.budget,
         "isolation_level": manifest.environment_summary.get("unsafe_local_runtime"),

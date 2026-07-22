@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
@@ -37,8 +37,14 @@ class CompletedCommand(StrictModel):
     stderr: str = ""
     duration_s: float = Field(default=0.0, ge=0.0)
     timed_out: bool = False
+    oom_killed: bool = False
     output_truncated: bool = False
     error: str | None = None
+    failure_reason: str | None = None
+    failure_origin: Literal["candidate_process", "control_plane"] | None = None
+    container_id: str | None = None
+    runtime_role: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolResult(StrictModel):

@@ -113,6 +113,13 @@ The manifest, scorecard, and verifier artifacts record exact detected Icarus ver
 Nonreference tools may be used for development, but their reports do not claim exact upstream
 comparability. PPA and synthesis fields remain `null`.
 
+With `--runtime docker`, tool discovery and compatibility come from the immutable resolved image,
+not host `iverilog` or `vvp`. Native simulation runs beside the compiled artifact in the verifier's
+writable internal build directory so upstream testbenches can emit temporary VCD files without
+making candidate or golden/testbench sources writable. The external checkout itself is never
+mounted into a container. See [DockerRuntime](docker_runtime.md) for image, isolation, replay, and
+opt-in conformance-test details.
+
 ## Independent samples and canonical pass@k
 
 Milestone 6 can run N sequential, independent ChatEval samples of one task. Every child receives a

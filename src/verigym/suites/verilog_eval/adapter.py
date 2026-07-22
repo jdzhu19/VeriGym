@@ -216,26 +216,47 @@ class VerilogEvalSuite(SuiteAdapter):
         runtime: Runtime,
         tools: PluginRegistry[Any],
     ) -> ToolchainProfile | None:
-        compiler = tools.get("verilog_eval.v2.compile").health_check()
-        runner = tools.get("verilog_eval.v2.regression").health_check()
-        compiler_info = detect_icarus("iverilog")
-        runner_info = detect_icarus("vvp")
-        statuses = {compiler_info.compatibility, runner_info.compatibility}
-        if IcarusCompatibility.INCOMPATIBLE in statuses:
-            compatibility = IcarusCompatibility.INCOMPATIBLE
-        elif statuses == {IcarusCompatibility.REFERENCE_COMPATIBLE}:
-            compatibility = IcarusCompatibility.REFERENCE_COMPATIBLE
+        runtime_image = runtime.descriptor.image
+        if runtime_image is not None:
+            compiler_version = runtime_image.iverilog_version
+            runner_version = runtime_image.vvp_version
+            try:
+                compatibility = (
+                    IcarusCompatibility(runtime_image.compatibility_status)
+                    if runtime_image.compatibility_status is not None
+                    else IcarusCompatibility.UNVERIFIED
+                )
+            except ValueError:
+                compatibility = IcarusCompatibility.UNVERIFIED
         else:
-            compatibility = IcarusCompatibility.UNVERIFIED
+            compiler = tools.get("verilog_eval.v2.compile").health_check()
+            runner = tools.get("verilog_eval.v2.regression").health_check()
+            compiler_version = compiler.version
+            runner_version = runner.version
+            compiler_info = detect_icarus("iverilog")
+            runner_info = detect_icarus("vvp")
+            statuses = {compiler_info.compatibility, runner_info.compatibility}
+            if IcarusCompatibility.INCOMPATIBLE in statuses:
+                compatibility = IcarusCompatibility.INCOMPATIBLE
+            elif statuses == {IcarusCompatibility.REFERENCE_COMPATIBLE}:
+                compatibility = IcarusCompatibility.REFERENCE_COMPATIBLE
+            else:
+                compatibility = IcarusCompatibility.UNVERIFIED
         return ToolchainProfile(
             id="verilog-eval-v2-icarus",
             version="1.0.0",
             description=("VerilogEval V2 Icarus profile; upstream reference is Icarus v12."),
             tools=[
-                ToolRequirement(name="iverilog", version=compiler.version),
-                ToolRequirement(name="vvp", version=runner.version),
+                ToolRequirement(name="iverilog", version=compiler_version),
+                ToolRequirement(name="vvp", version=runner_version),
             ],
             runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+            container_image=(
+                runtime_image.requested_reference if runtime_image is not None else None
+            ),
+            container_digest=(
+                runtime_image.resolved_image_id if runtime_image is not None else None
+            ),
             deterministic=True,
             reproducibility_scope="public",
             compatibility_status=compatibility.value,

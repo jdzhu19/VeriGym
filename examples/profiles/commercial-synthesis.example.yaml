@@ -1,0 +1,109 @@
+# DOCUMENTATION-ONLY TEMPLATE. It is intentionally non-executable.
+# Replace placeholders only in a private site configuration; never commit secrets or vendor assets.
+schema_version: "1.0"
+api_version: "1.0"
+id: "site.example.vendor-synthesis-v1"
+version: "1.0.0-site.1"
+description: "Site-private example synthesis contract; not supplied by VeriGym"
+reproducibility_scope: "site_specific"
+deterministic: true
+
+runtime:
+  runtime: "site-private-runtime"
+  allowed_runtimes: ["site-private-runtime"]
+  minimum_isolation_level: "<site-reviewed-isolation-level>"
+  immutable_image_required: true
+  supported_os: ["linux"]
+  supported_architectures: ["amd64"]
+  network_policy: "none"
+  resource_controls_required: true
+container_digest: "sha256:<private-immutable-image-digest>"
+
+tools:
+  - name: "vendor-synthesis"
+    executable: "<site-wrapper-executable>"
+    version: "<approved-version>"
+    accepted_version: "==<approved-version>"
+    version_command: ["<site-wrapper-executable>", "--version"]
+    capabilities: ["synthesis", "machine-readable-area-report"]
+
+libraries:
+  - name: "site-owned-liberty-corner"
+    uri: "<private-re-resolution-locator>"
+    content_hash: "<sha256-of-user-owned-liberty>"
+    version: "<library-release>"
+    license: "proprietary-user-supplied"
+    media_type: "application/x-liberty"
+    source_kind: "user_path"
+    attribution: "User-owned; redistribution prohibited"
+    redistributable: false
+    unit: "<declared-area-unit>"
+    semantics: "<corner-and-area-semantics>"
+    copy_permitted: false
+
+constraints:
+  - name: "site-owned-constraints"
+    uri: "<private-re-resolution-locator>"
+    content_hash: "<sha256-of-user-owned-constraints>"
+    version: "<constraints-version>"
+    license: "proprietary-user-supplied"
+    media_type: "text/plain"
+    source_kind: "user_path"
+    redistributable: false
+    copy_permitted: false
+
+scripts:
+  - name: "site-owned-flow-script"
+    uri: "<private-re-resolution-locator>"
+    content_hash: "<sha256-of-user-owned-script>"
+    version: "<script-version>"
+    license: "proprietary-user-supplied"
+    media_type: "text/plain"
+    source_kind: "user_path"
+    redistributable: false
+    copy_permitted: false
+
+# Names only. Values and server addresses must never be serialized.
+environment_allowlist: ["VENDOR_LICENSE_CONFIGURATION"]
+
+flow:
+  frontend: "verilog-2005"
+  source_policy: "task_entrypoints"
+  default_sources: ["<suite-owned-entrypoint>"]
+  top_policy: "profile_fixed"
+  top_module: "<suite-owned-top>"
+  hierarchy_check: true
+  flatten: true
+  template_id: "<site-reviewed-flow-contract-id>"
+  abc_policy_id: "<vendor-mapping-policy-id>"
+  liberty_mapping: true
+  emit_netlist_verilog: false
+  emit_netlist_json: false
+  emit_stat_json: true
+  reference_normalization: "suite_reference_solution"
+
+metrics:
+  scope: "synthesis_area_only"
+  area:
+    enabled: true
+    source: "<bounded-versioned-machine-readable-report-field>"
+    unit: "<declared-area-unit>"
+    semantics: "<site-reviewed-mapped-area-semantics>"
+  delay: {enabled: false}
+  frequency: {enabled: false}
+  power: {enabled: false}
+  worst_negative_slack: {enabled: false}
+  total_negative_slack: {enabled: false}
+  educational: false
+  signoff: false
+
+reference:
+  strategy: "suite_reference_solution"
+  ratio: "reference_area_over_candidate_area"
+  required_for_ranking: true
+
+metadata:
+  parser_contract: "<site-parser-id-and-version>"
+  output_schema: "<bounded-machine-readable-output-schema>"
+  scope_label: "site-specific-non-signoff"
+  secret_values_serialized: false

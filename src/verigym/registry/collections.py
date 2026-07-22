@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from verigym.profiles.registry import ToolchainProfileRegistry, builtin_profiles
 from verigym.registry.base import PluginRegistry
 
 
@@ -15,6 +16,7 @@ class Registries:
     agents: PluginRegistry[Any]
     models: PluginRegistry[Any]
     runtimes: PluginRegistry[Any]
+    profiles: ToolchainProfileRegistry
 
     def discover_external(self) -> None:
         for registry in (self.suites, self.tools, self.agents, self.models, self.runtimes):
@@ -28,12 +30,14 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     from verigym.agents.scripted import ScriptedAgent, ScriptedBadAgent
     from verigym.agents.single_turn import SingleTurnAgent
     from verigym.models.static import builtin_model_clients
+    from verigym.runtimes.docker import DockerRuntime
     from verigym.runtimes.local import LocalRuntime
     from verigym.suites.toy_rtl.adapter import ToyRtlSuite
     from verigym.suites.verilog_eval.adapter import VerilogEvalSuite
     from verigym.suites.verilog_eval.verifier import builtin_verilog_eval_tools
     from verigym.tools.file_tools import builtin_file_tools
     from verigym.tools.iverilog import builtin_iverilog_tools
+    from verigym.tools.yosys import builtin_yosys_tools
 
     registries = Registries(
         suites=PluginRegistry("verigym.suites"),
@@ -41,6 +45,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
         agents=PluginRegistry("verigym.agents"),
         models=PluginRegistry("verigym.models"),
         runtimes=PluginRegistry("verigym.runtimes"),
+        profiles=builtin_profiles(),
     )
     registries.suites.register(ToyRtlSuite())
     registries.suites.register(VerilogEvalSuite())
@@ -48,6 +53,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
         *builtin_file_tools(),
         *builtin_iverilog_tools(),
         *builtin_verilog_eval_tools(),
+        *builtin_yosys_tools(),
     ]:
         registries.tools.register(tool)
     registries.agents.register(ScriptedAgent())
@@ -57,6 +63,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     for model in builtin_model_clients():
         registries.models.register(model)
     registries.runtimes.register(LocalRuntime())
+    registries.runtimes.register(DockerRuntime())
     if discover_external:
         registries.discover_external()
     return registries

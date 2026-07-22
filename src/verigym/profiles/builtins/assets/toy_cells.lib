@@ -1,0 +1,90 @@
+/*
+ * VeriGym educational standard-cell library
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * This deliberately tiny library exists only to exercise deterministic Yosys
+ * mapping and profile-relative area accounting.  Its area values use the
+ * abstract `toy_area_unit`; they do not model a fabrication process.
+ */
+library(verigym_toy_cells) {
+  technology (cmos);
+  delay_model : table_lookup;
+  time_unit : "1ns";
+  voltage_unit : "1V";
+  current_unit : "1mA";
+  leakage_power_unit : "1nW";
+  capacitive_load_unit (1, pf);
+
+  cell(VG_INV) {
+    area : 1.0;
+    pin(A) { direction : input; }
+    pin(Y) { direction : output; function : "!A"; }
+  }
+
+  cell(VG_BUF) {
+    area : 1.0;
+    pin(A) { direction : input; }
+    pin(Y) { direction : output; function : "A"; }
+  }
+
+  cell(VG_AND2) {
+    area : 2.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "A & B"; }
+  }
+
+  cell(VG_OR2) {
+    area : 2.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "A | B"; }
+  }
+
+  cell(VG_XOR2) {
+    area : 3.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "A ^ B"; }
+  }
+
+  cell(VG_XNOR2) {
+    area : 3.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "!(A ^ B)"; }
+  }
+
+  cell(VG_NAND2) {
+    area : 2.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "!(A & B)"; }
+  }
+
+  cell(VG_NOR2) {
+    area : 2.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "!(A | B)"; }
+  }
+
+  cell(VG_MUX2) {
+    area : 3.0;
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(S) { direction : input; }
+    pin(Y) { direction : output; function : "(!S & A) | (S & B)"; }
+  }
+
+  cell(VG_DFF) {
+    area : 4.0;
+    ff(IQ, IQN) {
+      clocked_on : "CLK";
+      next_state : "D";
+    }
+    pin(CLK) { direction : input; clock : true; }
+    pin(D) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+  }
+}

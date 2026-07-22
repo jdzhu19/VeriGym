@@ -1,0 +1,52 @@
+{
+  "creator": "Yosys 0.67+post (git sha1 b8e7da6f40ae8f552c116bf6c359b07c6533e159, Release, GNU /usr/bin/c++ 14.2.0)",
+  "invocation": "stat -json -top counter -liberty profile/cells.lib ",
+  "modules": {
+    "\\counter": {
+      "num_wires": 30,
+      "num_wire_bits": 37,
+      "num_pub_wires": 3,
+      "num_pub_wire_bits": 10,
+      "num_ports": 3,
+      "num_port_bits": 10,
+      "num_memories": 0,
+      "num_memory_bits": 0,
+      "num_processes": 0,
+      "num_cells": 35,
+      "num_submodules": 0,
+      "area": 87.0,
+      "sequential_area": 32.0,
+      "num_cells_by_type": {
+        "VG_AND2": 6,
+        "VG_DFF": 8,
+        "VG_NAND2": 1,
+        "VG_NOR2": 14,
+        "VG_OR2": 5,
+        "VG_XOR2": 1
+      }
+    }
+  },
+  "design": {
+    "num_wires": 30,
+    "num_wire_bits": 37,
+    "num_pub_wires": 3,
+    "num_pub_wire_bits": 10,
+    "num_ports": 3,
+    "num_port_bits": 10,
+    "num_memories": 0,
+    "num_memory_bits": 0,
+    "num_processes": 0,
+    "num_cells": 35,
+    "num_submodules": 0,
+    "area": 87.0,
+    "sequential_area": 32.0,
+    "num_cells_by_type": {
+      "VG_AND2": 6,
+      "VG_DFF": 8,
+      "VG_NAND2": 1,
+      "VG_NOR2": 14,
+      "VG_OR2": 5,
+      "VG_XOR2": 1
+    }
+  }
+}

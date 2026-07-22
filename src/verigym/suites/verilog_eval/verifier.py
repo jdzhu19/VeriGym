@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import time
+from pathlib import PurePosixPath
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -14,7 +15,8 @@ from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.suites.verilog_eval.normalization import declared_modules
 from verigym.suites.verilog_eval.result_parser import parse_native_result
-from verigym.suites.verilog_eval.toolchain import detect_icarus
+from verigym.suites.verilog_eval.schemas import IcarusCompatibility
+from verigym.suites.verilog_eval.toolchain import IcarusVersionInfo, detect_icarus
 from verigym.tools.base import ToolContext, ToolPlugin
 
 
@@ -110,7 +112,7 @@ class VerilogEvalCompileTool(ToolPlugin):
         context: ToolContext,
     ) -> ToolResult:
         assert isinstance(request, VerilogEvalCompileRequest)
-        info = detect_icarus("iverilog")
+        info = _tool_info(completed, "iverilog")
         metadata: dict[str, Any] = {
             "compile_ok": False,
             "tool_version": info.version,
@@ -126,6 +128,15 @@ class VerilogEvalCompileTool(ToolPlugin):
                 else ErrorCategory.SANDBOX_ERROR
             )
             return _failure(self.descriptor.name, category, completed, metadata=metadata)
+        if completed.oom_killed:
+            metadata["candidate_failure"] = completed.failure_origin == "candidate_process"
+            return _failure(
+                self.descriptor.name,
+                ErrorCategory.OUT_OF_MEMORY,
+                completed,
+                message="VerilogEval compilation exceeded the Docker memory limit",
+                metadata=metadata,
+            )
         if completed.timed_out:
             metadata["candidate_failure"] = True
             return _failure(
@@ -242,9 +253,11 @@ class VerilogEvalRegressionTool(ToolPlugin):
         if context.session is None:
             raise ValueError("VerilogEval regression requires a runtime session")
         context.session.read_file(executable_path)
+        executable_location = PurePosixPath(executable_path)
         executable = shutil.which("vvp") or "vvp"
         return CommandSpec(
-            argv=[executable, executable_path],
+            argv=[executable, executable_location.name],
+            cwd=executable_location.parent.as_posix(),
             timeout_s=request.timeout_s,
         )
 
@@ -255,7 +268,7 @@ class VerilogEvalRegressionTool(ToolPlugin):
         context: ToolContext,
     ) -> ToolResult:
         assert isinstance(request, VerilogEvalRegressionRequest)
-        info = detect_icarus("vvp")
+        info = _tool_info(completed, "vvp")
         parsed = parse_native_result(
             completed,
             tool_version=info.version,
@@ -275,6 +288,15 @@ class VerilogEvalRegressionTool(ToolPlugin):
                 else ErrorCategory.SANDBOX_ERROR
             )
             return _failure(self.descriptor.name, category, completed, metadata=metadata)
+        if completed.oom_killed:
+            metadata["candidate_failure"] = completed.failure_origin == "candidate_process"
+            return _failure(
+                self.descriptor.name,
+                ErrorCategory.OUT_OF_MEMORY,
+                completed,
+                message="candidate exceeded the Docker memory limit",
+                metadata=metadata,
+            )
         if completed.timed_out:
             metadata["candidate_failure"] = True
             return _failure(
@@ -354,7 +376,11 @@ def _failure(
     message: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> ToolResult:
-    values = metadata or {}
+    values = dict(metadata or {})
+    if completed.failure_origin is not None:
+        values["resource_origin"] = completed.failure_origin
+    if completed.failure_reason is not None:
+        values["runtime_subreason"] = completed.failure_reason
     samples = values.get("samples_checked")
     mismatches = values.get("mismatches")
     if isinstance(samples, int):
@@ -371,6 +397,29 @@ def _failure(
         duration_s=completed.duration_s,
         output_truncated=completed.output_truncated,
         metadata=values,
+    )
+
+
+def _tool_info(completed: CompletedCommand, name: str) -> IcarusVersionInfo:
+    versions = completed.metadata.get("tool_versions")
+    selected = versions.get(name) if isinstance(versions, dict) else None
+    if not isinstance(selected, dict):
+        return detect_icarus(name)
+    status = selected.get("compatibility_status")
+    try:
+        compatibility = (
+            IcarusCompatibility(status)
+            if isinstance(status, str)
+            else IcarusCompatibility.UNVERIFIED
+        )
+    except ValueError:
+        compatibility = IcarusCompatibility.UNVERIFIED
+    version = selected.get("version")
+    executable = selected.get("executable")
+    return IcarusVersionInfo(
+        executable=executable if isinstance(executable, str) else None,
+        version=version if isinstance(version, str) else None,
+        compatibility=compatibility,
     )
 
 

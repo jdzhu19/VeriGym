@@ -2,23 +2,31 @@
 
 from __future__ import annotations
 
-import shutil
 import sys
+import uuid
 from pathlib import Path
+from typing import Literal
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from verigym.core.errors import VeriGymError
+from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.profiles.comparison import compare_area
+from verigym.profiles.resolver import resolve_toolchain_profile
+from verigym.profiles.validation import validate_profile
 from verigym.registry.collections import build_registries
+from verigym.runtimes.docker.diagnostics import diagnose_docker
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.run import RunConfig
+from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import SampleSetResult
 from verigym.schemas.suite import SuiteSourceConfig
+from verigym.tools.yosys.identity import local_abc_health
 from verigym.version import __version__
 
 app = typer.Typer(
@@ -32,11 +40,15 @@ tasks_app = typer.Typer(help="List and inspect normalized tasks.")
 tools_app = typer.Typer(help="List and health-check structured tool plugins.")
 agents_app = typer.Typer(help="List and inspect agent-harness plugins.")
 models_app = typer.Typer(help="List and inspect model-client plugins.")
+profiles_app = typer.Typer(help="List, validate, and resolve immutable toolchain profiles.")
+report_app = typer.Typer(help="Strict comparison commands for compatible ranked metrics.")
 app.add_typer(suites_app, name="suites")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(tools_app, name="tools")
 app.add_typer(agents_app, name="agents")
 app.add_typer(models_app, name="models")
+app.add_typer(profiles_app, name="profiles")
+app.add_typer(report_app, name="report")
 console = Console()
 
 
@@ -117,7 +129,18 @@ def init_project(path: Path = typer.Argument(Path("."), help="Project directory.
 
 
 @app.command("doctor")
-def doctor() -> None:
+def doctor(
+    docker_image: str | None = typer.Option(
+        None,
+        "--docker-image",
+        help="Inspect this local image without pulling or building it.",
+    ),
+    toolchain_profile: str | None = typer.Option(
+        None,
+        "--toolchain-profile",
+        help="Validate and, with --docker-image, resolve this profile without a model call.",
+    ),
+) -> None:
     """Report package, runtime, and tool health without printing secrets."""
 
     try:
@@ -133,11 +156,12 @@ def doctor() -> None:
     table.add_column("Details")
     table.add_row("Python", "ok", sys.version.split()[0])
     table.add_row("VeriGym", "ok", __version__)
-    table.add_row(
-        "Docker",
-        "available" if shutil.which("docker") else "optional/missing",
-        shutil.which("docker") or "not required for the local toy slice",
-    )
+    for diagnostic in diagnose_docker(docker_image):
+        table.add_row(
+            diagnostic.component,
+            "ok" if diagnostic.healthy else "unavailable",
+            diagnostic.message,
+        )
     for name, runtime in registries.runtimes.items():
         health = runtime.health_check()
         table.add_row(f"runtime:{name}", "ok" if health.healthy else "missing", health.message)
@@ -162,6 +186,56 @@ def doctor() -> None:
     for name, tool in registries.tools.items():
         health = tool.health_check()
         table.add_row(f"tool:{name}", "ok" if health.healthy else "missing", health.message)
+    abc = local_abc_health()
+    table.add_row("tool:yosys-abc", "ok" if abc.healthy else "missing", abc.message)
+    for profile_id, profile in registries.profiles.items():
+        validation = validate_profile(profile)
+        table.add_row(
+            f"profile:{profile_id}",
+            "ok" if validation.valid else "invalid",
+            "statically valid" if validation.valid else "; ".join(validation.errors),
+        )
+    if toolchain_profile is not None:
+        try:
+            profile = registries.profiles.get(toolchain_profile)
+            if docker_image is None:
+                table.add_row(
+                    f"profile-resolution:{toolchain_profile}",
+                    "not-run",
+                    "pass --docker-image to resolve this Docker profile",
+                )
+            else:
+                service = VeriGym(registries)
+                task_id = str(profile.metadata.get("acceptance_task", ""))
+                suite, task, _assets = service.load_task(task_id)
+                runtime = registries.runtimes.get("docker").configure(
+                    DockerRuntimeConfig(image=docker_image, pull_policy="never")
+                )
+                try:
+                    runtime.prepare(f"doctor-profile-{uuid.uuid4().hex[:12]}")
+                    reference = suite.reference_solution(task)
+                    resolved = resolve_toolchain_profile(
+                        profile,
+                        runtime,
+                        source_paths=list(task.workspace.entrypoints),
+                        top_module=profile.flow.top_module if profile.flow is not None else "",
+                        reference_candidate_hash=(
+                            content_hash(reference) if reference is not None else None
+                        ),
+                    )
+                    table.add_row(
+                        f"profile-resolution:{toolchain_profile}",
+                        "ok",
+                        resolved.resolved_profile_hash,
+                    )
+                finally:
+                    runtime.close()
+        except Exception as exc:
+            table.add_row(
+                f"profile-resolution:{toolchain_profile}",
+                "invalid",
+                str(exc),
+            )
     console.print(table)
 
 
@@ -206,10 +280,57 @@ def run_task(
     samples: int = typer.Option(1, "--samples", min=1),
     pass_k: list[int] | None = typer.Option(None, "--pass-k", min=1),
     runtime: str = typer.Option("local", "--runtime"),
+    docker_image: str | None = typer.Option(
+        None,
+        "--docker-image",
+        help=(
+            "Prebuilt local image reference; DockerRuntime never builds and does not pull "
+            "by default."
+        ),
+    ),
+    docker_pull_policy: Literal["never", "if_missing"] = typer.Option(
+        "never",
+        "--docker-pull-policy",
+        help="Image policy: never (default) or explicit if_missing.",
+    ),
+    docker_user: str | None = typer.Option(None, "--docker-user"),
+    docker_memory_bytes: int = typer.Option(
+        512 * 1024 * 1024,
+        "--docker-memory-bytes",
+        min=64 * 1024 * 1024,
+    ),
+    docker_cpus: float = typer.Option(1.0, "--docker-cpus", min=0.1),
+    docker_pids_limit: int = typer.Option(128, "--docker-pids-limit", min=16),
+    docker_tmpfs_bytes: int = typer.Option(
+        64 * 1024 * 1024,
+        "--docker-tmpfs-bytes",
+        min=1024 * 1024,
+    ),
+    docker_stop_timeout_s: int = typer.Option(3, "--docker-stop-timeout-s", min=1),
+    docker_max_command_time_s: int = typer.Option(
+        60,
+        "--docker-max-command-time-s",
+        min=1,
+    ),
+    docker_environment_allowlist: list[str] | None = typer.Option(
+        None,
+        "--docker-environment-allow",
+        help="Repeat for non-secret environment names explicitly allowed into containers.",
+    ),
+    toolchain_profile: str | None = typer.Option(
+        None,
+        "--toolchain-profile",
+        help="Opt in to an immutable synthesis-quality profile.",
+    ),
     seed: int = typer.Option(0, "--seed"),
     output: Path = typer.Option(Path("runs"), "--output"),
 ) -> None:
-    """Run one normalized task end to end."""
+    """Run one normalized task end to end.
+
+    Docker example: verigym run --suite toy-rtl --task counter-basic --mode agent
+    --agent scripted --runtime docker --docker-image verigym/rtl-iverilog:12.0
+    --output runs/
+    """
 
     task_id = task if "/" in task else f"{suite}/{task}"
     if not task_id.startswith(f"{suite}/"):
@@ -220,6 +341,25 @@ def run_task(
             suite_variant,
             strict_compatibility=strict_compatibility,
         )
+        if runtime == "docker":
+            if docker_image is None:
+                raise ValueError("--runtime docker requires --docker-image")
+            docker_config = DockerRuntimeConfig(
+                image=docker_image,
+                pull_policy=docker_pull_policy,
+                run_as_user=docker_user,
+                memory_bytes=docker_memory_bytes,
+                cpus=docker_cpus,
+                pids_limit=docker_pids_limit,
+                tmpfs_bytes=docker_tmpfs_bytes,
+                stop_timeout_s=docker_stop_timeout_s,
+                max_command_time_s=docker_max_command_time_s,
+                environment_allowlist=docker_environment_allowlist or [],
+            )
+        else:
+            if docker_image is not None:
+                raise ValueError("--docker-image requires --runtime docker")
+            docker_config = None
         config = RunConfig(
             task_id=task_id,
             mode=mode,
@@ -238,6 +378,8 @@ def run_task(
             max_invalid_actions=max_invalid_actions,
             suite_source=source_config,
             runtime=runtime,
+            docker_config=docker_config,
+            toolchain_profile=toolchain_profile,
             seed=seed,
             output=output,
         )
@@ -268,6 +410,7 @@ def run_task(
     style = "green" if status == "PASS" else "red"
     console.print(f"[{style}]{status}[/{style}] {result.scorecard.task_id}")
     console.print(f"Run directory: {result.run_dir}")
+    console.print(f"Runtime isolation: {result.manifest.runtime.isolation_level}")
     console.print(
         f"Verifier: {result.scorecard.correctness.tests_passed or 0}/"
         f"{result.scorecard.correctness.tests_total or 0} tests; "
@@ -450,6 +593,102 @@ def tools_check(name: str) -> None:
             raise typer.Exit(code=3)
     except typer.Exit:
         raise
+    except Exception as exc:
+        _fail(exc)
+
+
+@profiles_app.command("list")
+def profiles_list() -> None:
+    table = Table("Profile", "Version", "Scope", "Reproducibility")
+    for profile_id, profile in build_registries().profiles.items():
+        scope = profile.metrics.scope if profile.metrics is not None else "execution-only"
+        table.add_row(profile_id, profile.version, scope, profile.reproducibility_scope)
+    console.print(table)
+
+
+@profiles_app.command("show")
+def profiles_show(profile_id: str) -> None:
+    try:
+        profile = build_registries().profiles.get(profile_id)
+        console.print_json(profile.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@profiles_app.command("validate")
+def profiles_validate(profile_id: str) -> None:
+    try:
+        profile = build_registries().profiles.get(profile_id)
+        result = validate_profile(profile)
+        console.print_json(result.model_dump_json(indent=2))
+        if not result.valid:
+            raise typer.Exit(code=2)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _fail(exc)
+
+
+@profiles_app.command("resolve")
+def profiles_resolve(
+    profile_id: str,
+    runtime_name: str = typer.Option("docker", "--runtime"),
+    docker_image: str | None = typer.Option(None, "--docker-image"),
+    task_id: str | None = typer.Option(
+        None,
+        "--task",
+        help="Task contract used for source/top/reference identity resolution.",
+    ),
+) -> None:
+    """Resolve exact tools/assets/runtime state; never invokes an agent or model."""
+
+    runtime = None
+    try:
+        registries = build_registries()
+        profile = registries.profiles.get(profile_id)
+        selected_task = task_id or str(profile.metadata.get("acceptance_task", ""))
+        if not selected_task:
+            raise ValueError("profile resolution requires --task")
+        service = VeriGym(registries)
+        suite, task, _assets = service.load_task(selected_task)
+        if runtime_name == "docker":
+            if docker_image is None:
+                raise ValueError("--runtime docker requires --docker-image")
+            docker_config = DockerRuntimeConfig(image=docker_image, pull_policy="never")
+        else:
+            if docker_image is not None:
+                raise ValueError("--docker-image requires --runtime docker")
+            docker_config = None
+        runtime = registries.runtimes.get(runtime_name).configure(docker_config)
+        runtime.prepare(f"profile-resolve-{uuid.uuid4().hex[:12]}")
+        reference = suite.reference_solution(task)
+        resolved = resolve_toolchain_profile(
+            profile,
+            runtime,
+            source_paths=list(task.workspace.entrypoints),
+            top_module=profile.flow.top_module if profile.flow is not None else "",
+            reference_candidate_hash=content_hash(reference) if reference is not None else None,
+        )
+        console.print_json(resolved.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+    finally:
+        if runtime is not None:
+            runtime.close()
+
+
+@report_app.command("compare")
+def report_compare(
+    run_a: Path = typer.Argument(..., exists=True, file_okay=False),
+    run_b: Path = typer.Argument(..., exists=True, file_okay=False),
+    metric: Literal["area"] = typer.Option("area", "--metric"),
+) -> None:
+    """Rank two runs only when their full resolved area contracts match."""
+
+    del metric
+    try:
+        result = compare_area(run_a, run_b)
+        console.print_json(result.model_dump_json(indent=2))
     except Exception as exc:
         _fail(exc)
 

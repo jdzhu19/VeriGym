@@ -21,15 +21,19 @@ from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
 from verigym.core.scoring import build_scorecard
+from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
 from verigym.core.trace import TraceWriter
-from verigym.core.verifier_dag import VerifierExecutor
+from verigym.core.verifier_dag import VerifierExecutor, has_infrastructure_error
 from verigym.core.workspace import copy_tree_safely, merge_tree_safely, normalize_relative_path
 from verigym.models.base import ModelClient
+from verigym.profiles.base import ResolvedToolchainProfile
+from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.prompts.builder import PromptBuilder
 from verigym.registry.collections import Registries, build_registries
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.agent import EpisodeResult
 from verigym.schemas.common import (
+    ErrorCategory,
     InteractionMode,
     RuntimeRequirement,
     ToolchainProfile,
@@ -44,7 +48,7 @@ from verigym.schemas.sampling import SampleSetResult
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
-from verigym.schemas.verifier import VerifierResult
+from verigym.schemas.verifier import VerifierResult, VerifierStatus
 from verigym.version import __version__
 
 
@@ -93,27 +97,57 @@ class VeriGym:
             raise ConfigurationError(
                 f"task {task.id} does not support interaction mode {config.mode.value}"
             )
-        runtime: Runtime = self.registries.runtimes.get(config.runtime)
-        agent: AgentAdapter = self.registries.agents.get(config.agent)
-        if config.mode not in agent.supported_modes:
-            supported = ", ".join(sorted(mode.value for mode in agent.supported_modes))
-            raise ConfigurationError(
-                f"agent {config.agent!r} does not support mode {config.mode.value!r}; "
-                f"supported: {supported}"
-            )
-        model_client: ModelClient | None = None
-        prompt_builder: PromptBuilder | None = None
-        if agent.requires_model:
-            if config.model is None:
-                raise ConfigurationError(f"model-backed agent {config.agent!r} requires --model")
-            configured_model: ModelClient = self.registries.models.get(config.model)
-            model_options = config.model_options.model_copy(
-                update={"sample_index": config.sample_index}
-            )
-            model_client = configured_model.clone_for_run(model_options)
-            prompt_builder = PromptBuilder(config.mode)
-        elif config.model is not None:
-            raise ConfigurationError(f"agent {config.agent!r} does not use a model; omit --model")
+        runtime_plugin: Runtime = self.registries.runtimes.get(config.runtime)
+        run_id = self._new_run_id(task.id)
+        runtime = runtime_plugin.configure(config.docker_config)
+        synthesis_profile: ToolchainProfile | None = None
+        resolved_profile: ResolvedToolchainProfile | None = None
+        try:
+            runtime.prepare(run_id)
+            if config.toolchain_profile is not None:
+                synthesis_profile = self.registries.profiles.get(config.toolchain_profile)
+                if synthesis_profile.flow is None:
+                    raise ConfigurationError(
+                        f"profile {synthesis_profile.id!r} has no synthesis flow"
+                    )
+                reference = suite.reference_solution(task)
+                reference_hash = content_hash(reference) if reference is not None else None
+                resolved_profile = resolve_toolchain_profile(
+                    synthesis_profile,
+                    runtime,
+                    source_paths=list(task.workspace.entrypoints),
+                    top_module=synthesis_profile.flow.top_module,
+                    reference_candidate_hash=reference_hash,
+                )
+            # Agent and model registries are intentionally consulted only after profile
+            # resolution, so a bad image/tool/asset can never trigger a model lookup.
+            agent: AgentAdapter = self.registries.agents.get(config.agent)
+            if config.mode not in agent.supported_modes:
+                supported = ", ".join(sorted(mode.value for mode in agent.supported_modes))
+                raise ConfigurationError(
+                    f"agent {config.agent!r} does not support mode {config.mode.value!r}; "
+                    f"supported: {supported}"
+                )
+            model_client: ModelClient | None = None
+            prompt_builder: PromptBuilder | None = None
+            if agent.requires_model:
+                if config.model is None:
+                    raise ConfigurationError(
+                        f"model-backed agent {config.agent!r} requires --model"
+                    )
+                configured_model: ModelClient = self.registries.models.get(config.model)
+                model_options = config.model_options.model_copy(
+                    update={"sample_index": config.sample_index}
+                )
+                model_client = configured_model.clone_for_run(model_options)
+                prompt_builder = PromptBuilder(config.mode)
+            elif config.model is not None:
+                raise ConfigurationError(
+                    f"agent {config.agent!r} does not use a model; omit --model"
+                )
+        except BaseException:
+            runtime.close()
+            raise
         allowed_tools = (
             []
             if config.mode == InteractionMode.CHAT
@@ -141,13 +175,12 @@ class VeriGym:
             ),
             network_policy=task.interaction.network_policy,
         )
-        run_id = self._new_run_id(task.id)
         layout = RunLayout.create(config.output.expanduser().resolve() / run_id)
         trace = TraceWriter(layout.trace, run_id)
         task_hash = content_hash(task)
         verifier_hash = content_hash(task.verifier)
         run_config_hash = content_hash(config)
-        profile = suite.toolchain_profile(runtime, self.registries.tools)
+        profile = synthesis_profile or suite.toolchain_profile(runtime, self.registries.tools)
         if profile is None:
             profile = self._toolchain_profile(runtime)
         profile_ref = ToolchainProfileRef(
@@ -188,6 +221,28 @@ class VeriGym:
             suite_source=suite.source_snapshot(),
             runtime=runtime.descriptor,
             toolchain_profiles=[profile_ref],
+            requested_toolchain_profile_id=(
+                resolved_profile.profile_id if resolved_profile is not None else None
+            ),
+            requested_toolchain_profile_version=(
+                resolved_profile.profile_version if resolved_profile is not None else None
+            ),
+            declared_profile_hash=(
+                resolved_profile.declared_profile_hash if resolved_profile is not None else None
+            ),
+            resolved_profile_hash=(
+                resolved_profile.resolved_profile_hash if resolved_profile is not None else None
+            ),
+            resolved_toolchain_profile=resolved_profile,
+            synthesis_flow_script_hash=(
+                resolved_profile.generated_script_hash if resolved_profile is not None else None
+            ),
+            reference_strategy=(
+                resolved_profile.reference_strategy if resolved_profile is not None else None
+            ),
+            reference_candidate_hash=(
+                resolved_profile.reference_candidate_hash if resolved_profile is not None else None
+            ),
             budget=task.budget,
             prompt_policy_hash=(
                 prompt_builder.descriptor.configuration_fingerprint
@@ -201,11 +256,14 @@ class VeriGym:
                 "network_policy": task.interaction.network_policy,
                 "unsafe_local_runtime": runtime.descriptor.isolation_level == "local_trusted",
                 "verifier_isolation": "separate_runtime_session",
+                **runtime.environment_summary(),
             },
         )
         dump_json(layout.manifest, manifest)
         dump_json(layout.task_snapshot, task)
         dump_json(layout.artifacts / "toolchain_profile.json", profile)
+        if resolved_profile is not None:
+            dump_json(layout.artifacts / "resolved_toolchain_profile.json", resolved_profile)
         append_json_log(
             layout.logs / "runtime.log",
             event="runtime_created",
@@ -229,6 +287,7 @@ class VeriGym:
             mode=config.mode,
         )
         verifier_results: list[VerifierResult] = []
+        synthesis_evaluation: SynthesisEvaluation | None = None
         episode_failure: EpisodeFailure | None = None
         try:
             observation, _ = env.reset(run_id=run_id, trace=trace)
@@ -305,6 +364,7 @@ class VeriGym:
             if env.termination_reason is None:
                 env.termination_reason = TerminationReason.RUNTIME_ERROR
             assert env.session is not None and env.tracker is not None
+            env.session.freeze()
             diff = env.session.snapshot_diff()
             layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
             layout.export_candidate(env.session.root)
@@ -325,6 +385,28 @@ class VeriGym:
                 artifact_root=layout.artifacts,
                 agent_session=env.session,
             )
+            if synthesis_profile is not None and resolved_profile is not None:
+                by_id = {result.node_id: result for result in verifier_results}
+                correctness_passed = all(
+                    by_id.get(node_id) is not None
+                    and by_id[node_id].status == VerifierStatus.PASSED
+                    for node_id in task.scoring.correctness_required_nodes
+                ) and not has_infrastructure_error(verifier_results)
+                synthesis_evaluation = execute_synthesis_quality(
+                    suite=suite,
+                    task=task,
+                    candidate_dir=layout.candidate,
+                    runtime=runtime,
+                    profile=synthesis_profile,
+                    resolved=resolved_profile,
+                    artifact_root=layout.artifacts,
+                    plugin=self.registries.tools.get("yosys.synth"),
+                    correctness_passed=correctness_passed,
+                )
+                verifier_results.extend(synthesis_evaluation.results)
+                reference_summary = layout.artifacts / "yosys" / "reference_summary.json"
+                if reference_summary.is_file():
+                    manifest.reference_summary_hash = hash_bytes(reference_summary.read_bytes())
             env.tracker.verifier_time_s = time.monotonic() - verifier_started
             for result in verifier_results:
                 trace.emit(
@@ -350,6 +432,28 @@ class VeriGym:
                     error_category=result.error_category.value,
                     message=result.message,
                 )
+            env.close()
+            runtime.close()
+            manifest.runtime = runtime.descriptor
+            manifest.environment_summary.update(runtime.environment_summary())
+            dump_json(layout.manifest, manifest)
+            trace.emit(
+                "runtime_cleanup_result",
+                {
+                    "runtime": manifest.runtime.name,
+                    "isolation_level": manifest.runtime.isolation_level,
+                    "complete": (
+                        manifest.runtime.cleanup.complete
+                        if manifest.runtime.cleanup is not None
+                        else True
+                    ),
+                    "warnings": (
+                        len(manifest.runtime.cleanup.warnings)
+                        if manifest.runtime.cleanup is not None
+                        else 0
+                    ),
+                },
+            )
             scorecard = build_scorecard(
                 run_id=run_id,
                 task=task,
@@ -363,6 +467,13 @@ class VeriGym:
                 profile_refs=[profile_ref],
                 isolation_level=runtime.descriptor.isolation_level,
                 episode_failure=episode_failure,
+                resolved_profile=resolved_profile,
+                candidate_synthesis=(
+                    synthesis_evaluation.candidate if synthesis_evaluation is not None else None
+                ),
+                reference_synthesis=(
+                    synthesis_evaluation.reference if synthesis_evaluation is not None else None
+                ),
             )
             dump_json(layout.scorecard, scorecard)
             trace.emit(
@@ -392,6 +503,7 @@ class VeriGym:
             return RunResult(run_dir=layout.root, manifest=manifest, scorecard=scorecard)
         finally:
             env.close()
+            runtime.close()
 
     def run_samples(
         self,
@@ -417,6 +529,7 @@ class VeriGym:
         agent_session: RuntimeSession | None = None,
     ) -> list[VerifierResult]:
         verifier_session: RuntimeSession | None = None
+        protected_hashes: dict[str, str] = {}
         with tempfile.TemporaryDirectory(prefix="verigym-verifier-staging-") as temporary:
             staging = Path(temporary)
             copy_tree_safely(candidate_dir, staging)
@@ -428,6 +541,11 @@ class VeriGym:
                 )
                 mount_path = asset.mount_path if asset and asset.mount_path else "hidden"
                 merge_tree_safely(Path(hidden_root), staging, mount_path=mount_path)
+                protected_root = staging / normalize_relative_path(mount_path, allow_root=True)
+                for protected in sorted(protected_root.rglob("*")):
+                    if protected.is_file():
+                        relative = protected.relative_to(staging).as_posix()
+                        protected_hashes[relative] = hash_bytes(protected.read_bytes())
             for asset in assets.hidden_assets:
                 if asset.kind != "inline" or asset.content is None or asset.mount_path is None:
                     raise ConfigurationError(
@@ -442,6 +560,7 @@ class VeriGym:
                 destination = staging / mount_path
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(payload)
+                protected_hashes[mount_path] = hash_bytes(payload)
             verifier_session = runtime.create_session(
                 SessionSpec(
                     source_dir=str(staging),
@@ -453,27 +572,54 @@ class VeriGym:
             if agent_session is not None and verifier_session.root == agent_session.root:
                 raise RuntimeError("agent and verifier sessions must be physically distinct")
             executor = VerifierExecutor(self.registries.tools)
-            return executor.execute(
+            results = executor.execute(
                 task.verifier,
                 verifier_session,
                 artifact_root,
                 max_output_bytes=task.budget.max_output_bytes_per_tool,
             )
+            integrity_ok = all(
+                (verifier_session.root / relative).is_file()
+                and hash_bytes((verifier_session.root / relative).read_bytes()) == expected
+                for relative, expected in protected_hashes.items()
+            )
+            if not integrity_ok:
+                results.append(
+                    VerifierResult(
+                        node_id="runtime_hidden_integrity",
+                        plugin="runtime",
+                        status=VerifierStatus.ERROR,
+                        error_category=ErrorCategory.SANDBOX_ERROR,
+                        message="verifier hidden-input integrity check failed",
+                    )
+                )
+            return results
         finally:
             verifier_session.close()
 
     def _toolchain_profile(self, runtime: Runtime) -> ToolchainProfile:
-        compiler_health = self.registries.tools.get("iverilog.compile").health_check()
-        runner_health = self.registries.tools.get("iverilog.run").health_check()
+        runtime_image = runtime.descriptor.image
+        if runtime_image is None:
+            compiler_version = self.registries.tools.get("iverilog.compile").health_check().version
+            runner_version = self.registries.tools.get("iverilog.run").health_check().version
+        else:
+            compiler_version = runtime_image.iverilog_version
+            runner_version = runtime_image.vvp_version
         return ToolchainProfile(
             id="toy-iverilog-v1",
             version="1.0.0",
             description="Public deterministic Icarus profile for the toy RTL counter.",
             tools=[
-                ToolRequirement(name="iverilog", version=compiler_health.version),
-                ToolRequirement(name="vvp", version=runner_health.version),
+                ToolRequirement(name="iverilog", version=compiler_version),
+                ToolRequirement(name="vvp", version=runner_version),
             ],
             runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+            container_image=(
+                runtime_image.requested_reference if runtime_image is not None else None
+            ),
+            container_digest=(
+                runtime_image.resolved_image_id if runtime_image is not None else None
+            ),
             deterministic=True,
             reproducibility_scope="public",
         )

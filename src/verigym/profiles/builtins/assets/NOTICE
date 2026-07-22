@@ -1,0 +1,7 @@
+VeriGym educational standard-cell library
+Copyright 2026 VeriGym contributors
+
+The file toy_cells.lib is authored by the VeriGym contributors and distributed
+under the repository's Apache License 2.0. Its abstract area values are for
+testing profile-relative synthesis accounting only and do not describe a PDK,
+fabrication process, physical layout, timing model, power model, or signoff view.

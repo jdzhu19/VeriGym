@@ -143,6 +143,8 @@ class IverilogCompileTool(ToolPlugin):
                 else ErrorCategory.SANDBOX_ERROR
             )
             return _command_failure(self.descriptor.name, category, completed)
+        if completed.oom_killed:
+            return _command_failure(self.descriptor.name, ErrorCategory.OUT_OF_MEMORY, completed)
         if completed.timed_out:
             return _command_failure(self.descriptor.name, ErrorCategory.TIMEOUT, completed)
         if completed.output_truncated:
@@ -298,6 +300,8 @@ def _parse_simulation(
             else ErrorCategory.SANDBOX_ERROR
         )
         return _command_failure(tool_name, category, completed)
+    if completed.oom_killed:
+        return _command_failure(tool_name, ErrorCategory.OUT_OF_MEMORY, completed)
     if completed.timed_out:
         return _command_failure(tool_name, ErrorCategory.TIMEOUT, completed)
     if completed.output_truncated:
@@ -338,6 +342,16 @@ def _command_failure(
     message: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> ToolResult:
+    values = dict(metadata or {})
+    if completed.failure_origin is not None:
+        values["resource_origin"] = completed.failure_origin
+    if completed.failure_reason is not None:
+        values["runtime_subreason"] = completed.failure_reason
+    if (
+        category in {ErrorCategory.TIMEOUT, ErrorCategory.OUT_OF_MEMORY}
+        and completed.failure_origin == "candidate_process"
+    ):
+        values["candidate_failure"] = True
     return ToolResult(
         tool=tool_name,
         success=False,
@@ -348,7 +362,7 @@ def _command_failure(
         stderr=completed.stderr,
         duration_s=completed.duration_s,
         output_truncated=completed.output_truncated,
-        metadata=metadata or {},
+        metadata=values,
     )
 
 

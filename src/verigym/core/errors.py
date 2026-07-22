@@ -57,3 +57,7 @@ class VerifierGraphError(ConfigurationError):
 
 class ReplayError(ConfigurationError):
     """Stored run data cannot be validated or replayed."""
+
+
+class ComparisonError(ConfigurationError):
+    """Two ranked metrics do not share an identical comparison contract."""

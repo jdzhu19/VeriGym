@@ -36,6 +36,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 verigym = [
+  "profiles/builtins/*.yaml",
+  "profiles/builtins/assets/*",
   "suites/toy_rtl/assets/**/*",
   "suites/verilog_eval/assets/**/*",
 ]
@@ -54,6 +56,9 @@ testpaths = ["tests"]
 markers = [
   "integration: exercises an installed external RTL tool",
   "conformance: validates suite semantics",
+  "docker: exercises the opt-in real Docker runtime",
+  "yosys: exercises an opt-in real local Yosys installation",
+  "docker_yosys: exercises the opt-in pinned Docker Yosys profile",
 ]
 
 [tool.ruff]

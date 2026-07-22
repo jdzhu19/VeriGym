@@ -11,7 +11,8 @@ SuiteAdapter -> VeriTask -> Agent workspace -> Verifier DAG -> Trace + ScoreCard
 
 ## Install
 
-Python 3.11+ and Icarus Verilog (`iverilog` and `vvp`) are required for RTL verification.
+Python 3.11+ is required. `LocalRuntime` verification also needs host `iverilog` and `vvp`;
+DockerRuntime obtains them from its explicitly selected image.
 
 ```bash
 pip install -e .
@@ -20,6 +21,10 @@ verigym doctor
 
 `LocalRuntime` is explicitly labeled `local_trusted`. It is suitable only for trusted toy
 tasks and development; it is not an untrusted-workload security boundary.
+
+Docker isolation is optional and uses the external Docker CLI; no Docker Python package or extra
+is required for the base installation. See [DockerRuntime](docs/docker_runtime.md) and the
+[security policy](SECURITY.md) before running untrusted inputs.
 
 ## Run the toy RTL task
 
@@ -77,6 +82,112 @@ verigym agents list
 The offline fixtures include `static-counter-good`, `static-counter-good-fenced`,
 `static-counter-bad`, `static-react-counter-good`, `static-react-malformed`, and
 `static-exhausted`. They need neither a network endpoint nor an API key.
+
+## Optional DockerRuntime
+
+Build the Icarus 12 reference image explicitly; VeriGym never builds an image automatically:
+
+```bash
+docker build \
+  -f docker/iverilog12/Dockerfile \
+  -t verigym/rtl-iverilog:12.0 \
+  docker/iverilog12
+```
+
+Run the same toy AgentEval vertical slice under fail-closed Docker isolation:
+
+```bash
+verigym run \
+  --suite toy-rtl \
+  --task counter-basic \
+  --mode agent \
+  --agent scripted \
+  --runtime docker \
+  --docker-image verigym/rtl-iverilog:12.0 \
+  --output runs/
+```
+
+The default pull policy is `never`. DockerRuntime resolves the requested reference once, records
+the actual immutable image ID and inside-image Icarus versions, and uses that ID for separate agent
+and verifier sessions. Containers run non-root with network disabled, a read-only root filesystem,
+dropped capabilities, `no-new-privileges`, resource limits, an allowlisted environment, bounded
+output, and labeled cleanup. Docker shares the host kernel and is not a virtual-machine boundary.
+
+Inspect a local image without pulling or building it, then replay a completed run using its exact
+stored image ID:
+
+```bash
+verigym doctor --docker-image verigym/rtl-iverilog:12.0
+verigym replay runs/<run-id> --verify
+```
+
+Real Docker tests are opt-in and ordinary tests need no daemon:
+
+```bash
+VERIGYM_RUN_DOCKER_TESTS=1 \
+VERIGYM_DOCKER_IMAGE=verigym/rtl-iverilog:12.0 \
+pytest -m docker
+```
+
+## Optional Yosys mapped-area profile
+
+Milestone 8 adds an area-only Yosys `ToolPlugin` and a pinned educational Liberty profile. It
+does not add timing, power, OpenROAD, or signoff PPA. Generic cell count remains a structural
+synthesis statistic and is never presented as area. Ranked area is emitted only after functional
+verification succeeds and both the candidate and suite reference RTL synthesize with the exact
+same resolved profile.
+
+Build the combined Icarus/Yosys reference image explicitly; `verigym run` never builds or pulls it:
+
+```bash
+docker build \
+  -f docker/open-rtl-tools/Dockerfile \
+  -t verigym/open-rtl-tools:iverilog12-yosys067 \
+  docker/open-rtl-tools
+```
+
+Validate and resolve the declared profile before running a model or agent:
+
+```bash
+verigym profiles list
+verigym profiles validate open-yosys-toy-area-v1
+verigym profiles resolve open-yosys-toy-area-v1 \
+  --runtime docker \
+  --docker-image verigym/open-rtl-tools:iverilog12-yosys067
+```
+
+Run the toy vertical slice and compare only compatible, eligible runs:
+
+```bash
+verigym run \
+  --suite toy-rtl \
+  --task counter-basic \
+  --mode agent \
+  --agent scripted \
+  --runtime docker \
+  --docker-image verigym/open-rtl-tools:iverilog12-yosys067 \
+  --toolchain-profile open-yosys-toy-area-v1 \
+  --output runs/
+
+verigym report compare runs/<left-run> runs/<right-run>
+```
+
+The scorecard reports `reference_area / candidate_area`, so values above one mean the candidate
+uses less mapped area than the reference under that exact profile. Delay, frequency, power, WNS,
+and TNS remain JSON `null`. A declared profile identifies the intended contract; its resolved hash
+also covers the exact image, tools, Liberty bytes, generated script, flow, units, and reference
+semantics. Results from different profile IDs or resolved hashes are deliberately incomparable.
+
+See [Yosys synthesis](docs/yosys.md), [PPA profile semantics](docs/ppa_profiles.md), and the
+[commercial-tool template policy](docs/commercial_tools.md). Real Yosys tests are opt-in:
+
+```bash
+VERIGYM_RUN_YOSYS_TESTS=1 pytest -m yosys
+
+VERIGYM_RUN_DOCKER_YOSYS_TESTS=1 \
+VERIGYM_DOCKER_YOSYS_IMAGE=verigym/open-rtl-tools:iverilog12-yosys067 \
+pytest -m docker_yosys
+```
 
 ## External VerilogEval V2
 
@@ -165,6 +276,8 @@ Only the environment-variable name is configured; its value and authorization he
 excluded from manifests, traces, logs, and configuration fingerprints. Credential-bearing
 URLs are rejected. See [Milestone 5 model and agent details](docs/milestone5-models-and-agents.md).
 
-This repository implements Milestone 6 on top of the preserved Milestones 0–5 behavior. Docker
-isolation, Yosys/PPA, broader benchmark adapters, general batch execution, external agent
-frameworks, and RL integrations remain out of scope.
+This repository implements Milestone 8 on top of the preserved Milestones 0–7 behavior. The
+reference images and Docker profiles are Linux-first. Milestone 8 provides only profile-relative,
+educational synthesis area—not full PPA or signoff. OpenROAD, timing, power, broader benchmark
+adapters, general batch execution/reporting, remote runtimes, commercial execution, external
+agent frameworks, and RL integrations remain out of scope.

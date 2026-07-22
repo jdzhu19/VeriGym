@@ -192,7 +192,7 @@ class LocalRuntimeSession(RuntimeSession):
 
 
 class LocalRuntime(Runtime):
-    descriptor = RuntimeDescriptor(
+    _descriptor = RuntimeDescriptor(
         schema_version=SCHEMA_VERSION,
         name="local",
         version="0.1.0",
@@ -202,6 +202,10 @@ class LocalRuntime(Runtime):
         isolation_level="local_trusted",
         deterministic=True,
     )
+
+    @property
+    def descriptor(self) -> RuntimeDescriptor:
+        return self._descriptor
 
     def health_check(self) -> HealthCheckResult:
         return HealthCheckResult(

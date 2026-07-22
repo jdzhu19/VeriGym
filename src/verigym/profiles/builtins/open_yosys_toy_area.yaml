@@ -1,0 +1,111 @@
+schema_version: "1.0"
+api_version: "1.0"
+id: "open-yosys-toy-area-v1"
+version: "1.0.0"
+description: >-
+  Public deterministic Yosys educational mapped-area profile. Results use an
+  abstract toy area unit and are profile-relative, area-only, and non-signoff.
+reproducibility_scope: "public"
+deterministic: true
+
+runtime:
+  runtime: "docker"
+  allowed_runtimes: ["docker"]
+  minimum_isolation_level: "docker_standard"
+  requested_image: "verigym/open-rtl-tools:iverilog12-yosys067"
+  immutable_image_required: true
+  supported_os: ["linux"]
+  supported_architectures: ["amd64"]
+  network_policy: "none"
+  resource_controls_required: true
+
+container_image: "verigym/open-rtl-tools:iverilog12-yosys067"
+
+tools:
+  - name: "yosys"
+    executable: "yosys"
+    version: "0.67"
+    accepted_version: "==0.67"
+    version_command: ["yosys", "-V"]
+    capabilities: ["synth", "stat_json", "liberty", "abc"]
+    abc_required: true
+    git_hash: "b8e7da6f40ae8f552c116bf6c359b07c6533e159"
+  - name: "yosys-abc"
+    executable: "yosys-abc"
+    version_command: ["yosys-abc", "-c", "version; quit"]
+    capabilities: ["liberty_mapping"]
+    git_hash: "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b"
+
+libraries:
+  - name: "verigym-toy-cells-v1"
+    uri: "verigym.profiles.builtins:assets/toy_cells.lib"
+    content_hash: "817685fa394822882602ca0469065f0d5db6ee52a07788d16ff8f84ebb536512"
+    version: "1.0.0"
+    license: "Apache-2.0"
+    media_type: "application/x-liberty"
+    source_kind: "package_resource"
+    attribution: "Copyright 2026 VeriGym contributors"
+    redistributable: true
+    unit: "toy_area_unit"
+    semantics: "educational Liberty-mapped cell area; profile-relative and non-signoff"
+    copy_permitted: true
+
+constraints: []
+scripts:
+  - name: "verigym-yosys-area-v1"
+    content_hash: "0e825470addb47375b7fed24681f6869c793cc996066a6aed22cff9f8ba6ecd0"
+    version: "1.0.0"
+    license: "Apache-2.0"
+    media_type: "application/x-yosys-script-template"
+    source_kind: "generated"
+    attribution: "VeriGym contributors"
+    redistributable: true
+    semantics: "trusted built-in deterministic synthesis template"
+    copy_permitted: true
+
+flow:
+  frontend: "verilog-2005"
+  source_policy: "task_entrypoints"
+  default_sources: ["rtl/counter.v"]
+  top_policy: "profile_fixed"
+  top_module: "counter"
+  hierarchy_check: true
+  flatten: true
+  template_id: "verigym-yosys-area-v1"
+  abc_policy_id: "verigym-abc-liberty-v1"
+  liberty_mapping: true
+  emit_netlist_verilog: true
+  emit_netlist_json: true
+  emit_stat_json: true
+  reference_normalization: "suite_reference_solution"
+
+metrics:
+  scope: "synthesis_area_only"
+  area:
+    enabled: true
+    source: "yosys.stat_json.liberty_area"
+    unit: "toy_area_unit"
+    semantics: "Liberty-mapped cell area under verigym-toy-cells-v1"
+  delay: {enabled: false}
+  frequency: {enabled: false}
+  power: {enabled: false}
+  worst_negative_slack: {enabled: false}
+  total_negative_slack: {enabled: false}
+  educational: true
+  signoff: false
+
+reference:
+  strategy: "suite_reference_solution"
+  ratio: "reference_area_over_candidate_area"
+  required_for_ranking: true
+
+environment_allowlist: []
+metadata:
+  acceptance_task: "toy-rtl/counter-basic"
+  source_release: "Yosys v0.67"
+  source_tag_peeled_commit: "2d1509d1bcb8df0723f6790057e3b1d21c876683"
+  source_archive_gitcommit: "b8e7da6f40ae8f552c116bf6c359b07c6533e159"
+  abc_archive_gitcommit: "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b"
+  source_archive_sha256: "608d758a6efc73c9f866b0a822aa2f788c2889fcb70dcdcc0e758009465049f6"
+  scope_label: "synthesis-area-only"
+  signoff: false

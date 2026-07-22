@@ -1,0 +1,117 @@
+# syntax=docker/dockerfile:1
+
+# The digest below was reported by Docker for docker.io/library/debian:trixie-slim
+# on 2026-07-22. It is a multi-architecture repository digest; the resulting
+# image identity is still resolved and recorded independently by VeriGym.
+FROM debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS yosys-builder
+
+ARG YOSYS_RELEASE=v0.67
+ARG YOSYS_ARCHIVE_SHA256=608d758a6efc73c9f866b0a822aa2f788c2889fcb70dcdcc0e758009465049f6
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        bison \
+        ca-certificates \
+        cmake \
+        curl \
+        flex \
+        g++ \
+        gawk \
+        make \
+        ninja-build \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --fail --location --retry 3 \
+        "https://github.com/YosysHQ/yosys/releases/download/${YOSYS_RELEASE}/yosys.tar.gz" \
+        --output /tmp/yosys.tar.gz \
+    && printf '%s  %s\n' "${YOSYS_ARCHIVE_SHA256}" /tmp/yosys.tar.gz \
+        | sha256sum --check --strict - \
+    && mkdir -p /src/yosys \
+    && tar --extract --gzip --file /tmp/yosys.tar.gz --directory /src/yosys \
+    && test "$(cat /src/yosys/.gitcommit)" = \
+        "b8e7da6f40ae8f552c116bf6c359b07c6533e159" \
+    && test "$(cat /src/yosys/abc/.gitcommit)" = \
+        "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b"
+
+RUN cmake -S /src/yosys -B /src/yosys/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/yosys \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DYOSYS_WITHOUT_LIBFFI=ON \
+        -DYOSYS_WITHOUT_READLINE=ON \
+        -DYOSYS_WITHOUT_SLANG=ON \
+        -DYOSYS_WITHOUT_TCL=ON \
+        -DYOSYS_WITHOUT_ZLIB=ON \
+    && cmake --build /src/yosys/build --parallel 2 \
+    && cmake --install /src/yosys/build --strip \
+    && /opt/yosys/bin/yosys -V \
+    && /opt/yosys/bin/yosys-abc -c 'version; quit'
+
+FROM debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS iverilog-builder
+
+ARG IVERILOG_COMMIT=4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        autoconf \
+        bison \
+        ca-certificates \
+        flex \
+        g++ \
+        git \
+        gperf \
+        make \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git init /src/iverilog \
+    && git -C /src/iverilog remote add origin https://github.com/steveicarus/iverilog.git \
+    && git -C /src/iverilog fetch --depth 1 origin "${IVERILOG_COMMIT}" \
+    && git -C /src/iverilog checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/iverilog rev-parse HEAD)" = "${IVERILOG_COMMIT}" \
+    && cd /src/iverilog \
+    && sh autoconf.sh \
+    && ./configure --prefix=/opt/iverilog \
+    && make -j2 \
+    && make install
+
+FROM debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS runtime
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        coreutils \
+        libbz2-1.0 \
+        libreadline8t64 \
+        libstdc++6 \
+        libtinfo6 \
+        python3-minimal \
+        zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && printf 'verigym:x:10001:10001:VeriGym runtime:/home/verigym:/usr/sbin/nologin\n' \
+        >> /etc/passwd \
+    && printf 'verigym:x:10001:\n' >> /etc/group \
+    && mkdir -p /home/verigym /workspace /usr/share/verigym \
+    && chown -R 10001:10001 /home/verigym /workspace \
+    && printf '%s\n' \
+        'Yosys release asset: v0.67' \
+        'Yosys archive SHA-256: 608d758a6efc73c9f866b0a822aa2f788c2889fcb70dcdcc0e758009465049f6' \
+        'Yosys v0.67 tag peeled commit: 2d1509d1bcb8df0723f6790057e3b1d21c876683' \
+        'Yosys vendored source identity: b8e7da6f40ae8f552c116bf6c359b07c6533e159' \
+        'ABC vendored source identity: e026ed5380f3bdc3beea2ff9ffc23236fc549d5b' \
+        'Icarus source identity: 4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf' \
+        > /usr/share/verigym/source-identities.txt \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        'exec cat /usr/share/verigym/source-identities.txt' \
+        > /usr/local/bin/verigym-toolchain-identity \
+    && chmod 0555 /usr/local/bin/verigym-toolchain-identity
+
+COPY --from=yosys-builder /opt/yosys /opt/yosys
+COPY --from=iverilog-builder /opt/iverilog /opt/iverilog
+
+ENV PATH=/opt/yosys/bin:/opt/iverilog/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+USER 10001:10001
+WORKDIR /workspace
+
+CMD ["yosys", "-V"]
