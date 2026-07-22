@@ -118,6 +118,8 @@ class ModelGateway:
                 "model": self._model_reference(),
                 "request_id": request.request_id,
                 "response_id": response.response_id,
+                "provider_model_id": response.provider_model_id,
+                "system_fingerprint": response.system_fingerprint,
                 "text": bounded_text,
                 "content_truncated": response_truncated,
                 "finish_reason": response.finish_reason.value,

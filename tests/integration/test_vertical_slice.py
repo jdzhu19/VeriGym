@@ -110,9 +110,17 @@ def test_bad_agent_is_normal_candidate_failure_not_runtime_error(tmp_path) -> No
 @pytest.mark.conformance
 def test_adapter_known_candidates_match_expected_semantics_deterministically(tmp_path) -> None:
     vg = service()
-    suite, task, assets = vg.load_task("toy-rtl/counter-basic")
+    suite = vg.registries.suites.get("toy-rtl")
     runtime = vg.registries.runtimes.get("local")
     for case in suite.conformance_cases():
+        entrypoints = set(case.candidate.files)
+        matching = [
+            ref.id
+            for ref in suite.discover()
+            if entrypoints.issubset(set(suite.load_task(ref).workspace.entrypoints))
+        ]
+        assert len(matching) == 1
+        _loaded_suite, task, assets = vg.load_task(matching[0])
         candidate_dir = tmp_path / case.name / "candidate"
         copy_tree_safely(Path(assets.visible_root), candidate_dir)
         for relative, content in case.candidate.files.items():

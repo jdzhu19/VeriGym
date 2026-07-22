@@ -185,6 +185,17 @@ endmodule
 
 VERILOG_EVAL_FIXTURE_BAD_SOURCE = VERILOG_EVAL_FIXTURE_GOOD_SOURCE.replace("a & b", "a | b")
 
+AND_GATE_GOOD_SOURCE = """module and_gate (
+    input wire a,
+    input wire b,
+    output wire y
+);
+    assign y = a & b;
+endmodule
+"""
+
+AND_GATE_BAD_SOURCE = AND_GATE_GOOD_SOURCE.replace("a & b", "a | b")
+
 COUNTER_GOOD_PATCH = """--- a/rtl/counter.v
 +++ b/rtl/counter.v
 @@ -7,3 +7,7 @@
@@ -244,6 +255,16 @@ def builtin_model_clients() -> list[ModelClient]:
             ],
         ),
         StaticModelClient(
+            name="static-and-gate-mixed",
+            responses=[AND_GATE_GOOD_SOURCE],
+            sample_responses=[
+                [StaticResponseSpec(text=AND_GATE_GOOD_SOURCE, usage=synthetic_usage)],
+                [StaticResponseSpec(text=AND_GATE_BAD_SOURCE, usage=synthetic_usage)],
+                [StaticResponseSpec(text=AND_GATE_GOOD_SOURCE, usage=synthetic_usage)],
+                [StaticResponseSpec(text="not RTL", usage=synthetic_usage)],
+            ],
+        ),
+        StaticModelClient(
             name="static-react-counter-good",
             responses=[
                 StaticResponseSpec(
@@ -293,6 +314,8 @@ def builtin_model_clients() -> list[ModelClient]:
 
 
 __all__ = [
+    "AND_GATE_BAD_SOURCE",
+    "AND_GATE_GOOD_SOURCE",
     "COUNTER_BAD_SOURCE",
     "COUNTER_GOOD_PATCH",
     "COUNTER_GOOD_SOURCE",

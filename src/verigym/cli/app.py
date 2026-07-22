@@ -15,10 +15,14 @@ from verigym.core.errors import VeriGymError
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.experiments.config import load_experiment_config
+from verigym.experiments.planner import ExperimentPlanner
+from verigym.experiments.runner import BatchRunner
 from verigym.profiles.comparison import compare_area
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
 from verigym.registry.collections import build_registries
+from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.diagnostics import diagnose_docker
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.model import ModelRunConfig
@@ -41,7 +45,7 @@ tools_app = typer.Typer(help="List and health-check structured tool plugins.")
 agents_app = typer.Typer(help="List and inspect agent-harness plugins.")
 models_app = typer.Typer(help="List and inspect model-client plugins.")
 profiles_app = typer.Typer(help="List, validate, and resolve immutable toolchain profiles.")
-report_app = typer.Typer(help="Strict comparison commands for compatible ranked metrics.")
+report_app = typer.Typer(help="Offline reports and strict compatible-metric comparisons.")
 app.add_typer(suites_app, name="suites")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(tools_app, name="tools")
@@ -427,6 +431,94 @@ def run_task(
     raise typer.Exit(code=4 if result.scorecard.status == "error" else 1)
 
 
+@app.command("batch")
+def batch(
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Strict YAML/JSON experiment configuration.",
+    ),
+    resume_path: Path | None = typer.Option(
+        None,
+        "--resume",
+        help="Resume an existing immutable experiment directory.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Validate and print the complete frozen plan without child execution.",
+    ),
+    max_workers: int | None = typer.Option(
+        None,
+        "--max-workers",
+        min=1,
+        max=32,
+        help="Override bounded local workers; recorded in the config identity.",
+    ),
+    fail_fast_infrastructure: bool = typer.Option(
+        False,
+        "--fail-fast-infrastructure",
+        help="Stop scheduling after the first infrastructure failure.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Override the new experiment root; unavailable during resume.",
+    ),
+) -> None:
+    """Plan or execute a deterministic experiment through ordinary core runs."""
+
+    if config_path is None and resume_path is None:
+        _fail(ValueError("batch requires --config or --resume"))
+    if resume_path is not None and dry_run:
+        _fail(ValueError("--dry-run cannot be combined with --resume"))
+    if resume_path is not None and any(value is not None for value in (max_workers, output)):
+        _fail(ValueError("resume does not permit plan-changing worker/output overrides"))
+    if resume_path is not None and fail_fast_infrastructure:
+        _fail(ValueError("resume does not permit a plan-changing fail-fast override"))
+    try:
+        supplied = load_experiment_config(config_path) if config_path is not None else None
+        runner = BatchRunner()
+        if resume_path is not None:
+            result = runner.resume(resume_path, supplied_config=supplied)
+        else:
+            assert supplied is not None
+            execution = supplied.execution
+            if max_workers is not None:
+                execution = execution.model_copy(update={"max_workers": max_workers})
+            if fail_fast_infrastructure:
+                execution = execution.model_copy(update={"continue_on_infrastructure_error": False})
+            normalized = supplied.model_copy(
+                update={
+                    "execution": execution,
+                    "output": (
+                        supplied.output.model_copy(update={"root": output})
+                        if output is not None
+                        else supplied.output
+                    ),
+                }
+            )
+            plan = ExperimentPlanner().build(normalized)
+            if dry_run:
+                console.print_json(plan.model_dump_json(indent=2))
+                console.print(f"Planned child runs: {len(plan.items)}")
+                return
+            result = runner.run(plan)
+        console.print(f"Experiment: {result.manifest.experiment_id}")
+        console.print(f"Status: {result.state.status}")
+        console.print(
+            f"Child runs: {result.state.valid_terminal_count}/{result.state.planned_count}"
+        )
+        console.print(f"Experiment directory: {result.experiment_dir}")
+        console.print(f"Aggregate: {result.experiment_dir / 'reports' / 'aggregate.json'}")
+        if result.exit_code:
+            raise typer.Exit(code=result.exit_code)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _fail(exc)
+
+
 @app.command("replay")
 def replay(
     run_dir: Path = typer.Argument(..., exists=True, file_okay=False),
@@ -689,6 +781,34 @@ def report_compare(
     try:
         result = compare_area(run_a, run_b)
         console.print_json(result.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@report_app.command("generate")
+def report_generate(
+    root: Path = typer.Argument(..., exists=True, file_okay=False),
+    format_name: Literal["json", "csv", "markdown"] = typer.Option(
+        "json",
+        "--format",
+    ),
+    output: Path = typer.Option(..., "--output"),
+    group_by: list[str] | None = typer.Option(
+        None,
+        "--group-by",
+        help="Safe grouping dimension; repeat to form a composite group.",
+    ),
+) -> None:
+    """Generate one offline report without invoking models, tools, or runtimes."""
+
+    try:
+        generated = ReportService().generate_one(
+            root,
+            format_name=format_name,
+            output=output,
+            group_by=tuple(group_by or ["system"]),
+        )
+        console.print(f"Report: {generated}")
     except Exception as exc:
         _fail(exc)
 

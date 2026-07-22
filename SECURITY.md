@@ -79,6 +79,29 @@ metadata. Such runs must be labeled site-specific/private and are comparable onl
 complete resolved profile hashes match. VeriGym does not ship commercial binaries, vendor
 scripts, PDKs, license files, credentials, or a licensed-host runtime.
 
+## Experiment and report artifact safety
+
+Experiment YAML/JSON and persisted parent artifacts are untrusted data. Configuration loading is
+size/depth bounded, duplicate-key rejecting, safe-YAML only, and refuses symlinked files. Planning
+stores credential environment names but never values. Model/agent pairing, source content,
+mandatory tools, immutable Docker image identity, and optional profile assets are validated before
+model lookup. Each child receives expected task/source/runtime/profile identities; drift fails
+closed rather than mixing results.
+
+Parent state, events, indexes, and reports use same-directory temporary files, `fsync`, and atomic
+replacement. Experiment roots and report discovery refuse symlink roots and escapes. Child
+validation requires contained relative paths, ordinary files/directories, no symlinks or special
+files anywhere in the child tree, bounded JSON, matching manifest/score/index hashes, and exact
+plan bindings. Corrupt or incompatible attempts are preserved for audit and excluded from metrics.
+
+Reporting is intentionally offline: it does not invoke models, tools, runtimes, Docker, or the
+network, and it does not parse candidate or hidden source for scoring. Arbitrary-root discovery
+does not follow symlinks. CSV output normalizes control characters and prefixes spreadsheet
+formula leaders; Markdown text and link paths are escaped. Reports contain descriptors, hashes,
+counts, relative paths, and bounded structured diagnostics—not prompts, RTL, hidden tests, traces,
+logs, credential values, or unredacted environments. Treat generated CSV/Markdown as untrusted
+content in downstream viewers despite these defenses.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

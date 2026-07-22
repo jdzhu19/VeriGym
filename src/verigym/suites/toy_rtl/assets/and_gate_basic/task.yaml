@@ -1,0 +1,90 @@
+schema_version: "1.0"
+id: "toy-rtl/and-gate-basic"
+suite: "toy-rtl"
+suite_version: "0.1.0"
+task_type: "generation"
+title: "Two-input combinational AND gate"
+description: |
+  Implement module and_gate. Output y must be the Boolean AND of inputs a and b.
+
+source:
+  kind: "manual"
+  revision: "0.1.0"
+  license: "Apache-2.0"
+  attribution: "VeriGym contributors"
+
+workspace:
+  base:
+    kind: "directory"
+    path: "workspace"
+  editable_globs: ["rtl/**/*.v"]
+  readonly_globs: ["README.md", "visible/**"]
+  excluded_globs: ["hidden", "hidden/**"]
+  hidden_assets:
+    - kind: "directory"
+      path: "hidden"
+      mount_path: "hidden"
+  entrypoints: ["rtl/and_gate.v"]
+  max_changed_files: 1
+  max_patch_lines: 50
+
+interaction:
+  supported_modes: ["chat", "agent"]
+  default_mode: "agent"
+  allowed_tools:
+    - "file.list"
+    - "file.read"
+    - "file.apply_patch"
+    - "file.diff"
+    - "iverilog.simulate_visible"
+  denied_tools: []
+  allow_general_shell: false
+  network_policy: "none"
+  initial_observation:
+    include_tree: true
+    include_readme: true
+    include_entrypoints: false
+  final_submission:
+    kind: "workspace"
+
+budget:
+  max_turns: 20
+  max_tool_calls: 40
+  max_model_calls: 20
+  max_wall_time_s: 300
+  max_tool_time_s: 30
+  max_output_bytes_per_tool: 200000
+  max_workspace_bytes: 1000000
+
+verifier:
+  nodes:
+    - id: "compile_hidden"
+      plugin: "iverilog.compile"
+      depends_on: []
+      gate: true
+      required: true
+      visibility: "verifier_only"
+      timeout_s: 30
+      request:
+        sources: ["rtl/and_gate.v", "hidden/tb_and_gate.sv"]
+        top: "tb_and_gate"
+        output: ".verigym_internal/compile_hidden/simv"
+    - id: "run_hidden"
+      plugin: "iverilog.run"
+      depends_on: ["compile_hidden"]
+      gate: true
+      required: true
+      visibility: "verifier_only"
+      timeout_s: 30
+      request:
+        executable_from: "compile_hidden"
+        pass_marker: "VERIGYM_PASS"
+        fail_marker: "VERIGYM_FAIL"
+
+scoring:
+  correctness_required_nodes: ["compile_hidden", "run_hidden"]
+  ppa_enabled: false
+
+metadata:
+  category: "combinational"
+  difficulty: "easy"

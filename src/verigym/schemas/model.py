@@ -76,6 +76,8 @@ class ModelResponse(StrictModel):
     schema_version: str = SCHEMA_VERSION
     request_id: str
     response_id: str | None = None
+    provider_model_id: str | None = None
+    system_fingerprint: str | None = None
     text: str
     finish_reason: ModelFinishReason = ModelFinishReason.UNKNOWN
     usage: NormalizedModelUsage = Field(default_factory=NormalizedModelUsage)

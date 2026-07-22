@@ -8,8 +8,12 @@ def test_toy_source_layout_and_cases_are_valid() -> None:
     report = suite.validate_source()
     assert report.valid, report.errors
     references = list(suite.discover())
-    assert [reference.id for reference in references] == ["toy-rtl/counter-basic"]
-    task = suite.load_task(references[0])
-    assert task.source.license == "Apache-2.0"
+    assert [reference.id for reference in references] == [
+        "toy-rtl/and-gate-basic",
+        "toy-rtl/counter-basic",
+    ]
+    tasks = [suite.load_task(reference) for reference in references]
+    assert all(task.source.license == "Apache-2.0" for task in tasks)
     cases = list(suite.conformance_cases())
     assert {case.expected_resolved for case in cases} == {True, False}
+    assert len(cases) == 4

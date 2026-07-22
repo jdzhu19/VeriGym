@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.schemas.agent import AgentDescriptor
@@ -40,11 +40,60 @@ class RunConfig(StrictModel):
     toolchain_profile: str | None = None
     seed: int = 0
     output: Path = Path("runs")
+    run_id: str | None = None
+    experiment_id: str | None = None
+    plan_item_id: str | None = None
+    system_id: str | None = None
+    base_seed: int | None = Field(default=None, ge=0)
+    expected_task_hash: str | None = None
+    expected_source_hash: str | None = None
+    expected_suite_source_snapshot: SuiteSourceSnapshot | None = None
+    expected_runtime: RuntimeDescriptor | None = None
+    expected_resolved_profile: ResolvedToolchainProfile | None = None
+
+    @field_validator("run_id")
+    @classmethod
+    def validate_run_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if (
+            not value
+            or value != value.strip()
+            or len(value) > 200
+            or "/" in value
+            or "\\" in value
+            or value in {".", ".."}
+            or "\x00" in value
+        ):
+            raise ValueError("explicit run IDs must be safe single path components")
+        return value
 
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> RunConfig:
         if self.docker_config is not None and self.runtime != "docker":
             raise ValueError("Docker configuration requires runtime='docker'")
+        if self.expected_runtime is not None and self.expected_runtime.name != self.runtime:
+            raise ValueError("expected runtime identity does not match runtime selection")
+        if self.expected_resolved_profile is not None and self.toolchain_profile is None:
+            raise ValueError("an expected resolved profile requires toolchain_profile")
+        experiment_fields = (
+            self.experiment_id,
+            self.plan_item_id,
+            self.system_id,
+            self.base_seed,
+        )
+        if any(value is not None for value in experiment_fields) and not all(
+            value is not None for value in experiment_fields
+        ):
+            raise ValueError("experiment child binding fields must be supplied together")
+        frozen_input_fields = (
+            self.expected_task_hash,
+            self.expected_source_hash,
+        )
+        if any(value is not None for value in frozen_input_fields) and not all(
+            value is not None for value in frozen_input_fields
+        ):
+            raise ValueError("expected task and source hashes must be supplied together")
         return self
 
 
@@ -86,6 +135,10 @@ class RunManifest(StrictModel):
     reference_candidate_hash: str | None = None
     budget: BudgetSpec
     prompt_policy_hash: str | None = None
+    experiment_id: str | None = None
+    plan_item_id: str | None = None
+    system_id: str | None = None
+    base_seed: int | None = None
     environment_summary: dict[str, Any] = Field(default_factory=dict)
 
 

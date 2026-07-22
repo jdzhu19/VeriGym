@@ -260,9 +260,17 @@ class OpenAICompatibleModelClient(ModelClient):
             response_id = data.get("id")
             if response_id is not None and not isinstance(response_id, str):
                 response_id = str(response_id)
+            provider_model_id = data.get("model")
+            if provider_model_id is not None and not isinstance(provider_model_id, str):
+                provider_model_id = str(provider_model_id)
+            system_fingerprint = data.get("system_fingerprint")
+            if system_fingerprint is not None and not isinstance(system_fingerprint, str):
+                system_fingerprint = str(system_fingerprint)
             return ModelResponse(
                 request_id=request.request_id,
                 response_id=response_id,
+                provider_model_id=provider_model_id,
+                system_fingerprint=system_fingerprint,
                 text=str(message["content"]),
                 finish_reason=finish,
                 usage=usage,

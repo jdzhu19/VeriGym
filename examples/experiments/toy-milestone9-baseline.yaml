@@ -1,0 +1,41 @@
+schema_version: "1.0"
+name: "toy-milestone9-baseline"
+description: "Two first-party toy tasks, two seeds, and known-good/bad systems"
+
+suite:
+  id: "toy-rtl"
+  source: null
+  variant: null
+  tasks:
+    include:
+      - "and-gate-basic"
+      - "counter-basic"
+    exclude: []
+
+runs:
+  mode: "agent"
+  seeds: [0, 1]
+  samples_per_task: 1
+  pass_k: [1]
+
+systems:
+  - id: "scripted-good"
+    agent:
+      id: "scripted"
+    model: null
+  - id: "scripted-bad"
+    agent:
+      id: "scripted-bad"
+    model: null
+
+runtime:
+  id: "local"
+
+profile: null
+
+execution:
+  max_workers: 1
+  continue_on_infrastructure_error: true
+
+output:
+  root: "runs/experiments/toy-milestone9-baseline"

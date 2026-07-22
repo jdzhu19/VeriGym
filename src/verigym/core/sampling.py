@@ -315,7 +315,7 @@ def _sample_ref(
     relative_path: str,
     configuration_fingerprint: str,
 ) -> SampleRunRef:
-    outcome, verdict = _classify_outcome(scorecard)
+    outcome, verdict = classify_sample_outcome(scorecard)
     if manifest.sample_index is None:
         raise ConfigurationError("sample child manifest has no sample index")
     return SampleRunRef(
@@ -333,7 +333,9 @@ def _sample_ref(
     )
 
 
-def _classify_outcome(scorecard: ScoreCard) -> tuple[SampleOutcome, bool]:
+def classify_sample_outcome(scorecard: ScoreCard) -> tuple[SampleOutcome, bool]:
+    """Classify one scorecard using the canonical Milestone 6 sample semantics."""
+
     if (
         scorecard.status == "error"
         or scorecard.correctness.infrastructure_error
@@ -351,6 +353,7 @@ def _classify_outcome(scorecard: ScoreCard) -> tuple[SampleOutcome, bool]:
 
 __all__ = [
     "build_pass_at_k_report",
+    "classify_sample_outcome",
     "compute_pass_at_k",
     "manifest_configuration_fingerprint",
     "regenerate_sample_report",

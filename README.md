@@ -26,6 +26,34 @@ Docker isolation is optional and uses the external Docker CLI; no Docker Python 
 is required for the base installation. See [DockerRuntime](docs/docker_runtime.md) and the
 [security policy](SECURITY.md) before running untrusted inputs.
 
+## Five-minute batch experiment
+
+Milestone 9 adds deterministic, resumable experiments while keeping every child as an ordinary
+independently replayable VeriGym run. The included baseline expands to two toy tasks × two
+scripted systems × two base seeds = eight child runs:
+
+```bash
+cp examples/experiments/toy-milestone9-baseline.yaml /tmp/toy-m9.yaml
+# Edit output.root if that path already exists.
+verigym batch --config /tmp/toy-m9.yaml --dry-run
+verigym batch --config /tmp/toy-m9.yaml
+```
+
+The experiment root contains `reports/aggregate.json`, `reports/runs.csv`, and
+`reports/report.md`. Regenerate one format without calling a model, tool, or runtime:
+
+```bash
+verigym report generate runs/experiments/toy-milestone9-baseline \
+  --format markdown \
+  --output /tmp/toy-m9-report.md
+
+verigym batch --resume runs/experiments/toy-milestone9-baseline
+```
+
+Resume validates the frozen plan and reuses valid terminal children, including normal unresolved
+candidates. See [experiment configuration](docs/experiments.md), the
+[batch runner](docs/batch_runner.md), and [report semantics](docs/reporting.md).
+
 ## Run the toy RTL task
 
 The original deterministic scripted AgentEval remains available:
@@ -80,8 +108,9 @@ verigym agents list
 ```
 
 The offline fixtures include `static-counter-good`, `static-counter-good-fenced`,
-`static-counter-bad`, `static-react-counter-good`, `static-react-malformed`, and
-`static-exhausted`. They need neither a network endpoint nor an API key.
+`static-counter-bad`, `static-and-gate-mixed`, `static-react-counter-good`,
+`static-react-malformed`, and `static-exhausted`. They need neither a network endpoint nor an
+API key.
 
 ## Optional DockerRuntime
 
@@ -276,8 +305,9 @@ Only the environment-variable name is configured; its value and authorization he
 excluded from manifests, traces, logs, and configuration fingerprints. Credential-bearing
 URLs are rejected. See [Milestone 5 model and agent details](docs/milestone5-models-and-agents.md).
 
-This repository implements Milestone 8 on top of the preserved Milestones 0–7 behavior. The
-reference images and Docker profiles are Linux-first. Milestone 8 provides only profile-relative,
-educational synthesis area—not full PPA or signoff. OpenROAD, timing, power, broader benchmark
-adapters, general batch execution/reporting, remote runtimes, commercial execution, external
-agent frameworks, and RL integrations remain out of scope.
+This repository implements Milestone 9 on top of the preserved Milestones 0–8 behavior. The
+reference images and Docker profiles are Linux-first. Quality reporting remains only
+profile-relative educational synthesis area—not full PPA or signoff. Broader benchmark adapters,
+OpenROAD, timing, power, formal expansion, commercial execution, distributed scheduling, remote
+runtimes, external agent frameworks, trajectory export, RL, and evolving releases remain out of
+scope.

@@ -26,6 +26,7 @@ dev = [
   "pytest>=8.2",
   "pytest-cov>=5.0",
   "ruff>=0.5",
+  "types-PyYAML",
 ]
 
 [project.scripts]
@@ -59,6 +60,9 @@ markers = [
   "docker: exercises the opt-in real Docker runtime",
   "yosys: exercises an opt-in real local Yosys installation",
   "docker_yosys: exercises the opt-in pinned Docker Yosys profile",
+  "docker_batch: exercises an opt-in Docker-backed Milestone 9 batch",
+  "yosys_batch: exercises an opt-in area-profile Milestone 9 batch",
+  "verilog_eval_batch: exercises an opt-in external-path VerilogEval batch",
 ]
 
 [tool.ruff]

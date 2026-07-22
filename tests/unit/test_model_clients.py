@@ -92,6 +92,8 @@ def test_openai_compatible_mock_success_normalizes_response_without_network() ->
     transport = FakeTransport(
         {
             "id": "provider-response",
+            "model": "provider-observed-model",
+            "system_fingerprint": "fp_test_observation",
             "choices": [{"message": {"content": "candidate"}, "finish_reason": "stop"}],
             "usage": {
                 "prompt_tokens": 7,
@@ -111,6 +113,8 @@ def test_openai_compatible_mock_success_normalizes_response_without_network() ->
     )
     response = client.generate(request())
     assert response.text == "candidate"
+    assert response.provider_model_id == "provider-observed-model"
+    assert response.system_fingerprint == "fp_test_observation"
     assert response.finish_reason.value == "stop"
     assert response.usage.model_dump() == {
         "schema_version": "1.0",

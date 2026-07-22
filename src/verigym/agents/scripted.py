@@ -30,6 +30,19 @@ def _counter_patch(increment: str) -> str:
 """
 
 
+def _and_gate_patch(operator: str) -> str:
+    return f"""--- a/rtl/and_gate.v
++++ b/rtl/and_gate.v
+@@ -3,5 +3,5 @@
+     input wire b,
+     output wire y
+ );
+-    assign y = 1'b0;
++    assign y = a {operator} b;
+ endmodule
+"""
+
+
 class _ScriptedCounterAgent(AgentAdapter):
     increment = "01"
 
@@ -38,9 +51,16 @@ class _ScriptedCounterAgent(AgentAdapter):
         self._index = 0
 
     def start(self, context: AgentContext) -> None:
-        if context.task.id != "toy-rtl/counter-basic":
-            raise ValueError(f"scripted counter agent does not support {context.task.id}")
-        self._actions = [
+        if context.task.id == "toy-rtl/counter-basic":
+            self._actions = self._counter_actions()
+        elif context.task.id == "toy-rtl/and-gate-basic":
+            self._actions = self._and_gate_actions()
+        else:
+            raise ValueError(f"scripted toy agent does not support {context.task.id}")
+        self._index = 0
+
+    def _counter_actions(self) -> list[AgentAction]:
+        return [
             ToolCallAction(tool="file.list", arguments={"path": ".", "recursive": True}),
             ToolCallAction(tool="file.read", arguments={"path": "rtl/counter.v"}),
             ApplyPatchAction(patch=_counter_patch(self.increment)),
@@ -56,7 +76,25 @@ class _ScriptedCounterAgent(AgentAdapter):
             ToolCallAction(tool="file.diff", arguments={}),
             FinalSubmissionAction(message="Counter implementation complete."),
         ]
-        self._index = 0
+
+    def _and_gate_actions(self) -> list[AgentAction]:
+        operator = "&" if self.increment == "01" else "|"
+        return [
+            ToolCallAction(tool="file.list", arguments={"path": ".", "recursive": True}),
+            ToolCallAction(tool="file.read", arguments={"path": "rtl/and_gate.v"}),
+            ApplyPatchAction(patch=_and_gate_patch(operator)),
+            ToolCallAction(
+                tool="iverilog.simulate_visible",
+                arguments={
+                    "sources": ["rtl/and_gate.v", "visible/tb_smoke.sv"],
+                    "top": "tb_smoke",
+                    "pass_marker": "VERIGYM_PASS",
+                    "fail_marker": "VERIGYM_FAIL",
+                },
+            ),
+            ToolCallAction(tool="file.diff", arguments={}),
+            FinalSubmissionAction(message="AND-gate implementation complete."),
+        ]
 
     def act(self, observation: Observation) -> AgentAction:
         if self._index >= len(self._actions):
@@ -76,7 +114,12 @@ class ScriptedAgent(_ScriptedCounterAgent):
         version="0.1.0",
         api_version=PLUGIN_API_VERSION,
         provider="verigym",
-        capabilities=["deterministic", "toy-rtl/counter-basic", "known-good"],
+        capabilities=[
+            "deterministic",
+            "toy-rtl/counter-basic",
+            "toy-rtl/and-gate-basic",
+            "known-good",
+        ],
     )
 
 
@@ -87,6 +130,11 @@ class ScriptedBadAgent(_ScriptedCounterAgent):
         version="0.1.0",
         api_version=PLUGIN_API_VERSION,
         provider="verigym",
-        capabilities=["deterministic", "toy-rtl/counter-basic", "known-bad"],
+        capabilities=[
+            "deterministic",
+            "toy-rtl/counter-basic",
+            "toy-rtl/and-gate-basic",
+            "known-bad",
+        ],
     )
     increment = "02"

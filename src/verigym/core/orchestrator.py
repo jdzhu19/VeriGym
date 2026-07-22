@@ -93,13 +93,29 @@ class VeriGym:
             suite, task, assets = self.load_task(config.task_id)
         else:
             suite, task, assets = self.load_task(config.task_id, config.suite_source)
+        task_hash = content_hash(task)
+        source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
+        source_snapshot = suite.source_snapshot()
+        if config.expected_task_hash is not None and task_hash != config.expected_task_hash:
+            raise ConfigurationError("task identity changed after experiment planning")
+        if config.expected_source_hash is not None and source_hash != config.expected_source_hash:
+            raise ConfigurationError("task source changed after experiment planning")
+        if (
+            config.expected_suite_source_snapshot is not None
+            and source_snapshot != config.expected_suite_source_snapshot
+        ):
+            raise ConfigurationError("suite source identity changed after experiment planning")
         if config.mode not in task.interaction.supported_modes:
             raise ConfigurationError(
                 f"task {task.id} does not support interaction mode {config.mode.value}"
             )
         runtime_plugin: Runtime = self.registries.runtimes.get(config.runtime)
-        run_id = self._new_run_id(task.id)
-        runtime = runtime_plugin.configure(config.docker_config)
+        run_id = config.run_id or self._new_run_id(task.id)
+        runtime = (
+            runtime_plugin.configure_for_replay(config.expected_runtime)
+            if config.expected_runtime is not None
+            else runtime_plugin.configure(config.docker_config)
+        )
         synthesis_profile: ToolchainProfile | None = None
         resolved_profile: ResolvedToolchainProfile | None = None
         try:
@@ -118,6 +134,7 @@ class VeriGym:
                     source_paths=list(task.workspace.entrypoints),
                     top_module=synthesis_profile.flow.top_module,
                     reference_candidate_hash=reference_hash,
+                    expected=config.expected_resolved_profile,
                 )
             # Agent and model registries are intentionally consulted only after profile
             # resolution, so a bad image/tool/asset can never trigger a model lookup.
@@ -177,7 +194,6 @@ class VeriGym:
         )
         layout = RunLayout.create(config.output.expanduser().resolve() / run_id)
         trace = TraceWriter(layout.trace, run_id)
-        task_hash = content_hash(task)
         verifier_hash = content_hash(task.verifier)
         run_config_hash = content_hash(config)
         profile = synthesis_profile or suite.toolchain_profile(runtime, self.registries.tools)
@@ -188,7 +204,6 @@ class VeriGym:
             version=profile.version,
             content_hash=content_hash(profile),
         )
-        source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
         manifest = RunManifest(
             run_id=run_id,
             created_at_utc=datetime.now(UTC),
@@ -218,7 +233,7 @@ class VeriGym:
                 if model_client is not None
                 else None
             ),
-            suite_source=suite.source_snapshot(),
+            suite_source=source_snapshot,
             runtime=runtime.descriptor,
             toolchain_profiles=[profile_ref],
             requested_toolchain_profile_id=(
@@ -249,6 +264,10 @@ class VeriGym:
                 if prompt_builder is not None
                 else None
             ),
+            experiment_id=config.experiment_id,
+            plan_item_id=config.plan_item_id,
+            system_id=config.system_id,
+            base_seed=config.base_seed,
             environment_summary={
                 "python": platform.python_version(),
                 "platform": platform.platform(),
