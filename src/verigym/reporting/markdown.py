@@ -124,10 +124,28 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             f"{_format_number(summary.median)} | {markdown_escape(summary.unit or '')} |"
         )
     cost = aggregate.cost_resolved
+    accounting = aggregate.cost_accounting
     lines.append(
         f"| model_api_cost | {cost.known_value_count} | {cost.missing_value_count} | "
-        f"unavailable | unavailable | unknown currency |"
+        f"unavailable | unavailable | partitioned below |"
     )
+    if accounting is not None:
+        lines.extend(
+            [
+                "",
+                f"Unknown cost unit/currency values: {accounting.unknown_unit_count}; "
+                f"incompatible-unit values: {accounting.incompatible_unit_count}.",
+                "",
+                "| Cost dimension | Identifier | Known | Sum |",
+                "| --- | --- | ---: | ---: |",
+            ]
+        )
+        for partition in accounting.partitions:
+            lines.append(
+                f"| {markdown_escape(partition.dimension)} | "
+                f"{markdown_escape(partition.identifier)} | "
+                f"{partition.known_value_count} | {_format_number(partition.sum)} |"
+            )
     lines.extend(
         [
             "",

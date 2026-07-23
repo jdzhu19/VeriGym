@@ -1,0 +1,2320 @@
+{
+  "$defs": {
+    "AgentDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "default": "1.0",
+          "title": "Api Version",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "provider"
+      ],
+      "title": "AgentDescriptor",
+      "type": "object"
+    },
+    "BudgetSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "max_cpu_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cpu Seconds"
+        },
+        "max_input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Input Tokens"
+        },
+        "max_model_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Model Calls"
+        },
+        "max_output_bytes_per_tool": {
+          "default": 1000000,
+          "minimum": 1,
+          "title": "Max Output Bytes Per Tool",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
+        },
+        "max_tool_calls": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_tool_time_s": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tool Time S"
+        },
+        "max_total_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Total Tokens"
+        },
+        "max_turns": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Turns",
+          "type": "integer"
+        },
+        "max_wall_time_s": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Max Wall Time S",
+          "type": "integer"
+        },
+        "max_workspace_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Workspace Bytes"
+        }
+      },
+      "title": "BudgetSpec",
+      "type": "object"
+    },
+    "BuildProvenance": {
+      "additionalProperties": false,
+      "description": "Secret-free identity for the source state that produced this package.",
+      "properties": {
+        "build_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Backend"
+        },
+        "build_source_date_epoch": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Source Date Epoch"
+        },
+        "dirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirty"
+        },
+        "installed_distribution_metadata_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installed Distribution Metadata Hash"
+        },
+        "package_name": {
+          "default": "verigym",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "provenance_method": {
+          "enum": [
+            "git_live_editable",
+            "embedded_build",
+            "embedded_source_archive",
+            "unknown"
+          ],
+          "title": "Provenance Method",
+          "type": "string"
+        },
+        "python_build_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Build Version"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_archive_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Archive Hash"
+        },
+        "source_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Commit"
+        },
+        "source_tree_file_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree File Count"
+        },
+        "source_tree_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree Hash"
+        },
+        "source_tree_path_policy": {
+          "title": "Source Tree Path Policy",
+          "type": "string"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "package_version",
+        "provenance_method",
+        "source_tree_path_policy"
+      ],
+      "title": "BuildProvenance",
+      "type": "object"
+    },
+    "GenerationParameters": {
+      "additionalProperties": false,
+      "properties": {
+        "max_output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "top_p": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top P"
+        }
+      },
+      "title": "GenerationParameters",
+      "type": "object"
+    },
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    },
+    "ModelCallIdentity": {
+      "additionalProperties": false,
+      "description": "Requested versus observed identity for one model call.",
+      "properties": {
+        "adapter_name": {
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adapter Version"
+        },
+        "endpoint_origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Origin"
+        },
+        "generation": {
+          "$ref": "#/$defs/GenerationParameters"
+        },
+        "identity_confidence": {
+          "enum": [
+            "exact",
+            "provider_observed",
+            "requested_only",
+            "unknown"
+          ],
+          "title": "Identity Confidence",
+          "type": "string"
+        },
+        "mutable_remote_service": {
+          "title": "Mutable Remote Service",
+          "type": "boolean"
+        },
+        "observed_provider_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Provider Model Id"
+        },
+        "reproducibility_scope": {
+          "enum": [
+            "exact_offline_fixture",
+            "mutable_remote_observation",
+            "requested_remote_identity",
+            "unknown"
+          ],
+          "title": "Reproducibility Scope",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "requested_model_id": {
+          "title": "Requested Model Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "system_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Fingerprint"
+        }
+      },
+      "required": [
+        "request_id",
+        "adapter_name",
+        "requested_model_id",
+        "generation",
+        "identity_confidence",
+        "reproducibility_scope",
+        "mutable_remote_service"
+      ],
+      "title": "ModelCallIdentity",
+      "type": "object"
+    },
+    "ModelDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "api_compatibility": {
+          "default": "verigym.model.v1",
+          "title": "Api Compatibility",
+          "type": "string"
+        },
+        "api_version": {
+          "default": "1.0",
+          "title": "Api Version",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "client_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Name"
+        },
+        "client_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Version"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "configuration_fingerprint": {
+          "default": "",
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "provider",
+        "model_id"
+      ],
+      "title": "ModelDescriptor",
+      "type": "object"
+    },
+    "PromptPolicyDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "interaction_mode": {
+          "$ref": "#/$defs/InteractionMode"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "interaction_mode",
+        "configuration_fingerprint"
+      ],
+      "title": "PromptPolicyDescriptor",
+      "type": "object"
+    },
+    "ResolvedArtifactIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribution"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "copy_permitted": {
+          "title": "Copy Permitted",
+          "type": "boolean"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "logical_id": {
+          "title": "Logical Id",
+          "type": "string"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "redistributable": {
+          "title": "Redistributable",
+          "type": "boolean"
+        },
+        "replay_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replay Locator"
+        },
+        "semantics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantics"
+        },
+        "source_kind": {
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "logical_id",
+        "media_type",
+        "source_kind",
+        "content_hash",
+        "redistributable",
+        "copy_permitted"
+      ],
+      "title": "ResolvedArtifactIdentity",
+      "type": "object"
+    },
+    "ResolvedRuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "configuration_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configuration Fingerprint"
+        },
+        "deterministic": {
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "isolation_level": {
+          "title": "Isolation Level",
+          "type": "string"
+        },
+        "network_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Network Policy"
+        },
+        "os": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os"
+        },
+        "requested_image_reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Image Reference"
+        },
+        "resolved_image_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Image Id"
+        },
+        "resource_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Contract Hash"
+        },
+        "resource_controls": {
+          "default": false,
+          "title": "Resource Controls",
+          "type": "boolean"
+        },
+        "runtime_slug": {
+          "title": "Runtime Slug",
+          "type": "string"
+        },
+        "security_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Security Hash"
+        }
+      },
+      "required": [
+        "runtime_slug",
+        "isolation_level",
+        "deterministic"
+      ],
+      "title": "ResolvedRuntimeIdentity",
+      "type": "object"
+    },
+    "ResolvedToolIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "executable": {
+          "title": "Executable",
+          "type": "string"
+        },
+        "executable_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable Sha256"
+        },
+        "git_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Hash"
+        },
+        "identity_kind": {
+          "enum": [
+            "immutable_image_observation",
+            "local_executable"
+          ],
+          "title": "Identity Kind",
+          "type": "string"
+        },
+        "logical_name": {
+          "title": "Logical Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "version_output": {
+          "title": "Version Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_name",
+        "executable",
+        "version",
+        "version_output",
+        "identity_kind"
+      ],
+      "title": "ResolvedToolIdentity",
+      "type": "object"
+    },
+    "ResolvedToolchainProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "area_unit": {
+          "title": "Area Unit",
+          "type": "string"
+        },
+        "artifact_visibility_policy": {
+          "default": "candidate_public_reference_summary_only",
+          "title": "Artifact Visibility Policy",
+          "type": "string"
+        },
+        "asset_identities": {
+          "items": {
+            "$ref": "#/$defs/ResolvedArtifactIdentity"
+          },
+          "title": "Asset Identities",
+          "type": "array"
+        },
+        "declared_profile_hash": {
+          "title": "Declared Profile Hash",
+          "type": "string"
+        },
+        "deterministic": {
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "flow_hash": {
+          "title": "Flow Hash",
+          "type": "string"
+        },
+        "flow_template_id": {
+          "title": "Flow Template Id",
+          "type": "string"
+        },
+        "generated_script_hash": {
+          "title": "Generated Script Hash",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "metric_contract_hash": {
+          "title": "Metric Contract Hash",
+          "type": "string"
+        },
+        "metric_scope": {
+          "const": "synthesis_area_only",
+          "title": "Metric Scope",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "reference_candidate_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Candidate Hash"
+        },
+        "reference_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reference Contract Hash"
+        },
+        "reference_strategy": {
+          "title": "Reference Strategy",
+          "type": "string"
+        },
+        "reproducibility_scope": {
+          "enum": [
+            "public",
+            "site_specific",
+            "private"
+          ],
+          "title": "Reproducibility Scope",
+          "type": "string"
+        },
+        "resolved_profile_hash": {
+          "title": "Resolved Profile Hash",
+          "type": "string"
+        },
+        "runtime_identity": {
+          "$ref": "#/$defs/ResolvedRuntimeIdentity"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Paths",
+          "type": "array"
+        },
+        "tool_identities": {
+          "items": {
+            "$ref": "#/$defs/ResolvedToolIdentity"
+          },
+          "title": "Tool Identities",
+          "type": "array"
+        },
+        "top_module": {
+          "title": "Top Module",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "profile_version",
+        "declared_profile_hash",
+        "resolved_profile_hash",
+        "reproducibility_scope",
+        "deterministic",
+        "runtime_identity",
+        "tool_identities",
+        "asset_identities",
+        "flow_hash",
+        "metric_contract_hash",
+        "reference_contract_hash",
+        "flow_template_id",
+        "generated_script_hash",
+        "top_module",
+        "source_paths",
+        "metric_scope",
+        "area_unit",
+        "reference_strategy"
+      ],
+      "title": "ResolvedToolchainProfile",
+      "type": "object"
+    },
+    "RuntimeBackendInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Version"
+        },
+        "backend_type": {
+          "title": "Backend Type",
+          "type": "string"
+        },
+        "client_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Version"
+        },
+        "cpu_limit_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Limit Supported"
+        },
+        "memory_limit_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Limit Supported"
+        },
+        "pids_limit_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Limit Supported"
+        },
+        "rootless": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rootless"
+        },
+        "server_architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Architecture"
+        },
+        "server_os": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Os"
+        },
+        "server_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Version"
+        },
+        "swap_limit_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Swap Limit Supported"
+        }
+      },
+      "required": [
+        "backend_type"
+      ],
+      "title": "RuntimeBackendInfo",
+      "type": "object"
+    },
+    "RuntimeCleanupSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "default": false,
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "removed_container_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Removed Container Ids",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "title": "RuntimeCleanupSummary",
+      "type": "object"
+    },
+    "RuntimeDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "default": "1.0",
+          "title": "Api Version",
+          "type": "string"
+        },
+        "backend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeBackendInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "cleanup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeCleanupSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "configuration_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configuration Fingerprint"
+        },
+        "deterministic": {
+          "default": true,
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeImageIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "isolation_level": {
+          "title": "Isolation Level",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeResourceSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "security": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeSecuritySummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/RuntimeSessionRecord"
+          },
+          "title": "Sessions",
+          "type": "array"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "provider",
+        "isolation_level"
+      ],
+      "title": "RuntimeDescriptor",
+      "type": "object"
+    },
+    "RuntimeImageIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "title": "Architecture",
+          "type": "string"
+        },
+        "compatibility_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compatibility Status"
+        },
+        "configured_image_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configured Image User"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "effective_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective User"
+        },
+        "iverilog_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iverilog Version"
+        },
+        "observed_gid": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Gid"
+        },
+        "observed_uid": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Uid"
+        },
+        "os": {
+          "title": "Os",
+          "type": "string"
+        },
+        "repository_digests": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository Digests"
+        },
+        "requested_reference": {
+          "title": "Requested Reference",
+          "type": "string"
+        },
+        "resolved_image_id": {
+          "title": "Resolved Image Id",
+          "type": "string"
+        },
+        "vvp_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vvp Version"
+        }
+      },
+      "required": [
+        "requested_reference",
+        "resolved_image_id",
+        "os",
+        "architecture"
+      ],
+      "title": "RuntimeImageIdentity",
+      "type": "object"
+    },
+    "RuntimeResourceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cpus",
+          "type": "number"
+        },
+        "max_artifact_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Artifact Bytes"
+        },
+        "max_artifact_file_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Artifact File Bytes"
+        },
+        "max_command_time_s": {
+          "minimum": 1,
+          "title": "Max Command Time S",
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Bytes"
+        },
+        "memory_bytes": {
+          "minimum": 1,
+          "title": "Memory Bytes",
+          "type": "integer"
+        },
+        "memory_swap_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Swap Bytes"
+        },
+        "pids_limit": {
+          "minimum": 1,
+          "title": "Pids Limit",
+          "type": "integer"
+        },
+        "stop_timeout_s": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Timeout S"
+        },
+        "swap_enforced": {
+          "title": "Swap Enforced",
+          "type": "boolean"
+        },
+        "tmpfs_bytes": {
+          "minimum": 1,
+          "title": "Tmpfs Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory_bytes",
+        "swap_enforced",
+        "cpus",
+        "pids_limit",
+        "tmpfs_bytes",
+        "max_command_time_s"
+      ],
+      "title": "RuntimeResourceSummary",
+      "type": "object"
+    },
+    "RuntimeSecuritySummary": {
+      "additionalProperties": false,
+      "properties": {
+        "cap_drop": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cap Drop",
+          "type": "array"
+        },
+        "configured_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configured User"
+        },
+        "docker_socket_mounted": {
+          "default": false,
+          "title": "Docker Socket Mounted",
+          "type": "boolean"
+        },
+        "environment_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Environment Names",
+          "type": "array"
+        },
+        "host_home_mounted": {
+          "default": false,
+          "title": "Host Home Mounted",
+          "type": "boolean"
+        },
+        "init": {
+          "default": false,
+          "title": "Init",
+          "type": "boolean"
+        },
+        "mount_destinations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mount Destinations",
+          "type": "array"
+        },
+        "network_mode": {
+          "title": "Network Mode",
+          "type": "string"
+        },
+        "no_new_privileges": {
+          "default": false,
+          "title": "No New Privileges",
+          "type": "boolean"
+        },
+        "observed_gid": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Gid"
+        },
+        "observed_uid": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Uid"
+        },
+        "privileged": {
+          "default": false,
+          "title": "Privileged",
+          "type": "boolean"
+        },
+        "read_only_rootfs": {
+          "title": "Read Only Rootfs",
+          "type": "boolean"
+        },
+        "writable_destinations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Writable Destinations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "network_mode",
+        "read_only_rootfs"
+      ],
+      "title": "RuntimeSecuritySummary",
+      "type": "object"
+    },
+    "RuntimeSessionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup_complete": {
+          "default": false,
+          "title": "Cleanup Complete",
+          "type": "boolean"
+        },
+        "cleanup_warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cleanup Warnings",
+          "type": "array"
+        },
+        "command_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Command Count",
+          "type": "integer"
+        },
+        "container_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Container Ids",
+          "type": "array"
+        },
+        "frozen": {
+          "default": false,
+          "title": "Frozen",
+          "type": "boolean"
+        },
+        "resolved_image_id": {
+          "title": "Resolved Image Id",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "role",
+        "resolved_image_id"
+      ],
+      "title": "RuntimeSessionRecord",
+      "type": "object"
+    },
+    "SuiteSourceSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "dataset_content_hash": {
+          "title": "Dataset Content Hash",
+          "type": "string"
+        },
+        "dataset_root": {
+          "title": "Dataset Root",
+          "type": "string"
+        },
+        "git_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Commit"
+        },
+        "git_metadata_available": {
+          "default": false,
+          "title": "Git Metadata Available",
+          "type": "boolean"
+        },
+        "git_remote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Remote"
+        },
+        "license_file_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License File Hash"
+        },
+        "license_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Id"
+        },
+        "native_layout": {
+          "title": "Native Layout",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_root": {
+          "title": "Source Root",
+          "type": "string"
+        },
+        "strict_compatibility": {
+          "title": "Strict Compatibility",
+          "type": "boolean"
+        },
+        "synthetic_fixture": {
+          "default": false,
+          "title": "Synthetic Fixture",
+          "type": "boolean"
+        },
+        "variant": {
+          "title": "Variant",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_root",
+        "dataset_root",
+        "variant",
+        "native_layout",
+        "strict_compatibility",
+        "configuration_fingerprint",
+        "dataset_content_hash"
+      ],
+      "title": "SuiteSourceSnapshot",
+      "type": "object"
+    },
+    "ToolPolicySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_general_shell": {
+          "default": false,
+          "title": "Allow General Shell",
+          "type": "boolean"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "denied_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Denied Tools",
+          "type": "array"
+        },
+        "network_policy": {
+          "default": "none",
+          "title": "Network Policy",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "title": "ToolPolicySnapshot",
+      "type": "object"
+    },
+    "ToolchainProfileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "content_hash"
+      ],
+      "title": "ToolchainProfileRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/run-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/AgentDescriptor"
+    },
+    "agent_harness": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "base_seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Base Seed"
+    },
+    "budget": {
+      "$ref": "#/$defs/BudgetSpec"
+    },
+    "build_provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuildProvenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "candidate_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Hash"
+    },
+    "created_at_utc": {
+      "format": "date-time",
+      "title": "Created At Utc",
+      "type": "string"
+    },
+    "declared_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Declared Profile Hash"
+    },
+    "environment_summary": {
+      "additionalProperties": true,
+      "title": "Environment Summary",
+      "type": "object"
+    },
+    "experiment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Experiment Id"
+    },
+    "generation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GenerationParameters"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "interaction_mode": {
+      "title": "Interaction Mode",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ModelDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "model_observations": {
+      "items": {
+        "$ref": "#/$defs/ModelCallIdentity"
+      },
+      "title": "Model Observations",
+      "type": "array"
+    },
+    "plan_item_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan Item Id"
+    },
+    "prompt_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptPolicyDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "prompt_policy_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Policy Hash"
+    },
+    "reference_candidate_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Candidate Hash"
+    },
+    "reference_strategy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Strategy"
+    },
+    "reference_summary_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Summary Hash"
+    },
+    "release_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Release Id"
+    },
+    "requested_toolchain_profile_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Toolchain Profile Id"
+    },
+    "requested_toolchain_profile_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Toolchain Profile Version"
+    },
+    "resolved_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved Profile Hash"
+    },
+    "resolved_toolchain_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedToolchainProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "run_config_hash": {
+      "title": "Run Config Hash",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeDescriptor"
+    },
+    "sample_index": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Index"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "source_hash": {
+      "title": "Source Hash",
+      "type": "string"
+    },
+    "suite": {
+      "title": "Suite",
+      "type": "string"
+    },
+    "suite_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SuiteSourceSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "suite_version": {
+      "title": "Suite Version",
+      "type": "string"
+    },
+    "synthesis_flow_script_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Synthesis Flow Script Hash"
+    },
+    "system_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "System Id"
+    },
+    "task_hash": {
+      "title": "Task Hash",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "tool_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolPolicySnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "toolchain_profiles": {
+      "items": {
+        "$ref": "#/$defs/ToolchainProfileRef"
+      },
+      "title": "Toolchain Profiles",
+      "type": "array"
+    },
+    "verifier_hash": {
+      "title": "Verifier Hash",
+      "type": "string"
+    },
+    "verigym_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verigym Commit"
+    },
+    "verigym_version": {
+      "title": "Verigym Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "created_at_utc",
+    "verigym_version",
+    "task_id",
+    "task_hash",
+    "source_hash",
+    "verifier_hash",
+    "run_config_hash",
+    "suite",
+    "suite_version",
+    "interaction_mode",
+    "seed",
+    "agent",
+    "runtime",
+    "budget"
+  ],
+  "title": "RunManifest",
+  "type": "object"
+}

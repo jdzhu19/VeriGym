@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
-from verigym.schemas.base import StrictModel
+from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 
 
 class SynthesisDiagnostic(StrictModel):
@@ -25,6 +25,7 @@ class SynthesisArtifactRef(StrictModel):
 
 
 class SynthesisMetrics(StrictModel):
+    schema_version: str = SCHEMA_VERSION
     status: Literal["passed", "failed", "error", "skipped"]
     synthesis_ok: bool
     role: Literal["candidate", "reference"]

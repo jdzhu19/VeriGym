@@ -1,0 +1,112 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/docker-runtime-config.schema.json",
+  "additionalProperties": false,
+  "description": "Fail-closed configuration for the optional Docker CLI runtime.",
+  "properties": {
+    "cpus": {
+      "default": 1.0,
+      "exclusiveMinimum": 0.0,
+      "maximum": 64.0,
+      "title": "Cpus",
+      "type": "number"
+    },
+    "environment_allowlist": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Environment Allowlist",
+      "type": "array"
+    },
+    "image": {
+      "title": "Image",
+      "type": "string"
+    },
+    "max_artifact_bytes": {
+      "default": 67108864,
+      "maximum": 4294967296,
+      "minimum": 1,
+      "title": "Max Artifact Bytes",
+      "type": "integer"
+    },
+    "max_artifact_file_bytes": {
+      "default": 16777216,
+      "maximum": 1073741824,
+      "minimum": 1,
+      "title": "Max Artifact File Bytes",
+      "type": "integer"
+    },
+    "max_command_time_s": {
+      "default": 60,
+      "maximum": 3600,
+      "minimum": 1,
+      "title": "Max Command Time S",
+      "type": "integer"
+    },
+    "memory_bytes": {
+      "default": 536870912,
+      "maximum": 17179869184,
+      "minimum": 67108864,
+      "title": "Memory Bytes",
+      "type": "integer"
+    },
+    "network_mode": {
+      "const": "none",
+      "default": "none",
+      "title": "Network Mode",
+      "type": "string"
+    },
+    "pids_limit": {
+      "default": 128,
+      "maximum": 4096,
+      "minimum": 16,
+      "title": "Pids Limit",
+      "type": "integer"
+    },
+    "pull_policy": {
+      "default": "never",
+      "enum": [
+        "never",
+        "if_missing"
+      ],
+      "title": "Pull Policy",
+      "type": "string"
+    },
+    "read_only_rootfs": {
+      "const": true,
+      "default": true,
+      "title": "Read Only Rootfs",
+      "type": "boolean"
+    },
+    "run_as_user": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run As User"
+    },
+    "stop_timeout_s": {
+      "default": 3,
+      "maximum": 30,
+      "minimum": 1,
+      "title": "Stop Timeout S",
+      "type": "integer"
+    },
+    "tmpfs_bytes": {
+      "default": 67108864,
+      "maximum": 1073741824,
+      "minimum": 1048576,
+      "title": "Tmpfs Bytes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "image"
+  ],
+  "title": "DockerRuntimeConfig",
+  "type": "object"
+}

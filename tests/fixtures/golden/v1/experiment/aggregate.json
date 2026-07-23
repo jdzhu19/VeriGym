@@ -1,0 +1,300 @@
+{
+  "compatibility_aggregates": [
+    {
+      "correctness_definition_hash": "aba632215dd7115e3755f926fd7a5f1386f8164a1074ea982a5c961f92bbbe1a",
+      "correctness_stages": [
+        {
+          "denominator": 1,
+          "infrastructure_error_count": 0,
+          "missing_count": 0,
+          "numerator": 1,
+          "rate": 1.0,
+          "stage": "compile"
+        },
+        {
+          "denominator": 1,
+          "infrastructure_error_count": 0,
+          "missing_count": 0,
+          "numerator": 1,
+          "rate": 1.0,
+          "stage": "hidden_regression"
+        },
+        {
+          "denominator": 0,
+          "infrastructure_error_count": 0,
+          "missing_count": 1,
+          "numerator": 0,
+          "rate": null,
+          "stage": "formal"
+        },
+        {
+          "denominator": 0,
+          "infrastructure_error_count": 0,
+          "missing_count": 1,
+          "numerator": 0,
+          "rate": null,
+          "stage": "equivalence"
+        }
+      ],
+      "evaluable_count": 1,
+      "partition_id": "2b01075c7e480bb3a83a4555f1dce282480dd1948416910a9da484d1fe446356",
+      "planned_count": 1,
+      "resolved_count": 1,
+      "resolved_rate_evaluable": {
+        "denominator": 1,
+        "numerator": 1,
+        "unavailable_reason": null,
+        "value": 1.0
+      },
+      "resolved_rate_planned": {
+        "denominator": 1,
+        "numerator": 1,
+        "unavailable_reason": null,
+        "value": 1.0
+      },
+      "suite_release_identity": "62ad635913474d56cc4476a7ee5212ace64e9e20277b89898d19757ed8aaa97f",
+      "system_coverage_count": 1,
+      "task_coverage_count": 1,
+      "valid_count": 1
+    }
+  ],
+  "compatibility_partitions": {
+    "correctness_definition": [
+      "bc6ce1999602594af93a19073fbf9923f2e631ada79e1d5dce9a63782e89f3be"
+    ],
+    "resolved_profile": [],
+    "suite_release": [
+      "62ad635913474d56cc4476a7ee5212ace64e9e20277b89898d19757ed8aaa97f"
+    ]
+  },
+  "config_hash": "1a0bb010ecffa2f579e8a4874a4aa4d4875f32502ebc2e939b12f08e38565307",
+  "correctness_stages": [
+    {
+      "denominator": 1,
+      "infrastructure_error_count": 0,
+      "missing_count": 0,
+      "numerator": 1,
+      "rate": 1.0,
+      "stage": "compile"
+    },
+    {
+      "denominator": 1,
+      "infrastructure_error_count": 0,
+      "missing_count": 0,
+      "numerator": 1,
+      "rate": 1.0,
+      "stage": "hidden_regression"
+    },
+    {
+      "denominator": 0,
+      "infrastructure_error_count": 0,
+      "missing_count": 1,
+      "numerator": 0,
+      "rate": null,
+      "stage": "formal"
+    },
+    {
+      "denominator": 0,
+      "infrastructure_error_count": 0,
+      "missing_count": 1,
+      "numerator": 0,
+      "rate": null,
+      "stage": "equivalence"
+    }
+  ],
+  "cost_resolved": {
+    "currency": null,
+    "known_value_count": 0,
+    "mean": null,
+    "median": null,
+    "missing_value_count": 1,
+    "population": "resolved_runs",
+    "sum": null,
+    "unit": "currency"
+  },
+  "coverage": {
+    "cancelled_interrupted_runs": 0,
+    "corrupt_incompatible_artifacts": 0,
+    "evaluable_candidate_runs": 1,
+    "infrastructure_error_runs": 0,
+    "missing_plan_items": 0,
+    "planned_plan_items": 1,
+    "resolved_runs": 1,
+    "started_plan_items": 1,
+    "terminal_child_runs": 1,
+    "unresolved_evaluable_runs": 0,
+    "valid_terminal_artifacts": 1
+  },
+  "efficiency_resolved": {
+    "model_input_tokens": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "tokens"
+    },
+    "model_output_tokens": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "tokens"
+    },
+    "tool_calls": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 5.0,
+      "median": 5.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "calls"
+    },
+    "total_tokens": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "tokens"
+    },
+    "turns": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 6.0,
+      "median": 6.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "turns"
+    },
+    "wall_time_s": {
+      "currency": null,
+      "known_value_count": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "missing_value_count": 0,
+      "population": "resolved_runs",
+      "sum": null,
+      "unit": "seconds"
+    }
+  },
+  "evaluation_completion_rate": {
+    "denominator": 1,
+    "numerator": 1,
+    "unavailable_reason": null,
+    "value": 1.0
+  },
+  "experiment_id": "m9-golden-milestone9-ffa1089ffe7b67bb",
+  "failure_taxonomy": {
+    "batch_artifact": {},
+    "candidate_outcomes": {
+      "resolved": 1
+    },
+    "model_infrastructure": {},
+    "runtime_sandbox": {},
+    "verifier_tool": {}
+  },
+  "grouped_aggregates": [
+    {
+      "compatibility_partition_id": "2b01075c7e480bb3a83a4555f1dce282480dd1948416910a9da484d1fe446356",
+      "dimensions": {
+        "system": "scripted"
+      },
+      "evaluable_count": 1,
+      "planned_count": 1,
+      "resolved_count": 1,
+      "resolved_rate_evaluable": {
+        "denominator": 1,
+        "numerator": 1,
+        "unavailable_reason": null,
+        "value": 1.0
+      },
+      "task_coverage_count": 1,
+      "valid_count": 1
+    }
+  ],
+  "input_set_hash": "72cdd08446c139d4d4e0c63a2eea7d39af9bd594e73bec35b6a3d97f2425c50f",
+  "invalid_inputs": [],
+  "metadata": {
+    "combined_correctness_scope": "single_compatibility_partition",
+    "cost_currency_policy": "unknown currency is never summed",
+    "efficiency_population": "resolved runs",
+    "legacy_unverified_run_count": 0,
+    "model_identity_reproducibility_scopes": {},
+    "parent_integrity_status": "legacy_unverified",
+    "quality_scope": "profile-relative synthesis area only",
+    "resolved_population": "valid evaluable child artifacts",
+    "universal_score": null
+  },
+  "plan_hash": "ffa1089ffe7b67bb274bf0897b4d23a1937be17c6c1b48d5f98b2852d55fb5dd",
+  "quality_partitions": [],
+  "resolved_rate_evaluable": {
+    "denominator": 1,
+    "numerator": 1,
+    "unavailable_reason": null,
+    "value": 1.0
+  },
+  "resolved_rate_planned": {
+    "denominator": 1,
+    "numerator": 1,
+    "unavailable_reason": null,
+    "value": 1.0
+  },
+  "sampling": {
+    "groups": [
+      {
+        "base_seed": 0,
+        "best_of_n_success": true,
+        "cancelled_count": 0,
+        "canonical_valid": true,
+        "entries": [
+          {
+            "c": 1,
+            "invalid_reason": null,
+            "k": 1,
+            "n": 1,
+            "schema_version": "1.0",
+            "valid": true,
+            "value": 1.0
+          }
+        ],
+        "evaluable_count": 1,
+        "expected_n": 1,
+        "group_id": "a60a54dd1827ac2513a0bc4f556b944363f06e6bf2ea56ac00ebb0501c0ff5c1",
+        "infrastructure_error_count": 0,
+        "invalid_reason": null,
+        "missing_count": 0,
+        "observed_n": 1,
+        "resolved_c": 1,
+        "system_id": "scripted",
+        "task_id": "toy-rtl/and-gate-basic"
+      }
+    ],
+    "macro": [
+      {
+        "invalid_group_count": 0,
+        "k": 1,
+        "macro_mean": 1.0,
+        "macro_median": 1.0,
+        "missing_group_count": 0,
+        "valid_group_count": 1
+      }
+    ]
+  },
+  "schema_version": "1.0",
+  "source_kind": "experiment",
+  "task_set_hash": "20bfb4179ff1b1490ab8ab29760911db74107549cd8030e69f9c8b1271380447",
+  "warnings": [
+    "1 legacy artifact set(s) had no integrity manifest.",
+    "Model cost is missing for 1 resolved run(s)."
+  ]
+}

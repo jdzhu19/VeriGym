@@ -1,0 +1,798 @@
+{
+  "$defs": {
+    "ArtifactDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribution"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "copy_permitted": {
+          "default": false,
+          "title": "Copy Permitted",
+          "type": "boolean"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Type"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "redistributable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Redistributable"
+        },
+        "semantics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantics"
+        },
+        "source_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "package_resource",
+                "user_path",
+                "generated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Kind"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uri"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ArtifactDescriptor",
+      "type": "object"
+    },
+    "AssetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "kind": {
+          "enum": [
+            "directory",
+            "file",
+            "inline"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mount_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mount Path"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AssetRef",
+      "type": "object"
+    },
+    "MetricContract": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "$ref": "#/$defs/MetricSpec"
+        },
+        "delay": {
+          "$ref": "#/$defs/MetricSpec"
+        },
+        "educational": {
+          "default": true,
+          "title": "Educational",
+          "type": "boolean"
+        },
+        "frequency": {
+          "$ref": "#/$defs/MetricSpec"
+        },
+        "power": {
+          "$ref": "#/$defs/MetricSpec"
+        },
+        "scope": {
+          "const": "synthesis_area_only",
+          "default": "synthesis_area_only",
+          "title": "Scope",
+          "type": "string"
+        },
+        "signoff": {
+          "default": false,
+          "title": "Signoff",
+          "type": "boolean"
+        },
+        "total_negative_slack": {
+          "$ref": "#/$defs/MetricSpec"
+        },
+        "worst_negative_slack": {
+          "$ref": "#/$defs/MetricSpec"
+        }
+      },
+      "required": [
+        "area"
+      ],
+      "title": "MetricContract",
+      "type": "object"
+    },
+    "MetricSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "semantics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantics"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "MetricSpec",
+      "type": "object"
+    },
+    "ReferenceMetricSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "ratio": {
+          "const": "reference_area_over_candidate_area",
+          "default": "reference_area_over_candidate_area",
+          "title": "Ratio",
+          "type": "string"
+        },
+        "required_for_ranking": {
+          "default": true,
+          "title": "Required For Ranking",
+          "type": "boolean"
+        },
+        "strategy": {
+          "const": "suite_reference_solution",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "title": "ReferenceMetricSpec",
+      "type": "object"
+    },
+    "RuntimeRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_runtimes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Runtimes",
+          "type": "array"
+        },
+        "immutable_image_required": {
+          "default": false,
+          "title": "Immutable Image Required",
+          "type": "boolean"
+        },
+        "minimum_isolation_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Isolation Level"
+        },
+        "minimum_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Version"
+        },
+        "network_policy": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "allowlist",
+                "open"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Network Policy"
+        },
+        "requested_image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Image"
+        },
+        "resource_controls_required": {
+          "default": false,
+          "title": "Resource Controls Required",
+          "type": "boolean"
+        },
+        "runtime": {
+          "title": "Runtime",
+          "type": "string"
+        },
+        "supported_architectures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supported Architectures",
+          "type": "array"
+        },
+        "supported_os": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supported Os",
+          "type": "array"
+        }
+      },
+      "required": [
+        "runtime"
+      ],
+      "title": "RuntimeRequirement",
+      "type": "object"
+    },
+    "SynthesisFlowSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "abc_policy_id": {
+          "title": "Abc Policy Id",
+          "type": "string"
+        },
+        "default_sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Default Sources",
+          "type": "array"
+        },
+        "emit_netlist_json": {
+          "default": true,
+          "title": "Emit Netlist Json",
+          "type": "boolean"
+        },
+        "emit_netlist_verilog": {
+          "default": true,
+          "title": "Emit Netlist Verilog",
+          "type": "boolean"
+        },
+        "emit_stat_json": {
+          "default": true,
+          "title": "Emit Stat Json",
+          "type": "boolean"
+        },
+        "flatten": {
+          "default": true,
+          "title": "Flatten",
+          "type": "boolean"
+        },
+        "frontend": {
+          "enum": [
+            "verilog-2005",
+            "systemverilog-subset"
+          ],
+          "title": "Frontend",
+          "type": "string"
+        },
+        "hierarchy_check": {
+          "default": true,
+          "title": "Hierarchy Check",
+          "type": "boolean"
+        },
+        "liberty_mapping": {
+          "default": true,
+          "title": "Liberty Mapping",
+          "type": "boolean"
+        },
+        "reference_normalization": {
+          "default": "suite_reference_solution",
+          "enum": [
+            "suite_reference_solution",
+            "none"
+          ],
+          "title": "Reference Normalization",
+          "type": "string"
+        },
+        "source_policy": {
+          "const": "task_entrypoints",
+          "default": "task_entrypoints",
+          "title": "Source Policy",
+          "type": "string"
+        },
+        "template_id": {
+          "title": "Template Id",
+          "type": "string"
+        },
+        "top_module": {
+          "title": "Top Module",
+          "type": "string"
+        },
+        "top_policy": {
+          "const": "profile_fixed",
+          "default": "profile_fixed",
+          "title": "Top Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frontend",
+        "default_sources",
+        "top_module",
+        "template_id",
+        "abc_policy_id"
+      ],
+      "title": "SynthesisFlowSpec",
+      "type": "object"
+    },
+    "ToolRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "abc_required": {
+          "default": false,
+          "title": "Abc Required",
+          "type": "boolean"
+        },
+        "accepted_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accepted Version"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "executable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable"
+        },
+        "git_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Hash"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "version_command": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Version Command",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ToolRequirement",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/toolchain-profile.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "default": "1.0",
+      "title": "Api Version",
+      "type": "string"
+    },
+    "compatibility_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compatibility Status"
+    },
+    "constraints": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AssetRef"
+          },
+          {
+            "$ref": "#/$defs/ArtifactDescriptor"
+          }
+        ]
+      },
+      "title": "Constraints",
+      "type": "array"
+    },
+    "container_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Container Digest"
+    },
+    "container_image": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Container Image"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "deterministic": {
+      "default": true,
+      "title": "Deterministic",
+      "type": "boolean"
+    },
+    "environment_allowlist": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Environment Allowlist",
+      "type": "array"
+    },
+    "flow": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SynthesisFlowSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "libraries": {
+      "items": {
+        "$ref": "#/$defs/ArtifactDescriptor"
+      },
+      "title": "Libraries",
+      "type": "array"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricContract"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "pdk": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reference": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReferenceMetricSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reproducibility_scope": {
+      "default": "public",
+      "enum": [
+        "public",
+        "site_specific",
+        "private"
+      ],
+      "title": "Reproducibility Scope",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeRequirement"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scripts": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AssetRef"
+          },
+          {
+            "$ref": "#/$defs/ArtifactDescriptor"
+          }
+        ]
+      },
+      "title": "Scripts",
+      "type": "array"
+    },
+    "tools": {
+      "items": {
+        "$ref": "#/$defs/ToolRequirement"
+      },
+      "title": "Tools",
+      "type": "array"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "description",
+    "runtime"
+  ],
+  "title": "ToolchainProfile",
+  "type": "object"
+}

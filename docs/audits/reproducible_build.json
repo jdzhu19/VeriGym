@@ -1,0 +1,48 @@
+{
+  "embedded_provenance": {
+    "build_backend": "setuptools.build_meta via verigym_build_backend",
+    "build_source_date_epoch": 1784712454,
+    "dirty": true,
+    "installed_distribution_metadata_hash": null,
+    "package_name": "verigym",
+    "package_version": "0.1.0",
+    "provenance_method": "embedded_build",
+    "python_build_version": "3.11.13",
+    "schema_version": "1.0",
+    "source_archive_hash": null,
+    "source_commit": "ab6ddd29563bf8fb2e578745142043f67c17238e",
+    "source_tree_file_count": 333,
+    "source_tree_hash": "b054937fb9d027a7803fb5b86e88144f285f7343e796f69cb74adc8fcb41ce06",
+    "source_tree_path_policy": "tracked-and-nonignored files under .github, build_backend, docker, docs, examples, scripts, src, and tests, plus named root project files; generated embedded provenance and the self-referential docs/audits/reproducible_build.json report are excluded",
+    "unknown_reason": null
+  },
+  "first": {
+    "sdist": {
+      "name": "verigym-0.1.0.tar.gz",
+      "sha256": "918db0ffac580e5ddd51517be89c5901a200b927734a5d7ba9905bce57d3ed82"
+    },
+    "wheel": {
+      "name": "verigym-0.1.0-py3-none-any.whl",
+      "sha256": "4b3ce5692c5260d655c21fa7fa5f51a19c6ba75da5e722e4be40bfd015b77be3"
+    }
+  },
+  "package_paths": [
+    "verigym-0.1.0-py3-none-any.whl",
+    "verigym-0.1.0.tar.gz"
+  ],
+  "schema_version": "1.0",
+  "sdist_byte_identical": true,
+  "second": {
+    "sdist": {
+      "name": "verigym-0.1.0.tar.gz",
+      "sha256": "918db0ffac580e5ddd51517be89c5901a200b927734a5d7ba9905bce57d3ed82"
+    },
+    "wheel": {
+      "name": "verigym-0.1.0-py3-none-any.whl",
+      "sha256": "4b3ce5692c5260d655c21fa7fa5f51a19c6ba75da5e722e4be40bfd015b77be3"
+    }
+  },
+  "source_date_epoch": 1784712454,
+  "status": "passed",
+  "wheel_byte_identical": true
+}

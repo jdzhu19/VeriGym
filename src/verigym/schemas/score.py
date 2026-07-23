@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.synthesis import SynthesisMetrics
@@ -91,11 +91,35 @@ class EfficiencyMetrics(StrictModel):
     model_output_tokens: int | None = 0
     total_tokens: int | None = 0
     model_calls: int = 0
-    model_api_cost: float | None = None
+    model_api_cost: float | None = Field(default=None, ge=0.0)
+    model_api_cost_currency: str | None = None
+    model_api_cost_unit: str | None = None
     turns: int = 0
     tool_calls: int = 0
     failed_tool_calls: int = 0
     peak_memory_bytes: int | None = None
+
+    @field_validator("model_api_cost_currency", "model_api_cost_unit")
+    @classmethod
+    def validate_cost_identity(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not value
+            or value != value.strip()
+            or len(value) > 64
+            or any(ord(character) < 33 or ord(character) > 126 for character in value)
+        ):
+            raise ValueError("cost currency/unit must be a short printable identifier")
+        return value
+
+    @model_validator(mode="after")
+    def validate_cost_dimensions(self) -> EfficiencyMetrics:
+        if self.model_api_cost_currency is not None and self.model_api_cost_unit is not None:
+            raise ValueError("model cost cannot declare both a currency and provider unit")
+        if self.model_api_cost is None and (
+            self.model_api_cost_currency is not None or self.model_api_cost_unit is not None
+        ):
+            raise ValueError("model cost identity requires a model_api_cost value")
+        return self
 
 
 class PatchMetrics(StrictModel):

@@ -1,0 +1,42 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/agent-descriptor.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "default": "1.0",
+      "title": "Api Version",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "provider"
+  ],
+  "title": "AgentDescriptor",
+  "type": "object"
+}

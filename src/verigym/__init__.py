@@ -1,7 +1,25 @@
 """Public VeriGym API."""
 
-from verigym.core.orchestrator import VeriGym
-from verigym.schemas.run import RunConfig, RunResult
-from verigym.version import __version__
+from verigym.api import (
+    BatchRunner,
+    ExperimentConfig,
+    ExperimentPlanner,
+    ReportService,
+    RunConfig,
+    RunResult,
+    VeriGym,
+    __version__,
+    replay_run,
+)
 
-__all__ = ["RunConfig", "RunResult", "VeriGym", "__version__"]
+__all__ = [
+    "BatchRunner",
+    "ExperimentConfig",
+    "ExperimentPlanner",
+    "ReportService",
+    "RunConfig",
+    "RunResult",
+    "VeriGym",
+    "__version__",
+    "replay_run",
+]

@@ -102,6 +102,19 @@ counts, relative paths, and bounded structured diagnostics—not prompts, RTL, h
 logs, credential values, or unredacted environments. Treat generated CSV/Markdown as untrusted
 content in downstream viewers despite these defenses.
 
+New completed run and experiment roots also carry bounded artifact manifests. Verification accepts
+only normalized relative ordinary-file entries and checks required roles, visibility, byte sizes,
+and SHA-256 values before replay, resume, or reporting trusts content. Symlinks, external hard
+links, devices, FIFOs, sockets, duplicates, traversal, and out-of-bound inventories are rejected.
+Older artifacts without a manifest remain explicitly `legacy_unverified`; a mismatch is a
+distinct integrity failure, never a candidate verdict.
+
+External plugin packages are trusted host-process code and must be reviewed before installation.
+Entry-point import failures are isolated and diagnostics omit exception detail, but discovery is
+not a sandbox. Once loaded, plugins still cannot bypass the environment’s allowlisted tool/path
+policy, hidden-asset separation, budgets, candidate freeze, or runtime controls through the
+supported interfaces. Artifact loaders do not discover or execute plugins.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

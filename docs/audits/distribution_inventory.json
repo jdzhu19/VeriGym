@@ -1,0 +1,64 @@
+{
+  "allowed_distribution_classes": {
+    "sdist_only": [
+      "build backend and developer scripts",
+      "CI and Docker build recipes",
+      "documentation and ADRs",
+      "first-party tests and sanitized golden artifacts",
+      "first-party synthetic VerilogEval-shaped fixture",
+      "installed-plugin conformance fixture"
+    ],
+    "wheel": [
+      "VeriGym Python modules",
+      "embedded build provenance",
+      "built-in profile declarations",
+      "first-party toy RTL suite assets",
+      "VerilogEval adapter placeholder workspace",
+      "educational toy Liberty asset and notice"
+    ]
+  },
+  "excluded_classes": [
+    "external benchmark checkout or corpus",
+    "commercial binary or licensed script",
+    "PDK or third-party standard-cell library",
+    "model weight or model-service response",
+    "credential, private configuration, or host environment",
+    "run, release-audit, cache, virtual-environment, or Docker-layer data"
+  ],
+  "first_party_assets": [
+    {
+      "license": "Apache-2.0",
+      "path": "src/verigym/suites/toy_rtl/assets",
+      "purpose": "redistributable toy evaluation tasks"
+    },
+    {
+      "license": "Apache-2.0",
+      "path": "src/verigym/profiles/builtins/assets/toy_cells.lib",
+      "purpose": "abstract educational synthesis-area fixture; non-signoff"
+    },
+    {
+      "license": "Apache-2.0",
+      "path": "examples/plugins/conformance",
+      "purpose": "installed-distribution plugin contract fixture"
+    },
+    {
+      "license": "MIT",
+      "path": "tests/fixtures/verilog_eval_v2_synthetic",
+      "purpose": "synthetic format/conformance fixture; not VerilogEval data"
+    }
+  ],
+  "package": {
+    "license_expression": "Apache-2.0",
+    "name": "verigym",
+    "python_requires": ">=3.11",
+    "version": "0.1.0"
+  },
+  "schema_version": "1.0",
+  "third_party_external_components": [
+    "Icarus Verilog",
+    "Yosys and ABC",
+    "Docker engine and reference-image base packages",
+    "user-supplied VerilogEval checkout",
+    "optional model services"
+  ]
+}

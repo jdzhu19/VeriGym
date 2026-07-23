@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "AbortAction": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "abort",
+          "default": "abort",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "AbortAction",
+      "type": "object"
+    },
+    "ApplyPatchAction": {
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "apply_patch",
+          "default": "apply_patch",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "patch"
+      ],
+      "title": "ApplyPatchAction",
+      "type": "object"
+    },
+    "FinalSubmissionAction": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "message": {
+          "default": "Implementation complete.",
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "final",
+          "default": "final",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "FinalSubmissionAction",
+      "type": "object"
+    },
+    "MessageAction": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "message",
+          "default": "message",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "MessageAction",
+      "type": "object"
+    },
+    "ToolCallAction": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "title": "ToolCallAction",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/action.schema.json",
+  "discriminator": {
+    "mapping": {
+      "abort": "#/$defs/AbortAction",
+      "apply_patch": "#/$defs/ApplyPatchAction",
+      "final": "#/$defs/FinalSubmissionAction",
+      "message": "#/$defs/MessageAction",
+      "tool_call": "#/$defs/ToolCallAction"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/MessageAction"
+    },
+    {
+      "$ref": "#/$defs/ToolCallAction"
+    },
+    {
+      "$ref": "#/$defs/ApplyPatchAction"
+    },
+    {
+      "$ref": "#/$defs/FinalSubmissionAction"
+    },
+    {
+      "$ref": "#/$defs/AbortAction"
+    }
+  ]
+}

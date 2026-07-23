@@ -1,0 +1,37 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/tool-policy-snapshot.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "allow_general_shell": {
+      "default": false,
+      "title": "Allow General Shell",
+      "type": "boolean"
+    },
+    "allowed_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Tools",
+      "type": "array"
+    },
+    "denied_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Denied Tools",
+      "type": "array"
+    },
+    "network_policy": {
+      "default": "none",
+      "title": "Network Policy",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "title": "ToolPolicySnapshot",
+  "type": "object"
+}

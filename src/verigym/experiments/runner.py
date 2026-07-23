@@ -13,12 +13,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from verigym.core.errors import (
+    ArtifactIntegrityError,
     ConfigurationError,
     MissingDependencyError,
     RuntimeExecutionError,
     VeriGymError,
 )
 from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.integrity import (
+    remove_artifact_manifest,
+    verify_artifact_manifest,
+    write_experiment_artifact_manifest,
+)
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.sampling import classify_sample_outcome
@@ -207,6 +213,13 @@ class BatchRunner:
     ) -> BatchResult:
         experiment_root = _existing_root(root)
         _validate_parent_directories(experiment_root)
+        try:
+            verify_artifact_manifest(experiment_root, expected_scope="experiment")
+        except ArtifactIntegrityError as exc:
+            # Linked children are checked again by replay, where the established
+            # resume policy preserves and replaces corrupt attempts.
+            if "runs/" not in str(exc):
+                raise
         manifest = load_json_model(experiment_root / "experiment_manifest.json", ExperimentManifest)
         stored_config = load_json_model(
             experiment_root / "experiment_config.json", ExperimentConfig
@@ -231,6 +244,7 @@ class BatchRunner:
             plan_hash=manifest.plan_hash,
             verigym_version=manifest.verigym_version,
             verigym_commit=manifest.verigym_commit,
+            build_provenance=manifest.build_provenance,
             config=config,
             items=items,
         )
@@ -299,6 +313,7 @@ class BatchRunner:
             ),
             verigym_version=plan.verigym_version,
             verigym_commit=plan.verigym_commit,
+            build_provenance=plan.build_provenance,
             selected_task_count=len({item.task_id for item in plan.items}),
             planned_item_count=len(plan.items),
             system_identities=system_identities,
@@ -343,6 +358,7 @@ class BatchRunner:
         completed: set[int],
         resume: bool = False,
     ) -> BatchResult:
+        remove_artifact_manifest(parent.root)
         parent.set_status("running")
         parent.event(
             "experiment_started",
@@ -424,6 +440,7 @@ class BatchRunner:
                 "infrastructure_failures": infrastructure_failures,
             },
         )
+        write_experiment_artifact_manifest(parent.root, parent.manifest.experiment_id)
         return BatchResult(
             experiment_dir=parent.root,
             manifest=parent.manifest,
@@ -769,6 +786,7 @@ def _record_from_result(
         artifact_validation_status="valid",
         child_manifest_hash=hash_bytes((result.run_dir / "run_manifest.json").read_bytes()),
         scorecard_hash=hash_bytes((result.run_dir / "scorecard.json").read_bytes()),
+        artifact_manifest_hash=hash_bytes((result.run_dir / "artifact_manifest.json").read_bytes()),
     )
 
 

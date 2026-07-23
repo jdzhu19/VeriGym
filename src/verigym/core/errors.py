@@ -61,3 +61,15 @@ class ReplayError(ConfigurationError):
 
 class ComparisonError(ConfigurationError):
     """Two ranked metrics do not share an identical comparison contract."""
+
+
+class SchemaCompatibilityError(ConfigurationError):
+    """A persistent artifact uses a missing, malformed, or unsupported schema."""
+
+    def __init__(self, message: str, *, category: str) -> None:
+        super().__init__(message)
+        self.category = category
+
+
+class ArtifactIntegrityError(ReplayError):
+    """A persistent artifact fails its non-executing integrity contract."""

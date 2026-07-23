@@ -1,0 +1,24 @@
+include LICENSE
+include NOTICE
+include THIRD_PARTY_NOTICES.md
+include README.md
+include SECURITY.md
+include CONTRIBUTING.md
+include CHANGELOG.md
+include pyproject.toml
+recursive-include .github *.yml *.yaml
+recursive-include build_backend *.py
+recursive-include docker *
+recursive-include docs *.md *.json
+recursive-include examples *.md *.py *.toml *.json *.yaml *.yml *.v *.sv LICENSE
+recursive-include scripts *.py
+recursive-include src/verigym *.py *.json *.yaml *.lib *.md *.v *.sv
+recursive-include tests *.py *.json *.jsonl *.csv *.yaml *.md *.v *.sv *.txt LICENSE VERIGYM_SYNTHETIC_FIXTURE
+prune release_audit
+global-exclude __pycache__
+global-exclude *.py[cod]
+exclude AGENTS.md
+exclude AGENTS.override.md
+exclude CLAUDE.md
+exclude VERIGYM_*.md
+exclude docs/audits/reproducible_build.json

@@ -15,10 +15,13 @@ from verigym.core.sampling import (
     manifest_configuration_fingerprint,
 )
 from verigym.experiments.schemas import PlanItem
+from verigym.provenance import get_build_provenance
 from verigym.reporting.loader import LoadedReportInputs, ValidatedRun, load_report_inputs
 from verigym.reporting.schemas import (
     AggregateReport,
     CompatibilityAggregate,
+    CostAccounting,
+    CostPartition,
     CoverageCounts,
     ExplicitRate,
     FailureTaxonomy,
@@ -85,15 +88,20 @@ class ReportBuilder:
             "mixed_release_or_correctness_partitions" if mixed_correctness_scope else None
         )
         efficiency = _efficiency_summaries(runs)
-        cost = _cost_summary(runs)
+        cost, cost_accounting = _cost_summary(runs)
         sampling = _sampling(inputs, runs)
         if cost.missing_value_count:
             warnings.append(
                 f"Model cost is missing for {cost.missing_value_count} resolved run(s)."
             )
-        if cost.known_value_count:
+        if cost_accounting.unknown_unit_count:
             warnings.append(
-                "Model cost values have no persisted currency identity and are not summed."
+                f"{cost_accounting.unknown_unit_count} model cost value(s) have no persisted "
+                "currency or provider-unit identity and are not summed."
+            )
+        if cost_accounting.incompatible_unit_count:
+            warnings.append(
+                "Model costs span incompatible units and are partitioned, not combined."
             )
         missing_efficiency = sorted(
             name for name, summary in efficiency.items() if summary.missing_value_count
@@ -109,6 +117,16 @@ class ReportBuilder:
                 f"{len(inputs.invalid_inputs)} corrupt, incompatible, or unsafe artifact(s) "
                 "were excluded."
             )
+        legacy_integrity = sum(run.integrity_status == "legacy_unverified" for run in runs) + int(
+            inputs.parent_integrity_status == "legacy_unverified"
+        )
+        if legacy_integrity:
+            warnings.append(f"{legacy_integrity} legacy artifact set(s) had no integrity manifest.")
+        if inputs.parent_integrity_status == "integrity_failed":
+            warnings.append(
+                "The experiment parent integrity manifest failed validation; "
+                "affected records are diagnostic-only."
+            )
         invalid_sample_groups = sum(not group.canonical_valid for group in sampling.groups)
         if invalid_sample_groups:
             warnings.append(
@@ -121,6 +139,7 @@ class ReportBuilder:
             plan_hash=inputs.plan_hash,
             task_set_hash=inputs.task_set_hash,
             input_set_hash=_input_set_hash(inputs, runs),
+            build_provenance=get_build_provenance(),
             compatibility_partitions=compatibility,
             compatibility_aggregates=compatibility_aggregates,
             coverage=coverage,
@@ -140,6 +159,7 @@ class ReportBuilder:
             correctness_stages=[] if mixed_correctness_scope else _stage_rates(runs),
             efficiency_resolved=efficiency,
             cost_resolved=cost,
+            cost_accounting=cost_accounting,
             failure_taxonomy=_failure_taxonomy(inputs, runs),
             sampling=sampling,
             quality_partitions=_quality_partitions(runs),
@@ -159,6 +179,19 @@ class ReportBuilder:
                 "cost_currency_policy": "unknown currency is never summed",
                 "quality_scope": "profile-relative synthesis area only",
                 "universal_score": None,
+                "parent_integrity_status": inputs.parent_integrity_status,
+                "legacy_unverified_run_count": sum(
+                    run.integrity_status == "legacy_unverified" for run in runs
+                ),
+                "model_identity_reproducibility_scopes": dict(
+                    sorted(
+                        Counter(
+                            observation.reproducibility_scope
+                            for run in runs
+                            for observation in run.manifest.model_observations
+                        ).items()
+                    )
+                ),
                 "combined_correctness_scope": (
                     "unavailable_for_mixed_release_or_correctness_partitions"
                     if mixed_correctness_scope
@@ -337,19 +370,61 @@ def _efficiency_summaries(runs: list[ValidatedRun]) -> dict[str, NumericSummary]
     }
 
 
-def _cost_summary(runs: list[ValidatedRun]) -> NumericSummary:
+def _cost_summary(runs: list[ValidatedRun]) -> tuple[NumericSummary, CostAccounting]:
     resolved = [run for run in runs if run.scorecard.resolved and _is_evaluable(run)]
-    values = [run.scorecard.efficiency.model_api_cost for run in resolved]
-    known = [value for value in values if value is not None]
-    return NumericSummary(
+    missing = 0
+    unknown = 0
+    partitions: dict[tuple[str, str], list[float]] = {}
+    observed = 0
+    for run in resolved:
+        efficiency = run.scorecard.efficiency
+        value = efficiency.model_api_cost
+        if value is None:
+            missing += 1
+            continue
+        observed += 1
+        if efficiency.model_api_cost_currency is not None:
+            key = ("currency", efficiency.model_api_cost_currency)
+        elif efficiency.model_api_cost_unit is not None:
+            key = ("provider_unit", efficiency.model_api_cost_unit)
+        else:
+            unknown += 1
+            continue
+        partitions.setdefault(key, []).append(value)
+    summaries = [
+        CostPartition(
+            dimension=dimension,  # type: ignore[arg-type]
+            identifier=identifier,
+            known_value_count=len(values),
+            sum=sum(values),
+        )
+        for (dimension, identifier), values in sorted(partitions.items())
+    ]
+    incompatible = sum(item.known_value_count for item in summaries) if len(summaries) > 1 else 0
+    single = summaries[0] if len(summaries) == 1 and unknown == 0 else None
+    legacy = NumericSummary(
         population="resolved_runs",
-        known_value_count=len(known),
-        missing_value_count=len(values) - len(known),
+        known_value_count=observed,
+        missing_value_count=missing,
         mean=None,
         median=None,
-        sum=None,
-        unit="currency",
-        currency=None,
+        sum=single.sum if single is not None else None,
+        unit=(
+            single.identifier
+            if single is not None and single.dimension == "provider_unit"
+            else "currency"
+        ),
+        currency=(
+            single.identifier if single is not None and single.dimension == "currency" else None
+        ),
+    )
+    return legacy, CostAccounting(
+        population="resolved_runs",
+        observed_value_count=observed,
+        missing_value_count=missing,
+        unknown_unit_count=unknown,
+        incompatible_unit_count=incompatible,
+        partitions=summaries,
     )
 
 

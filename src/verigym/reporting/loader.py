@@ -11,6 +11,8 @@ from typing import Any
 
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.integrity import verify_artifact_manifest
+from verigym.core.schema_compat import validate_schema_version
 from verigym.experiments.identity import (
     derive_experiment_id,
     evaluation_config_payload,
@@ -54,6 +56,7 @@ class ValidatedRun:
     scorecard: ScoreCard
     plan_item: PlanItem | None = None
     index_record: RunIndexRecord | None = None
+    integrity_status: str = "legacy_unverified"
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,7 @@ class LoadedReportInputs:
     invalid_inputs: list[InvalidInput]
     requested_k: list[int]
     samples_per_task: int
+    parent_integrity_status: str = "legacy_unverified"
 
 
 def _bounded_json(path: Path, model: type[Any]) -> Any:
@@ -85,6 +89,7 @@ def _bounded_json(path: Path, model: type[Any]) -> Any:
             raise ConfigurationError(f"artifact changed while reading: {path.name}")
         payload = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_json_object)
         _check_depth(payload)
+        validate_schema_version(payload, model, artifact=path.name)
         return model.model_validate(payload)
     except ConfigurationError:
         raise
@@ -144,6 +149,13 @@ def load_report_inputs(path: Path) -> LoadedReportInputs:
 
 
 def _load_experiment(root: Path) -> LoadedReportInputs:
+    parent_integrity_status: str
+    try:
+        parent_integrity_status = verify_artifact_manifest(root, expected_scope="experiment").status
+    except ConfigurationError:
+        # Reports remain useful for corruption diagnostics. Cross-reference
+        # checks below still exclude invalid records from aggregate metrics.
+        parent_integrity_status = "integrity_failed"
     manifest = load_json_model(root / "experiment_manifest.json", ExperimentManifest)
     config = load_json_model(root / "experiment_config.json", ExperimentConfig)
     if content_hash(config.identity_payload()) != manifest.config_hash:
@@ -267,6 +279,7 @@ def _load_experiment(root: Path) -> LoadedReportInputs:
         invalid_inputs=invalid,
         requested_k=manifest.sampling_policy.pass_k,
         samples_per_task=manifest.sampling_policy.samples_per_task,
+        parent_integrity_status=parent_integrity_status,
     )
 
 
@@ -350,6 +363,7 @@ def _validate_child(
         if not (resolved / name).is_dir():
             raise ConfigurationError(f"required child artifact is not a directory: {name}")
     _assert_safe_child_tree(resolved)
+    integrity = verify_artifact_manifest(resolved, expected_scope="run")
     manifest_path = resolved / "run_manifest.json"
     score_path = resolved / "scorecard.json"
     if record.child_manifest_hash != hash_bytes(manifest_path.read_bytes()):
@@ -371,6 +385,7 @@ def _validate_child(
         scorecard=scorecard,
         plan_item=plan_item,
         index_record=record,
+        integrity_status=integrity.status,
     )
 
 
@@ -473,6 +488,7 @@ def _load_arbitrary_root(root: Path) -> LoadedReportInputs:
                 if entry.is_symlink() or not entry.is_dir():
                     raise ConfigurationError(f"required child artifact is not a directory: {name}")
             _assert_safe_child_tree(child)
+            integrity = verify_artifact_manifest(child, expected_scope="run")
             manifest = _bounded_json(child / "run_manifest.json", RunManifest)
             scorecard = _bounded_json(child / "scorecard.json", ScoreCard)
             _validate_cross_references(manifest, scorecard, None)
@@ -483,6 +499,7 @@ def _load_arbitrary_root(root: Path) -> LoadedReportInputs:
                     relative_path=relative,
                     manifest=manifest,
                     scorecard=scorecard,
+                    integrity_status=integrity.status,
                 )
             )
         except Exception as exc:

@@ -17,8 +17,9 @@ from verigym.schemas.common import (
     RuntimeDescriptor,
     ToolchainProfileRef,
 )
-from verigym.schemas.model import GenerationParameters, ModelRunConfig
+from verigym.schemas.model import GenerationParameters, ModelCallIdentity, ModelRunConfig
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
+from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
@@ -103,6 +104,7 @@ class RunManifest(StrictModel):
     created_at_utc: datetime
     verigym_version: str
     verigym_commit: str | None = None
+    build_provenance: BuildProvenance | None = None
     task_id: str
     task_hash: str
     source_hash: str
@@ -121,6 +123,7 @@ class RunManifest(StrictModel):
     prompt_policy: PromptPolicyDescriptor | None = None
     tool_policy: ToolPolicySnapshot | None = None
     generation: GenerationParameters | None = None
+    model_observations: list[ModelCallIdentity] = Field(default_factory=list)
     suite_source: SuiteSourceSnapshot | None = None
     runtime: RuntimeDescriptor
     toolchain_profiles: list[ToolchainProfileRef] = Field(default_factory=list)

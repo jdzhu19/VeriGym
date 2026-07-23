@@ -27,6 +27,11 @@ Parent JSON/JSONL is strict, bounded, non-symlink input on resume. Child paths r
 are checked for containment, required types, symlinks, special files, identity bindings, and
 manifest/score hashes.
 
+New experiment roots also contain `artifact_manifest.json`. It binds the parent configuration,
+plan, index, reports, and each accepted child’s artifact-manifest/scorecard identities. Resume and
+report readers verify integrity before reuse. Older roots without this file remain readable as
+`legacy_unverified`; hash or path mismatches are corruption, not candidate failures.
+
 ## Sequential and parallel behavior
 
 `max_workers: 1` is the canonical default and runs exact plan order. Candidate compile failures,

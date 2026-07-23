@@ -1,0 +1,48 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/integrity-validation.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "manifest_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Hash"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "verified",
+        "legacy_unverified"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "verified_byte_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Verified Byte Count",
+      "type": "integer"
+    },
+    "verified_entry_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Verified Entry Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "IntegrityValidation",
+  "type": "object"
+}

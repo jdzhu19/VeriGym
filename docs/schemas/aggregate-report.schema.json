@@ -1,0 +1,1399 @@
+{
+  "$defs": {
+    "BuildProvenance": {
+      "additionalProperties": false,
+      "description": "Secret-free identity for the source state that produced this package.",
+      "properties": {
+        "build_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Backend"
+        },
+        "build_source_date_epoch": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Source Date Epoch"
+        },
+        "dirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirty"
+        },
+        "installed_distribution_metadata_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installed Distribution Metadata Hash"
+        },
+        "package_name": {
+          "default": "verigym",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "provenance_method": {
+          "enum": [
+            "git_live_editable",
+            "embedded_build",
+            "embedded_source_archive",
+            "unknown"
+          ],
+          "title": "Provenance Method",
+          "type": "string"
+        },
+        "python_build_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Build Version"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_archive_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Archive Hash"
+        },
+        "source_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Commit"
+        },
+        "source_tree_file_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree File Count"
+        },
+        "source_tree_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree Hash"
+        },
+        "source_tree_path_policy": {
+          "title": "Source Tree Path Policy",
+          "type": "string"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "package_version",
+        "provenance_method",
+        "source_tree_path_policy"
+      ],
+      "title": "BuildProvenance",
+      "type": "object"
+    },
+    "CompatibilityAggregate": {
+      "additionalProperties": false,
+      "properties": {
+        "correctness_definition_hash": {
+          "title": "Correctness Definition Hash",
+          "type": "string"
+        },
+        "correctness_stages": {
+          "items": {
+            "$ref": "#/$defs/StageRate"
+          },
+          "title": "Correctness Stages",
+          "type": "array"
+        },
+        "evaluable_count": {
+          "minimum": 0,
+          "title": "Evaluable Count",
+          "type": "integer"
+        },
+        "partition_id": {
+          "title": "Partition Id",
+          "type": "string"
+        },
+        "planned_count": {
+          "minimum": 0,
+          "title": "Planned Count",
+          "type": "integer"
+        },
+        "resolved_count": {
+          "minimum": 0,
+          "title": "Resolved Count",
+          "type": "integer"
+        },
+        "resolved_rate_evaluable": {
+          "$ref": "#/$defs/ExplicitRate"
+        },
+        "resolved_rate_planned": {
+          "$ref": "#/$defs/ExplicitRate"
+        },
+        "suite_release_identity": {
+          "title": "Suite Release Identity",
+          "type": "string"
+        },
+        "system_coverage_count": {
+          "minimum": 0,
+          "title": "System Coverage Count",
+          "type": "integer"
+        },
+        "task_coverage_count": {
+          "minimum": 0,
+          "title": "Task Coverage Count",
+          "type": "integer"
+        },
+        "valid_count": {
+          "minimum": 0,
+          "title": "Valid Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "partition_id",
+        "suite_release_identity",
+        "correctness_definition_hash",
+        "planned_count",
+        "valid_count",
+        "evaluable_count",
+        "resolved_count",
+        "resolved_rate_evaluable",
+        "resolved_rate_planned",
+        "correctness_stages",
+        "task_coverage_count",
+        "system_coverage_count"
+      ],
+      "title": "CompatibilityAggregate",
+      "type": "object"
+    },
+    "CostAccounting": {
+      "additionalProperties": false,
+      "properties": {
+        "incompatible_unit_count": {
+          "minimum": 0,
+          "title": "Incompatible Unit Count",
+          "type": "integer"
+        },
+        "missing_value_count": {
+          "minimum": 0,
+          "title": "Missing Value Count",
+          "type": "integer"
+        },
+        "observed_value_count": {
+          "minimum": 0,
+          "title": "Observed Value Count",
+          "type": "integer"
+        },
+        "partitions": {
+          "items": {
+            "$ref": "#/$defs/CostPartition"
+          },
+          "title": "Partitions",
+          "type": "array"
+        },
+        "population": {
+          "title": "Population",
+          "type": "string"
+        },
+        "unknown_unit_count": {
+          "minimum": 0,
+          "title": "Unknown Unit Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "population",
+        "observed_value_count",
+        "missing_value_count",
+        "unknown_unit_count",
+        "incompatible_unit_count"
+      ],
+      "title": "CostAccounting",
+      "type": "object"
+    },
+    "CostPartition": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "enum": [
+            "currency",
+            "provider_unit"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "identifier": {
+          "title": "Identifier",
+          "type": "string"
+        },
+        "known_value_count": {
+          "minimum": 1,
+          "title": "Known Value Count",
+          "type": "integer"
+        },
+        "sum": {
+          "minimum": 0.0,
+          "title": "Sum",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dimension",
+        "identifier",
+        "known_value_count",
+        "sum"
+      ],
+      "title": "CostPartition",
+      "type": "object"
+    },
+    "CoverageCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "cancelled_interrupted_runs": {
+          "minimum": 0,
+          "title": "Cancelled Interrupted Runs",
+          "type": "integer"
+        },
+        "corrupt_incompatible_artifacts": {
+          "minimum": 0,
+          "title": "Corrupt Incompatible Artifacts",
+          "type": "integer"
+        },
+        "evaluable_candidate_runs": {
+          "minimum": 0,
+          "title": "Evaluable Candidate Runs",
+          "type": "integer"
+        },
+        "infrastructure_error_runs": {
+          "minimum": 0,
+          "title": "Infrastructure Error Runs",
+          "type": "integer"
+        },
+        "missing_plan_items": {
+          "minimum": 0,
+          "title": "Missing Plan Items",
+          "type": "integer"
+        },
+        "planned_plan_items": {
+          "minimum": 0,
+          "title": "Planned Plan Items",
+          "type": "integer"
+        },
+        "resolved_runs": {
+          "minimum": 0,
+          "title": "Resolved Runs",
+          "type": "integer"
+        },
+        "started_plan_items": {
+          "minimum": 0,
+          "title": "Started Plan Items",
+          "type": "integer"
+        },
+        "terminal_child_runs": {
+          "minimum": 0,
+          "title": "Terminal Child Runs",
+          "type": "integer"
+        },
+        "unresolved_evaluable_runs": {
+          "minimum": 0,
+          "title": "Unresolved Evaluable Runs",
+          "type": "integer"
+        },
+        "valid_terminal_artifacts": {
+          "minimum": 0,
+          "title": "Valid Terminal Artifacts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "planned_plan_items",
+        "started_plan_items",
+        "terminal_child_runs",
+        "valid_terminal_artifacts",
+        "evaluable_candidate_runs",
+        "resolved_runs",
+        "unresolved_evaluable_runs",
+        "infrastructure_error_runs",
+        "cancelled_interrupted_runs",
+        "corrupt_incompatible_artifacts",
+        "missing_plan_items"
+      ],
+      "title": "CoverageCounts",
+      "type": "object"
+    },
+    "ExplicitRate": {
+      "additionalProperties": false,
+      "properties": {
+        "denominator": {
+          "minimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        },
+        "numerator": {
+          "minimum": 0,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "title": "ExplicitRate",
+      "type": "object"
+    },
+    "FailureTaxonomy": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_artifact": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Batch Artifact",
+          "type": "object"
+        },
+        "candidate_outcomes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Candidate Outcomes",
+          "type": "object"
+        },
+        "model_infrastructure": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Model Infrastructure",
+          "type": "object"
+        },
+        "runtime_sandbox": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Runtime Sandbox",
+          "type": "object"
+        },
+        "verifier_tool": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Verifier Tool",
+          "type": "object"
+        }
+      },
+      "title": "FailureTaxonomy",
+      "type": "object"
+    },
+    "GroupAggregate": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility_partition_id": {
+          "title": "Compatibility Partition Id",
+          "type": "string"
+        },
+        "dimensions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dimensions",
+          "type": "object"
+        },
+        "evaluable_count": {
+          "minimum": 0,
+          "title": "Evaluable Count",
+          "type": "integer"
+        },
+        "planned_count": {
+          "minimum": 0,
+          "title": "Planned Count",
+          "type": "integer"
+        },
+        "resolved_count": {
+          "minimum": 0,
+          "title": "Resolved Count",
+          "type": "integer"
+        },
+        "resolved_rate_evaluable": {
+          "$ref": "#/$defs/ExplicitRate"
+        },
+        "task_coverage_count": {
+          "minimum": 0,
+          "title": "Task Coverage Count",
+          "type": "integer"
+        },
+        "valid_count": {
+          "minimum": 0,
+          "title": "Valid Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "compatibility_partition_id",
+        "dimensions",
+        "planned_count",
+        "valid_count",
+        "evaluable_count",
+        "resolved_count",
+        "resolved_rate_evaluable",
+        "task_coverage_count"
+      ],
+      "title": "GroupAggregate",
+      "type": "object"
+    },
+    "InvalidInput": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "plan_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Index"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "category",
+        "message"
+      ],
+      "title": "InvalidInput",
+      "type": "object"
+    },
+    "NumericSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "known_value_count": {
+          "minimum": 0,
+          "title": "Known Value Count",
+          "type": "integer"
+        },
+        "mean": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean"
+        },
+        "median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median"
+        },
+        "missing_value_count": {
+          "minimum": 0,
+          "title": "Missing Value Count",
+          "type": "integer"
+        },
+        "population": {
+          "title": "Population",
+          "type": "string"
+        },
+        "sum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sum"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "population",
+        "known_value_count",
+        "missing_value_count"
+      ],
+      "title": "NumericSummary",
+      "type": "object"
+    },
+    "PassAtKEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "c": {
+          "minimum": 0,
+          "title": "C",
+          "type": "integer"
+        },
+        "invalid_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invalid Reason"
+        },
+        "k": {
+          "minimum": 1,
+          "title": "K",
+          "type": "integer"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "valid": {
+          "title": "Valid",
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "k",
+        "n",
+        "c",
+        "valid"
+      ],
+      "title": "PassAtKEntry",
+      "type": "object"
+    },
+    "PassAtKMacro": {
+      "additionalProperties": false,
+      "properties": {
+        "invalid_group_count": {
+          "minimum": 0,
+          "title": "Invalid Group Count",
+          "type": "integer"
+        },
+        "k": {
+          "minimum": 1,
+          "title": "K",
+          "type": "integer"
+        },
+        "macro_mean": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Mean"
+        },
+        "macro_median": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Median"
+        },
+        "missing_group_count": {
+          "minimum": 0,
+          "title": "Missing Group Count",
+          "type": "integer"
+        },
+        "valid_group_count": {
+          "minimum": 0,
+          "title": "Valid Group Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "k",
+        "valid_group_count",
+        "invalid_group_count",
+        "missing_group_count"
+      ],
+      "title": "PassAtKMacro",
+      "type": "object"
+    },
+    "QualityPartition": {
+      "additionalProperties": false,
+      "properties": {
+        "area_unit": {
+          "title": "Area Unit",
+          "type": "string"
+        },
+        "correctness_definition_hash": {
+          "title": "Correctness Definition Hash",
+          "type": "string"
+        },
+        "declared_profile_hash": {
+          "title": "Declared Profile Hash",
+          "type": "string"
+        },
+        "declared_profile_id": {
+          "title": "Declared Profile Id",
+          "type": "string"
+        },
+        "eligible_run_count": {
+          "minimum": 0,
+          "title": "Eligible Run Count",
+          "type": "integer"
+        },
+        "image_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Id"
+        },
+        "ineligible_reasons": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Ineligible Reasons",
+          "type": "object"
+        },
+        "ineligible_run_count": {
+          "minimum": 0,
+          "title": "Ineligible Run Count",
+          "type": "integer"
+        },
+        "partition_id": {
+          "title": "Partition Id",
+          "type": "string"
+        },
+        "ratio_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio Max"
+        },
+        "ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio Median"
+        },
+        "ratio_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio Min"
+        },
+        "reference_candidate_hash": {
+          "title": "Reference Candidate Hash",
+          "type": "string"
+        },
+        "resolved_profile_hash": {
+          "title": "Resolved Profile Hash",
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/QualityRunValue"
+          },
+          "title": "Runs",
+          "type": "array"
+        },
+        "runtime_identity_hash": {
+          "title": "Runtime Identity Hash",
+          "type": "string"
+        },
+        "suite_source_identity": {
+          "title": "Suite Source Identity",
+          "type": "string"
+        },
+        "task_hash": {
+          "title": "Task Hash",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "task_system_coverage": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Task System Coverage",
+          "type": "object"
+        }
+      },
+      "required": [
+        "partition_id",
+        "suite_source_identity",
+        "task_id",
+        "task_hash",
+        "correctness_definition_hash",
+        "declared_profile_id",
+        "declared_profile_hash",
+        "resolved_profile_hash",
+        "runtime_identity_hash",
+        "area_unit",
+        "reference_candidate_hash",
+        "eligible_run_count",
+        "ineligible_run_count",
+        "runs"
+      ],
+      "title": "QualityPartition",
+      "type": "object"
+    },
+    "QualityRunValue": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area"
+        },
+        "area_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Ratio"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "ineligible_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ineligible Reasons",
+          "type": "array"
+        },
+        "plan_index": {
+          "minimum": 0,
+          "title": "Plan Index",
+          "type": "integer"
+        },
+        "reference_area": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Area"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "system_id": {
+          "title": "System Id",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_index",
+        "run_id",
+        "task_id",
+        "system_id",
+        "eligible"
+      ],
+      "title": "QualityRunValue",
+      "type": "object"
+    },
+    "SampleGroupAggregate": {
+      "additionalProperties": false,
+      "properties": {
+        "base_seed": {
+          "title": "Base Seed",
+          "type": "integer"
+        },
+        "best_of_n_success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Of N Success"
+        },
+        "cancelled_count": {
+          "minimum": 0,
+          "title": "Cancelled Count",
+          "type": "integer"
+        },
+        "canonical_valid": {
+          "title": "Canonical Valid",
+          "type": "boolean"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/PassAtKEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "evaluable_count": {
+          "minimum": 0,
+          "title": "Evaluable Count",
+          "type": "integer"
+        },
+        "expected_n": {
+          "minimum": 1,
+          "title": "Expected N",
+          "type": "integer"
+        },
+        "group_id": {
+          "title": "Group Id",
+          "type": "string"
+        },
+        "infrastructure_error_count": {
+          "minimum": 0,
+          "title": "Infrastructure Error Count",
+          "type": "integer"
+        },
+        "invalid_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invalid Reason"
+        },
+        "missing_count": {
+          "minimum": 0,
+          "title": "Missing Count",
+          "type": "integer"
+        },
+        "observed_n": {
+          "minimum": 0,
+          "title": "Observed N",
+          "type": "integer"
+        },
+        "resolved_c": {
+          "minimum": 0,
+          "title": "Resolved C",
+          "type": "integer"
+        },
+        "system_id": {
+          "title": "System Id",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "task_id",
+        "system_id",
+        "base_seed",
+        "expected_n",
+        "observed_n",
+        "resolved_c",
+        "evaluable_count",
+        "infrastructure_error_count",
+        "cancelled_count",
+        "missing_count",
+        "canonical_valid",
+        "entries"
+      ],
+      "title": "SampleGroupAggregate",
+      "type": "object"
+    },
+    "SamplingAggregate": {
+      "additionalProperties": false,
+      "properties": {
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/SampleGroupAggregate"
+          },
+          "title": "Groups",
+          "type": "array"
+        },
+        "macro": {
+          "items": {
+            "$ref": "#/$defs/PassAtKMacro"
+          },
+          "title": "Macro",
+          "type": "array"
+        }
+      },
+      "required": [
+        "groups",
+        "macro"
+      ],
+      "title": "SamplingAggregate",
+      "type": "object"
+    },
+    "StageRate": {
+      "additionalProperties": false,
+      "properties": {
+        "denominator": {
+          "minimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        },
+        "infrastructure_error_count": {
+          "minimum": 0,
+          "title": "Infrastructure Error Count",
+          "type": "integer"
+        },
+        "missing_count": {
+          "minimum": 0,
+          "title": "Missing Count",
+          "type": "integer"
+        },
+        "numerator": {
+          "minimum": 0,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "numerator",
+        "denominator",
+        "missing_count",
+        "infrastructure_error_count"
+      ],
+      "title": "StageRate",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/aggregate-report.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "build_provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuildProvenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "compatibility_aggregates": {
+      "items": {
+        "$ref": "#/$defs/CompatibilityAggregate"
+      },
+      "title": "Compatibility Aggregates",
+      "type": "array"
+    },
+    "compatibility_partitions": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Compatibility Partitions",
+      "type": "object"
+    },
+    "config_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Config Hash"
+    },
+    "correctness_stages": {
+      "items": {
+        "$ref": "#/$defs/StageRate"
+      },
+      "title": "Correctness Stages",
+      "type": "array"
+    },
+    "cost_accounting": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CostAccounting"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "cost_resolved": {
+      "$ref": "#/$defs/NumericSummary"
+    },
+    "coverage": {
+      "$ref": "#/$defs/CoverageCounts"
+    },
+    "efficiency_resolved": {
+      "additionalProperties": {
+        "$ref": "#/$defs/NumericSummary"
+      },
+      "title": "Efficiency Resolved",
+      "type": "object"
+    },
+    "evaluation_completion_rate": {
+      "$ref": "#/$defs/ExplicitRate"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "failure_taxonomy": {
+      "$ref": "#/$defs/FailureTaxonomy"
+    },
+    "grouped_aggregates": {
+      "items": {
+        "$ref": "#/$defs/GroupAggregate"
+      },
+      "title": "Grouped Aggregates",
+      "type": "array"
+    },
+    "input_set_hash": {
+      "title": "Input Set Hash",
+      "type": "string"
+    },
+    "invalid_inputs": {
+      "items": {
+        "$ref": "#/$defs/InvalidInput"
+      },
+      "title": "Invalid Inputs",
+      "type": "array"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "plan_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan Hash"
+    },
+    "quality_partitions": {
+      "items": {
+        "$ref": "#/$defs/QualityPartition"
+      },
+      "title": "Quality Partitions",
+      "type": "array"
+    },
+    "resolved_rate_evaluable": {
+      "$ref": "#/$defs/ExplicitRate"
+    },
+    "resolved_rate_planned": {
+      "$ref": "#/$defs/ExplicitRate"
+    },
+    "sampling": {
+      "$ref": "#/$defs/SamplingAggregate"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_kind": {
+      "enum": [
+        "experiment",
+        "runs_root"
+      ],
+      "title": "Source Kind",
+      "type": "string"
+    },
+    "task_set_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Set Hash"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "source_kind",
+    "input_set_hash",
+    "coverage",
+    "resolved_rate_evaluable",
+    "resolved_rate_planned",
+    "evaluation_completion_rate",
+    "correctness_stages",
+    "efficiency_resolved",
+    "cost_resolved",
+    "failure_taxonomy",
+    "sampling",
+    "quality_partitions",
+    "grouped_aggregates"
+  ],
+  "title": "AggregateReport",
+  "type": "object"
+}

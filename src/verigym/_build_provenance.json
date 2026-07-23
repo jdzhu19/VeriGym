@@ -1,0 +1,17 @@
+{
+  "build_backend": null,
+  "build_source_date_epoch": null,
+  "dirty": null,
+  "installed_distribution_metadata_hash": null,
+  "package_name": "verigym",
+  "package_version": "0.1.0",
+  "provenance_method": "unknown",
+  "python_build_version": null,
+  "schema_version": "1.0",
+  "source_archive_hash": null,
+  "source_commit": null,
+  "source_tree_file_count": null,
+  "source_tree_hash": null,
+  "source_tree_path_policy": "tracked-and-nonignored files under .github, build_backend, docker, docs, examples, scripts, src, and tests, plus named root project files; generated embedded provenance is excluded",
+  "unknown_reason": "source checkout has not been processed by the build backend"
+}

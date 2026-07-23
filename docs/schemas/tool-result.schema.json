@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "ErrorCategory": {
+      "enum": [
+        "success",
+        "tool_failed",
+        "compile_failed",
+        "test_failed",
+        "timeout",
+        "out_of_memory",
+        "output_limit",
+        "invalid_request",
+        "tool_not_found",
+        "license_unavailable",
+        "unsupported_version",
+        "parser_error",
+        "sandbox_error",
+        "permission_denied",
+        "policy_denied",
+        "internal_error"
+      ],
+      "title": "ErrorCategory",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/tool-result.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "category": {
+      "$ref": "#/$defs/ErrorCategory"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "duration_s": {
+      "default": 0.0,
+      "minimum": 0.0,
+      "title": "Duration S",
+      "type": "number"
+    },
+    "exit_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exit Code"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "output_truncated": {
+      "default": false,
+      "title": "Output Truncated",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stderr": {
+      "default": "",
+      "title": "Stderr",
+      "type": "string"
+    },
+    "stdout": {
+      "default": "",
+      "title": "Stdout",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    },
+    "tool": {
+      "title": "Tool",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool",
+    "success",
+    "category"
+  ],
+  "title": "ToolResult",
+  "type": "object"
+}

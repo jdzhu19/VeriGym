@@ -10,6 +10,7 @@ from pathlib import Path
 from verigym.core.errors import PluginNotFoundError
 from verigym.registry.base import PluginRegistry
 from verigym.runtimes.base import RuntimeSession
+from verigym.schemas.base import SCHEMA_VERSION
 from verigym.schemas.common import ErrorCategory, ToolVisibility
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.verifier import (
@@ -181,8 +182,10 @@ class VerifierExecutor:
         node_dir = artifact_root / node.id
         node_dir.mkdir(parents=True, exist_ok=True)
         artifacts: list[str] = []
+        persisted_request = {"schema_version": SCHEMA_VERSION, **result.request}
         (node_dir / "request.json").write_text(
-            json.dumps(result.request, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(persisted_request, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
         artifacts.append((Path(node.id) / "request.json").as_posix())
         if tool_result is not None:

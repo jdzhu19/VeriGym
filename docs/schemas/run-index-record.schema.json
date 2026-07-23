@@ -1,0 +1,142 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/run-index-record.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_manifest_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artifact Manifest Hash"
+    },
+    "artifact_validation_status": {
+      "enum": [
+        "valid",
+        "partial",
+        "corrupt",
+        "incompatible",
+        "missing"
+      ],
+      "title": "Artifact Validation Status",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "child_exit_category": {
+      "title": "Child Exit Category",
+      "type": "string"
+    },
+    "child_manifest_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Child Manifest Hash"
+    },
+    "child_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Child Run Id"
+    },
+    "evaluable": {
+      "default": false,
+      "title": "Evaluable",
+      "type": "boolean"
+    },
+    "infrastructure_error": {
+      "default": false,
+      "title": "Infrastructure Error",
+      "type": "boolean"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "plan_index": {
+      "minimum": 0,
+      "title": "Plan Index",
+      "type": "integer"
+    },
+    "plan_item_id": {
+      "title": "Plan Item Id",
+      "type": "string"
+    },
+    "relative_child_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Relative Child Path"
+    },
+    "resolved": {
+      "default": false,
+      "title": "Resolved",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scorecard_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scorecard Hash"
+    },
+    "terminal_status": {
+      "title": "Terminal Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_index",
+    "plan_item_id",
+    "attempt",
+    "terminal_status",
+    "child_exit_category",
+    "artifact_validation_status"
+  ],
+  "title": "RunIndexRecord",
+  "type": "object"
+}

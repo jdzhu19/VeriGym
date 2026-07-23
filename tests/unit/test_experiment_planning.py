@@ -11,10 +11,16 @@ from tests.milestone9_helpers import experiment_config, offline_service
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash
 from verigym.experiments.config import load_experiment_config
-from verigym.experiments.identity import derive_child_seed, plan_item_identity_payload
+from verigym.experiments.identity import (
+    derive_child_seed,
+    normalized_runtime_descriptor,
+    plan_item_identity_payload,
+    runtime_identity_hash,
+)
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
 from verigym.experiments.schemas import ExperimentConfig
+from verigym.schemas.common import RuntimeImageIdentity, RuntimeResourceSummary
 
 
 def test_experiment_schema_round_trip_is_strict_and_secret_free(tmp_path: Path) -> None:
@@ -156,6 +162,47 @@ def test_child_seed_is_stable_sensitive_and_signed_64_bit() -> None:
     assert 0 <= value <= 2**63 - 1
     assert value != derive_child_seed(**{**arguments, "sample_index": 4})
     assert value != derive_child_seed(**{**arguments, "base_seed": 18})
+
+
+def test_runtime_identity_discards_request_and_session_lifecycle_noise() -> None:
+    descriptor = (
+        offline_service()
+        .registries.runtimes.get("docker")
+        .descriptor.model_copy(
+            update={
+                "configuration_fingerprint": "a" * 64,
+                "image": RuntimeImageIdentity(
+                    requested_reference="example:tag",
+                    resolved_image_id="sha256:" + "b" * 64,
+                    os="linux",
+                    architecture="amd64",
+                ),
+                "resources": RuntimeResourceSummary(
+                    memory_bytes=512 * 1024 * 1024,
+                    memory_swap_bytes=512 * 1024 * 1024,
+                    swap_enforced=True,
+                    cpus=1.0,
+                    pids_limit=128,
+                    tmpfs_bytes=64 * 1024 * 1024,
+                    max_command_time_s=60,
+                    max_output_bytes=100,
+                ),
+            }
+        )
+    )
+    executed = descriptor.model_copy(deep=True)
+    assert executed.image is not None and executed.resources is not None
+    executed.image.requested_reference = executed.image.resolved_image_id
+    executed.resources.max_output_bytes = 200
+    executed.configuration_fingerprint = "c" * 64
+
+    assert runtime_identity_hash(descriptor) == runtime_identity_hash(executed)
+    normalized = normalized_runtime_descriptor(descriptor)
+    assert normalized.configuration_fingerprint is None
+    assert normalized.image is not None
+    assert normalized.image.requested_reference == normalized.image.resolved_image_id
+    assert normalized.resources is not None
+    assert normalized.resources.max_output_bytes is None
 
 
 def test_plan_integrity_tampering_is_rejected_before_output_or_child_execution(

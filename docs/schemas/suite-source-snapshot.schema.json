@@ -1,0 +1,108 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/suite-source-snapshot.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "configuration_fingerprint": {
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "dataset_content_hash": {
+      "title": "Dataset Content Hash",
+      "type": "string"
+    },
+    "dataset_root": {
+      "title": "Dataset Root",
+      "type": "string"
+    },
+    "git_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Commit"
+    },
+    "git_metadata_available": {
+      "default": false,
+      "title": "Git Metadata Available",
+      "type": "boolean"
+    },
+    "git_remote": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Remote"
+    },
+    "license_file_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "License File Hash"
+    },
+    "license_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "License Id"
+    },
+    "native_layout": {
+      "title": "Native Layout",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_root": {
+      "title": "Source Root",
+      "type": "string"
+    },
+    "strict_compatibility": {
+      "title": "Strict Compatibility",
+      "type": "boolean"
+    },
+    "synthetic_fixture": {
+      "default": false,
+      "title": "Synthetic Fixture",
+      "type": "boolean"
+    },
+    "variant": {
+      "title": "Variant",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_root",
+    "dataset_root",
+    "variant",
+    "native_layout",
+    "strict_compatibility",
+    "configuration_fingerprint",
+    "dataset_content_hash"
+  ],
+  "title": "SuiteSourceSnapshot",
+  "type": "object"
+}

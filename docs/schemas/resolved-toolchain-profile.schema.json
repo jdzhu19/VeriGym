@@ -1,0 +1,448 @@
+{
+  "$defs": {
+    "ResolvedArtifactIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribution"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "copy_permitted": {
+          "title": "Copy Permitted",
+          "type": "boolean"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "logical_id": {
+          "title": "Logical Id",
+          "type": "string"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "redistributable": {
+          "title": "Redistributable",
+          "type": "boolean"
+        },
+        "replay_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replay Locator"
+        },
+        "semantics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantics"
+        },
+        "source_kind": {
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "logical_id",
+        "media_type",
+        "source_kind",
+        "content_hash",
+        "redistributable",
+        "copy_permitted"
+      ],
+      "title": "ResolvedArtifactIdentity",
+      "type": "object"
+    },
+    "ResolvedRuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "configuration_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configuration Fingerprint"
+        },
+        "deterministic": {
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "isolation_level": {
+          "title": "Isolation Level",
+          "type": "string"
+        },
+        "network_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Network Policy"
+        },
+        "os": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os"
+        },
+        "requested_image_reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Image Reference"
+        },
+        "resolved_image_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Image Id"
+        },
+        "resource_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Contract Hash"
+        },
+        "resource_controls": {
+          "default": false,
+          "title": "Resource Controls",
+          "type": "boolean"
+        },
+        "runtime_slug": {
+          "title": "Runtime Slug",
+          "type": "string"
+        },
+        "security_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Security Hash"
+        }
+      },
+      "required": [
+        "runtime_slug",
+        "isolation_level",
+        "deterministic"
+      ],
+      "title": "ResolvedRuntimeIdentity",
+      "type": "object"
+    },
+    "ResolvedToolIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "executable": {
+          "title": "Executable",
+          "type": "string"
+        },
+        "executable_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable Sha256"
+        },
+        "git_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Hash"
+        },
+        "identity_kind": {
+          "enum": [
+            "immutable_image_observation",
+            "local_executable"
+          ],
+          "title": "Identity Kind",
+          "type": "string"
+        },
+        "logical_name": {
+          "title": "Logical Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "version_output": {
+          "title": "Version Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_name",
+        "executable",
+        "version",
+        "version_output",
+        "identity_kind"
+      ],
+      "title": "ResolvedToolIdentity",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/resolved-toolchain-profile.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "area_unit": {
+      "title": "Area Unit",
+      "type": "string"
+    },
+    "artifact_visibility_policy": {
+      "default": "candidate_public_reference_summary_only",
+      "title": "Artifact Visibility Policy",
+      "type": "string"
+    },
+    "asset_identities": {
+      "items": {
+        "$ref": "#/$defs/ResolvedArtifactIdentity"
+      },
+      "title": "Asset Identities",
+      "type": "array"
+    },
+    "declared_profile_hash": {
+      "title": "Declared Profile Hash",
+      "type": "string"
+    },
+    "deterministic": {
+      "title": "Deterministic",
+      "type": "boolean"
+    },
+    "flow_hash": {
+      "title": "Flow Hash",
+      "type": "string"
+    },
+    "flow_template_id": {
+      "title": "Flow Template Id",
+      "type": "string"
+    },
+    "generated_script_hash": {
+      "title": "Generated Script Hash",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "metric_contract_hash": {
+      "title": "Metric Contract Hash",
+      "type": "string"
+    },
+    "metric_scope": {
+      "const": "synthesis_area_only",
+      "title": "Metric Scope",
+      "type": "string"
+    },
+    "profile_id": {
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "profile_version": {
+      "title": "Profile Version",
+      "type": "string"
+    },
+    "reference_candidate_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Candidate Hash"
+    },
+    "reference_contract_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reference Contract Hash"
+    },
+    "reference_strategy": {
+      "title": "Reference Strategy",
+      "type": "string"
+    },
+    "reproducibility_scope": {
+      "enum": [
+        "public",
+        "site_specific",
+        "private"
+      ],
+      "title": "Reproducibility Scope",
+      "type": "string"
+    },
+    "resolved_profile_hash": {
+      "title": "Resolved Profile Hash",
+      "type": "string"
+    },
+    "runtime_identity": {
+      "$ref": "#/$defs/ResolvedRuntimeIdentity"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Paths",
+      "type": "array"
+    },
+    "tool_identities": {
+      "items": {
+        "$ref": "#/$defs/ResolvedToolIdentity"
+      },
+      "title": "Tool Identities",
+      "type": "array"
+    },
+    "top_module": {
+      "title": "Top Module",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "profile_version",
+    "declared_profile_hash",
+    "resolved_profile_hash",
+    "reproducibility_scope",
+    "deterministic",
+    "runtime_identity",
+    "tool_identities",
+    "asset_identities",
+    "flow_hash",
+    "metric_contract_hash",
+    "reference_contract_hash",
+    "flow_template_id",
+    "generated_script_hash",
+    "top_module",
+    "source_paths",
+    "metric_scope",
+    "area_unit",
+    "reference_strategy"
+  ],
+  "title": "ResolvedToolchainProfile",
+  "type": "object"
+}

@@ -17,6 +17,7 @@ from verigym.core.environment import VeriGymEnv
 from verigym.core.episode import EpisodeState, TerminationReason
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
+from verigym.core.integrity import write_run_artifact_manifest
 from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
@@ -29,6 +30,7 @@ from verigym.models.base import ModelClient
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.prompts.builder import PromptBuilder
+from verigym.provenance import get_build_provenance
 from verigym.registry.collections import Registries, build_registries
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.agent import EpisodeResult
@@ -204,11 +206,13 @@ class VeriGym:
             version=profile.version,
             content_hash=content_hash(profile),
         )
+        build_provenance = get_build_provenance()
         manifest = RunManifest(
             run_id=run_id,
             created_at_utc=datetime.now(UTC),
             verigym_version=__version__,
-            verigym_commit=None,
+            verigym_commit=build_provenance.source_commit,
+            build_provenance=build_provenance,
             task_id=task.id,
             task_hash=task_hash,
             source_hash=source_hash,
@@ -308,6 +312,7 @@ class VeriGym:
         verifier_results: list[VerifierResult] = []
         synthesis_evaluation: SynthesisEvaluation | None = None
         episode_failure: EpisodeFailure | None = None
+        model_gateway: ModelGateway | None = None
         try:
             observation, _ = env.reset(run_id=run_id, trace=trace)
             assert env.tracker is not None
@@ -454,6 +459,11 @@ class VeriGym:
             env.close()
             runtime.close()
             manifest.runtime = runtime.descriptor
+            manifest.model_observations = (
+                [item.model_copy(deep=True) for item in model_gateway.observations]
+                if model_gateway is not None
+                else []
+            )
             manifest.environment_summary.update(runtime.environment_summary())
             dump_json(layout.manifest, manifest)
             trace.emit(
@@ -519,6 +529,7 @@ class VeriGym:
                     termination_reason=env.termination_reason.value,
                 )
             )
+            write_run_artifact_manifest(layout.root, run_id)
             return RunResult(run_dir=layout.root, manifest=manifest, scorecard=scorecard)
         finally:
             env.close()

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import canonical_json
+from verigym.core.schema_compat import validate_schema_version
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 _MAX_PARENT_FILE_BYTES = 64 * 1024 * 1024
@@ -95,6 +96,7 @@ def load_json_model(path: Path, model: type[ModelT]) -> ModelT:
             object_pairs_hook=_unique_json_object,
         )
         _check_json_depth(payload)
+        validate_schema_version(payload, model, artifact=path.name)
         return model.model_validate(payload)
     except ConfigurationError:
         raise
@@ -111,6 +113,11 @@ def load_jsonl_models(path: Path, model: type[ModelT]) -> list[ModelT]:
                 raise ConfigurationError(f"blank JSONL record at {path.name}:{line_number}")
             payload = json.loads(line, object_pairs_hook=_unique_json_object)
             _check_json_depth(payload)
+            validate_schema_version(
+                payload,
+                model,
+                artifact=f"{path.name}:{line_number}",
+            )
             values.append(model.model_validate(payload))
         return values
     except ConfigurationError:

@@ -1,0 +1,180 @@
+"""Build, documentation, distribution, and release-audit contract tests."""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import tarfile
+import zipfile
+from pathlib import Path
+
+import pytest
+
+from scripts.audit_distribution import inspect_distributions
+from scripts.reproducible_build import reproducible_build
+from verigym.provenance import _live_provenance
+from verigym.release_audit import evaluate_gate, validate_bundle
+from verigym.schemas.provenance import BuildProvenance
+
+
+def test_clean_and_dirty_source_identity_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("one\n", encoding="utf-8")
+    dirty = False
+
+    def fake_git(root: Path, arguments: list[str]) -> bytes:
+        assert root == tmp_path
+        if arguments[0] == "rev-parse":
+            return b"a" * 40 + b"\n"
+        if arguments[0] == "ls-files":
+            return b"source.txt\0"
+        if arguments[0] == "status":
+            return b" M source.txt\0" if dirty else b""
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr("verigym.provenance._git", fake_git)
+    clean = _live_provenance(tmp_path)
+    assert clean.dirty is False
+    assert clean.source_commit == "a" * 40
+    first_hash = clean.source_tree_hash
+
+    dirty = True
+    source.write_text("two\n", encoding="utf-8")
+    changed = _live_provenance(tmp_path)
+    assert changed.dirty is True
+    assert changed.source_tree_hash != first_hash
+
+
+def test_unknown_provenance_and_missing_evidence_fail_release_gate() -> None:
+    unknown = BuildProvenance(
+        package_version="0.1.0",
+        provenance_method="unknown",
+        source_tree_path_policy="test",
+        unknown_reason="fixture",
+    )
+    gate, reasons = evaluate_gate([], unknown, ["required"])
+    assert gate == "FAIL"
+    assert any("no evidence" in reason for reason in reasons)
+    assert any("provenance" in reason for reason in reasons)
+
+
+def _write_test_archives(tmp_path: Path) -> tuple[Path, Path]:
+    wheel = tmp_path / "verigym-0.1.0-py3-none-any.whl"
+    metadata = (
+        "Metadata-Version: 2.4\n"
+        "Name: verigym\n"
+        "Version: 0.1.0\n"
+        "Requires-Python: >=3.11\n"
+        "License-Expression: Apache-2.0\n"
+        "Project-URL: Repository, https://example.invalid/verigym\n\n"
+    )
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("verigym/__init__.py", "")
+        archive.writestr("verigym/_build_provenance.json", "{}")
+        archive.writestr("verigym/profiles/builtins/assets/NOTICE", "first-party")
+        archive.writestr("verigym/profiles/builtins/assets/toy_cells.lib", "library(test) {}")
+        archive.writestr(
+            "verigym/suites/toy_rtl/assets/and_gate_basic/task.yaml",
+            "schema_version: '1.0'\n",
+        )
+        archive.writestr("verigym-0.1.0.dist-info/METADATA", metadata)
+        archive.writestr("verigym-0.1.0.dist-info/licenses/LICENSE", "Apache-2.0")
+        archive.writestr("verigym-0.1.0.dist-info/licenses/NOTICE", "VeriGym")
+
+    sdist = tmp_path / "verigym-0.1.0.tar.gz"
+    with tarfile.open(sdist, "w:gz") as archive:
+        for name, payload in {
+            "verigym-0.1.0/pyproject.toml": b"[project]\nname='verigym'\n",
+            "verigym-0.1.0/.github/workflows/ci.yml": b"name: test\n",
+            "verigym-0.1.0/build_backend/verigym_build_backend.py": b"",
+            "verigym-0.1.0/examples/plugins/conformance/pyproject.toml": b"",
+            "verigym-0.1.0/scripts/run_release_audit.py": b"",
+            (
+                "verigym-0.1.0/tests/fixtures/verilog_eval_v2_synthetic/VERIGYM_SYNTHETIC_FIXTURE"
+            ): b"first-party synthetic fixture\n",
+            "verigym-0.1.0/tests/fixtures/verilog_eval_v2_synthetic/LICENSE": b"MIT\n",
+            "verigym-0.1.0/examples/plugins/conformance/LICENSE": b"Apache-2.0\n",
+        }.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+    return wheel, sdist
+
+
+def test_distribution_policy_scan_accepts_declared_fixture_and_rejects_private_member(
+    tmp_path: Path,
+) -> None:
+    wheel, sdist = _write_test_archives(tmp_path)
+    assert inspect_distributions(wheel, sdist)["status"] == "passed"
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr("verigym/.env", "TOKEN=not-a-real-secret")
+    result = inspect_distributions(wheel, sdist)
+    assert result["status"] == "failed"
+    assert any("forbidden" in issue for issue in result["issues"])
+
+
+def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
+    required = [
+        "README.md",
+        "SECURITY.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "docs/task_ir.md",
+        "docs/artifact_contract.md",
+        "docs/schema_compatibility.md",
+        "docs/python_api.md",
+        "docs/plugin_api.md",
+        "docs/adding_a_suite.md",
+        "docs/adding_a_tool.md",
+        "docs/adding_an_agent.md",
+        "docs/adding_a_runtime.md",
+        "docs/ppa_profiles.md",
+        "docs/commercial_tools.md",
+        "docs/verilog_eval.md",
+        "docs/docker_runtime.md",
+        "docs/yosys.md",
+        "docs/experiments.md",
+        "docs/batch_runner.md",
+        "docs/reporting.md",
+        "docs/benchmark_governance.md",
+        "docs/build_provenance.md",
+        "docs/packaging_policy.md",
+    ]
+    required.extend(f"docs/adr/{number:04d}-" for number in range(1, 11))
+    files = [path.as_posix() for path in Path(".").rglob("*") if path.is_file()]
+    for expected in required:
+        assert any(item == expected or item.startswith(expected) for item in files), expected
+    example = Path("examples/python_api_mvp.py").read_text(encoding="utf-8")
+    compile(example, "examples/python_api_mvp.py", "exec")
+    for schema in Path("docs/schemas").glob("*.schema.json"):
+        if schema.name == "docker-runtime-config.schema.json":
+            # This is an exported nested configuration object, not a persistent top-level record.
+            continue
+        assert "schema_version" in json.dumps(json.loads(schema.read_text(encoding="utf-8")))
+
+
+@pytest.mark.reproducible_build
+@pytest.mark.skipif(
+    os.environ.get("VERIGYM_RUN_REPRODUCIBLE_BUILD_TESTS") != "1",
+    reason="set VERIGYM_RUN_REPRODUCIBLE_BUILD_TESTS=1 for archive rebuilds",
+)
+def test_reproducible_package_builds(tmp_path: Path) -> None:
+    result = reproducible_build(Path.cwd(), tmp_path / "packages", 1_784_712_454)
+    assert result["status"] == "passed"
+    assert result["wheel_byte_identical"]
+    assert result["sdist_byte_identical"]
+
+
+@pytest.mark.release_audit
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RELEASE_AUDIT_ROOT"),
+    reason="VERIGYM_RELEASE_AUDIT_ROOT is not configured",
+)
+def test_generated_release_audit_bundle_is_hash_bound() -> None:
+    manifest, bundle_hash = validate_bundle(Path(os.environ["VERIGYM_RELEASE_AUDIT_ROOT"]))
+    assert manifest.gate_result in {"PASS", "FAIL"}
+    assert len(bundle_hash) == 64

@@ -1,0 +1,104 @@
+{
+  "artifact_locations": {
+    "config": "experiment_config.json",
+    "events": "events.jsonl",
+    "plan": "plan.jsonl",
+    "reports": "reports",
+    "run_index": "run_index.jsonl",
+    "runs": "runs",
+    "state": "state.json"
+  },
+  "config_hash": "1a0bb010ecffa2f579e8a4874a4aa4d4875f32502ebc2e939b12f08e38565307",
+  "created_at_utc": "2026-01-01T00:00:00Z",
+  "evaluation_config_hash": "cfbc745a3c0b0b311d3bee23950b902dce6a655eb12d8926b201fcf1cd83dd35",
+  "execution_policy": {
+    "continue_on_infrastructure_error": true,
+    "max_plan_items": 10000,
+    "max_workers": 1
+  },
+  "experiment_id": "m9-golden-milestone9-ffa1089ffe7b67bb",
+  "plan_hash": "ffa1089ffe7b67bb274bf0897b4d23a1937be17c6c1b48d5f98b2852d55fb5dd",
+  "planned_item_count": 1,
+  "release_ids": [],
+  "resolved_profile_hashes": [],
+  "runtime_identities": [
+    {
+      "api_version": "1.0",
+      "backend": null,
+      "capabilities": [
+        "trusted_local",
+        "timeouts",
+        "bounded_output"
+      ],
+      "cleanup": null,
+      "configuration_fingerprint": null,
+      "deterministic": true,
+      "image": null,
+      "isolation_level": "local_trusted",
+      "name": "local",
+      "provider": "verigym",
+      "resources": null,
+      "schema_version": "1.0",
+      "security": null,
+      "sessions": [],
+      "version": "0.1.0"
+    }
+  ],
+  "sampling_policy": {
+    "mode": "agent",
+    "pass_k": [
+      1
+    ],
+    "samples_per_task": 1,
+    "seeds": [
+      0
+    ]
+  },
+  "schema_version": "1.0",
+  "selected_task_count": 1,
+  "source_identity_hash": "1c836b7d4e937342c68d9744d1b3d293f49005eefc47eff900515f89401214b5",
+  "status": "completed",
+  "suite_id": "toy-rtl",
+  "suite_source_snapshots": [],
+  "suite_versions": [
+    "0.1.0"
+  ],
+  "system_identities": [
+    {
+      "agent_configuration_hash": "0154e96703e92fe4e29278c1ca9ec576f94c300166bf8ddaf57ec3b373927690",
+      "agent_descriptor": {
+        "api_version": "1.0",
+        "capabilities": [
+          "deterministic",
+          "toy-rtl/counter-basic",
+          "toy-rtl/and-gate-basic",
+          "known-good"
+        ],
+        "name": "scripted",
+        "provider": "verigym",
+        "schema_version": "1.0",
+        "version": "0.1.0"
+      },
+      "agent_id": "scripted",
+      "agent_requires_model": false,
+      "model_configuration_hash": null,
+      "model_descriptor": null,
+      "model_id": null,
+      "model_options": {
+        "api_key_env": null,
+        "base_url": null,
+        "connect_timeout_s": 10.0,
+        "model_id": null,
+        "read_timeout_s": 60.0,
+        "request_timeout_s": 90.0,
+        "sample_index": null,
+        "temperature": 0.0,
+        "top_p": null
+      },
+      "system_id": "scripted"
+    }
+  ],
+  "task_set_hash": "20bfb4179ff1b1490ab8ab29760911db74107549cd8030e69f9c8b1271380447",
+  "verigym_commit": null,
+  "verigym_version": "0.1.0"
+}

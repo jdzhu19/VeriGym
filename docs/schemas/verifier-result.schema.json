@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "ErrorCategory": {
+      "enum": [
+        "success",
+        "tool_failed",
+        "compile_failed",
+        "test_failed",
+        "timeout",
+        "out_of_memory",
+        "output_limit",
+        "invalid_request",
+        "tool_not_found",
+        "license_unavailable",
+        "unsupported_version",
+        "parser_error",
+        "sandbox_error",
+        "permission_denied",
+        "policy_denied",
+        "internal_error"
+      ],
+      "title": "ErrorCategory",
+      "type": "string"
+    },
+    "VerifierStatus": {
+      "enum": [
+        "passed",
+        "failed",
+        "error",
+        "skipped"
+      ],
+      "title": "VerifierStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/verifier-result.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "duration_s": {
+      "default": 0.0,
+      "minimum": 0.0,
+      "title": "Duration S",
+      "type": "number"
+    },
+    "error_category": {
+      "$ref": "#/$defs/ErrorCategory",
+      "default": "success"
+    },
+    "exit_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exit Code"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "node_id": {
+      "title": "Node Id",
+      "type": "string"
+    },
+    "plugin": {
+      "title": "Plugin",
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/VerifierStatus"
+    },
+    "tests_passed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tests Passed"
+    },
+    "tests_total": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tests Total"
+    }
+  },
+  "required": [
+    "node_id",
+    "plugin",
+    "status"
+  ],
+  "title": "VerifierResult",
+  "type": "object"
+}

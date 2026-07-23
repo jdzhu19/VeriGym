@@ -1,0 +1,82 @@
+{
+  "area_unit": "toy_area_unit",
+  "artifact_visibility_policy": "candidate_public_reference_summary_only",
+  "asset_identities": [
+    {
+      "attribution": "Copyright 2026 VeriGym contributors",
+      "content_hash": "817685fa394822882602ca0469065f0d5db6ee52a07788d16ff8f84ebb536512",
+      "copy_permitted": true,
+      "license": "Apache-2.0",
+      "logical_id": "verigym-toy-cells-v1",
+      "media_type": "application/x-liberty",
+      "redistributable": true,
+      "replay_locator": "verigym.profiles.builtins:assets/toy_cells.lib",
+      "semantics": "educational profile-relative non-signoff area",
+      "source_kind": "package_resource",
+      "unit": "toy_area_unit"
+    }
+  ],
+  "declared_profile_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "deterministic": true,
+  "flow_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+  "flow_template_id": "verigym-yosys-area-v1",
+  "generated_script_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "metadata": {},
+  "metric_contract_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "metric_scope": "synthesis_area_only",
+  "profile_id": "open-yosys-toy-area-v1",
+  "profile_version": "1.0.0",
+  "reference_candidate_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "reference_contract_hash": "8888888888888888888888888888888888888888888888888888888888888888",
+  "reference_strategy": "suite_reference_solution",
+  "reproducibility_scope": "public",
+  "resolved_profile_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runtime_identity": {
+    "architecture": "amd64",
+    "configuration_fingerprint": null,
+    "deterministic": true,
+    "isolation_level": "docker_standard",
+    "network_policy": "none",
+    "os": "linux",
+    "requested_image_reference": "verigym/open-rtl-tools:audited",
+    "resolved_image_id": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "resource_contract_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "resource_controls": true,
+    "runtime_slug": "docker",
+    "security_hash": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "schema_version": "1.0",
+  "source_paths": [
+    "rtl/counter.v"
+  ],
+  "tool_identities": [
+    {
+      "capabilities": [
+        "synth",
+        "stat_json",
+        "liberty",
+        "abc"
+      ],
+      "executable": "yosys",
+      "executable_sha256": null,
+      "git_hash": "b8e7da6f40ae8f552c116bf6c359b07c6533e159",
+      "identity_kind": "immutable_image_observation",
+      "logical_name": "yosys",
+      "version": "0.67",
+      "version_output": "Yosys 0.67 (audited fixture)"
+    },
+    {
+      "capabilities": [
+        "liberty_mapping"
+      ],
+      "executable": "yosys-abc",
+      "executable_sha256": null,
+      "git_hash": "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b",
+      "identity_kind": "immutable_image_observation",
+      "logical_name": "yosys-abc",
+      "version": "1.01",
+      "version_output": "ABC 1.01 (audited fixture)"
+    }
+  ],
+  "top_module": "counter"
+}

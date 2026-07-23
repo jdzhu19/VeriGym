@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from verigym.registry.base import PluginRegistry
+from verigym.registry.base import PluginDiagnostic, PluginOrigin, PluginRegistry
 from verigym.registry.collections import Registries, build_registries
 
 _defaults: Registries | None = None
@@ -35,6 +35,8 @@ runtime_registry = _RegistryProxy("runtimes")
 
 __all__ = [
     "PluginRegistry",
+    "PluginDiagnostic",
+    "PluginOrigin",
     "Registries",
     "agent_registry",
     "build_registries",

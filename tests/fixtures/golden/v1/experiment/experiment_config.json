@@ -1,0 +1,49 @@
+{
+  "description": null,
+  "execution": {
+    "continue_on_infrastructure_error": true,
+    "max_workers": 1
+  },
+  "name": "golden-milestone9",
+  "output": {
+    "root": "."
+  },
+  "profile": null,
+  "runs": {
+    "mode": "agent",
+    "pass_k": [
+      1
+    ],
+    "samples_per_task": 1,
+    "seeds": [
+      0
+    ]
+  },
+  "runtime": {
+    "docker": null,
+    "id": "local"
+  },
+  "schema_version": "1.0",
+  "suite": {
+    "id": "toy-rtl",
+    "source": null,
+    "strict_compatibility": true,
+    "tasks": {
+      "exclude": [],
+      "include": [
+        "and-gate-basic"
+      ]
+    },
+    "variant": null
+  },
+  "systems": [
+    {
+      "agent": {
+        "id": "scripted"
+      },
+      "id": "scripted",
+      "max_invalid_actions": 3,
+      "model": null
+    }
+  ]
+}

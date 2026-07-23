@@ -5,6 +5,15 @@ runs. Planning completes before the first child starts. It validates the suite, 
 systems, runtime, mandatory verifier tools, sampling settings, and optional synthesis profile.
 It never downloads a benchmark or invokes a model.
 
+`execution.max_plan_items` defaults to 10,000 and may not exceed 100,000. The planner computes the
+Cartesian-product size first and rejects an over-limit configuration before creating output or
+looking up a model. Explicit non-default bounds participate in normalized experiment identity;
+the omitted default preserves existing Milestone 9 plan hashes.
+
+New frozen manifests and plans carry package build provenance. Runtime identity normalization
+binds Docker plans to the resolved immutable image ID rather than mutable request tags or
+session-lifecycle fields.
+
 Start from [`examples/experiments/toy-milestone9-baseline.yaml`](../examples/experiments/toy-milestone9-baseline.yaml):
 
 ```yaml

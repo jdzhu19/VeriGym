@@ -36,6 +36,12 @@ jobs:
           VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
         run: pytest -m docker
 
+      - name: Run the two-outcome Docker batch
+        env:
+          VERIGYM_RUN_DOCKER_BATCH_TESTS: "1"
+          VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
+        run: pytest -m docker_batch
+
   docker-yosys:
     name: Pinned Docker Yosys area profile
     runs-on: ubuntu-24.04
@@ -70,3 +76,9 @@ jobs:
           VERIGYM_RUN_DOCKER_YOSYS_TESTS: "1"
           VERIGYM_DOCKER_YOSYS_IMAGE: verigym/open-rtl-tools:iverilog12-yosys067
         run: pytest -m docker_yosys
+
+      - name: Run the eligible/ineligible profile batch
+        env:
+          VERIGYM_RUN_YOSYS_BATCH_TESTS: "1"
+          VERIGYM_DOCKER_YOSYS_IMAGE: verigym/open-rtl-tools:iverilog12-yosys067
+        run: pytest -m yosys_batch

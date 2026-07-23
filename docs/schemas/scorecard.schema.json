@@ -1,0 +1,1172 @@
+{
+  "$defs": {
+    "CorrectnessMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "compile_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compile Status"
+        },
+        "equivalence_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Equivalence Status"
+        },
+        "formal_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Formal Status"
+        },
+        "hidden_regression_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hidden Regression Status"
+        },
+        "infrastructure_error": {
+          "default": false,
+          "title": "Infrastructure Error",
+          "type": "boolean"
+        },
+        "resolved": {
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "tests_passed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tests Passed"
+        },
+        "tests_total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tests Total"
+        },
+        "visible_regression_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible Regression Status"
+        }
+      },
+      "required": [
+        "resolved"
+      ],
+      "title": "CorrectnessMetrics",
+      "type": "object"
+    },
+    "EfficiencyMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_time_s": {
+          "default": 0.0,
+          "title": "Agent Time S",
+          "type": "number"
+        },
+        "failed_tool_calls": {
+          "default": 0,
+          "title": "Failed Tool Calls",
+          "type": "integer"
+        },
+        "model_api_cost": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Api Cost"
+        },
+        "model_api_cost_currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Api Cost Currency"
+        },
+        "model_api_cost_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Api Cost Unit"
+        },
+        "model_calls": {
+          "default": 0,
+          "title": "Model Calls",
+          "type": "integer"
+        },
+        "model_input_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0,
+          "title": "Model Input Tokens"
+        },
+        "model_output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0,
+          "title": "Model Output Tokens"
+        },
+        "peak_memory_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peak Memory Bytes"
+        },
+        "tool_calls": {
+          "default": 0,
+          "title": "Tool Calls",
+          "type": "integer"
+        },
+        "tool_time_s": {
+          "default": 0.0,
+          "title": "Tool Time S",
+          "type": "number"
+        },
+        "total_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0,
+          "title": "Total Tokens"
+        },
+        "turns": {
+          "default": 0,
+          "title": "Turns",
+          "type": "integer"
+        },
+        "verifier_time_s": {
+          "default": 0.0,
+          "title": "Verifier Time S",
+          "type": "number"
+        },
+        "wall_time_s": {
+          "default": 0.0,
+          "title": "Wall Time S",
+          "type": "number"
+        }
+      },
+      "title": "EfficiencyMetrics",
+      "type": "object"
+    },
+    "EpisodeFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "infrastructure": {
+          "default": false,
+          "title": "Infrastructure",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "agent",
+            "model",
+            "policy",
+            "runtime"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "category",
+        "message"
+      ],
+      "title": "EpisodeFailure",
+      "type": "object"
+    },
+    "ErrorCategory": {
+      "enum": [
+        "success",
+        "tool_failed",
+        "compile_failed",
+        "test_failed",
+        "timeout",
+        "out_of_memory",
+        "output_limit",
+        "invalid_request",
+        "tool_not_found",
+        "license_unavailable",
+        "unsupported_version",
+        "parser_error",
+        "sandbox_error",
+        "permission_denied",
+        "policy_denied",
+        "internal_error"
+      ],
+      "title": "ErrorCategory",
+      "type": "string"
+    },
+    "PPAMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area"
+        },
+        "area_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Ratio"
+        },
+        "area_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Unit"
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay"
+        },
+        "delay_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "frequency": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frequency"
+        },
+        "ineligible_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ineligible Reasons",
+          "type": "array"
+        },
+        "power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power"
+        },
+        "power_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "default": "",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "reference_area": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Area"
+        },
+        "reference_delay": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Delay"
+        },
+        "reference_power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Power"
+        },
+        "resolved_profile_hash": {
+          "default": "",
+          "title": "Resolved Profile Hash",
+          "type": "string"
+        },
+        "scope": {
+          "const": "synthesis_area_only",
+          "default": "synthesis_area_only",
+          "title": "Scope",
+          "type": "string"
+        },
+        "total_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Negative Slack"
+        },
+        "violations": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Violations",
+          "type": "object"
+        },
+        "worst_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack"
+        }
+      },
+      "required": [
+        "profile_id",
+        "eligible"
+      ],
+      "title": "PPAMetrics",
+      "type": "object"
+    },
+    "PatchMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "added_lines": {
+          "default": 0,
+          "title": "Added Lines",
+          "type": "integer"
+        },
+        "changed_file_precision": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changed File Precision"
+        },
+        "changed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changed Files",
+          "type": "array"
+        },
+        "changes_outside_expected_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changes Outside Expected Files",
+          "type": "array"
+        },
+        "deleted_lines": {
+          "default": 0,
+          "title": "Deleted Lines",
+          "type": "integer"
+        },
+        "edit_similarity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edit Similarity"
+        },
+        "total_diff_lines": {
+          "default": 0,
+          "title": "Total Diff Lines",
+          "type": "integer"
+        }
+      },
+      "title": "PatchMetrics",
+      "type": "object"
+    },
+    "QualityMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "ppa": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PPAMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference_synthesis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SynthesisMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "synthesis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SynthesisMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "QualityMetrics",
+      "type": "object"
+    },
+    "ReproducibilityMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_hash": {
+          "title": "Candidate Hash",
+          "type": "string"
+        },
+        "deterministic": {
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "isolation_level": {
+          "title": "Isolation Level",
+          "type": "string"
+        },
+        "resolved_toolchain_profile_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Resolved Toolchain Profile Hashes",
+          "type": "array"
+        },
+        "run_config_hash": {
+          "title": "Run Config Hash",
+          "type": "string"
+        },
+        "task_hash": {
+          "title": "Task Hash",
+          "type": "string"
+        },
+        "toolchain_profile_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Toolchain Profile Ids",
+          "type": "array"
+        },
+        "verifier_hash": {
+          "title": "Verifier Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_hash",
+        "candidate_hash",
+        "verifier_hash",
+        "run_config_hash",
+        "deterministic",
+        "isolation_level"
+      ],
+      "title": "ReproducibilityMetrics",
+      "type": "object"
+    },
+    "SynthesisArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "generated_script",
+            "tool_log",
+            "statistics",
+            "netlist_json",
+            "netlist_verilog"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "verifier_private",
+            "summary_only"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content_hash",
+        "size_bytes",
+        "role",
+        "visibility"
+      ],
+      "title": "SynthesisArtifactRef",
+      "type": "object"
+    },
+    "SynthesisDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error",
+            "info"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "code",
+        "message"
+      ],
+      "title": "SynthesisDiagnostic",
+      "type": "object"
+    },
+    "SynthesisMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/SynthesisArtifactRef"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "cells_by_type": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Cells By Type",
+          "type": "object"
+        },
+        "failure_category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Category"
+        },
+        "failure_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Message"
+        },
+        "generated_script_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated Script Hash"
+        },
+        "mapped_area_raw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mapped Area Raw"
+        },
+        "mapped_area_source_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mapped Area Source Hash"
+        },
+        "mapped_area_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mapped Area Unit"
+        },
+        "num_cells": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Cells"
+        },
+        "num_memories": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Memories"
+        },
+        "num_memory_bits": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Memory Bits"
+        },
+        "num_processes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Processes"
+        },
+        "num_wire_bits": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Wire Bits"
+        },
+        "num_wires": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Wires"
+        },
+        "resolved_profile_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Profile Hash"
+        },
+        "role": {
+          "enum": [
+            "candidate",
+            "reference"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "error",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "synthesis_ok": {
+          "title": "Synthesis Ok",
+          "type": "boolean"
+        },
+        "tool_identity": {
+          "additionalProperties": true,
+          "title": "Tool Identity",
+          "type": "object"
+        },
+        "top": {
+          "title": "Top",
+          "type": "string"
+        },
+        "unsupported_constructs": {
+          "items": {
+            "$ref": "#/$defs/SynthesisDiagnostic"
+          },
+          "title": "Unsupported Constructs",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/SynthesisDiagnostic"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "synthesis_ok",
+        "role",
+        "top"
+      ],
+      "title": "SynthesisMetrics",
+      "type": "object"
+    },
+    "VerifierResult": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "diagnostics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "duration_s": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Duration S",
+          "type": "number"
+        },
+        "error_category": {
+          "$ref": "#/$defs/ErrorCategory",
+          "default": "success"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "plugin": {
+          "title": "Plugin",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "title": "Request",
+          "type": "object"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/VerifierStatus"
+        },
+        "tests_passed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tests Passed"
+        },
+        "tests_total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tests Total"
+        }
+      },
+      "required": [
+        "node_id",
+        "plugin",
+        "status"
+      ],
+      "title": "VerifierResult",
+      "type": "object"
+    },
+    "VerifierStatus": {
+      "enum": [
+        "passed",
+        "failed",
+        "error",
+        "skipped"
+      ],
+      "title": "VerifierStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/scorecard.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "correctness": {
+      "$ref": "#/$defs/CorrectnessMetrics"
+    },
+    "efficiency": {
+      "$ref": "#/$defs/EfficiencyMetrics"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EpisodeFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "patch": {
+      "$ref": "#/$defs/PatchMetrics"
+    },
+    "quality": {
+      "$ref": "#/$defs/QualityMetrics"
+    },
+    "reproducibility": {
+      "$ref": "#/$defs/ReproducibilityMetrics"
+    },
+    "resolved": {
+      "title": "Resolved",
+      "type": "boolean"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed",
+        "error",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "termination_reason": {
+      "title": "Termination Reason",
+      "type": "string"
+    },
+    "verifier_results": {
+      "items": {
+        "$ref": "#/$defs/VerifierResult"
+      },
+      "title": "Verifier Results",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "task_id",
+    "status",
+    "resolved",
+    "correctness",
+    "quality",
+    "efficiency",
+    "patch",
+    "reproducibility",
+    "verifier_results",
+    "termination_reason"
+  ],
+  "title": "ScoreCard",
+  "type": "object"
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from verigym.core.artifact_policy import bound_text, bound_value
 from verigym.core.episode import BudgetTracker, TerminationReason
@@ -12,6 +13,8 @@ from verigym.core.redaction import redact_mapping
 from verigym.core.trace import TraceWriter
 from verigym.models.base import ModelClient, ModelClientError
 from verigym.schemas.model import (
+    GenerationParameters,
+    ModelCallIdentity,
     ModelClientErrorInfo,
     ModelErrorCategory,
     ModelMessage,
@@ -47,6 +50,7 @@ class ModelGateway:
         self.max_visible_bytes = max_visible_bytes
         self.temperature = temperature
         self.top_p = top_p
+        self.observations: list[ModelCallIdentity] = []
 
     def create_request(
         self,
@@ -108,6 +112,7 @@ class ModelGateway:
                 },
                 parent_event_id=request_event.event_id,
             )
+            self.observations.append(self._call_identity(request, None))
             raise
         response.latency_s = time.monotonic() - started
         self.tracker.record_model_usage(response.usage)
@@ -129,6 +134,7 @@ class ModelGateway:
             },
             parent_event_id=request_event.event_id,
         )
+        self.observations.append(self._call_identity(request, response))
         exhausted_after = self.tracker.exhausted_after_model()
         if exhausted_after is not None:
             raise ModelBudgetError(exhausted_after)
@@ -173,6 +179,53 @@ class ModelGateway:
             "client_version": descriptor.client_version,
             "configuration_fingerprint": descriptor.configuration_fingerprint,
         }
+
+    def _call_identity(
+        self,
+        request: ModelRequest,
+        response: ModelResponse | None,
+    ) -> ModelCallIdentity:
+        descriptor = self.client.descriptor
+        exact_offline = {
+            "deterministic",
+            "offline",
+        }.issubset(descriptor.capabilities)
+        observed = response is not None and (
+            response.provider_model_id is not None or response.system_fingerprint is not None
+        )
+        configured_url = descriptor.configuration.get("base_url")
+        endpoint_origin: str | None = None
+        if isinstance(configured_url, str):
+            parsed = urlsplit(configured_url)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                endpoint_origin = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+        return ModelCallIdentity(
+            request_id=request.request_id,
+            adapter_name=descriptor.client_name or descriptor.name,
+            adapter_version=descriptor.client_version or descriptor.version,
+            requested_model_id=descriptor.model_id,
+            observed_provider_model_id=(
+                response.provider_model_id if response is not None else None
+            ),
+            system_fingerprint=(response.system_fingerprint if response is not None else None),
+            endpoint_origin=endpoint_origin,
+            generation=GenerationParameters(
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_output_tokens=request.max_output_tokens,
+            ),
+            identity_confidence=(
+                "exact" if exact_offline else "provider_observed" if observed else "requested_only"
+            ),
+            reproducibility_scope=(
+                "exact_offline_fixture"
+                if exact_offline
+                else "mutable_remote_observation"
+                if observed
+                else "requested_remote_identity"
+            ),
+            mutable_remote_service=not exact_offline,
+        )
 
     def _bounded_request(self, request: ModelRequest) -> tuple[dict[str, Any], bool]:
         remaining = self.max_visible_bytes

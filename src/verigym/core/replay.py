@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
-from verigym.core.errors import ReplayError
+from verigym.core.errors import ArtifactIntegrityError, ReplayError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
+from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.loaders import dump_json, load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.synthesis import execute_synthesis_quality
@@ -17,7 +19,10 @@ from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
+from verigym.provenance import get_build_provenance
 from verigym.schemas.common import ToolchainProfile
+from verigym.schemas.integrity import IntegrityValidation
+from verigym.schemas.replay import ReplayEvidence
 from verigym.schemas.run import RunManifest
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig
@@ -32,6 +37,7 @@ class ReplaySummary:
     manifest: RunManifest
     scorecard: ScoreCard
     events: list[EpisodeEvent]
+    integrity: IntegrityValidation
     reverified_results: list[VerifierResult] | None = None
     reverified_candidate_synthesis: SynthesisMetrics | None = None
     reverified_reference_synthesis: SynthesisMetrics | None = None
@@ -65,6 +71,14 @@ def replay_run(
     missing = [name for name in required if not (run_dir / name).exists()]
     if missing:
         raise ReplayError(f"run directory is incomplete; missing: {', '.join(missing)}")
+    try:
+        integrity = verify_artifact_manifest(run_dir, expected_scope="run")
+    except ArtifactIntegrityError as exc:
+        if "candidate/" in str(exc):
+            raise ArtifactIntegrityError(
+                f"candidate snapshot failed artifact integrity: {exc}"
+            ) from exc
+        raise
     manifest = load_model(run_dir / "run_manifest.json", RunManifest)
     task = load_model(run_dir / "task_snapshot.json", VeriTask)
     try:
@@ -215,10 +229,26 @@ def replay_run(
             run_dir / "artifacts" / "replay-verification" / "runtime_descriptor.json",
             runtime.descriptor,
         )
+        dump_json(
+            run_dir / "artifacts" / "replay-verification" / "replay_evidence.json",
+            ReplayEvidence(
+                run_id=manifest.run_id,
+                created_at_utc=datetime.now(UTC),
+                verifier_reexecuted=True,
+                stored_integrity_status=integrity.status,
+                original_artifact_manifest_hash=integrity.manifest_hash,
+                reverified_result_hash=(
+                    content_hash(reverified) if reverified is not None else None
+                ),
+                runtime=runtime.descriptor,
+                build_provenance=get_build_provenance(),
+            ),
+        )
     return ReplaySummary(
         manifest=manifest,
         scorecard=scorecard,
         events=events,
+        integrity=integrity,
         reverified_results=reverified,
         reverified_candidate_synthesis=replay_candidate_synthesis,
         reverified_reference_synthesis=replay_reference_synthesis,
@@ -295,8 +325,10 @@ def _validate_stored_synthesis_artifacts(
         raise ReplayError("reference summary is not valid JSON") from exc
     if not isinstance(summary, dict):
         raise ReplayError("reference summary is not a JSON object")
+    # Milestone 8 summaries predate the additive explicit version field.
     if (
-        summary.get("resolved_profile_hash") != manifest.resolved_profile_hash
+        summary.get("schema_version") not in {None, "1.0"}
+        or summary.get("resolved_profile_hash") != manifest.resolved_profile_hash
         or summary.get("reference_candidate_hash") != manifest.reference_candidate_hash
         or summary.get("reference_rtl_exported") is not False
         or summary.get("reference_netlist_exported") is not False

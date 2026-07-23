@@ -1,0 +1,93 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/batch-event.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt"
+    },
+    "detail": {
+      "additionalProperties": true,
+      "title": "Detail",
+      "type": "object"
+    },
+    "event_type": {
+      "enum": [
+        "experiment_started",
+        "plan_item_scheduled",
+        "plan_item_started",
+        "plan_item_terminal",
+        "plan_item_reused_on_resume",
+        "plan_item_corrupt",
+        "report_started",
+        "report_completed",
+        "experiment_interrupted",
+        "experiment_completed"
+      ],
+      "title": "Event Type",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "plan_index": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan Index"
+    },
+    "plan_item_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan Item Id"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "timestamp_utc": {
+      "format": "date-time",
+      "title": "Timestamp Utc",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sequence",
+    "timestamp_utc",
+    "event_type",
+    "experiment_id"
+  ],
+  "title": "BatchEvent",
+  "type": "object"
+}

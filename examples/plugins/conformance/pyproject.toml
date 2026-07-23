@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-conformance-plugin"
+version = "0.1.0"
+description = "First-party installed-distribution conformance fixture for VeriGym plugins."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["verigym==0.1.0"]
+
+[project.entry-points."verigym.suites"]
+external-conformance = "verigym_conformance_plugin:ConformanceSuite"
+
+[project.entry-points."verigym.tools"]
+external-conformance-tool = "verigym_conformance_plugin:ConformanceTool"
+
+[project.entry-points."verigym.agents"]
+external-conformance-agent = "verigym_conformance_plugin:ConformanceAgent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_conformance_plugin = ["assets/**/*"]

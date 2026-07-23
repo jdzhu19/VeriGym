@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from verigym.core.errors import ConfigurationError
+from verigym.core.schema_compat import validate_schema_version
 from verigym.experiments.schemas import ExperimentConfig
 
 _MAX_CONFIG_BYTES = 1024 * 1024
@@ -109,6 +110,7 @@ def load_experiment_config(path: str | Path) -> ExperimentConfig:
         else:
             raise ConfigurationError("experiment config must use .json, .yaml, or .yml")
         _validate_shape(payload)
+        validate_schema_version(payload, ExperimentConfig, artifact=config_path.name)
         return ExperimentConfig.model_validate(payload)
     except ConfigurationError:
         raise

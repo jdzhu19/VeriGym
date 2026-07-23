@@ -14,7 +14,26 @@ _MAX_SEED = 2**63 - 1
 def normalized_runtime_descriptor(descriptor: RuntimeDescriptor) -> RuntimeDescriptor:
     """Discard lifecycle noise while preserving the effective runtime contract."""
 
-    return descriptor.model_copy(update={"sessions": [], "cleanup": None}, deep=True)
+    normalized = descriptor.model_copy(
+        update={
+            "sessions": [],
+            "cleanup": None,
+            # Effective descriptor fields carry the execution contract. This
+            # fingerprint also includes request spelling such as a Docker tag
+            # versus its resolved image ID.
+            "configuration_fingerprint": None,
+        },
+        deep=True,
+    )
+    if normalized.image is not None:
+        normalized.image = normalized.image.model_copy(
+            update={"requested_reference": normalized.image.resolved_image_id}
+        )
+    if normalized.resources is not None:
+        # A runtime accumulates the smallest per-session output allowance while
+        # executing. The task budget is bound separately in each plan item.
+        normalized.resources = normalized.resources.model_copy(update={"max_output_bytes": None})
+    return normalized
 
 
 def runtime_identity_hash(descriptor: RuntimeDescriptor) -> str:

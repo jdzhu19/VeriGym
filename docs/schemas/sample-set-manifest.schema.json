@@ -1,0 +1,333 @@
+{
+  "$defs": {
+    "BuildProvenance": {
+      "additionalProperties": false,
+      "description": "Secret-free identity for the source state that produced this package.",
+      "properties": {
+        "build_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Backend"
+        },
+        "build_source_date_epoch": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Source Date Epoch"
+        },
+        "dirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirty"
+        },
+        "installed_distribution_metadata_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installed Distribution Metadata Hash"
+        },
+        "package_name": {
+          "default": "verigym",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "provenance_method": {
+          "enum": [
+            "git_live_editable",
+            "embedded_build",
+            "embedded_source_archive",
+            "unknown"
+          ],
+          "title": "Provenance Method",
+          "type": "string"
+        },
+        "python_build_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Build Version"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_archive_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Archive Hash"
+        },
+        "source_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Commit"
+        },
+        "source_tree_file_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree File Count"
+        },
+        "source_tree_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree Hash"
+        },
+        "source_tree_path_policy": {
+          "title": "Source Tree Path Policy",
+          "type": "string"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "package_version",
+        "provenance_method",
+        "source_tree_path_policy"
+      ],
+      "title": "BuildProvenance",
+      "type": "object"
+    },
+    "SampleOutcome": {
+      "enum": [
+        "resolved",
+        "candidate_failure",
+        "model_output_failure",
+        "infrastructure_error",
+        "cancelled_truncated"
+      ],
+      "title": "SampleOutcome",
+      "type": "string"
+    },
+    "SampleRunRef": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_verdict": {
+          "title": "Candidate Verdict",
+          "type": "boolean"
+        },
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/SampleOutcome"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "resolved": {
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "sample_index": {
+          "minimum": 0,
+          "title": "Sample Index",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "source_hash": {
+          "title": "Source Hash",
+          "type": "string"
+        },
+        "task_hash": {
+          "title": "Task Hash",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sample_index",
+        "seed",
+        "run_id",
+        "task_id",
+        "relative_path",
+        "outcome",
+        "resolved",
+        "candidate_verdict",
+        "task_hash",
+        "source_hash",
+        "configuration_fingerprint"
+      ],
+      "title": "SampleRunRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/sample-set-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "base_seed": {
+      "title": "Base Seed",
+      "type": "integer"
+    },
+    "build_provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuildProvenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "child_runs": {
+      "items": {
+        "$ref": "#/$defs/SampleRunRef"
+      },
+      "title": "Child Runs",
+      "type": "array"
+    },
+    "created_at_utc": {
+      "format": "date-time",
+      "title": "Created At Utc",
+      "type": "string"
+    },
+    "errors": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "homogeneous_configuration_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Homogeneous Configuration Hash"
+    },
+    "requested_k": {
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 1,
+      "title": "Requested K",
+      "type": "array"
+    },
+    "requested_sample_count": {
+      "minimum": 1,
+      "title": "Requested Sample Count",
+      "type": "integer"
+    },
+    "sample_set_id": {
+      "title": "Sample Set Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sample_set_id",
+    "created_at_utc",
+    "task_id",
+    "requested_sample_count",
+    "requested_k",
+    "base_seed"
+  ],
+  "title": "SampleSetManifest",
+  "type": "object"
+}

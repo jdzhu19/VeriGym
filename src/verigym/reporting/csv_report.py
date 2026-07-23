@@ -204,7 +204,14 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "model_output_tokens": score.efficiency.model_output_tokens,
         "total_tokens": score.efficiency.total_tokens,
         "model_cost": score.efficiency.model_api_cost,
-        "cost_currency": None,
+        "cost_currency": (
+            score.efficiency.model_api_cost_currency
+            or (
+                f"unit:{score.efficiency.model_api_cost_unit}"
+                if score.efficiency.model_api_cost_unit is not None
+                else None
+            )
+        ),
         "turns": score.efficiency.turns,
         "tool_calls": score.efficiency.tool_calls,
         "failed_tool_calls": score.efficiency.failed_tool_calls,

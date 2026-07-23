@@ -1,0 +1,100 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/experiment-state.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "active_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Active Count",
+      "type": "integer"
+    },
+    "config_hash": {
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "corrupt_attempt_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Corrupt Attempt Count",
+      "type": "integer"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "infrastructure_error_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Infrastructure Error Count",
+      "type": "integer"
+    },
+    "last_event_sequence": {
+      "default": -1,
+      "minimum": -1,
+      "title": "Last Event Sequence",
+      "type": "integer"
+    },
+    "observed_max_concurrency": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Observed Max Concurrency",
+      "type": "integer"
+    },
+    "plan_hash": {
+      "title": "Plan Hash",
+      "type": "string"
+    },
+    "planned_count": {
+      "minimum": 1,
+      "title": "Planned Count",
+      "type": "integer"
+    },
+    "scheduled_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Scheduled Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "running",
+        "interrupted",
+        "completed",
+        "completed_with_infrastructure_errors",
+        "failed_configuration",
+        "failed_internal",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "terminal_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Terminal Count",
+      "type": "integer"
+    },
+    "valid_terminal_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Valid Terminal Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "config_hash",
+    "plan_hash",
+    "status",
+    "planned_count"
+  ],
+  "title": "ExperimentState",
+  "type": "object"
+}

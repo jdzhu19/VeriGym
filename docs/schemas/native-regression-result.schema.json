@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "IcarusCompatibility": {
+      "enum": [
+        "canonical_or_reference_compatible",
+        "unverified_tool_version",
+        "incompatible_tool_version"
+      ],
+      "title": "IcarusCompatibility",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/native-regression-result.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "compatibility_status": {
+      "$ref": "#/$defs/IcarusCompatibility"
+    },
+    "compile_ok": {
+      "title": "Compile Ok",
+      "type": "boolean"
+    },
+    "mismatches": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mismatches"
+    },
+    "native_result_marker_found": {
+      "title": "Native Result Marker Found",
+      "type": "boolean"
+    },
+    "native_timeout": {
+      "default": false,
+      "title": "Native Timeout",
+      "type": "boolean"
+    },
+    "process_timed_out": {
+      "default": false,
+      "title": "Process Timed Out",
+      "type": "boolean"
+    },
+    "resolved": {
+      "title": "Resolved",
+      "type": "boolean"
+    },
+    "samples_checked": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Samples Checked"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "simulation_ok": {
+      "title": "Simulation Ok",
+      "type": "boolean"
+    },
+    "tool_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Version"
+    }
+  },
+  "required": [
+    "compile_ok",
+    "simulation_ok",
+    "resolved",
+    "native_result_marker_found",
+    "compatibility_status"
+  ],
+  "title": "NativeRegressionResult",
+  "type": "object"
+}

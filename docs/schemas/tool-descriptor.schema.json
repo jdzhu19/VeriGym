@@ -1,0 +1,57 @@
+{
+  "$defs": {
+    "ToolVisibility": {
+      "enum": [
+        "agent_visible",
+        "verifier_only",
+        "both"
+      ],
+      "title": "ToolVisibility",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/tool-descriptor.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "default": "1.0",
+      "title": "Api Version",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    },
+    "visibility": {
+      "$ref": "#/$defs/ToolVisibility"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "provider",
+    "visibility"
+  ],
+  "title": "ToolDescriptor",
+  "type": "object"
+}

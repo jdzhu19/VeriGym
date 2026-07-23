@@ -305,6 +305,7 @@ def test_literal_external_source_cli_commands(tmp_path: Path) -> None:
     not os.environ.get("VERIGYM_VERILOG_EVAL_ROOT"),
     reason="VERIGYM_VERILOG_EVAL_ROOT is not configured",
 )
+@pytest.mark.external_benchmark
 @requires_icarus
 def test_optional_real_external_checkout_conformance(tmp_path: Path) -> None:
     root = Path(os.environ["VERIGYM_VERILOG_EVAL_ROOT"])

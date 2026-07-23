@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "ConditionSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "dependency_passed",
+          "enum": [
+            "always",
+            "dependency_passed",
+            "dependency_failed"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node"
+        }
+      },
+      "title": "ConditionSpec",
+      "type": "object"
+    },
+    "ToolVisibility": {
+      "enum": [
+        "agent_visible",
+        "verifier_only",
+        "both"
+      ],
+      "title": "ToolVisibility",
+      "type": "string"
+    },
+    "VerifierNode": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Globs",
+          "type": "array"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "gate": {
+          "default": false,
+          "title": "Gate",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "plugin": {
+          "title": "Plugin",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "title": "Request",
+          "type": "object"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "run_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timeout_s": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout S"
+        },
+        "visibility": {
+          "$ref": "#/$defs/ToolVisibility"
+        }
+      },
+      "required": [
+        "id",
+        "plugin",
+        "visibility",
+        "request"
+      ],
+      "title": "VerifierNode",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/verifier-graph.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/VerifierNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nodes"
+  ],
+  "title": "VerifierGraph",
+  "type": "object"
+}

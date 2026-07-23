@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/prompt-policy-descriptor.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "configuration_fingerprint": {
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "interaction_mode": {
+      "$ref": "#/$defs/InteractionMode"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "interaction_mode",
+    "configuration_fingerprint"
+  ],
+  "title": "PromptPolicyDescriptor",
+  "type": "object"
+}

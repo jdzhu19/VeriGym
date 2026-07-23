@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
+from verigym.schemas.provenance import BuildProvenance
 
 
 class SampleOutcome(StrEnum):
@@ -50,6 +51,7 @@ class SampleSetManifest(StrictModel):
     requested_sample_count: int = Field(ge=1)
     requested_k: list[int] = Field(min_length=1)
     base_seed: int
+    build_provenance: BuildProvenance | None = None
     homogeneous_configuration_hash: str | None = None
     child_runs: list[SampleRunRef] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

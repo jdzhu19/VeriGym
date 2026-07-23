@@ -1,0 +1,38 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/suite-source-config.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_root": {
+      "format": "path",
+      "title": "Source Root",
+      "type": "string"
+    },
+    "strict_compatibility": {
+      "default": true,
+      "title": "Strict Compatibility",
+      "type": "boolean"
+    },
+    "variant": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Variant"
+    }
+  },
+  "required": [
+    "source_root"
+  ],
+  "title": "SuiteSourceConfig",
+  "type": "object"
+}

@@ -1,0 +1,191 @@
+{
+  "agent": {
+    "api_version": "1.0",
+    "capabilities": [
+      "deterministic",
+      "toy-rtl/counter-basic",
+      "toy-rtl/and-gate-basic",
+      "known-good"
+    ],
+    "name": "scripted",
+    "provider": "verigym",
+    "schema_version": "1.0",
+    "version": "0.1.0"
+  },
+  "agent_harness": {
+    "api_version": "1.0",
+    "capabilities": [
+      "deterministic",
+      "toy-rtl/counter-basic",
+      "toy-rtl/and-gate-basic",
+      "known-good"
+    ],
+    "name": "scripted",
+    "provider": "verigym",
+    "schema_version": "1.0",
+    "version": "0.1.0"
+  },
+  "base_seed": null,
+  "budget": {
+    "max_cpu_seconds": null,
+    "max_input_tokens": null,
+    "max_model_calls": 20,
+    "max_output_bytes_per_tool": 200000,
+    "max_output_tokens": null,
+    "max_tool_calls": 40,
+    "max_tool_time_s": 30,
+    "max_total_tokens": null,
+    "max_turns": 20,
+    "max_wall_time_s": 300,
+    "max_workspace_bytes": 1000000
+  },
+  "candidate_hash": "3c6abf9d31fcca9959443260237eab5bcfbbb747b74247c8e1d27ea173e2b35f",
+  "created_at_utc": "2026-01-01T00:00:00Z",
+  "declared_profile_hash": null,
+  "environment_summary": {
+    "network_policy": "none",
+    "platform": "sanitized",
+    "python": "3.11",
+    "python_implementation": "CPython",
+    "unsafe_local_runtime": false,
+    "verifier_isolation": "separate_runtime_session"
+  },
+  "experiment_id": null,
+  "generation": null,
+  "interaction_mode": "agent",
+  "model": null,
+  "plan_item_id": null,
+  "prompt_policy": null,
+  "prompt_policy_hash": null,
+  "reference_candidate_hash": null,
+  "reference_strategy": null,
+  "reference_summary_hash": null,
+  "release_id": null,
+  "requested_toolchain_profile_id": null,
+  "requested_toolchain_profile_version": null,
+  "resolved_profile_hash": null,
+  "resolved_toolchain_profile": null,
+  "run_config_hash": "19330bbc46d9a82a644b8de6d85411486cc20eefc4b26b19cb56f240504b085c",
+  "run_id": "golden-docker-replay",
+  "runtime": {
+    "api_version": "1.0",
+    "backend": {
+      "api_version": "1.42",
+      "backend_type": "docker_cli",
+      "client_version": "23.0.4",
+      "cpu_limit_supported": null,
+      "memory_limit_supported": null,
+      "pids_limit_supported": null,
+      "rootless": false,
+      "server_architecture": "amd64",
+      "server_os": "linux",
+      "server_version": "23.0.4",
+      "swap_limit_supported": null
+    },
+    "capabilities": [
+      "cli",
+      "network_none",
+      "resource_limits"
+    ],
+    "cleanup": {
+      "complete": true,
+      "removed_container_ids": [],
+      "warnings": []
+    },
+    "configuration_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+    "deterministic": true,
+    "image": {
+      "architecture": "amd64",
+      "compatibility_status": "reference_compatible",
+      "configured_image_user": "10001:10001",
+      "created_at": null,
+      "effective_user": "10001:10001",
+      "iverilog_version": "Icarus Verilog version 12.0",
+      "observed_gid": 10001,
+      "observed_uid": 10001,
+      "os": "linux",
+      "repository_digests": [
+        "example.invalid/verigym/iverilog@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "requested_reference": "example.invalid/verigym/iverilog@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "resolved_image_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "vvp_version": "Icarus Verilog runtime version 12.0"
+    },
+    "isolation_level": "docker_standard",
+    "name": "docker",
+    "provider": "verigym",
+    "resources": {
+      "cpus": 1.0,
+      "max_artifact_bytes": null,
+      "max_artifact_file_bytes": null,
+      "max_command_time_s": 60,
+      "max_output_bytes": 200000,
+      "memory_bytes": 536870912,
+      "memory_swap_bytes": 536870912,
+      "pids_limit": 128,
+      "stop_timeout_s": 3,
+      "swap_enforced": true,
+      "tmpfs_bytes": 67108864
+    },
+    "schema_version": "1.0",
+    "security": {
+      "cap_drop": [
+        "ALL"
+      ],
+      "configured_user": "10001:10001",
+      "docker_socket_mounted": false,
+      "environment_names": [],
+      "host_home_mounted": false,
+      "init": true,
+      "mount_destinations": [
+        "/workspace"
+      ],
+      "network_mode": "none",
+      "no_new_privileges": true,
+      "observed_gid": 10001,
+      "observed_uid": 10001,
+      "privileged": false,
+      "read_only_rootfs": true,
+      "writable_destinations": [
+        "/workspace",
+        "/tmp"
+      ]
+    },
+    "sessions": [],
+    "version": "0.1.0"
+  },
+  "sample_index": null,
+  "schema_version": "1.0",
+  "seed": 0,
+  "source_hash": "4b8c71aabd6009ec278774bd45820747d2a8b7c4863692aed924cbc71fba911d",
+  "suite": "toy-rtl",
+  "suite_source": null,
+  "suite_version": "0.1.0",
+  "synthesis_flow_script_hash": null,
+  "system_id": null,
+  "task_hash": "ad2d7a5e602d02327e67a5e0feabf844f04119e7d587495d4b6760e5eb80372a",
+  "task_id": "toy-rtl/and-gate-basic",
+  "tool_policy": {
+    "allow_general_shell": false,
+    "allowed_tools": [
+      "file.apply_patch",
+      "file.diff",
+      "file.list",
+      "file.read",
+      "iverilog.simulate_visible"
+    ],
+    "denied_tools": [],
+    "network_policy": "none",
+    "schema_version": "1.0"
+  },
+  "toolchain_profiles": [
+    {
+      "content_hash": "d7372a0812e2c7fb21d125a3381c6c92c27e61a57bd6f59449e0ad7b4c3d6561",
+      "id": "toy-iverilog-v1",
+      "version": "1.0.0"
+    }
+  ],
+  "verifier_hash": "571b4f1088384c99a6221808547ce176c702aa45dc49ad353a59f05361a03d10",
+  "verigym_commit": null,
+  "verigym_version": "0.1.0"
+}

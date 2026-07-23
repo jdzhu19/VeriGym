@@ -20,6 +20,7 @@ from verigym.schemas.common import (
 )
 from verigym.schemas.model import GenerationParameters, ModelRunConfig
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
+from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import BudgetSpec
@@ -29,6 +30,8 @@ _HASH = re.compile(r"^[0-9a-f]{64}$")
 _MAX_SEED = 2**63 - 1
 _MAX_SAMPLES = 1024
 _MAX_WORKERS = 32
+DEFAULT_MAX_PLAN_ITEMS = 10_000
+HARD_MAX_PLAN_ITEMS = 100_000
 
 
 class TaskSelection(StrictModel):
@@ -144,6 +147,11 @@ class ExperimentRuntimeConfig(StrictModel):
 class ExperimentExecutionConfig(StrictModel):
     max_workers: int = Field(default=1, ge=1, le=_MAX_WORKERS)
     continue_on_infrastructure_error: bool = True
+    max_plan_items: int = Field(
+        default=DEFAULT_MAX_PLAN_ITEMS,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS,
+    )
 
 
 class ExperimentOutputConfig(StrictModel):
@@ -194,6 +202,10 @@ class ExperimentConfig(StrictModel):
         payload = self.model_dump(mode="json")
         payload["systems"] = sorted(payload["systems"], key=lambda item: item["id"])
         payload["output"] = {"root": "."}
+        # The original Milestone 9 hash contract had an implicit 10,000-item
+        # bound. Omitting the additive default here preserves those hashes.
+        if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
+            del payload["execution"]["max_plan_items"]
         return payload
 
 
@@ -278,6 +290,7 @@ class ExperimentPlan(StrictModel):
     plan_hash: str
     verigym_version: str
     verigym_commit: str | None = None
+    build_provenance: BuildProvenance | None = None
     config: ExperimentConfig
     items: list[PlanItem]
 
@@ -332,6 +345,7 @@ class ExperimentManifest(StrictModel):
     suite_source_snapshots: list[SuiteSourceSnapshot] = Field(default_factory=list)
     verigym_version: str
     verigym_commit: str | None = None
+    build_provenance: BuildProvenance | None = None
     selected_task_count: int = Field(ge=1)
     planned_item_count: int = Field(ge=1)
     system_identities: list[PlannedSystemIdentity]
@@ -384,6 +398,7 @@ class RunIndexRecord(StrictModel):
     artifact_validation_status: ArtifactValidationStatus
     child_manifest_hash: str | None = None
     scorecard_hash: str | None = None
+    artifact_manifest_hash: str | None = None
     message: str | None = None
 
     @field_validator("relative_child_path")
@@ -433,12 +448,14 @@ __all__ = [
     "ArtifactValidationStatus",
     "BatchEvent",
     "BatchResult",
+    "DEFAULT_MAX_PLAN_ITEMS",
     "ExperimentConfig",
     "ExperimentExecutionConfig",
     "ExperimentLifecycle",
     "ExperimentManifest",
     "ExperimentPlan",
     "ExperimentRunsConfig",
+    "HARD_MAX_PLAN_ITEMS",
     "PlanItem",
     "PlannedSystemIdentity",
     "RunIndexRecord",

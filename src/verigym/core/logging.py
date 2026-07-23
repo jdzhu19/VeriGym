@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from verigym.core.redaction import redact_mapping
+from verigym.schemas.base import SCHEMA_VERSION
 
 
 def append_json_log(
@@ -22,6 +23,7 @@ def append_json_log(
     """Append one bounded orchestration record without serializing known secrets."""
 
     payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
         "timestamp_utc": datetime.now(UTC).isoformat(),
         "level": level,
         "event": event,

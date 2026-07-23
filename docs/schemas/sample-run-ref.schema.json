@@ -1,0 +1,83 @@
+{
+  "$defs": {
+    "SampleOutcome": {
+      "enum": [
+        "resolved",
+        "candidate_failure",
+        "model_output_failure",
+        "infrastructure_error",
+        "cancelled_truncated"
+      ],
+      "title": "SampleOutcome",
+      "type": "string"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/sample-run-ref.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_verdict": {
+      "title": "Candidate Verdict",
+      "type": "boolean"
+    },
+    "configuration_fingerprint": {
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/SampleOutcome"
+    },
+    "relative_path": {
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "resolved": {
+      "title": "Resolved",
+      "type": "boolean"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "sample_index": {
+      "minimum": 0,
+      "title": "Sample Index",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "source_hash": {
+      "title": "Source Hash",
+      "type": "string"
+    },
+    "task_hash": {
+      "title": "Task Hash",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sample_index",
+    "seed",
+    "run_id",
+    "task_id",
+    "relative_path",
+    "outcome",
+    "resolved",
+    "candidate_verdict",
+    "task_hash",
+    "source_hash",
+    "configuration_fingerprint"
+  ],
+  "title": "SampleRunRef",
+  "type": "object"
+}

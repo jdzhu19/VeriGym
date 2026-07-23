@@ -26,6 +26,19 @@ Docker isolation is optional and uses the external Docker CLI; no Docker Python 
 is required for the base installation. See [DockerRuntime](docs/docker_runtime.md) and the
 [security policy](SECURITY.md) before running untrusted inputs.
 
+## Stable MVP contracts
+
+New runs and experiments record source/build provenance and include hash-bound artifact
+manifests. Older Milestones 0–9 artifacts remain readable with an explicit `legacy_unverified`
+integrity status. Persistent JSON Schema is exported under
+[`docs/schemas/`](docs/schemas/); unsupported schema versions fail distinctly from candidate and
+infrastructure errors.
+
+Reusable integrations should import [`verigym.api`](docs/python_api.md). Plugin authors should
+use the versioned [`verigym.plugin_api`](docs/plugin_api.md) entry-point contract. The installable
+conformance fixture proves external suite, tool, and agent discovery while core task policy and
+runtime controls continue to enforce paths, visibility, budgets, and hidden-data separation.
+
 ## Five-minute batch experiment
 
 Milestone 9 adds deterministic, resumable experiments while keeping every child as an ordinary
@@ -53,6 +66,9 @@ verigym batch --resume runs/experiments/toy-milestone9-baseline
 Resume validates the frozen plan and reuses valid terminal children, including normal unresolved
 candidates. See [experiment configuration](docs/experiments.md), the
 [batch runner](docs/batch_runner.md), and [report semantics](docs/reporting.md).
+
+Planning is capped by `execution.max_plan_items` (default 10,000; hard maximum 100,000) and fails
+before creating an experiment directory or invoking a model when expansion exceeds the cap.
 
 ## Run the toy RTL task
 

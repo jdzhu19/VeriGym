@@ -17,6 +17,7 @@ from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import synthesis_request_from_profile
 from verigym.profiles.validation import read_artifact_bytes
 from verigym.runtimes.base import Runtime, RuntimeSession
+from verigym.schemas.base import SCHEMA_VERSION
 from verigym.schemas.common import ArtifactDescriptor, ErrorCategory, ToolchainProfile
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.synthesis import SynthesisMetrics
@@ -334,6 +335,7 @@ def execute_synthesis_quality(
     dump_json(
         reference_summary_path,
         {
+            "schema_version": SCHEMA_VERSION,
             "reference_candidate_hash": reference_hash,
             "resolved_profile_hash": resolved.resolved_profile_hash,
             "visibility": "summary_only",

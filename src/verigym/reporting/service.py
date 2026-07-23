@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from verigym.core.hashing import hash_bytes
+from verigym.core.integrity import write_experiment_artifact_manifest
 from verigym.experiments.state import atomic_write_text
 from verigym.reporting.aggregate import ReportBuilder
 from verigym.reporting.csv_report import build_run_rows, render_csv
@@ -56,6 +57,9 @@ class ReportService:
         }
         for path, text in payloads.items():
             atomic_write_text(path, text)
+        experiment_manifest = inputs.root / "experiment_manifest.json"
+        if destination == inputs.root / "reports" and experiment_manifest.is_file():
+            write_experiment_artifact_manifest(inputs.root, inputs.experiment_id)
         return GeneratedReports(
             aggregate=aggregate,
             aggregate_path=aggregate_path,

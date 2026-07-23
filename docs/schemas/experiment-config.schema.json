@@ -1,0 +1,523 @@
+{
+  "$defs": {
+    "DockerRuntimeConfig": {
+      "additionalProperties": false,
+      "description": "Fail-closed configuration for the optional Docker CLI runtime.",
+      "properties": {
+        "cpus": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 64.0,
+          "title": "Cpus",
+          "type": "number"
+        },
+        "environment_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Environment Allowlist",
+          "type": "array"
+        },
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "max_artifact_bytes": {
+          "default": 67108864,
+          "maximum": 4294967296,
+          "minimum": 1,
+          "title": "Max Artifact Bytes",
+          "type": "integer"
+        },
+        "max_artifact_file_bytes": {
+          "default": 16777216,
+          "maximum": 1073741824,
+          "minimum": 1,
+          "title": "Max Artifact File Bytes",
+          "type": "integer"
+        },
+        "max_command_time_s": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Max Command Time S",
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "default": 536870912,
+          "maximum": 17179869184,
+          "minimum": 67108864,
+          "title": "Memory Bytes",
+          "type": "integer"
+        },
+        "network_mode": {
+          "const": "none",
+          "default": "none",
+          "title": "Network Mode",
+          "type": "string"
+        },
+        "pids_limit": {
+          "default": 128,
+          "maximum": 4096,
+          "minimum": 16,
+          "title": "Pids Limit",
+          "type": "integer"
+        },
+        "pull_policy": {
+          "default": "never",
+          "enum": [
+            "never",
+            "if_missing"
+          ],
+          "title": "Pull Policy",
+          "type": "string"
+        },
+        "read_only_rootfs": {
+          "const": true,
+          "default": true,
+          "title": "Read Only Rootfs",
+          "type": "boolean"
+        },
+        "run_as_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run As User"
+        },
+        "stop_timeout_s": {
+          "default": 3,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Stop Timeout S",
+          "type": "integer"
+        },
+        "tmpfs_bytes": {
+          "default": 67108864,
+          "maximum": 1073741824,
+          "minimum": 1048576,
+          "title": "Tmpfs Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "title": "DockerRuntimeConfig",
+      "type": "object"
+    },
+    "ExperimentAgentConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ExperimentAgentConfig",
+      "type": "object"
+    },
+    "ExperimentExecutionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "continue_on_infrastructure_error": {
+          "default": true,
+          "title": "Continue On Infrastructure Error",
+          "type": "boolean"
+        },
+        "max_plan_items": {
+          "default": 10000,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Plan Items",
+          "type": "integer"
+        },
+        "max_workers": {
+          "default": 1,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Max Workers",
+          "type": "integer"
+        }
+      },
+      "title": "ExperimentExecutionConfig",
+      "type": "object"
+    },
+    "ExperimentModelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/ModelRunConfig"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ExperimentModelConfig",
+      "type": "object"
+    },
+    "ExperimentOutputConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "format": "path",
+          "title": "Root",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "title": "ExperimentOutputConfig",
+      "type": "object"
+    },
+    "ExperimentRunsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/InteractionMode",
+          "default": "agent"
+        },
+        "pass_k": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Pass K",
+          "type": "array"
+        },
+        "samples_per_task": {
+          "default": 1,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Samples Per Task",
+          "type": "integer"
+        },
+        "seeds": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Seeds",
+          "type": "array"
+        }
+      },
+      "title": "ExperimentRunsConfig",
+      "type": "object"
+    },
+    "ExperimentRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "docker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DockerRuntimeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "default": "local",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "title": "ExperimentRuntimeConfig",
+      "type": "object"
+    },
+    "ExperimentSuiteConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "strict_compatibility": {
+          "default": true,
+          "title": "Strict Compatibility",
+          "type": "boolean"
+        },
+        "tasks": {
+          "$ref": "#/$defs/TaskSelection"
+        },
+        "variant": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ExperimentSuiteConfig",
+      "type": "object"
+    },
+    "ExperimentSystemConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/ExperimentAgentConfig"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "max_invalid_actions": {
+          "default": 3,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Invalid Actions",
+          "type": "integer"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExperimentModelConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "agent"
+      ],
+      "title": "ExperimentSystemConfig",
+      "type": "object"
+    },
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    },
+    "ModelRunConfig": {
+      "additionalProperties": false,
+      "description": "Secret-free per-run options understood by compatible model clients.",
+      "properties": {
+        "api_key_env": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Key Env"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url"
+        },
+        "connect_timeout_s": {
+          "default": 10.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Connect Timeout S",
+          "type": "number"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "read_timeout_s": {
+          "default": 60.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Read Timeout S",
+          "type": "number"
+        },
+        "request_timeout_s": {
+          "default": 90.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Request Timeout S",
+          "type": "number"
+        },
+        "sample_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Index"
+        },
+        "temperature": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "top_p": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top P"
+        }
+      },
+      "title": "ModelRunConfig",
+      "type": "object"
+    },
+    "TaskSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Include",
+          "type": "array"
+        }
+      },
+      "title": "TaskSelection",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/experiment-config.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExperimentExecutionConfig"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "output": {
+      "$ref": "#/$defs/ExperimentOutputConfig"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Profile"
+    },
+    "runs": {
+      "$ref": "#/$defs/ExperimentRunsConfig"
+    },
+    "runtime": {
+      "$ref": "#/$defs/ExperimentRuntimeConfig"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "suite": {
+      "$ref": "#/$defs/ExperimentSuiteConfig"
+    },
+    "systems": {
+      "items": {
+        "$ref": "#/$defs/ExperimentSystemConfig"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "title": "Systems",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "suite",
+    "runs",
+    "systems",
+    "output"
+  ],
+  "title": "ExperimentConfig",
+  "type": "object"
+}

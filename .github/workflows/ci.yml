@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  ordinary:
+  quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -16,12 +16,87 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e '.[dev,openai-compatible]'
+      - name: Format, lint, type, and patch hygiene
+        run: |
+          ruff format --check .
+          ruff check .
+          mypy --strict src/verigym
+          git diff --check
+      - name: Persistent-schema drift
+        run: python scripts/export_schemas.py --check
+      - name: Documentation and example contracts
+        run: >-
+          pytest
+          tests/unit/test_audit_contracts.py::test_required_documentation_and_adrs_exist_and_examples_compile
+          tests/unit/test_release_contracts.py::test_schema_export_has_no_drift
+
+  ordinary:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
       - name: Install without RTL or container tools
         run: python -m pip install -e '.[dev,openai-compatible]'
-      - name: Lint and type-check
-        run: |
-          ruff check .
-          ruff format --check .
-          mypy src
       - name: Run ordinary no-daemon tests
-        run: pytest
+        run: >-
+          pytest
+          -m "not docker and not yosys and not external_benchmark and not release_audit"
+
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - name: Build wheel and sdist
+        env:
+          SOURCE_DATE_EPOCH: "1784712454"
+        run: python -m build
+      - name: Scan package contents and metadata
+        run: >-
+          python scripts/audit_distribution.py
+          --wheel dist/verigym-0.1.0-py3-none-any.whl
+          --sdist dist/verigym-0.1.0.tar.gz
+      - name: Installed wheel, plugin, CLI, and public API
+        run: >-
+          python scripts/installed_conformance.py
+          --wheel dist/verigym-0.1.0-py3-none-any.whl
+          --output /tmp/installed-conformance.json
+      - name: Install the sdist in a separate environment
+        run: |
+          python -m venv /tmp/verigym-sdist-venv
+          /tmp/verigym-sdist-venv/bin/pip install dist/verigym-0.1.0.tar.gz
+          /tmp/verigym-sdist-venv/bin/pip check
+          cd /tmp
+          /tmp/verigym-sdist-venv/bin/python -c "import verigym; print(verigym.__version__)"
+
+  reproducible-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - name: Compare two normalized wheel and sdist builds
+        run: >-
+          python scripts/reproducible_build.py
+          --package-output /tmp/verigym-packages
+          --report /tmp/reproducible-build.json
+          --source-date-epoch 1784712454

@@ -1,0 +1,86 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/model-descriptor.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "api_compatibility": {
+      "default": "verigym.model.v1",
+      "title": "Api Compatibility",
+      "type": "string"
+    },
+    "api_version": {
+      "default": "1.0",
+      "title": "Api Version",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "client_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Client Name"
+    },
+    "client_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Client Version"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "configuration_fingerprint": {
+      "default": "",
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "model_id": {
+      "title": "Model Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "provider",
+    "model_id"
+  ],
+  "title": "ModelDescriptor",
+  "type": "object"
+}

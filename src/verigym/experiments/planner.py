@@ -29,6 +29,7 @@ from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
 from verigym.prompts.builder import PromptBuilder
+from verigym.provenance import get_build_provenance
 from verigym.runtimes.base import Runtime
 from verigym.schemas.common import ToolchainProfile, ToolchainProfileRef
 from verigym.schemas.model import GenerationParameters, ModelRunConfig
@@ -37,8 +38,6 @@ from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import TaskRef, VeriTask
 from verigym.version import __version__
-
-_MAX_PLAN_ITEMS = 10_000
 
 
 class ExperimentPlanner:
@@ -65,8 +64,11 @@ class ExperimentPlanner:
         planned_count = (
             len(tasks) * len(config.systems) * len(config.runs.seeds) * config.runs.samples_per_task
         )
-        if planned_count > _MAX_PLAN_ITEMS:
-            raise ConfigurationError(f"experiment expansion exceeds {_MAX_PLAN_ITEMS:,} plan items")
+        if planned_count > config.execution.max_plan_items:
+            raise ConfigurationError(
+                f"experiment expansion has {planned_count:,} plan items, exceeding the "
+                f"configured max_plan_items={config.execution.max_plan_items:,}"
+            )
         task_set_hash = content_hash(task_records)
         source_identity_hash = content_hash(
             {
@@ -104,6 +106,7 @@ class ExperimentPlanner:
 
         plan_hash = content_hash([item.model_dump(mode="json") for item in items])
         experiment_id = derive_experiment_id(config.name, plan_hash)
+        build_provenance = get_build_provenance()
         return ExperimentPlan(
             experiment_id=experiment_id,
             config_hash=config_hash,
@@ -112,7 +115,8 @@ class ExperimentPlanner:
             source_identity_hash=source_identity_hash,
             plan_hash=plan_hash,
             verigym_version=__version__,
-            verigym_commit=None,
+            verigym_commit=build_provenance.source_commit,
+            build_provenance=build_provenance,
             config=config,
             items=items,
         )
@@ -304,6 +308,12 @@ class ExperimentPlanner:
             profile = suite.toolchain_profile(runtime, self.service.registries.tools)
             if profile is None:
                 profile = self.service._toolchain_profile(runtime)
+            image = runtime.descriptor.image
+            if image is not None and profile.container_digest == image.resolved_image_id:
+                # Batch children are constrained to the immutable image ID.
+                # Freeze the default profile using the same reference spelling
+                # that configure_for_replay will use for each child.
+                profile = profile.model_copy(update={"container_image": image.resolved_image_id})
             profiles[task.id] = profile
         return profiles
 

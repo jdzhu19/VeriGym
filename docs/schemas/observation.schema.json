@@ -1,0 +1,271 @@
+{
+  "$defs": {
+    "BudgetRemaining": {
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "model_calls": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Calls"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Tokens"
+        },
+        "turns": {
+          "title": "Turns",
+          "type": "integer"
+        },
+        "wall_time_s": {
+          "title": "Wall Time S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "turns",
+        "tool_calls",
+        "wall_time_s"
+      ],
+      "title": "BudgetRemaining",
+      "type": "object"
+    },
+    "ErrorCategory": {
+      "enum": [
+        "success",
+        "tool_failed",
+        "compile_failed",
+        "test_failed",
+        "timeout",
+        "out_of_memory",
+        "output_limit",
+        "invalid_request",
+        "tool_not_found",
+        "license_unavailable",
+        "unsupported_version",
+        "parser_error",
+        "sandbox_error",
+        "permission_denied",
+        "policy_denied",
+        "internal_error"
+      ],
+      "title": "ErrorCategory",
+      "type": "string"
+    },
+    "ToolResult": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "category": {
+          "$ref": "#/$defs/ErrorCategory"
+        },
+        "diagnostics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "duration_s": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Duration S",
+          "type": "number"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "output_truncated": {
+          "default": false,
+          "title": "Output Truncated",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "stderr": {
+          "default": "",
+          "title": "Stderr",
+          "type": "string"
+        },
+        "stdout": {
+          "default": "",
+          "title": "Stdout",
+          "type": "string"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "success",
+        "category"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/observation.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "diff_summary": {
+      "additionalProperties": true,
+      "title": "Diff Summary",
+      "type": "object"
+    },
+    "episode_status": {
+      "title": "Episode Status",
+      "type": "string"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "policy_reminders": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Policy Reminders",
+      "type": "array"
+    },
+    "previous_tool_result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "remaining_budget": {
+      "$ref": "#/$defs/BudgetRemaining"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_files": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Selected Files",
+      "type": "object"
+    },
+    "task_description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Description"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "visible_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Visible Files",
+      "type": "array"
+    }
+  },
+  "required": [
+    "task_id",
+    "remaining_budget",
+    "episode_status"
+  ],
+  "title": "Observation",
+  "type": "object"
+}

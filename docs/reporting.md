@@ -20,6 +20,9 @@ Allowed group dimensions are `suite`, `release`, `category`, `difficulty`, `task
 `model`, `agent`, `interaction_mode`, `runtime`, `profile_id`, `profile_hash`, and `base_seed`.
 Arbitrary expressions are not evaluated.
 
+Integrity status and package provenance scope appear in report metadata. Reports never upgrade a
+legacy artifact to verified, and tampered children are excluded with a distinct diagnostic.
+
 ## Coverage and denominators
 
 `aggregate.json` is the authoritative strict `1.0` schema. It reports planned, started, terminal,
@@ -41,9 +44,10 @@ applicable denominator, rate, missing count, and infrastructure-error count. A c
 is not infrastructure; structured categories are never inferred by regexing logs.
 
 Efficiency mean/median values use resolved runs only and include known/missing counts and units.
-Token values of zero are real when recorded; `null` remains missing. Model API cost has no current
-persisted currency identity, so a missing cost is not zero and even known numeric costs are not
-summed or averaged across an unknown currency. Warnings make that limitation explicit.
+Token values of zero are real when recorded; `null` remains missing. Model API cost is aggregated
+only inside an exact currency or explicit unit partition. Missing values, unknown units, and
+incompatible partitions have separate counts; VeriGym performs no exchange-rate or unit
+conversion. Legacy numeric costs without a unit remain visible but are not summed.
 
 ## Sampling and canonical pass@k
 

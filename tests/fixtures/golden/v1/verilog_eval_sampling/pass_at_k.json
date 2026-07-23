@@ -1,0 +1,68 @@
+{
+  "any_resolved": true,
+  "cancelled_truncated_count": 0,
+  "candidate_failure_count": 1,
+  "canonical_valid": true,
+  "child_runs": [
+    {
+      "candidate_verdict": true,
+      "configuration_fingerprint": "6a287aab06c8a34500fa32f332f5ee7c0f0954b852c1cd4c144c72de87478d5c",
+      "outcome": "resolved",
+      "relative_path": "samples/0000/golden-verilog-eval-0",
+      "resolved": true,
+      "run_id": "golden-verilog-eval-0",
+      "sample_index": 0,
+      "schema_version": "1.0",
+      "seed": 0,
+      "source_hash": "a388d84d8ff02ebe29158dccabe1e9979fdef81cd45c2d00e8a00943539be0e1",
+      "task_hash": "572cae3aa2ae840a7a378e9160efca581dce7fd6ab5e946d774fd647d79dab95",
+      "task_id": "verilog-eval/v2-spec-to-rtl/Prob900_fixture_and"
+    },
+    {
+      "candidate_verdict": true,
+      "configuration_fingerprint": "6a287aab06c8a34500fa32f332f5ee7c0f0954b852c1cd4c144c72de87478d5c",
+      "outcome": "candidate_failure",
+      "relative_path": "samples/0001/golden-verilog-eval-1",
+      "resolved": false,
+      "run_id": "golden-verilog-eval-1",
+      "sample_index": 1,
+      "schema_version": "1.0",
+      "seed": 1,
+      "source_hash": "a388d84d8ff02ebe29158dccabe1e9979fdef81cd45c2d00e8a00943539be0e1",
+      "task_hash": "572cae3aa2ae840a7a378e9160efca581dce7fd6ab5e946d774fd647d79dab95",
+      "task_id": "verilog-eval/v2-spec-to-rtl/Prob900_fixture_and"
+    }
+  ],
+  "empirical_resolved_fraction": 0.5,
+  "entries": [
+    {
+      "c": 1,
+      "invalid_reason": null,
+      "k": 1,
+      "n": 2,
+      "schema_version": "1.0",
+      "valid": true,
+      "value": 0.5
+    },
+    {
+      "c": 1,
+      "invalid_reason": null,
+      "k": 2,
+      "n": 2,
+      "schema_version": "1.0",
+      "valid": true,
+      "value": 1.0
+    }
+  ],
+  "homogeneity_error": null,
+  "homogeneous": true,
+  "infrastructure_error_count": 0,
+  "missing_child_count": 0,
+  "model_output_failure_count": 0,
+  "requested_sample_count": 2,
+  "resolved_count": 1,
+  "sample_set_id": "golden-verilog-eval-samples",
+  "schema_version": "1.0",
+  "task_id": "verilog-eval/v2-spec-to-rtl/Prob900_fixture_and",
+  "valid_candidate_verdict_count": 2
+}

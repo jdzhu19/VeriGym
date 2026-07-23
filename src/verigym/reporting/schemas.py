@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from verigym.schemas.base import StrictModel
+from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.sampling import PassAtKEntry
 
 
@@ -59,6 +60,22 @@ class NumericSummary(StrictModel):
     sum: float | None = None
     unit: str | None = None
     currency: str | None = None
+
+
+class CostPartition(StrictModel):
+    dimension: Literal["currency", "provider_unit"]
+    identifier: str
+    known_value_count: int = Field(ge=1)
+    sum: float = Field(ge=0.0)
+
+
+class CostAccounting(StrictModel):
+    population: str
+    observed_value_count: int = Field(ge=0)
+    missing_value_count: int = Field(ge=0)
+    unknown_unit_count: int = Field(ge=0)
+    incompatible_unit_count: int = Field(ge=0)
+    partitions: list[CostPartition] = Field(default_factory=list)
 
 
 class FailureTaxonomy(StrictModel):
@@ -178,6 +195,7 @@ class AggregateReport(StrictModel):
     plan_hash: str | None = None
     task_set_hash: str | None = None
     input_set_hash: str
+    build_provenance: BuildProvenance | None = None
     compatibility_partitions: dict[str, list[str]] = Field(default_factory=dict)
     compatibility_aggregates: list[CompatibilityAggregate] = Field(default_factory=list)
     coverage: CoverageCounts
@@ -187,6 +205,7 @@ class AggregateReport(StrictModel):
     correctness_stages: list[StageRate]
     efficiency_resolved: dict[str, NumericSummary]
     cost_resolved: NumericSummary
+    cost_accounting: CostAccounting | None = None
     failure_taxonomy: FailureTaxonomy
     sampling: SamplingAggregate
     quality_partitions: list[QualityPartition]
@@ -200,6 +219,8 @@ __all__ = [
     "AggregateReport",
     "CoverageCounts",
     "CompatibilityAggregate",
+    "CostAccounting",
+    "CostPartition",
     "ExplicitRate",
     "FailureTaxonomy",
     "GroupAggregate",

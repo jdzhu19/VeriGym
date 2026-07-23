@@ -1,0 +1,164 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/build-provenance.schema.json",
+  "additionalProperties": false,
+  "description": "Secret-free identity for the source state that produced this package.",
+  "properties": {
+    "build_backend": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Build Backend"
+    },
+    "build_source_date_epoch": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Build Source Date Epoch"
+    },
+    "dirty": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dirty"
+    },
+    "installed_distribution_metadata_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Installed Distribution Metadata Hash"
+    },
+    "package_name": {
+      "default": "verigym",
+      "title": "Package Name",
+      "type": "string"
+    },
+    "package_version": {
+      "title": "Package Version",
+      "type": "string"
+    },
+    "provenance_method": {
+      "enum": [
+        "git_live_editable",
+        "embedded_build",
+        "embedded_source_archive",
+        "unknown"
+      ],
+      "title": "Provenance Method",
+      "type": "string"
+    },
+    "python_build_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Python Build Version"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_archive_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Archive Hash"
+    },
+    "source_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Commit"
+    },
+    "source_tree_file_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Tree File Count"
+    },
+    "source_tree_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Tree Hash"
+    },
+    "source_tree_path_policy": {
+      "title": "Source Tree Path Policy",
+      "type": "string"
+    },
+    "unknown_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Unknown Reason"
+    }
+  },
+  "required": [
+    "package_version",
+    "provenance_method",
+    "source_tree_path_policy"
+  ],
+  "title": "BuildProvenance",
+  "type": "object"
+}

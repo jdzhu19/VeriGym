@@ -1,0 +1,12 @@
+VeriGym
+Copyright 2026 VeriGym contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+The packaged educational Liberty file
+src/verigym/profiles/builtins/assets/toy_cells.lib is first-party work under
+Apache-2.0. It contains abstract test values only and is not a PDK, timing,
+power, physical-layout, or signoff library.
+
+External VerilogEval checkouts, simulators, synthesis tools, Docker images,
+commercial tools, PDKs, model services, and model weights are not included.

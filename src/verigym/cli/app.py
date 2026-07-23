@@ -21,6 +21,7 @@ from verigym.experiments.runner import BatchRunner
 from verigym.profiles.comparison import compare_area
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
+from verigym.provenance import get_build_provenance
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.diagnostics import diagnose_docker
@@ -160,6 +161,17 @@ def doctor(
     table.add_column("Details")
     table.add_row("Python", "ok", sys.version.split()[0])
     table.add_row("VeriGym", "ok", __version__)
+    provenance = get_build_provenance()
+    provenance_identity = provenance.source_tree_hash or "unknown"
+    table.add_row(
+        "Build provenance",
+        "ok" if provenance.source_tree_hash and provenance.source_commit else "unknown",
+        (
+            f"{provenance.provenance_method}; commit="
+            f"{provenance.source_commit or 'unknown'}; tree={provenance_identity}; "
+            f"dirty={provenance.dirty}"
+        ),
+    )
     for diagnostic in diagnose_docker(docker_image):
         table.add_row(
             diagnostic.component,
@@ -190,6 +202,16 @@ def doctor(
     for name, tool in registries.tools.items():
         health = tool.health_check()
         table.add_row(f"tool:{name}", "ok" if health.healthy else "missing", health.message)
+    for plugin_diagnostic in registries.diagnostics():
+        origin = plugin_diagnostic.origin
+        table.add_row(
+            f"plugin:{plugin_diagnostic.group}:{plugin_diagnostic.entry_point}",
+            "ok" if plugin_diagnostic.status == "loaded" else "rejected",
+            (
+                f"{origin.package or 'unknown'} {origin.version or 'unknown'}; "
+                f"{plugin_diagnostic.message}"
+            ),
+        )
     abc = local_abc_health()
     table.add_row("tool:yosys-abc", "ok" if abc.healthy else "missing", abc.message)
     for profile_id, profile in registries.profiles.items():
@@ -502,6 +524,9 @@ def batch(
             if dry_run:
                 console.print_json(plan.model_dump_json(indent=2))
                 console.print(f"Planned child runs: {len(plan.items)}")
+                console.print(
+                    f"Plan item limit: {normalized.execution.max_plan_items} (hard ceiling: 100000)"
+                )
                 return
             result = runner.run(plan)
         console.print(f"Experiment: {result.manifest.experiment_id}")

@@ -1,0 +1,136 @@
+{
+  "correctness": {
+    "compile_status": "passed",
+    "equivalence_status": null,
+    "formal_status": null,
+    "hidden_regression_status": "failed",
+    "infrastructure_error": true,
+    "resolved": false,
+    "tests_passed": 0,
+    "tests_total": 1,
+    "visible_regression_status": null
+  },
+  "efficiency": {
+    "agent_time_s": 0.0,
+    "failed_tool_calls": 0,
+    "model_api_cost": null,
+    "model_calls": 1,
+    "model_input_tokens": null,
+    "model_output_tokens": null,
+    "peak_memory_bytes": null,
+    "tool_calls": 0,
+    "tool_time_s": 0.0,
+    "total_tokens": null,
+    "turns": 0,
+    "verifier_time_s": 0.0,
+    "wall_time_s": 0.0
+  },
+  "failure": {
+    "category": "exhausted",
+    "infrastructure": true,
+    "kind": "model",
+    "message": "static model 'static-exhausted' exhausted its 0 configured response(s)"
+  },
+  "patch": {
+    "added_lines": 0,
+    "changed_file_precision": null,
+    "changed_files": [],
+    "changes_outside_expected_files": [],
+    "deleted_lines": 0,
+    "edit_similarity": null,
+    "total_diff_lines": 0
+  },
+  "quality": {
+    "ppa": null,
+    "reference_synthesis": null,
+    "synthesis": null
+  },
+  "reproducibility": {
+    "candidate_hash": "9c9b2ece82d191b065387350f5eaba590e2e8220c0f3381745f5ae835300ffc9",
+    "deterministic": true,
+    "isolation_level": "local_trusted",
+    "resolved_toolchain_profile_hashes": [],
+    "run_config_hash": "811af8a9cc1c1525417e978b7c10dcf6287c5c9b0283d24e461fdba99868c6f8",
+    "task_hash": "ad2d7a5e602d02327e67a5e0feabf844f04119e7d587495d4b6760e5eb80372a",
+    "toolchain_profile_ids": [
+      "toy-iverilog-v1"
+    ],
+    "verifier_hash": "571b4f1088384c99a6221808547ce176c702aa45dc49ad353a59f05361a03d10"
+  },
+  "resolved": false,
+  "run_id": "golden-model-error",
+  "schema_version": "1.0",
+  "status": "error",
+  "task_id": "toy-rtl/and-gate-basic",
+  "termination_reason": "model_error",
+  "verifier_results": [
+    {
+      "artifacts": [
+        "compile_hidden/request.json",
+        "compile_hidden/stdout.log",
+        "compile_hidden/stderr.log",
+        "compile_hidden/tool_result.json",
+        "compile_hidden/executable",
+        "compile_hidden/verifier_result.json"
+      ],
+      "diagnostics": [],
+      "duration_s": 0.0,
+      "error_category": "success",
+      "exit_code": 0,
+      "message": "compilation passed",
+      "metadata": {
+        "executable": ".verigym_internal/compile_hidden/simv",
+        "top": "tb_and_gate"
+      },
+      "node_id": "compile_hidden",
+      "plugin": "iverilog.compile",
+      "request": {
+        "output": ".verigym_internal/compile_hidden/simv",
+        "sources": [
+          "rtl/and_gate.v",
+          "hidden/tb_and_gate.sv"
+        ],
+        "timeout_s": 30,
+        "top": "tb_and_gate"
+      },
+      "schema_version": "1.0",
+      "status": "passed",
+      "tests_passed": null,
+      "tests_total": null
+    },
+    {
+      "artifacts": [
+        "run_hidden/request.json",
+        "run_hidden/stdout.log",
+        "run_hidden/stderr.log",
+        "run_hidden/tool_result.json",
+        "run_hidden/verifier_result.json"
+      ],
+      "diagnostics": [],
+      "duration_s": 0.0,
+      "error_category": "test_failed",
+      "exit_code": 0,
+      "message": "simulation emitted a failure marker",
+      "metadata": {
+        "tests_passed": 0,
+        "tests_total": 1
+      },
+      "node_id": "run_hidden",
+      "plugin": "iverilog.run",
+      "request": {
+        "executable": ".verigym_internal/compile_hidden/simv",
+        "executable_from": "compile_hidden",
+        "fail_marker": "VERIGYM_FAIL",
+        "pass_marker": "VERIGYM_PASS",
+        "timeout_s": 30
+      },
+      "schema_version": "1.0",
+      "status": "failed",
+      "tests_passed": 0,
+      "tests_total": 1
+    }
+  ],
+  "warnings": [
+    "LocalRuntime is for trusted development fixtures and is not an untrusted-code sandbox."
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "SuiteReleaseRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "suite": {
+          "title": "Suite",
+          "type": "string"
+        },
+        "task_count": {
+          "title": "Task Count",
+          "type": "integer"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "suite",
+        "version",
+        "task_count",
+        "content_hash"
+      ],
+      "title": "SuiteReleaseRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/release-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "changelog": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Changelog",
+      "type": "array"
+    },
+    "checksums": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Checksums",
+      "type": "object"
+    },
+    "created_at_utc": {
+      "format": "date-time",
+      "title": "Created At Utc",
+      "type": "string"
+    },
+    "licenses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Licenses",
+      "type": "array"
+    },
+    "release_id": {
+      "title": "Release Id",
+      "type": "string"
+    },
+    "retired_tasks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retired Tasks",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_cutoff": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Cutoff"
+    },
+    "split_policy": {
+      "title": "Split Policy",
+      "type": "string"
+    },
+    "suites": {
+      "items": {
+        "$ref": "#/$defs/SuiteReleaseRef"
+      },
+      "title": "Suites",
+      "type": "array"
+    },
+    "task_count": {
+      "title": "Task Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "release_id",
+    "created_at_utc",
+    "suites",
+    "task_count",
+    "split_policy",
+    "licenses",
+    "checksums",
+    "changelog"
+  ],
+  "title": "ReleaseManifest",
+  "type": "object"
+}

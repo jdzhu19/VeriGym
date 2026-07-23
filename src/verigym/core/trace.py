@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from verigym.core.errors import ReplayError
+from verigym.core.errors import ReplayError, SchemaCompatibilityError
+from verigym.core.schema_compat import validate_schema_version
 from verigym.schemas.trace import EpisodeEvent
 
 
@@ -55,7 +56,13 @@ def read_trace(path: Path, *, expected_run_id: str | None = None) -> list[Episod
             for line_number, line in enumerate(stream, start=1):
                 if not line.strip():
                     raise ReplayError(f"blank trace line at {line_number}")
-                event = EpisodeEvent.model_validate(json.loads(line))
+                payload = json.loads(line)
+                validate_schema_version(
+                    payload,
+                    EpisodeEvent,
+                    artifact=f"{path.name}:{line_number}",
+                )
+                event = EpisodeEvent.model_validate(payload)
                 if event.sequence != len(events):
                     raise ReplayError(
                         f"trace sequence gap at line {line_number}: "
@@ -66,7 +73,7 @@ def read_trace(path: Path, *, expected_run_id: str | None = None) -> list[Episod
                         f"trace event {event.sequence} belongs to unexpected run {event.run_id}"
                     )
                 events.append(event)
-    except ReplayError:
+    except (ReplayError, SchemaCompatibilityError):
         raise
     except Exception as exc:
         raise ReplayError(f"cannot read trace {path}: {exc}") from exc

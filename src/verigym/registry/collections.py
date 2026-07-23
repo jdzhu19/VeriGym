@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from verigym.profiles.registry import ToolchainProfileRegistry, builtin_profiles
-from verigym.registry.base import PluginRegistry
+from verigym.registry.base import PluginDiagnostic, PluginOrigin, PluginRegistry
+from verigym.version import __version__
 
 
 @dataclass
@@ -21,6 +22,13 @@ class Registries:
     def discover_external(self) -> None:
         for registry in (self.suites, self.tools, self.agents, self.models, self.runtimes):
             registry.discover()
+
+    def diagnostics(self) -> list[PluginDiagnostic]:
+        return [
+            diagnostic
+            for registry in (self.suites, self.tools, self.agents, self.models, self.runtimes)
+            for diagnostic in registry.diagnostics()
+        ]
 
 
 def build_registries(*, discover_external: bool = True) -> Registries:
@@ -47,23 +55,29 @@ def build_registries(*, discover_external: bool = True) -> Registries:
         runtimes=PluginRegistry("verigym.runtimes"),
         profiles=builtin_profiles(),
     )
-    registries.suites.register(ToyRtlSuite())
-    registries.suites.register(VerilogEvalSuite())
+    builtin_origin = PluginOrigin(
+        package="verigym",
+        version=__version__,
+        entry_point=None,
+        registration="builtin",
+    )
+    registries.suites.register(ToyRtlSuite(), origin=builtin_origin)
+    registries.suites.register(VerilogEvalSuite(), origin=builtin_origin)
     for tool in [
         *builtin_file_tools(),
         *builtin_iverilog_tools(),
         *builtin_verilog_eval_tools(),
         *builtin_yosys_tools(),
     ]:
-        registries.tools.register(tool)
-    registries.agents.register(ScriptedAgent())
-    registries.agents.register(ScriptedBadAgent())
-    registries.agents.register(SingleTurnAgent())
-    registries.agents.register(ReferenceReActAgent())
+        registries.tools.register(tool, origin=builtin_origin)
+    registries.agents.register(ScriptedAgent(), origin=builtin_origin)
+    registries.agents.register(ScriptedBadAgent(), origin=builtin_origin)
+    registries.agents.register(SingleTurnAgent(), origin=builtin_origin)
+    registries.agents.register(ReferenceReActAgent(), origin=builtin_origin)
     for model in builtin_model_clients():
-        registries.models.register(model)
-    registries.runtimes.register(LocalRuntime())
-    registries.runtimes.register(DockerRuntime())
+        registries.models.register(model, origin=builtin_origin)
+    registries.runtimes.register(LocalRuntime(), origin=builtin_origin)
+    registries.runtimes.register(DockerRuntime(), origin=builtin_origin)
     if discover_external:
         registries.discover_external()
     return registries

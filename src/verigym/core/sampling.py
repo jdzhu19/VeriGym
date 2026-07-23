@@ -13,6 +13,7 @@ from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash
 from verigym.core.loaders import dump_json, load_model
 from verigym.core.replay import replay_run
+from verigym.provenance import get_build_provenance
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.run import RunConfig, RunManifest
 from verigym.schemas.sampling import (
@@ -78,6 +79,7 @@ def run_sample_set(
         requested_sample_count=samples,
         requested_k=requested_k,
         base_seed=config.seed,
+        build_provenance=get_build_provenance(),
     )
     dump_json(group_dir / "sample_set_manifest.json", manifest)
 

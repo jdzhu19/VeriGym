@@ -106,7 +106,30 @@ class GenerationParameters(StrictModel):
     max_output_tokens: int | None = Field(default=None, ge=1)
 
 
+class ModelCallIdentity(StrictModel):
+    """Requested versus observed identity for one model call."""
+
+    schema_version: str = SCHEMA_VERSION
+    request_id: str
+    adapter_name: str
+    adapter_version: str | None = None
+    requested_model_id: str
+    observed_provider_model_id: str | None = None
+    system_fingerprint: str | None = None
+    endpoint_origin: str | None = None
+    generation: GenerationParameters
+    identity_confidence: Literal["exact", "provider_observed", "requested_only", "unknown"]
+    reproducibility_scope: Literal[
+        "exact_offline_fixture",
+        "mutable_remote_observation",
+        "requested_remote_identity",
+        "unknown",
+    ]
+    mutable_remote_service: bool
+
+
 __all__ = [
+    "ModelCallIdentity",
     "ModelClientErrorInfo",
     "ModelDescriptor",
     "ModelErrorCategory",
