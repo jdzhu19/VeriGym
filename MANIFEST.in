@@ -15,6 +15,9 @@ recursive-include scripts *.py
 recursive-include src/verigym *.py *.json *.yaml *.lib *.md *.v *.sv
 recursive-include tests *.py *.json *.jsonl *.csv *.yaml *.md *.v *.sv *.txt LICENSE VERIGYM_SYNTHETIC_FIXTURE
 prune release_audit
+prune examples/plugins/conformance/build
+prune examples/plugins/conformance/dist
+prune examples/plugins/conformance/src/verigym_conformance_plugin.egg-info
 global-exclude __pycache__
 global-exclude *.py[cod]
 exclude AGENTS.md

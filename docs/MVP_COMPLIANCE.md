@@ -1,33 +1,26 @@
 # MVP compliance matrix
 
-Statuses reflect executed baseline or stabilization checks, not file existence. Final command
-records and logs are copied to `release_audit/`; the baseline is
-[`audits/mvp_baseline.md`](audits/mvp_baseline.md). A real external VerilogEval checkout and
-Python 3.12/3.13 interpreters are unavailable in the current audit environment, so the overall
-release-candidate gate remains failed.
+This matrix maps each Milestones 0–9 contract to executable evidence. It does not declare a
+release result: the sealed historical `release_audit/` remains a failed audit, while each newly
+generated bundle records its own authoritative classifications in `audit_manifest.json`.
 
-| Requirement | Status | Implementation and automated evidence | Acceptance command / evidence ID | Limitation |
-|---|---|---|---|---|
-| Clean Python 3.11 install | blocked | `pyproject.toml`; `scripts/installed_conformance.py` | `installed-wheel`; `clean-dependency-install` | Wheel works offline with audited system dependencies; a fresh resolver cannot access an index. |
-| `doctor` without commercial tools | pass | `src/verigym/cli/doctor.py`; installed conformance | `installed-wheel` | Optional components are diagnostic. |
-| Toy ChatEval | pass | `SingleTurnAgent`; `tests/integration/test_milestone5.py` | `offline-core` | Static offline model only. |
-| Same task in AgentEval | pass | `VeriGym.run`; `tests/integration/test_vertical_slice.py` | `offline-core` | `LocalRuntime` is trusted. |
-| Visible tools; hidden verifier isolation | pass | `Environment`, separate sessions; workspace/security tests | `offline-core`, `docker-icarus` | Docker trusts host kernel/daemon. |
-| Separate verifier execution context | pass | orchestrator freeze/reverify paths; Docker session tests | `offline-core`, `docker-icarus` | No formal isolation proof. |
-| Complete run artifact layout | pass | run writer plus `artifact_manifest.json`; integrity tests | `offline-core` | Older artifacts are `legacy_unverified`. |
-| Known-good/known-bad distinction | pass | verifier/scoring schemas and integration tests | `offline-core`, `docker-icarus` | Candidate failure remains exit 1. |
-| Budget and termination enforcement | pass | `BudgetTracker`; budget/trace/environment tests | `offline-core` | Wall-time accuracy is host dependent. |
-| Replay without model call | pass | `replay_run`; replay/reverify tests | `offline-core`, `docker-icarus`, `docker-yosys` | Exact optional runtime/tool must exist for reverification. |
-| External-path VerilogEval | blocked | adapter/source tests; real-checkout test marked `external_benchmark` | `external-verilog-eval` | No real checkout was supplied; synthetic conformance passed only. |
-| Independent sampling and canonical pass@k | pass | sampling service/equation; sampling tests | `offline-core`, `synthetic-verilog-eval` | Infrastructure errors invalidate pass@k. |
-| Optional Yosys quality | pass | Yosys tool/profile; local and Docker tests | `local-yosys`, `docker-yosys` | Educational mapped area only. |
-| Correctness-gated PPA eligibility | pass | projection/comparison/report partition tests | `offline-core`, `docker-yosys` | Timing/power/WNS/TNS stay null. |
-| Unit/integration/conformance/determinism/security | pass | `tests/` plus security audit | `offline-core`, opt-in runtime checks | External real-data coverage is blocked separately. |
-| Extension/profile documentation | pass | `docs/adding_*`, `plugin_api.md`, `ppa_profiles.md`; docs test | `quality-docs` | External plugins are trusted installed host code. |
+| Requirement | Implementation and required evidence | Limitation |
+|---|---|---|
+| Clean installed Python | `python.3.11`, `python.3.12`, `python.3.13`, and `package.clean-dependency-install` create isolated venvs, resolve from a hashed offline wheelhouse, run `pip check`, and import from site-packages. | The wheelhouse is prepared separately and supplied explicitly. |
+| `doctor` and full public API | `package.installed-wheel` checks CLI help/doctor, installed plugin origin and policy, one RTL run, model-free replay, sampling/pass@k, a frozen experiment, and reports. | Full conformance requires actual `iverilog` and `vvp`; their outputs are recorded. |
+| Toy ChatEval and AgentEval | `local.icarus` exercises `SingleTurnAgent` and `VeriGym.run`. | Static offline model; `LocalRuntime` is trusted. |
+| Hidden verifier isolation | `offline.core-no-tools` and `docker.icarus` test separate workspaces, sessions, and hidden-asset boundaries. | Docker trusts the host kernel and daemon. |
+| Complete, integrity-bound artifacts | Offline integrity, golden compatibility, and schema-drift checks cover run, replay, batch, experiment, and report artifacts. | Older artifacts remain `legacy_unverified`. |
+| Error distinctions and budgets | Local/Docker checks preserve candidate failure, infrastructure failure, budget, and termination semantics. | Candidate failure remains process exit 1. |
+| Model-free replay | Local and exact-image Docker Icarus/Yosys checks verify replay without another model call. | Reverification needs the recorded runtime/tool identity. |
+| External VerilogEval | `verilog-eval.external` uses a clean, exact-commit checkout and records license/content hashes, known-good/bad results, hidden isolation, and replay model-call counts. | The external corpus is never bundled or used by ordinary CI. |
+| Sampling and pass@k | Local and synthetic-batch checks exercise independent samples and canonical pass@k. | Infrastructure errors invalidate pass@k. |
+| Yosys comparison safeguards | Local/Docker Yosys and profile checks enforce correctness-gated toy-area eligibility. | Timing, power, WNS, and TNS remain null. |
+| Batch, resume, and reporting | Offline and Docker batch checks cover frozen plans, resume, aggregation, and reports. | No distributed execution is included. |
+| Extension documentation | Documentation checks cover suite, tool, agent, runtime, plugin, and PPA-profile interfaces. | Installed plugins are trusted host code and remain policy-bound. |
 
 ## Release-only requirements
 
-Schema drift, sanitized golden compatibility, embedded provenance, artifact integrity, package
-scans, reproducible archives, installed external plugins, and the public API have dedicated
-evidence IDs. A `pass` above does not override a blocked required release check. The authoritative
-gate and reasons are in `release_audit/audit_manifest.json`.
+Clean Git identity, frontend and reproducible builds, embedded `dirty=false` provenance,
+distribution scans, package hashes, security checks, and bundle self-validation are required.
+Only an audit whose every required evidence entry is `passed` may report `PASS`.

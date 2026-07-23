@@ -28,6 +28,7 @@ from verigym.schemas.provenance import BuildProvenance
 AuditClassification = Literal["passed", "failed", "blocked", "skipped"]
 _MAX_LOG_BYTES = 4 * 1024 * 1024
 _REQUIRED_CHECKS = [
+    "source.clean",
     "quality.format",
     "quality.lint",
     "quality.mypy",
@@ -49,6 +50,7 @@ _REQUIRED_CHECKS = [
     "python.3.13",
     "package.build-frontend",
     "package.reproducible",
+    "package.clean-provenance",
     "package.distribution-scan",
     "package.clean-dependency-install",
     "package.installed-wheel",
@@ -102,6 +104,8 @@ class AuditRunner:
         docker_iverilog_image: str,
         docker_yosys_image: str,
         verilog_eval_root: Path | None,
+        wheelhouse: Path | None,
+        python_interpreters: dict[str, Path | None],
         source_date_epoch: int,
     ) -> None:
         self.root = root
@@ -112,6 +116,8 @@ class AuditRunner:
         self.docker_iverilog_image = docker_iverilog_image
         self.docker_yosys_image = docker_yosys_image
         self.verilog_eval_root = verilog_eval_root
+        self.wheelhouse = wheelhouse
+        self.python_interpreters = python_interpreters
         self.source_date_epoch = source_date_epoch
         self.evidence: list[EvidenceEntry] = []
         self.created_at = _now()
@@ -128,6 +134,17 @@ class AuditRunner:
                 0,
                 (str(self.verilog_eval_root.resolve()), "<external-verilog-eval>"),
             )
+        if self.wheelhouse is not None:
+            replacements.insert(
+                0,
+                (str(self.wheelhouse.resolve()), "<dependency-wheelhouse>"),
+            )
+        for version, interpreter in self.python_interpreters.items():
+            if interpreter is not None:
+                replacements.insert(
+                    0,
+                    (str(interpreter.resolve()), f"<python-{version}>"),
+                )
         result = argument
         for source, replacement in replacements:
             result = result.replace(source, replacement)
@@ -158,6 +175,7 @@ class AuditRunner:
         timeout: int = 900,
         identities: dict[str, Any] | None = None,
         output_paths: list[str] | None = None,
+        required_files: list[Path] | None = None,
         failure_classification: AuditClassification = "failed",
         failure_reason: str | None = None,
     ) -> EvidenceEntry:
@@ -188,6 +206,16 @@ class AuditRunner:
             output = self._sanitize((exc.stdout or b"") + (exc.stderr or b""))
             classification = "failed"
             reason = f"command exceeded the {timeout}-second audit timeout"
+        missing_outputs = [
+            relative for relative in (output_paths or []) if not (self.output / relative).is_file()
+        ]
+        missing_required_files = [
+            path.name for path in (required_files or []) if not path.is_file()
+        ]
+        missing_evidence = [*missing_outputs, *missing_required_files]
+        if classification == "passed" and missing_evidence:
+            classification = "failed"
+            reason = "command did not produce required evidence: " + ", ".join(missing_evidence)
         ended = _now()
         relative_log = f"commands/{check_id}.log"
         log_path = self.output / relative_log
@@ -214,6 +242,11 @@ class AuditRunner:
             for relative in paths
             if (self.output / relative).is_file()
         }
+        recorded_identities = dict(identities or {})
+        if required_files:
+            recorded_identities["produced_files"] = {
+                path.name: sha256_file(path) for path in required_files if path.is_file()
+            }
         entry = EvidenceEntry(
             check_id=check_id,
             command_argv=displayed,
@@ -221,7 +254,7 @@ class AuditRunner:
             ended_at=ended,
             exit_code=exit_code,
             package_provenance=self.live_provenance,
-            identities=identities or {},
+            identities=recorded_identities,
             classification=classification,
             output_paths=paths,
             artifact_hashes=artifact_hashes,
@@ -325,6 +358,16 @@ class AuditRunner:
                 stderr=subprocess.DEVNULL,
                 timeout=30,
             )
+            status_process = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=self.verilog_eval_root,
+                env=_safe_environment(),
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+            )
             external_identity = {
                 "git_commit": (
                     git_process.stdout.decode("ascii").strip()
@@ -332,8 +375,31 @@ class AuditRunner:
                     else None
                 ),
                 "dataset_content_hash": hash_directory(dataset),
+                "checkout_clean_before": (
+                    status_process.returncode == 0 and not status_process.stdout
+                ),
                 "path": "<external-verilog-eval>",
             }
+        interpreter_inventory = {
+            version: (
+                capture([str(interpreter), "--version"])
+                if interpreter is not None
+                else {"available": False}
+            )
+            for version, interpreter in self.python_interpreters.items()
+        }
+        wheelhouse_inventory = {
+            "provided": self.wheelhouse is not None,
+            "file_count": (
+                len([path for path in self.wheelhouse.iterdir() if path.is_file()])
+                if self.wheelhouse is not None
+                else 0
+            ),
+            "content_hash": (
+                hash_directory(self.wheelhouse) if self.wheelhouse is not None else None
+            ),
+            "path": "<dependency-wheelhouse>" if self.wheelhouse is not None else None,
+        }
         return {
             "schema_version": "1.0",
             "platform": {
@@ -356,6 +422,8 @@ class AuditRunner:
                 "abc": capture(["yosys-abc", "-c", "version"]),
             },
             "images": images,
+            "python_interpreters": interpreter_inventory,
+            "dependency_wheelhouse": wheelhouse_inventory,
             "external_verilog_eval": {
                 "provided": self.verilog_eval_root is not None,
                 "identity": external_identity,
@@ -364,6 +432,16 @@ class AuditRunner:
 
     def execute_checks(self) -> None:
         python = sys.executable
+        self.run(
+            "source.clean",
+            [
+                python,
+                "scripts/verify_clean_source.py",
+                "--output",
+                str(self.reports / "source_identity.json"),
+            ],
+            output_paths=["reports/source_identity.json"],
+        )
         self.run("quality.format", ["ruff", "format", "--check", "."])
         self.run("quality.lint", ["ruff", "check", "."])
         self.run("quality.mypy", ["mypy", "--strict", "src/verigym"])
@@ -510,52 +588,45 @@ class AuditRunner:
         else:
             self.run(
                 "verilog-eval.external",
-                [python, "-m", "pytest", "-m", "external_benchmark"],
+                [python, "-m", "pytest", "-s", "-m", "external_benchmark"],
                 environment=_safe_environment(
-                    {"VERIGYM_VERILOG_EVAL_ROOT": str(self.verilog_eval_root)}
+                    {
+                        "VERIGYM_VERILOG_EVAL_ROOT": str(self.verilog_eval_root),
+                        "VERIGYM_VERILOG_EVAL_DOCKER_IMAGE": self.docker_iverilog_image,
+                        "VERIGYM_EXTERNAL_EVIDENCE_OUTPUT": str(
+                            self.reports / "external_verilog_eval.json"
+                        ),
+                    }
                 ),
                 timeout=1200,
-                identities={"source_path": "<external-verilog-eval>"},
+                identities={
+                    "source_path": "<external-verilog-eval>",
+                    "requested_image": self.docker_iverilog_image,
+                },
+                output_paths=["reports/external_verilog_eval.json"],
             )
 
-        version_code = (
-            "import json,platform,verigym;"
-            "print(json.dumps({'python':platform.python_version(),"
-            "'verigym':verigym.__version__},sort_keys=True))"
-        )
-        for version in ("3.11", "3.12", "3.13"):
-            executable = shutil.which(f"python{version}")
-            check_id = f"python.{version}"
-            if executable is None:
-                self.unavailable(
-                    check_id,
-                    [f"python{version}", "-c", version_code],
-                    classification="skipped",
-                    reason=f"Python {version} interpreter is not installed in the audit host",
-                )
-            else:
-                self.run(
-                    check_id,
-                    [executable, "-c", version_code],
-                    identities={"declared_python": version},
-                )
-
+        frontend_files = [
+            self.root / "dist" / "verigym-0.1.0-py3-none-any.whl",
+            self.root / "dist" / "verigym-0.1.0.tar.gz",
+        ]
+        for frontend_file in frontend_files:
+            frontend_file.unlink(missing_ok=True)
         self.run(
             "package.build-frontend",
             [
                 python,
                 "-m",
                 "build",
-                "--outdir",
-                str(self.output / "frontend-dist"),
             ],
-            environment=_safe_environment({"SOURCE_DATE_EPOCH": str(self.source_date_epoch)}),
-            timeout=600,
-            failure_classification="blocked",
-            failure_reason=(
-                "the required build frontend is not installed and the audit host cannot "
-                "resolve it from the configured package index"
+            environment=_safe_environment(
+                {
+                    "PIP_INDEX_URL": "https://pypi.org/simple",
+                    "SOURCE_DATE_EPOCH": str(self.source_date_epoch),
+                }
             ),
+            timeout=600,
+            required_files=frontend_files,
         )
         self.run(
             "package.reproducible",
@@ -577,13 +648,19 @@ class AuditRunner:
                 "packages/verigym-0.1.0.tar.gz",
             ],
         )
+        self.run(
+            "package.clean-provenance",
+            [
+                python,
+                "scripts/verify_build_provenance.py",
+                "--report",
+                str(self.output / "reproducible_build.json"),
+                "--source-date-epoch",
+                str(self.source_date_epoch),
+            ],
+        )
         wheel = self.packages / "verigym-0.1.0-py3-none-any.whl"
         sdist = self.packages / "verigym-0.1.0.tar.gz"
-        if (self.output / "reproducible_build.json").is_file():
-            shutil.copyfile(
-                self.output / "reproducible_build.json",
-                self.root / "docs/audits/reproducible_build.json",
-            )
         if wheel.is_file() and sdist.is_file():
             self.run(
                 "package.distribution-scan",
@@ -599,16 +676,84 @@ class AuditRunner:
                 ],
                 output_paths=["distribution_inventory.json"],
             )
-            self.run(
-                "package.clean-dependency-install",
-                [python, "scripts/clean_install_smoke.py", "--wheel", str(wheel)],
-                timeout=300,
-                failure_classification="blocked",
-                failure_reason=(
-                    "offline clean dependency resolution has no pre-provisioned dependency "
-                    "wheels and network access is unavailable"
-                ),
-            )
+            python_311 = self.python_interpreters.get("3.11")
+            if self.wheelhouse is None or python_311 is None:
+                self.unavailable(
+                    "package.clean-dependency-install",
+                    [python, "scripts/clean_install_smoke.py", "--wheel", str(wheel)],
+                    classification="blocked",
+                    reason=(
+                        "a dependency wheelhouse and Python 3.11 interpreter are required "
+                        "for clean offline resolution"
+                    ),
+                )
+            else:
+                self.run(
+                    "package.clean-dependency-install",
+                    [
+                        python,
+                        "scripts/clean_install_smoke.py",
+                        "--wheel",
+                        str(wheel),
+                        "--wheelhouse",
+                        str(self.wheelhouse),
+                        "--python",
+                        str(python_311),
+                        "--expected-python",
+                        "3.11",
+                        "--source-root",
+                        str(self.root),
+                        "--output",
+                        str(self.reports / "clean_dependency_install.json"),
+                    ],
+                    timeout=600,
+                    identities={"dependency_resolution": "offline_hashed_wheelhouse"},
+                    output_paths=["reports/clean_dependency_install.json"],
+                )
+            for version in ("3.11", "3.12", "3.13"):
+                interpreter = self.python_interpreters.get(version)
+                check_id = f"python.{version}"
+                if interpreter is None:
+                    self.unavailable(
+                        check_id,
+                        [f"python{version}", "<installed-package-check>"],
+                        classification="skipped",
+                        reason=f"Python {version} interpreter was not supplied to the audit",
+                    )
+                elif self.wheelhouse is None:
+                    self.unavailable(
+                        check_id,
+                        [str(interpreter), "<installed-package-check>"],
+                        classification="blocked",
+                        reason="installed-package Python checks require a dependency wheelhouse",
+                    )
+                else:
+                    report_name = f"python_{version.replace('.', '_')}_installed.json"
+                    self.run(
+                        check_id,
+                        [
+                            python,
+                            "scripts/clean_install_smoke.py",
+                            "--wheel",
+                            str(wheel),
+                            "--wheelhouse",
+                            str(self.wheelhouse),
+                            "--python",
+                            str(interpreter),
+                            "--expected-python",
+                            version,
+                            "--source-root",
+                            str(self.root),
+                            "--output",
+                            str(self.reports / report_name),
+                        ],
+                        timeout=600,
+                        identities={
+                            "declared_python": version,
+                            "dependency_resolution": "offline_hashed_wheelhouse",
+                        },
+                        output_paths=[f"reports/{report_name}"],
+                    )
             self.run(
                 "package.installed-wheel",
                 [
@@ -641,6 +786,9 @@ class AuditRunner:
                 "package.clean-dependency-install",
                 "package.installed-wheel",
                 "package.installed-sdist",
+                "python.3.11",
+                "python.3.12",
+                "python.3.13",
             ):
                 self.unavailable(
                     check_id,
@@ -952,6 +1100,10 @@ def main() -> int:
         default="verigym/open-rtl-tools:iverilog12-yosys067",
     )
     parser.add_argument("--verilog-eval-root", type=Path)
+    parser.add_argument("--wheelhouse", type=Path)
+    parser.add_argument("--python-311", type=Path, default=Path(sys.executable))
+    parser.add_argument("--python-312", type=Path)
+    parser.add_argument("--python-313", type=Path)
     parser.add_argument("--source-date-epoch", type=int, default=1_784_712_454)
     arguments = parser.parse_args()
     root = Path.cwd().resolve()
@@ -960,6 +1112,27 @@ def main() -> int:
         parser.error("audit output already exists; choose a new path to preserve evidence")
     if arguments.verilog_eval_root is not None and not arguments.verilog_eval_root.is_dir():
         parser.error("the supplied VerilogEval root is not a directory")
+    if arguments.wheelhouse is not None and not arguments.wheelhouse.is_dir():
+        parser.error("the supplied dependency wheelhouse is not a directory")
+    python_interpreters = {
+        "3.11": arguments.python_311,
+        "3.12": arguments.python_312,
+        "3.13": arguments.python_313,
+    }
+    for version, interpreter in python_interpreters.items():
+        if interpreter is not None and (
+            not interpreter.is_file() or not os.access(interpreter, os.X_OK)
+        ):
+            parser.error(f"the supplied Python {version} interpreter is not executable")
+    source_status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    ).stdout
+    if source_status:
+        parser.error("release audit requires a clean committed Git worktree")
     output.mkdir(parents=True)
     runner = AuditRunner(
         root,
@@ -967,6 +1140,11 @@ def main() -> int:
         docker_iverilog_image=arguments.docker_iverilog_image,
         docker_yosys_image=arguments.docker_yosys_image,
         verilog_eval_root=arguments.verilog_eval_root,
+        wheelhouse=(arguments.wheelhouse.resolve() if arguments.wheelhouse is not None else None),
+        python_interpreters={
+            version: interpreter.resolve() if interpreter is not None else None
+            for version, interpreter in python_interpreters.items()
+        },
         source_date_epoch=arguments.source_date_epoch,
     )
     _write_json(output / "environment.json", runner.environment_inventory())

@@ -16,10 +16,23 @@ Runtime dependencies have lower and upper bounds; optional HTTP support is isola
 `NOTICE`, declares Python 3.11+, and publishes repository/documentation/issue URLs.
 
 Before a candidate build, inspect both archive member lists, validate `METADATA`, scan names and
-text for forbidden paths/secrets, install the wheel in an isolated environment, run `pip check`,
-and compare two builds made with the same `SOURCE_DATE_EPOCH`.
+text for forbidden paths/secrets or generated plugin build trees, install the wheel in an isolated
+environment, run `pip check`, and compare two builds made with the same `SOURCE_DATE_EPOCH`.
+Installed public-API conformance also runs the complete RTL example and therefore requires real
+`iverilog` and `vvp` executables; their version outputs are evidence, not package contents.
 
-The local audit driver is `python scripts/run_release_audit.py --output release_audit`. It never
-publishes, tags, pushes, pulls images, or downloads a benchmark. Existing output is preserved
-rather than overwritten, and unavailable required resources remain blocked/skipped evidence that
-fails the candidate gate.
+The local audit driver requires a clean committed worktree plus explicit release inputs:
+
+```bash
+python scripts/run_release_audit.py \
+  --output .verigym/release-audit-<commit> \
+  --wheelhouse /path/to/hashed-wheelhouse \
+  --python-311 /path/to/python3.11 \
+  --python-312 /path/to/python3.12 \
+  --python-313 /path/to/python3.13 \
+  --verilog-eval-root /path/to/pinned/verilog-eval
+```
+
+The wheelhouse and external checkout are prepared outside the audit. The driver never publishes,
+tags, pushes, pulls images, or downloads a benchmark. It refuses dirty source and existing output;
+unavailable required resources remain blocked/skipped evidence and fail the candidate gate.

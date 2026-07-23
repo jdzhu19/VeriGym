@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,9 @@ from verigym.core.replay import replay_run
 from verigym.models.static import StaticModelClient
 from verigym.registry.collections import build_registries
 from verigym.schemas.common import InteractionMode
+from verigym.schemas.model import ModelRequest, ModelResponse, ModelRunConfig
 from verigym.schemas.run import RunConfig
+from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier import VerifierStatus
 
@@ -26,12 +29,35 @@ VARIANT = "v2-spec-to-rtl"
 TASK_ID = "verilog-eval/Prob900_fixture_and"
 HAS_ICARUS = shutil.which("iverilog") is not None and shutil.which("vvp") is not None
 requires_icarus = pytest.mark.skipif(not HAS_ICARUS, reason="Icarus Verilog is not installed")
+EXTERNAL_DOCKER_IMAGE = os.environ.get("VERIGYM_VERILOG_EVAL_DOCKER_IMAGE")
+requires_external_icarus = pytest.mark.skipif(
+    not HAS_ICARUS and EXTERNAL_DOCKER_IMAGE is None,
+    reason="Icarus Verilog is unavailable locally and no external Docker image is configured",
+)
 
 GOOD = """module TopModule(input logic a, input logic b, output logic y);
     assign y = a & b;
 endmodule
 """
 BAD = GOOD.replace("a & b", "a | b")
+
+
+class CountingStaticModelClient(StaticModelClient):
+    def __init__(self, calls: list[str], response: str) -> None:
+        self.calls = calls
+        self.response = response
+        super().__init__(name="m6-real-reference", responses=[response])
+
+    def clone_for_run(
+        self,
+        configuration: ModelRunConfig | None = None,
+    ) -> CountingStaticModelClient:
+        del configuration
+        return CountingStaticModelClient(self.calls, self.response)
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        self.calls.append(request.request_id)
+        return super().generate(request)
 
 
 def source_config() -> SuiteSourceConfig:
@@ -306,13 +332,19 @@ def test_literal_external_source_cli_commands(tmp_path: Path) -> None:
     reason="VERIGYM_VERILOG_EVAL_ROOT is not configured",
 )
 @pytest.mark.external_benchmark
-@requires_icarus
+@requires_external_icarus
 def test_optional_real_external_checkout_conformance(tmp_path: Path) -> None:
     root = Path(os.environ["VERIGYM_VERILOG_EVAL_ROOT"])
     config = SuiteSourceConfig(source_root=root, variant=VARIANT)
-    before = hash_directory(
-        root / "dataset_spec-to-rtl" if root.name != "dataset_spec-to-rtl" else root
-    )
+    dataset = root / "dataset_spec-to-rtl" if root.name != "dataset_spec-to-rtl" else root
+    before = hash_directory(dataset)
+    before_status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=30,
+    ).stdout
     vg = service()
     suite = vg.registries.suites.get("verilog-eval").with_source(config)
     references = list(suite.discover())
@@ -320,8 +352,20 @@ def test_optional_real_external_checkout_conformance(tmp_path: Path) -> None:
     task = suite.load_task(references[0])
     reference = suite.reference_solution(task)
     assert reference is not None
-    model = StaticModelClient(name="m6-real-reference", responses=list(reference.files.values()))
+    model_calls: list[str] = []
+    model = CountingStaticModelClient(model_calls, reference.files["rtl/TopModule.sv"])
     vg.registries.models.register(model)
+
+    runtime: dict[str, object] = {}
+    if EXTERNAL_DOCKER_IMAGE is not None:
+        runtime = {
+            "runtime": "docker",
+            "docker_config": DockerRuntimeConfig(
+                image=EXTERNAL_DOCKER_IMAGE,
+                pull_policy="never",
+            ),
+        }
+
     result = vg.run(
         RunConfig(
             task_id=references[0].id,
@@ -330,9 +374,15 @@ def test_optional_real_external_checkout_conformance(tmp_path: Path) -> None:
             model=model.descriptor.name,
             suite_source=config,
             output=tmp_path / "real",
+            **runtime,
         )
     )
     assert result.scorecard.resolved
+    assert model_calls and len(model_calls) == 1
+    replay = replay_run(result.run_dir, verify=True, service=vg)
+    assert replay.reverified_resolved is True
+    assert len(model_calls) == 1
+
     bad_model = StaticModelClient(
         name="m6-real-known-bad",
         responses=["module TopModule; endmodule\n"],
@@ -346,12 +396,107 @@ def test_optional_real_external_checkout_conformance(tmp_path: Path) -> None:
             model=bad_model.descriptor.name,
             suite_source=config,
             output=tmp_path / "real-bad",
+            **runtime,
         )
     )
     assert not bad_result.scorecard.resolved
     assert not bad_result.scorecard.correctness.infrastructure_error
-    assert not (result.run_dir / "candidate" / "verifier").exists()
-    assert (
-        hash_directory(root / "dataset_spec-to-rtl" if root.name != "dataset_spec-to-rtl" else root)
-        == before
+    failed = next(
+        verifier
+        for verifier in bad_result.scorecard.verifier_results
+        if verifier.status == VerifierStatus.FAILED
     )
+    assert failed.metadata.get("candidate_failure") is True
+
+    _loaded_suite, _loaded_task, assets = vg.load_task(references[0].id, config)
+    hidden_contents = [
+        asset.content.encode("utf-8") for asset in assets.hidden_assets if asset.content is not None
+    ]
+    assert not (result.run_dir / "candidate" / "verifier").exists()
+    model_visible = [
+        result.run_dir / "trace.jsonl",
+        result.run_dir / "logs" / "agent.log",
+        result.run_dir / "workspace_diff.patch",
+        *(path for path in (result.run_dir / "candidate").rglob("*") if path.is_file()),
+    ]
+    for path in model_visible:
+        payload = path.read_bytes()
+        assert str(root.resolve()).encode() not in payload
+        assert all(hidden not in payload for hidden in hidden_contents)
+
+    after = hash_directory(dataset)
+    after_status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=30,
+    ).stdout
+    assert after == before
+    assert not before_status
+    assert not after_status
+
+    source = result.manifest.suite_source
+    assert source is not None
+    runtime_image = result.manifest.runtime.image
+    evidence = {
+        "schema_version": "1.0",
+        "status": "passed",
+        "source": {
+            "repository_url": source.git_remote,
+            "git_commit": source.git_commit,
+            "license_id": source.license_id,
+            "license_file_hash": source.license_file_hash,
+            "adapter_dataset_content_hash": source.dataset_content_hash,
+            "dataset_directory_hash": before,
+            "checkout_clean_before": not before_status,
+            "checkout_clean_after": not after_status,
+        },
+        "task": {
+            "id": task.id,
+            "content_hash": task.source.content_hash,
+            "reference_origin": "upstream reference-derived candidate",
+        },
+        "known_good": {
+            "resolved": result.scorecard.resolved,
+            "tests_passed": result.scorecard.correctness.tests_passed,
+            "tests_total": result.scorecard.correctness.tests_total,
+            "model_calls": result.scorecard.efficiency.model_calls,
+            "model_observations": len(result.manifest.model_observations),
+            "replay_reverified": replay.reverified_resolved,
+            "replay_model_calls": len(model_calls) - 1,
+        },
+        "known_bad": {
+            "resolved": bad_result.scorecard.resolved,
+            "infrastructure_error": bad_result.scorecard.correctness.infrastructure_error,
+            "candidate_failure": failed.metadata.get("candidate_failure"),
+            "error_category": failed.error_category.value,
+        },
+        "hidden_asset_isolation": {
+            "candidate_verifier_directory_absent": not (
+                result.run_dir / "candidate" / "verifier"
+            ).exists(),
+            "model_visible_scan_passed": True,
+            "external_source_unchanged": after == before,
+        },
+        "runtime": {
+            "name": result.manifest.runtime.name,
+            "resolved_image_id": (
+                runtime_image.resolved_image_id if runtime_image is not None else None
+            ),
+            "iverilog_version": (
+                runtime_image.iverilog_version if runtime_image is not None else None
+            ),
+            "compatibility_status": (
+                runtime_image.compatibility_status if runtime_image is not None else None
+            ),
+        },
+    }
+    evidence_output = os.environ.get("VERIGYM_EXTERNAL_EVIDENCE_OUTPUT")
+    if evidence_output:
+        output = Path(evidence_output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )

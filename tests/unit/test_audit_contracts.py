@@ -62,7 +62,11 @@ def test_unknown_provenance_and_missing_evidence_fail_release_gate() -> None:
     assert any("provenance" in reason for reason in reasons)
 
 
-def _write_test_archives(tmp_path: Path) -> tuple[Path, Path]:
+def _write_test_archives(
+    tmp_path: Path,
+    *,
+    extra_sdist_members: dict[str, bytes] | None = None,
+) -> tuple[Path, Path]:
     wheel = tmp_path / "verigym-0.1.0-py3-none-any.whl"
     metadata = (
         "Metadata-Version: 2.4\n"
@@ -87,7 +91,7 @@ def _write_test_archives(tmp_path: Path) -> tuple[Path, Path]:
 
     sdist = tmp_path / "verigym-0.1.0.tar.gz"
     with tarfile.open(sdist, "w:gz") as archive:
-        for name, payload in {
+        contents = {
             "verigym-0.1.0/pyproject.toml": b"[project]\nname='verigym'\n",
             "verigym-0.1.0/.github/workflows/ci.yml": b"name: test\n",
             "verigym-0.1.0/build_backend/verigym_build_backend.py": b"",
@@ -98,7 +102,9 @@ def _write_test_archives(tmp_path: Path) -> tuple[Path, Path]:
             ): b"first-party synthetic fixture\n",
             "verigym-0.1.0/tests/fixtures/verilog_eval_v2_synthetic/LICENSE": b"MIT\n",
             "verigym-0.1.0/examples/plugins/conformance/LICENSE": b"Apache-2.0\n",
-        }.items():
+        }
+        contents.update(extra_sdist_members or {})
+        for name, payload in contents.items():
             info = tarfile.TarInfo(name)
             info.size = len(payload)
             archive.addfile(info, io.BytesIO(payload))
@@ -115,6 +121,28 @@ def test_distribution_policy_scan_accepts_declared_fixture_and_rejects_private_m
     result = inspect_distributions(wheel, sdist)
     assert result["status"] == "failed"
     assert any("forbidden" in issue for issue in result["issues"])
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "verigym-0.1.0/examples/plugins/conformance/build/lib/plugin.py",
+        "verigym-0.1.0/examples/plugins/conformance/src/plugin.egg-info/PKG-INFO",
+    ],
+)
+def test_distribution_policy_scan_rejects_generated_plugin_members(
+    tmp_path: Path,
+    member: str,
+) -> None:
+    wheel, sdist = _write_test_archives(
+        tmp_path,
+        extra_sdist_members={member: b"generated\n"},
+    )
+
+    result = inspect_distributions(wheel, sdist)
+
+    assert result["status"] == "failed"
+    assert any(member in issue for issue in result["issues"])
 
 
 def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:

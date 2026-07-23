@@ -20,7 +20,10 @@ _FORBIDDEN_MEMBER_PARTS = {
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
+    ".verigym",
     "__pycache__",
+    "build",
+    "dist",
     "release_audit",
     "runs",
 }
@@ -48,6 +51,10 @@ def _safe_member(name: str) -> list[str]:
         issues.append(f"unsafe archive path: {name}")
     if any(part in _FORBIDDEN_MEMBER_PARTS for part in path.parts):
         issues.append(f"forbidden generated/private member: {name}")
+    if "examples/plugins/conformance/" in name and any(
+        part.endswith(".egg-info") for part in path.parts[:-1]
+    ):
+        issues.append(f"forbidden generated package metadata member: {name}")
     if path.suffix in _FORBIDDEN_MEMBER_SUFFIXES:
         issues.append(f"forbidden cache/runtime suffix: {name}")
     if name.startswith(("tmp/", "home/", "data/")):
