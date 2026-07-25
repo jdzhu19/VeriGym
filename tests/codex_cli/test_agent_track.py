@@ -79,6 +79,32 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     assert hash_directory(result.run_dir / "candidate") == candidate_hash
 
 
+def test_alias_mode_track_b_records_identity_and_replays_without_cli(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _executable, log, scenario = fake_codex
+    scenario("agent_good")
+    monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
+    result = _run(tmp_path / "runs")
+    identity = result.manifest.external_agent_observations[-1]
+    assert identity.auth_mode_label == "chatgpt_cli_session"
+    assert identity.requested_auth_mode == "chatgpt_cli_session"
+    assert identity.resolved_auth_mode == "inherited_codex_login"
+    assert identity.auth_semantic_id == "codex.auth.inherited_chatgpt_session.v1"
+    assert identity.auth_alias_used is True
+    artifact = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "identity.json").read_text(encoding="utf-8")
+    )
+    assert artifact["requested_auth_mode"] == "chatgpt_cli_session"
+    assert artifact["resolved_auth_mode"] == "inherited_codex_login"
+    assert artifact["auth_semantic_id"] == ("codex.auth.inherited_chatgpt_session.v1")
+    before = log.read_bytes()
+    replay_run(result.run_dir, verify=False)
+    assert log.read_bytes() == before
+
+
 def test_bad_candidate_is_normal_candidate_failure(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,

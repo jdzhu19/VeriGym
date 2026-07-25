@@ -32,6 +32,13 @@ def main():
         print(_exec_help(scenario))
         _log({"kind": "diagnostic", "command": "exec_help"})
         return 0
+    if arguments == ["login", "status"]:
+        _log({"kind": "diagnostic", "command": "login_status"})
+        if scenario == "unauthenticated":
+            print("Not logged in", file=sys.stderr)
+            return 1
+        print("Logged in using ChatGPT")
+        return 0
     if not arguments or arguments[0] != "exec":
         print("unsupported fake invocation", file=sys.stderr)
         return 2

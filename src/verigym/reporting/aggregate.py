@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,10 @@ _GROUP_DIMENSIONS = {
     "observed_model_id",
     "identity_confidence",
     "auth_mode_label",
+    "requested_auth_mode",
+    "resolved_auth_mode",
+    "auth_semantic_id",
+    "auth_alias_used",
     "sandbox_policy",
     "approval_policy",
 }
@@ -204,7 +208,9 @@ class ReportBuilder:
                 ),
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
                 "codex_cli_comparison_policy": (
-                    "tracks, executable versions, and capability fingerprints remain distinct"
+                    "tracks, executable versions, capability fingerprints, and "
+                    "authentication semantic IDs remain distinct; requested authentication "
+                    "labels are provenance only"
                 ),
                 "combined_correctness_scope": (
                     "unavailable_for_mixed_release_or_correctness_partitions"
@@ -643,6 +649,7 @@ def _sampling(
                 identity.get("cli_version", ""),
                 identity.get("cli_executable_sha256", ""),
                 identity.get("capability_fingerprint", ""),
+                _auth_comparison_identity(identity),
             )
             for run in present
             if (identity := _run_codex_identity(run))
@@ -1057,6 +1064,10 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
         "observed_model_id": codex.get("observed_model_id", ""),
         "identity_confidence": codex.get("identity_confidence", ""),
         "auth_mode_label": codex.get("auth_mode_label", ""),
+        "requested_auth_mode": codex.get("requested_auth_mode", ""),
+        "resolved_auth_mode": codex.get("resolved_auth_mode", ""),
+        "auth_semantic_id": codex.get("auth_semantic_id", ""),
+        "auth_alias_used": codex.get("auth_alias_used", ""),
         "sandbox_policy": codex.get("sandbox_policy", ""),
         "approval_policy": codex.get("approval_policy", ""),
     }
@@ -1087,6 +1098,10 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "observed_model_id": codex.get("observed_model_id", ""),
         "identity_confidence": codex.get("identity_confidence", ""),
         "auth_mode_label": codex.get("auth_mode_label", ""),
+        "requested_auth_mode": codex.get("requested_auth_mode", ""),
+        "resolved_auth_mode": codex.get("resolved_auth_mode", ""),
+        "auth_semantic_id": codex.get("auth_semantic_id", ""),
+        "auth_alias_used": codex.get("auth_alias_used", ""),
         "sandbox_policy": codex.get("sandbox_policy", ""),
         "approval_policy": codex.get("approval_policy", ""),
     }
@@ -1136,6 +1151,7 @@ def _compatibility_warnings(
             item["cli_version"],
             item["cli_executable_sha256"],
             item["capability_fingerprint"],
+            _auth_comparison_identity(item),
         )
         for item in codex_partitions
     }
@@ -1145,8 +1161,9 @@ def _compatibility_warnings(
         )
     if len(identities) > 1:
         warnings.append(
-            "Codex model identities, executable versions/hashes, or capability fingerprints "
-            "differ and are not comparable without an explicit partition."
+            "Codex model identities, executable versions/hashes, capability fingerprints, "
+            "or authentication semantics differ and are not comparable without an explicit "
+            "partition."
         )
     if any(
         item["observed_model_id"] and item["observed_model_id"] != item["requested_model_id"]
@@ -1213,6 +1230,16 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
             "observed_model_id": identity.observed_model_id or "",
             "identity_confidence": identity.identity_confidence,
             "auth_mode_label": identity.auth_mode_label or "",
+            "requested_auth_mode": (identity.requested_auth_mode or identity.auth_mode_label or ""),
+            "resolved_auth_mode": identity.resolved_auth_mode or "",
+            "auth_semantic_id": identity.auth_semantic_id or "",
+            "auth_alias_used": (
+                ""
+                if identity.auth_alias_used is None
+                else "true"
+                if identity.auth_alias_used
+                else "false"
+            ),
             "sandbox_policy": identity.sandbox_policy or "",
             "approval_policy": identity.approval_policy or "",
         }
@@ -1236,6 +1263,20 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
                 observation.identity_confidence if observation is not None else "unknown"
             ),
             "auth_mode_label": str(configuration.get("auth_mode_label") or ""),
+            "requested_auth_mode": str(
+                configuration.get("requested_auth_mode")
+                or configuration.get("auth_mode_label")
+                or ""
+            ),
+            "resolved_auth_mode": str(configuration.get("resolved_auth_mode") or ""),
+            "auth_semantic_id": str(configuration.get("auth_semantic_id") or ""),
+            "auth_alias_used": (
+                ""
+                if configuration.get("auth_alias_used") is None
+                else "true"
+                if configuration.get("auth_alias_used") is True
+                else "false"
+            ),
             "sandbox_policy": str(configuration.get("sandbox_policy") or ""),
             "approval_policy": str(configuration.get("approval_policy") or ""),
         }
@@ -1261,6 +1302,20 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "observed_model_id": "",
             "identity_confidence": "unknown",
             "auth_mode_label": str(descriptor.configuration.get("auth_mode_label") or ""),
+            "requested_auth_mode": str(
+                descriptor.configuration.get("requested_auth_mode")
+                or descriptor.configuration.get("auth_mode_label")
+                or ""
+            ),
+            "resolved_auth_mode": str(descriptor.configuration.get("resolved_auth_mode") or ""),
+            "auth_semantic_id": str(descriptor.configuration.get("auth_semantic_id") or ""),
+            "auth_alias_used": (
+                ""
+                if descriptor.configuration.get("auth_alias_used") is None
+                else "true"
+                if descriptor.configuration.get("auth_alias_used") is True
+                else "false"
+            ),
             "sandbox_policy": str(descriptor.configuration.get("sandbox_policy") or ""),
             "approval_policy": str(descriptor.configuration.get("approval_policy") or ""),
         }
@@ -1275,6 +1330,10 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "observed_model_id": "",
             "identity_confidence": "unknown",
             "auth_mode_label": "",
+            "requested_auth_mode": "",
+            "resolved_auth_mode": "",
+            "auth_semantic_id": "",
+            "auth_alias_used": "",
             "sandbox_policy": str(item.system.agent_options.get("sandbox") or ""),
             "approval_policy": str(item.system.agent_options.get("approval_policy") or ""),
         }
@@ -1282,8 +1341,13 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
 
 
 def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
-    unique = {
-        (
+    buckets: dict[tuple[str, ...], dict[str, set[str]]] = {}
+    for run in runs:
+        identity = _run_codex_identity(run)
+        if not identity:
+            continue
+        comparison_auth = _auth_comparison_identity(identity)
+        partition_key = (
             identity.get("integration_track", ""),
             identity.get("cli_version", ""),
             identity.get("cli_executable_sha256", ""),
@@ -1291,27 +1355,27 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             identity.get("requested_model_id", ""),
             identity.get("observed_model_id", ""),
             identity.get("identity_confidence", ""),
-            identity.get("auth_mode_label", ""),
+            comparison_auth,
             identity.get("sandbox_policy", ""),
             identity.get("approval_policy", ""),
         )
-        for run in runs
-        if (identity := _run_codex_identity(run))
-    }
-    return [
-        {
-            "integration_track": track,
-            "cli_version": version,
-            "cli_executable_sha256": executable_sha256,
-            "capability_fingerprint": fingerprint,
-            "requested_model_id": requested_model,
-            "observed_model_id": observed_model,
-            "identity_confidence": confidence,
-            "auth_mode_label": auth_mode,
-            "sandbox_policy": sandbox,
-            "approval_policy": approval,
-        }
-        for (
+        bucket = buckets.setdefault(
+            partition_key,
+            {
+                "auth_mode_label": set(),
+                "requested_auth_mode": set(),
+                "resolved_auth_mode": set(),
+                "auth_semantic_id": set(),
+                "auth_alias_used": set(),
+            },
+        )
+        for field in bucket:
+            value = identity.get(field, "")
+            if value:
+                bucket[field].add(value)
+    partitions: list[dict[str, str]] = []
+    for stored_key, provenance in sorted(buckets.items()):
+        (
             track,
             version,
             executable_sha256,
@@ -1319,11 +1383,46 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             requested_model,
             observed_model,
             confidence,
-            auth_mode,
+            comparison_auth,
             sandbox,
             approval,
-        ) in sorted(unique)
-    ]
+        ) = stored_key
+        partitions.append(
+            {
+                "integration_track": track,
+                "cli_version": version,
+                "cli_executable_sha256": executable_sha256,
+                "capability_fingerprint": fingerprint,
+                "requested_model_id": requested_model,
+                "observed_model_id": observed_model,
+                "identity_confidence": confidence,
+                "auth_mode_label": ",".join(sorted(provenance["auth_mode_label"])),
+                "requested_auth_mode": ",".join(sorted(provenance["requested_auth_mode"])),
+                "resolved_auth_mode": ",".join(sorted(provenance["resolved_auth_mode"])),
+                "auth_semantic_id": ",".join(sorted(provenance["auth_semantic_id"])),
+                "auth_alias_used": _merged_auth_alias(provenance["auth_alias_used"]),
+                "auth_comparison_partition": comparison_auth,
+                "sandbox_policy": sandbox,
+                "approval_policy": approval,
+            }
+        )
+    return partitions
+
+
+def _merged_auth_alias(values: set[str]) -> str:
+    if not values:
+        return ""
+    if len(values) == 1:
+        return next(iter(values))
+    return "mixed"
+
+
+def _auth_comparison_identity(identity: Mapping[str, str]) -> str:
+    semantic_id = identity.get("auth_semantic_id", "")
+    if semantic_id:
+        return semantic_id
+    legacy_label = identity.get("auth_mode_label", "")
+    return f"legacy-auth-label:{legacy_label}" if legacy_label else ""
 
 
 __all__ = ["ReportBuilder"]

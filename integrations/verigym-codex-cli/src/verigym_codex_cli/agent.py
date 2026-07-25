@@ -139,7 +139,7 @@ class CodexCliAgentAdapter(AgentAdapter):
         )
         runner = CodexCliProcessRunner(
             executable,
-            auth_mode=settings.auth_mode_label,
+            auth_mode=settings.resolved_auth_mode,
             credential_env=settings.credential_env,
             max_output_bytes=settings.max_output_bytes,
             allow_proxy_environment=settings.allow_proxy_environment,
@@ -408,6 +408,10 @@ def _external_identity(
         reproducibility_scope="mutable_remote_observation",
         integration_track="codex_cli_external_agent",
         auth_mode_label=settings.auth_mode_label,
+        requested_auth_mode=settings.requested_auth_mode,
+        resolved_auth_mode=settings.resolved_auth_mode,
+        auth_semantic_id=settings.auth_semantic_id,
+        auth_alias_used=settings.auth_alias_used,
         sandbox_policy=settings.sandbox_policy,
         approval_policy=settings.approval_policy,
     )

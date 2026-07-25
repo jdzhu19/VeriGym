@@ -75,6 +75,10 @@ CODEX_CLI_CSV_COLUMNS = [
     "observed_model_id",
     "identity_confidence",
     "auth_mode_label",
+    "requested_auth_mode",
+    "resolved_auth_mode",
+    "auth_semantic_id",
+    "auth_alias_used",
     "sandbox_policy",
     "approval_policy",
     "external_tool_call_count",
@@ -301,6 +305,12 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
                 "capability_fingerprint": configuration.get("capability_fingerprint"),
                 "requested_model_id": plan.system.model_descriptor.model_id,
                 "auth_mode_label": configuration.get("auth_mode_label"),
+                "requested_auth_mode": (
+                    configuration.get("requested_auth_mode") or configuration.get("auth_mode_label")
+                ),
+                "resolved_auth_mode": configuration.get("resolved_auth_mode"),
+                "auth_semantic_id": configuration.get("auth_semantic_id"),
+                "auth_alias_used": configuration.get("auth_alias_used"),
                 "sandbox_policy": configuration.get("sandbox_policy"),
                 "approval_policy": configuration.get("approval_policy"),
             }
@@ -355,6 +365,10 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
             "observed_model_id": identity.observed_model_id,
             "identity_confidence": identity.identity_confidence,
             "auth_mode_label": identity.auth_mode_label,
+            "requested_auth_mode": (identity.requested_auth_mode or identity.auth_mode_label),
+            "resolved_auth_mode": identity.resolved_auth_mode,
+            "auth_semantic_id": identity.auth_semantic_id,
+            "auth_alias_used": identity.auth_alias_used,
             "sandbox_policy": identity.sandbox_policy,
             "approval_policy": identity.approval_policy,
         }
@@ -377,6 +391,12 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
                 observation.identity_confidence if observation is not None else "unknown"
             ),
             "auth_mode_label": configuration.get("auth_mode_label"),
+            "requested_auth_mode": (
+                configuration.get("requested_auth_mode") or configuration.get("auth_mode_label")
+            ),
+            "resolved_auth_mode": configuration.get("resolved_auth_mode"),
+            "auth_semantic_id": configuration.get("auth_semantic_id"),
+            "auth_alias_used": configuration.get("auth_alias_used"),
             "sandbox_policy": configuration.get("sandbox_policy"),
             "approval_policy": configuration.get("approval_policy"),
         }

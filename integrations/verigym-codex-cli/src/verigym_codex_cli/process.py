@@ -12,16 +12,20 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
-from .util import clean_identifier, redact_text, sha256_file
+from .auth import (
+    CREDENTIAL_AUTH_MODES,
+    INHERITED_CODEX_LOGIN,
+    AuthModeError,
+    AuthModeResolution,
+    ResolvedAuthMode,
+    is_resolved_auth_mode,
+    resolve_auth_mode,
+)
+from .util import redact_text, sha256_file
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-_ALLOWED_AUTH_MODES = {
-    "inherited_codex_login",
-    "api_key_env",
-    "custom_provider_environment",
-}
 _TEST_ENVIRONMENT_NAMES = (
     "VERIGYM_FAKE_CODEX_SCENARIO",
     "VERIGYM_FAKE_CODEX_LOG",
@@ -101,14 +105,14 @@ class CodexCliProcessRunner:
         max_output_bytes: int = 8 * 1024 * 1024,
         allow_proxy_environment: bool = False,
     ) -> None:
-        if auth_mode is not None and auth_mode not in _ALLOWED_AUTH_MODES:
+        if auth_mode is not None and not is_resolved_auth_mode(auth_mode):
             raise CodexProcessError("unsupported Codex authentication-mode label")
         if credential_env is not None and not _ENVIRONMENT_NAME.fullmatch(credential_env):
             raise CodexProcessError("credential environment name is invalid")
         if max_output_bytes < 1024 or max_output_bytes > 16 * 1024 * 1024:
             raise CodexProcessError("Codex output bound must be between 1 KiB and 16 MiB")
         self.executable = executable
-        self.auth_mode = auth_mode
+        self.auth_mode = cast(ResolvedAuthMode | None, auth_mode)
         self.credential_env = credential_env
         self.max_output_bytes = max_output_bytes
         self.allow_proxy_environment = allow_proxy_environment
@@ -195,13 +199,13 @@ class CodexCliProcessRunner:
         for name in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
             if name in os.environ:
                 environment[name] = os.environ[name]
-        if self.auth_mode == "inherited_codex_login":
+        if self.auth_mode == INHERITED_CODEX_LOGIN:
             if "HOME" not in os.environ:
                 raise CodexProcessError("inherited Codex login requires HOME")
             environment["HOME"] = os.environ["HOME"]
             if "CODEX_HOME" in os.environ:
                 environment["CODEX_HOME"] = os.environ["CODEX_HOME"]
-        elif self.auth_mode in {"api_key_env", "custom_provider_environment"}:
+        elif self.auth_mode in CREDENTIAL_AUTH_MODES:
             if self.credential_env is None or self.credential_env not in os.environ:
                 raise CodexProcessError("selected Codex authentication environment is unavailable")
             environment[self.credential_env] = os.environ[self.credential_env]
@@ -315,25 +319,34 @@ class CodexCliProcessRunner:
         return True
 
 
-def auth_configuration(
+def auth_identity_configuration(
     *,
     default_credential_env: str | None = None,
-) -> tuple[str, str | None]:
-    mode = clean_identifier(
-        os.environ.get("VERIGYM_CODEX_AUTH_MODE", ""),
-        label="VERIGYM_CODEX_AUTH_MODE",
-        max_length=64,
-    )
-    if mode not in _ALLOWED_AUTH_MODES:
-        raise CodexProcessError("VERIGYM_CODEX_AUTH_MODE is unsupported")
+) -> tuple[AuthModeResolution, str | None]:
+    try:
+        resolution = resolve_auth_mode(os.environ.get("VERIGYM_CODEX_AUTH_MODE", ""))
+    except AuthModeError as exc:
+        raise CodexProcessError("VERIGYM_CODEX_AUTH_MODE is unsupported") from exc
     credential_env = default_credential_env
-    if mode in {"api_key_env", "custom_provider_environment"}:
+    if resolution.resolved_auth_mode in CREDENTIAL_AUTH_MODES:
         credential_env = credential_env or os.environ.get("VERIGYM_CODEX_CREDENTIAL_ENV")
         if credential_env is None or not _ENVIRONMENT_NAME.fullmatch(credential_env):
             raise CodexProcessError(
                 "credential-based Codex authentication requires an explicit environment name"
             )
-    return mode, credential_env
+    return resolution, credential_env
+
+
+def auth_configuration(
+    *,
+    default_credential_env: str | None = None,
+) -> tuple[str, str | None]:
+    """Return the resolved execution mode using the pre-patch tuple shape."""
+
+    resolution, credential_env = auth_identity_configuration(
+        default_credential_env=default_credential_env
+    )
+    return resolution.resolved_auth_mode, credential_env
 
 
 __all__ = [
@@ -343,5 +356,6 @@ __all__ = [
     "ExecutableChangedError",
     "ExecutableIdentity",
     "auth_configuration",
+    "auth_identity_configuration",
     "resolve_executable",
 ]

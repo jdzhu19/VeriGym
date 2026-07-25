@@ -37,17 +37,25 @@ as an observed provider identity.
 Configure authentication without placing secrets in options or artifacts:
 
 ```bash
+export VERIGYM_CODEX_AUTH_MODE=chatgpt_cli_session
+verigym-codex auth-preflight --json /tmp/codex-auth-preflight.json
+# The compatibility label above resolves explicitly to inherited_codex_login.
+# The legacy label remains accepted:
 export VERIGYM_CODEX_AUTH_MODE=inherited_codex_login
 # Or:
 export VERIGYM_CODEX_AUTH_MODE=api_key_env
 export VERIGYM_CODEX_CREDENTIAL_ENV=OPENAI_API_KEY
 ```
 
-The inherited-login mode passes `HOME`/`CODEX_HOME` because current CLI login state may require
-them. Project instructions are disabled, MCP is configured empty, execution occurs under `/tmp`,
-and ancestor `AGENTS.md`/`.codex` contamination is rejected. This is still a `local_trusted`
-pilot, not a hardened boundary against a malicious CLI or incomplete upstream event telemetry.
-Track B is intentionally restricted to LocalRuntime.
+`chatgpt_cli_session` and `inherited_codex_login` share
+`codex.auth.inherited_chatgpt_session.v1`; reports use that semantic ID for comparison while
+retaining the requested label as provenance. The inherited-login mode passes `HOME`/`CODEX_HOME`
+because current CLI login state may require them. The preflight invokes only `codex login status`;
+it never starts login, logout, account switching, or a model process. Project instructions are
+disabled, MCP is configured empty, execution occurs under `/tmp`, and ancestor
+`AGENTS.md`/`.codex` contamination is rejected. This is still a `local_trusted` pilot, not a
+hardened boundary against a malicious CLI or incomplete upstream event telemetry. Track B is
+intentionally restricted to LocalRuntime.
 
 ## Fixed real smoke
 

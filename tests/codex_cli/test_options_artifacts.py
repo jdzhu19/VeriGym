@@ -48,6 +48,7 @@ def test_legacy_empty_options_are_omitted_from_identity_payload() -> None:
 
 def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     from verigym_codex_cli import CodexExecModelClient
@@ -57,6 +58,7 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     from verigym.schemas.common import InteractionMode
 
     _executable, _log, _scenario = fake_codex
+    monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
     registries = build_registries(discover_external=False)
     registries.models.register(CodexExecModelClient())
     result = VeriGym(registries).run(
@@ -68,6 +70,12 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
             model_options=ModelRunConfig(model_id="fake-model"),
             output=tmp_path / "runs",
         )
+    )
+    assert result.manifest.model is not None
+    assert result.manifest.model.configuration["requested_auth_mode"] == ("chatgpt_cli_session")
+    assert result.manifest.model.configuration["resolved_auth_mode"] == ("inherited_codex_login")
+    assert result.manifest.model.configuration["auth_semantic_id"] == (
+        "codex.auth.inherited_chatgpt_session.v1"
     )
     assert verify_artifact_manifest(result.run_dir, expected_scope="run").status == "verified"
     codex_artifacts = result.run_dir / "artifacts" / "codex_cli"
@@ -88,6 +96,10 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     assert len(rows) == 1
     assert float(rows[0]["cli_process_wall_time_s"]) > 0
     assert rows[0]["external_tool_call_count"] == "0"
+    assert rows[0]["requested_auth_mode"] == "chatgpt_cli_session"
+    assert rows[0]["resolved_auth_mode"] == "inherited_codex_login"
+    assert rows[0]["auth_semantic_id"] == ("codex.auth.inherited_chatgpt_session.v1")
+    assert rows[0]["auth_alias_used"] == "true"
     summary = result.run_dir / "artifacts" / "codex_cli" / "summary.json"
     payload = json.loads(summary.read_text(encoding="utf-8"))
     payload["tampered"] = True

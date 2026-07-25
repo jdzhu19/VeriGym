@@ -7,8 +7,9 @@ from dataclasses import dataclass
 
 from verigym.plugin_api import JsonValue, ModelRunConfig
 
+from .auth import AuthModeResolution
 from .capabilities import CapabilityReport
-from .process import auth_configuration
+from .process import auth_identity_configuration
 from .util import clean_identifier, stable_hash
 
 _COMMON_OPTIONS = {
@@ -31,10 +32,19 @@ class CodexSettings:
     max_process_time_s: float
     max_output_bytes: int
     reject_tool_use: bool
-    auth_mode_label: str
+    requested_auth_mode: str
+    resolved_auth_mode: str
+    auth_semantic_id: str
+    auth_alias_used: bool
     credential_env: str | None
     allow_proxy_environment: bool
     configuration_fingerprint: str
+
+    @property
+    def auth_mode_label(self) -> str:
+        """Backward-compatible provenance label."""
+
+        return self.requested_auth_mode
 
     def safe_configuration(self, capabilities: CapabilityReport) -> dict[str, JsonValue]:
         return {
@@ -48,6 +58,10 @@ class CodexSettings:
             "empty_working_directory_policy": self.integration_track == "codex_cli_model_proxy",
             "ephemeral_session_policy": True,
             "auth_mode_label": self.auth_mode_label,
+            "requested_auth_mode": self.requested_auth_mode,
+            "resolved_auth_mode": self.resolved_auth_mode,
+            "auth_semantic_id": self.auth_semantic_id,
+            "auth_alias_used": self.auth_alias_used,
             "max_process_time_s": self.max_process_time_s,
             "max_output_bytes": self.max_output_bytes,
             "reject_tool_use": self.reject_tool_use,
@@ -75,7 +89,9 @@ def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> Co
     reject_tool_use = _boolean(options, "reject_tool_use", True)
     if not reject_tool_use:
         raise ValueError("Track A cannot disable tool-use rejection")
-    auth_mode, credential_env = auth_configuration(default_credential_env=config.api_key_env)
+    auth_resolution, credential_env = auth_identity_configuration(
+        default_credential_env=config.api_key_env
+    )
     return _settings(
         integration_track="codex_cli_model_proxy",
         model_id=model_id,
@@ -84,7 +100,7 @@ def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> Co
         timeout=_number(options, "max_process_time_s", config.request_timeout_s),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
         reject_tool_use=True,
-        auth_mode=auth_mode,
+        auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
         capabilities=capabilities,
@@ -108,7 +124,7 @@ def agent_settings(
     approval = _string(options, "approval_policy", "non-interactive")
     if approval not in {"non-interactive", "never"}:
         raise ValueError("Track B requires a non-interactive approval policy")
-    auth_mode, credential_env = auth_configuration()
+    auth_resolution, credential_env = auth_identity_configuration()
     timeout = min(
         _number(options, "max_process_time_s", float(task_wall_time_s)),
         float(task_wall_time_s),
@@ -121,7 +137,7 @@ def agent_settings(
         timeout=timeout,
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
         reject_tool_use=False,
-        auth_mode=auth_mode,
+        auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
         capabilities=capabilities,
@@ -137,7 +153,7 @@ def _settings(
     timeout: float,
     max_output: int,
     reject_tool_use: bool,
-    auth_mode: str,
+    auth_resolution: AuthModeResolution,
     credential_env: str | None,
     allow_proxy: bool,
     capabilities: CapabilityReport,
@@ -154,7 +170,10 @@ def _settings(
         "timeout": timeout,
         "max_output": max_output,
         "reject_tool_use": reject_tool_use,
-        "auth_mode": auth_mode,
+        "requested_auth_mode": auth_resolution.requested_auth_mode,
+        "resolved_auth_mode": auth_resolution.resolved_auth_mode,
+        "auth_semantic_id": auth_resolution.auth_semantic_id,
+        "auth_alias_used": auth_resolution.auth_alias_used,
         "allow_proxy_environment": allow_proxy,
         "capability_fingerprint": capabilities.capability_fingerprint,
     }
@@ -166,7 +185,10 @@ def _settings(
         max_process_time_s=timeout,
         max_output_bytes=max_output,
         reject_tool_use=reject_tool_use,
-        auth_mode_label=auth_mode,
+        requested_auth_mode=auth_resolution.requested_auth_mode,
+        resolved_auth_mode=auth_resolution.resolved_auth_mode,
+        auth_semantic_id=auth_resolution.auth_semantic_id,
+        auth_alias_used=auth_resolution.auth_alias_used,
         credential_env=credential_env,
         allow_proxy_environment=allow_proxy,
         configuration_fingerprint=stable_hash(safe),

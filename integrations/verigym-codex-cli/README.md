@@ -36,10 +36,21 @@ Doctor executes only `--version`, `--help`, and `exec --help`. The sealed report
 executable hash, CLI version, supported sandbox/approval modes, event protocol, and a capability
 fingerprint with `model_call_count: 0`.
 
-Authentication is selected by the secret-free `VERIGYM_CODEX_AUTH_MODE` label:
-`inherited_codex_login`, `api_key_env`, or `custom_provider_environment`. Credential modes also
-require `VERIGYM_CODEX_CREDENTIAL_ENV`; only that environment value reaches the child and neither
-its value nor its path is persisted.
+Authentication is selected by the secret-free `VERIGYM_CODEX_AUTH_MODE` label. The explicit
+compatibility label `chatgpt_cli_session` resolves to the unchanged `inherited_codex_login`
+semantics. `inherited_codex_login`, `api_key_env`, and `custom_provider_environment` remain
+accepted. Records preserve the requested label and also store the resolved mode and stable
+semantic ID.
+
+Check an existing inherited session without a model call or login flow:
+
+```bash
+export VERIGYM_CODEX_AUTH_MODE=chatgpt_cli_session
+verigym-codex auth-preflight --json /tmp/codex-auth-preflight.json
+```
+
+Credential modes also require `VERIGYM_CODEX_CREDENTIAL_ENV`; only that selected environment
+value reaches a later model process, and its value is never persisted.
 
 ## Evidence and replay
 

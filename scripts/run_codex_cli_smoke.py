@@ -43,7 +43,10 @@ def main() -> int:
         raise SystemExit("VERIGYM_RUN_CODEX_CLI_TESTS=1 is required")
     model_id = _required_environment("VERIGYM_CODEX_MODEL")
     _required_environment("VERIGYM_CODEX_BINARY")
-    _required_environment("VERIGYM_CODEX_AUTH_MODE")
+    auth_label = _required_environment("VERIGYM_CODEX_AUTH_MODE")
+    from verigym_codex_cli import resolve_auth_mode
+
+    auth_identity = resolve_auth_mode(auth_label).safe_dict()
     capability_path = Path(_required_environment("VERIGYM_CODEX_CAPABILITY_FILE"))
     if not capability_path.is_file() or capability_path.is_symlink():
         raise SystemExit("VERIGYM_CODEX_CAPABILITY_FILE must be a sealed regular file")
@@ -61,7 +64,7 @@ def main() -> int:
     _verify_plugin_origins(registries)
     service = VeriGym(registries)
     capability = json.loads(capability_path.read_text(encoding="utf-8"))
-    plan = _frozen_plan(service, model_id, capability, registries)
+    plan = _frozen_plan(service, model_id, capability, registries, auth_identity)
     atomic_dump_json(root / "smoke_plan.json", plan)
     plan_bytes = (root / "smoke_plan.json").read_bytes()
     plan_hash = content_hash(plan)
@@ -151,6 +154,7 @@ def _frozen_plan(
     model_id: str,
     capability: dict[str, Any],
     registries: Any,
+    auth_identity: dict[str, str | bool],
 ) -> dict[str, Any]:
     task_records = []
     for task_id in _TASKS:
@@ -200,6 +204,7 @@ def _frozen_plan(
             "model_call_count": capability["model_call_count"],
         },
         "requested_model_id": model_id,
+        **auth_identity,
         "task_records": task_records,
         "planned_run_count": 4,
         "maximum_codex_model_processes": 4,
@@ -381,6 +386,10 @@ def _acceptance(
             == plan["capability_identity"]["executable_sha256"]
             and identity.get("capability_fingerprint")
             == plan["capability_identity"]["capability_fingerprint"]
+            and identity.get("requested_auth_mode") == plan["requested_auth_mode"]
+            and identity.get("resolved_auth_mode") == plan["resolved_auth_mode"]
+            and identity.get("auth_semantic_id") == plan["auth_semantic_id"]
+            and identity.get("auth_alias_used") == plan["auth_alias_used"]
             and identity.get("invocation_count") == 1
             and identity.get("identity_confidence") in {"observed", "requested_only", "unknown"}
             for identity in identities

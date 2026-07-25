@@ -27,6 +27,10 @@ class ExternalAgentCallIdentity(StrictModel):
     invocation_count: int = Field(ge=0)
     integration_track: Literal["codex_cli_external_agent"] | None = None
     auth_mode_label: str | None = None
+    requested_auth_mode: str | None = Field(default=None, min_length=1, max_length=64)
+    resolved_auth_mode: str | None = Field(default=None, min_length=1, max_length=64)
+    auth_semantic_id: str | None = Field(default=None, min_length=1, max_length=128)
+    auth_alias_used: bool | None = None
     sandbox_policy: str | None = None
     approval_policy: str | None = None
     identity_confidence: Literal["observed", "requested_only", "unknown"]
@@ -46,6 +50,26 @@ class ExternalAgentCallIdentity(StrictModel):
         if not _SHA256.fullmatch(value):
             raise ValueError("external-agent identity hashes must be lowercase SHA-256 values")
         return value
+
+    @model_validator(mode="after")
+    def validate_authentication_identity(self) -> ExternalAgentCallIdentity:
+        values = (
+            self.requested_auth_mode,
+            self.resolved_auth_mode,
+            self.auth_semantic_id,
+            self.auth_alias_used,
+        )
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ValueError(
+                "external-agent authentication identity fields must be recorded together"
+            )
+        if (
+            self.requested_auth_mode is not None
+            and self.auth_mode_label is not None
+            and self.requested_auth_mode != self.auth_mode_label
+        ):
+            raise ValueError("auth_mode_label must preserve the requested authentication mode")
+        return self
 
 
 class ExternalAgentAccounting(StrictModel):

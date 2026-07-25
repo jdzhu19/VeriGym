@@ -1,0 +1,20 @@
+{
+  "adapter_name": "codex-cli-agent",
+  "adapter_version": "0.1.0",
+  "approval_policy": "non-interactive",
+  "auth_mode_label": "inherited_codex_login",
+  "capability_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "configuration_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "executable_name": "codex",
+  "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "executable_version": "codex-cli legacy-fixture",
+  "harness_name": "verigym-external-agent-bridge",
+  "identity_confidence": "requested_only",
+  "integration_track": "codex_cli_external_agent",
+  "invocation_count": 1,
+  "observed_model_id": null,
+  "reproducibility_scope": "mutable_remote_observation",
+  "requested_model_id": "legacy-model",
+  "sandbox_policy": "workspace-write",
+  "schema_version": "1.0"
+}

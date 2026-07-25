@@ -72,6 +72,31 @@ def test_one_request_is_normalized_in_empty_directory(
     assert "private fake reasoning" not in persisted
 
 
+def test_alias_mode_track_a_records_requested_resolved_and_semantic_identity(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _executable, _log, _scenario = fake_codex
+    monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
+    client = _client()
+    configuration = client.descriptor.configuration
+    assert configuration["requested_auth_mode"] == "chatgpt_cli_session"
+    assert configuration["resolved_auth_mode"] == "inherited_codex_login"
+    assert configuration["auth_semantic_id"] == ("codex.auth.inherited_chatgpt_session.v1")
+    assert configuration["auth_alias_used"] is True
+    client.generate(_request())
+    destination = tmp_path / "codex_cli"
+    client.export_run_artifacts(destination)
+    identity = json.loads((destination / "identity.json").read_text(encoding="utf-8"))
+    invocation = json.loads((destination / "invocation.json").read_text(encoding="utf-8"))
+    for payload in (identity, invocation):
+        assert payload["requested_auth_mode"] == "chatgpt_cli_session"
+        assert payload["resolved_auth_mode"] == "inherited_codex_login"
+        assert payload["auth_semantic_id"] == ("codex.auth.inherited_chatgpt_session.v1")
+        assert payload["auth_alias_used"] is True
+
+
 def test_unknown_usage_remains_null(
     fake_codex: tuple[Path, Path, object],
 ) -> None:

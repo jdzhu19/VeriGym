@@ -68,11 +68,13 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             "",
             "A CLI model proxy is not a direct API benchmark. Model-proxy and external-agent "
             "tracks, CLI versions, and capability fingerprints are reported as distinct "
-            "systems.",
+            "systems. Authentication comparison uses the semantic ID; requested labels remain "
+            "provenance.",
             "",
             "| Track | Requested model | Observed model | Confidence | CLI version | "
-            "Executable SHA-256 | Capability fingerprint | Auth | Sandbox | Approval |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "Executable SHA-256 | Capability fingerprint | Requested auth | Resolved auth | "
+            "Auth semantic ID | Alias used | Sandbox | Approval |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     codex_partitions = aggregate.metadata.get("codex_cli_identity_partitions", [])
@@ -88,7 +90,10 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"{markdown_escape(partition.get('cli_version', ''))} | "
                 f"`{markdown_escape(partition.get('cli_executable_sha256', ''))}` | "
                 f"`{markdown_escape(partition.get('capability_fingerprint', ''))}` | "
-                f"{markdown_escape(partition.get('auth_mode_label', ''))} | "
+                f"{markdown_escape(partition.get('requested_auth_mode', ''))} | "
+                f"{markdown_escape(partition.get('resolved_auth_mode', ''))} | "
+                f"`{markdown_escape(partition.get('auth_semantic_id', ''))}` | "
+                f"{markdown_escape(partition.get('auth_alias_used', ''))} | "
                 f"{markdown_escape(partition.get('sandbox_policy', ''))} | "
                 f"{markdown_escape(partition.get('approval_policy', ''))} |"
             )

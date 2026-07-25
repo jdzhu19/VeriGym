@@ -22,6 +22,18 @@
       "default": null,
       "title": "Approval Policy"
     },
+    "auth_alias_used": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth Alias Used"
+    },
     "auth_mode_label": {
       "anyOf": [
         {
@@ -33,6 +45,20 @@
       ],
       "default": null,
       "title": "Auth Mode Label"
+    },
+    "auth_semantic_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth Semantic Id"
     },
     "capability_fingerprint": {
       "title": "Capability Fingerprint",
@@ -105,6 +131,20 @@
       "title": "Reproducibility Scope",
       "type": "string"
     },
+    "requested_auth_mode": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Auth Mode"
+    },
     "requested_model_id": {
       "anyOf": [
         {
@@ -115,6 +155,20 @@
         }
       ],
       "title": "Requested Model Id"
+    },
+    "resolved_auth_mode": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved Auth Mode"
     },
     "sandbox_policy": {
       "anyOf": [

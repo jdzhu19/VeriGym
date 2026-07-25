@@ -155,7 +155,7 @@ class CodexExecModelClient(ModelClient):
                 ) from exc
             runner = CodexCliProcessRunner(
                 executable,
-                auth_mode=settings.auth_mode_label,
+                auth_mode=settings.resolved_auth_mode,
                 credential_env=settings.credential_env,
                 max_output_bytes=settings.max_output_bytes,
                 allow_proxy_environment=settings.allow_proxy_environment,
@@ -353,6 +353,10 @@ class CodexExecModelClient(ModelClient):
             "identity_confidence": "observed" if observed else "requested_only",
             "reproducibility_scope": "mutable_remote_observation",
             "auth_mode_label": settings.auth_mode_label,
+            "requested_auth_mode": settings.requested_auth_mode,
+            "resolved_auth_mode": settings.resolved_auth_mode,
+            "auth_semantic_id": settings.auth_semantic_id,
+            "auth_alias_used": settings.auth_alias_used,
             "pure_api_model_eval": False,
         }
 
