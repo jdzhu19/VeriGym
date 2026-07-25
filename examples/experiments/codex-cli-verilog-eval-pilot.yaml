@@ -1,0 +1,69 @@
+schema_version: "1.0"
+name: "codex-cli-verilog-eval-v2-pilot"
+description: "Prepared 30-run integration study; it is not a direct-API benchmark or leaderboard."
+
+suite:
+  id: "verilog-eval"
+  variant: "v2-spec-to-rtl"
+  source_env: "VERIGYM_VERILOG_EVAL_ROOT"
+  expected_git_commit: "c498220d0a52248f8e3fdffe279075215bde2da6"
+  expected_git_remote: "https://github.com/NVlabs/verilog-eval.git"
+  expected_dataset_content_hash: "432b712cea110d4b5d35521f691db1bc3e726a77c6fc72fc1c916a85361ddbf2"
+
+tasks:
+  - id: "verilog-eval/v2-spec-to-rtl/Prob014_andgate"
+    task_hash: "1b8416e7816bb850d85ceec0ded027c053336a0e84a6f68c603a29a648b91429"
+    source_hash: "4e4a6243f76250f8d00432c10812211b0e3296fdc3021a2efb34a16418e4581b"
+    coverage: "simple combinational logic"
+    rationale: "A minimal two-input AND gate isolates basic prompt-to-RTL flow."
+  - id: "verilog-eval/v2-spec-to-rtl/Prob024_hadd"
+    task_hash: "612aee10aaeaff0cf418da6fd668d3d971c61eb76c39bf47eb2d3d5771e2c375"
+    source_hash: "1cecf50364df67dfe1d89e4fa7ac02720aa0098257bcafeab7a8b9919afc0afb"
+    coverage: "multiplexing or arithmetic"
+    rationale: "The half adder exercises related sum and carry outputs."
+  - id: "verilog-eval/v2-spec-to-rtl/Prob035_count1to10"
+    task_hash: "0b2420f853fc10af0ad559676c0d31fbd5669e0dc073beae03cde134b07b1b6e"
+    source_hash: "2dd134412a980471ed30d3812691d391b3ee31202db1b0c1872987f31e6d3d43"
+    coverage: "counter/sequential logic"
+    rationale: "A synchronous decade counter tests reset and wrap behavior."
+  - id: "verilog-eval/v2-spec-to-rtl/Prob085_shift4"
+    task_hash: "ba2e400bd316736ac11e7554f6ec3b037dbe33ad90a4ec736d492966a4ca3f27"
+    source_hash: "cbfd0a30ba4c3bea4db58d5d8e35168918617c8d78b6e91e946d3b4001fecf69"
+    coverage: "shift/register logic"
+    rationale: "A shift register tests asynchronous reset and control priority."
+  - id: "verilog-eval/v2-spec-to-rtl/Prob107_fsm1s"
+    task_hash: "378770622f83fefa799fc9ca681e2c5b4d0e3272d65a28fa1b6ddf812d43d4d3"
+    source_hash: "e636c911d94397b7c7611a345a1998516de03f5f76235bcd86672da7d599d2fc"
+    coverage: "FSM or control logic"
+    rationale: "A two-state Moore machine covers explicit transition and output logic."
+
+tracks:
+  - id: "codex_cli_model_proxy"
+    model_plugin: "codex-cli-exec-model"
+    agent_plugin: "single-turn"
+    interaction_mode: "chat"
+  - id: "codex_cli_external_agent"
+    model_plugin: null
+    agent_plugin: "codex-cli-agent"
+    interaction_mode: "agent"
+
+sampling:
+  base_seed: 0
+  sample_indices: [0, 1, 2]
+  pass_k: [1, 2, 3]
+
+execution:
+  planned_runs: 30
+  max_codex_processes: 30
+  max_total_wall_time_s: 14400
+  max_process_time_s: 300
+  allow_retry: false
+  allow_best_of_k_selection: false
+  allow_outer_agent_repair: false
+
+guard:
+  opt_in_env: "VERIGYM_RUN_CODEX_PILOT"
+  required_value: "1"
+  budget_env: "VERIGYM_CODEX_PILOT_BUDGET"
+  source_env: "VERIGYM_VERILOG_EVAL_ROOT"
+  capability_env: "VERIGYM_CODEX_CAPABILITY_FILE"

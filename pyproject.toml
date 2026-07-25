@@ -56,6 +56,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 verigym = [
   "_build_provenance.json",
+  "py.typed",
   "profiles/builtins/*.yaml",
   "profiles/builtins/assets/*",
   "suites/toy_rtl/assets/**/*",
@@ -85,6 +86,10 @@ markers = [
   "external_benchmark: exercises a user-supplied real benchmark checkout",
   "reproducible_build: rebuilds and compares local distribution archives",
   "release_audit: validates a generated local release-audit bundle",
+  "codex_cli: exercises a Codex CLI integration path",
+  "codex_cli_model: exercises the CLI-mediated model-proxy path",
+  "codex_cli_agent: exercises the external coding-agent path",
+  "codex_cli_pilot: exercises the protected real-model pilot",
 ]
 
 [tool.ruff]

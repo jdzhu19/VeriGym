@@ -23,6 +23,7 @@ jobs:
           ruff format --check .
           ruff check .
           mypy --strict src/verigym
+          mypy --strict integrations/verigym-codex-cli/src/verigym_codex_cli
           git diff --check
       - name: Persistent-schema drift
         run: python scripts/export_schemas.py --check
@@ -65,12 +66,18 @@ jobs:
       - name: Build wheel and sdist
         env:
           SOURCE_DATE_EPOCH: "1784712454"
-        run: python -m build
+        run: |
+          python -m build
+          python -m build integrations/verigym-codex-cli \
+            --outdir integrations/verigym-codex-cli/dist
       - name: Scan package contents and metadata
-        run: >-
-          python scripts/audit_distribution.py
-          --wheel dist/verigym-0.1.0-py3-none-any.whl
-          --sdist dist/verigym-0.1.0.tar.gz
+        run: |
+          python scripts/audit_distribution.py \
+            --wheel dist/verigym-0.1.0-py3-none-any.whl \
+            --sdist dist/verigym-0.1.0.tar.gz
+          python scripts/audit_codex_cli_distribution.py \
+            --wheel integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
+            --sdist integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0.tar.gz
       - name: Install Icarus Verilog for installed API conformance
         run: |
           sudo apt-get update
@@ -82,6 +89,57 @@ jobs:
           python scripts/installed_conformance.py
           --wheel dist/verigym-0.1.0-py3-none-any.whl
           --output /tmp/installed-conformance.json
+      - name: Installed Codex CLI plugin entry points
+        run: |
+          python -m venv /tmp/verigym-codex-plugin-venv
+          /tmp/verigym-codex-plugin-venv/bin/pip install \
+            dist/verigym-0.1.0-py3-none-any.whl \
+            integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl
+          /tmp/verigym-codex-plugin-venv/bin/pip check
+          cd /tmp
+          /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
+          from verigym.registry.collections import build_registries
+
+          registries = build_registries()
+          assert registries.models.origin("codex-cli-exec-model").package == "verigym-codex-cli"
+          assert registries.agents.origin("codex-cli-agent").package == "verigym-codex-cli"
+          print("installed Codex CLI entry points discovered")
+          PY
+      - name: Installed Codex CLI fake four-run flow
+        env:
+          VERIGYM_RUN_CODEX_CLI_TESTS: "1"
+          VERIGYM_CODEX_BINARY: ${{ github.workspace }}/integrations/verigym-codex-cli/tests/fake_codex.py
+          VERIGYM_CODEX_MODEL: fake-installed-conformance
+          VERIGYM_CODEX_AUTH_MODE: inherited_codex_login
+          VERIGYM_CODEX_TEST_MODE: "1"
+          VERIGYM_FAKE_CODEX_SCENARIO: valid
+          VERIGYM_FAKE_CODEX_LOG: /tmp/verigym-codex-fake-calls.jsonl
+          VERIGYM_CODEX_CAPABILITY_FILE: /tmp/verigym-codex-capabilities.json
+        run: |
+          cd /tmp
+          /tmp/verigym-codex-plugin-venv/bin/verigym-codex doctor \
+            --json "$VERIGYM_CODEX_CAPABILITY_FILE"
+          /tmp/verigym-codex-plugin-venv/bin/python \
+            "$GITHUB_WORKSPACE/scripts/run_codex_cli_smoke.py" \
+            --output /tmp/verigym-codex-fake-smoke
+          /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          calls = [
+              json.loads(line)
+              for line in Path("/tmp/verigym-codex-fake-calls.jsonl").read_text().splitlines()
+          ]
+          acceptance = json.loads(
+              Path(
+                  "/tmp/verigym-codex-fake-smoke/evidence/smoke_acceptance.json"
+              ).read_text()
+          )
+          assert sum(call["kind"] == "diagnostic" for call in calls) == 3
+          assert sum(call["kind"] == "model" for call in calls) == 4
+          assert acceptance["gate"] == "PASS"
+          print("installed Codex CLI fake flow passed")
+          PY
       - name: Install the sdist in a separate environment
         run: |
           python -m venv /tmp/verigym-sdist-venv

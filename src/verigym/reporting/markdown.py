@@ -64,6 +64,37 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
     lines.extend(
         [
             "",
+            "## Codex CLI integration partitions",
+            "",
+            "A CLI model proxy is not a direct API benchmark. Model-proxy and external-agent "
+            "tracks, CLI versions, and capability fingerprints are reported as distinct "
+            "systems.",
+            "",
+            "| Track | Requested model | Observed model | Confidence | CLI version | "
+            "Executable SHA-256 | Capability fingerprint | Auth | Sandbox | Approval |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    codex_partitions = aggregate.metadata.get("codex_cli_identity_partitions", [])
+    if isinstance(codex_partitions, list):
+        for partition in codex_partitions:
+            if not isinstance(partition, dict):
+                continue
+            lines.append(
+                f"| {markdown_escape(partition.get('integration_track', ''))} | "
+                f"{markdown_escape(partition.get('requested_model_id', ''))} | "
+                f"{markdown_escape(partition.get('observed_model_id', ''))} | "
+                f"{markdown_escape(partition.get('identity_confidence', ''))} | "
+                f"{markdown_escape(partition.get('cli_version', ''))} | "
+                f"`{markdown_escape(partition.get('cli_executable_sha256', ''))}` | "
+                f"`{markdown_escape(partition.get('capability_fingerprint', ''))}` | "
+                f"{markdown_escape(partition.get('auth_mode_label', ''))} | "
+                f"{markdown_escape(partition.get('sandbox_policy', ''))} | "
+                f"{markdown_escape(partition.get('approval_policy', ''))} |"
+            )
+    lines.extend(
+        [
+            "",
             "## Plan and completion coverage",
             "",
             "| Measure | Count |",
@@ -227,8 +258,8 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
         [
             "## Child runs",
             "",
-            "| Plan | Attempt | Status | Run |",
-            "| ---: | ---: | --- | --- |",
+            "| Plan | Attempt | Track | Status | Run |",
+            "| ---: | ---: | --- | --- | --- |",
         ]
     )
     for row in build_run_rows(inputs):
@@ -238,6 +269,7 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
         link = f"[{run_id}](../{safe_path})" if safe_path else run_id
         lines.append(
             f"| {row['plan_index']} | {row['attempt']} | "
+            f"{markdown_escape(row.get('integration_track') or '')} | "
             f"{markdown_escape(row.get('status') or '')} | {link} |"
         )
     lines.extend(["", "## Warnings and invalid artifacts", ""])

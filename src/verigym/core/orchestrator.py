@@ -15,7 +15,8 @@ from verigym.core.artifact_policy import bound_value
 from verigym.core.artifacts import RunLayout
 from verigym.core.environment import VeriGymEnv
 from verigym.core.episode import EpisodeState, TerminationReason
-from verigym.core.errors import ConfigurationError
+from verigym.core.errors import ConfigurationError, PathPolicyError
+from verigym.core.external_agent import RuntimeExternalAgentBridge
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.integrity import write_run_artifact_manifest
 from verigym.core.loaders import dump_json
@@ -45,7 +46,7 @@ from verigym.schemas.common import (
 from verigym.schemas.model import GenerationParameters
 from verigym.schemas.prompt import ToolPolicySnapshot
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
-from verigym.schemas.runtime import SessionSpec
+from verigym.schemas.runtime import SessionSpec, WorkspaceDiff
 from verigym.schemas.sampling import SampleSetResult
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
@@ -197,7 +198,8 @@ class VeriGym:
         layout = RunLayout.create(config.output.expanduser().resolve() / run_id)
         trace = TraceWriter(layout.trace, run_id)
         verifier_hash = content_hash(task.verifier)
-        run_config_hash = content_hash(config)
+        run_config_hash = content_hash(config.identity_payload())
+        external_agent_selected = "external_coding_agent" in agent.descriptor.capabilities
         profile = synthesis_profile or suite.toolchain_profile(runtime, self.registries.tools)
         if profile is None:
             profile = self._toolchain_profile(runtime)
@@ -235,6 +237,16 @@ class VeriGym:
                     max_output_tokens=task.budget.max_output_tokens,
                 )
                 if model_client is not None
+                else None
+            ),
+            agent_configuration_fingerprint=(
+                content_hash(
+                    {
+                        "descriptor": agent.descriptor,
+                        "options": config.agent_options,
+                    }
+                )
+                if external_agent_selected
                 else None
             ),
             suite_source=source_snapshot,
@@ -279,6 +291,14 @@ class VeriGym:
                 "network_policy": task.interaction.network_policy,
                 "unsafe_local_runtime": runtime.descriptor.isolation_level == "local_trusted",
                 "verifier_isolation": "separate_runtime_session",
+                **(
+                    {
+                        "external_agent_isolation": ("codex_cli_sandbox_on_trusted_host"),
+                        "verigym_runtime_isolation": runtime.descriptor.isolation_level,
+                    }
+                    if external_agent_selected
+                    else {}
+                ),
                 **runtime.environment_summary(),
             },
         )
@@ -313,9 +333,20 @@ class VeriGym:
         synthesis_evaluation: SynthesisEvaluation | None = None
         episode_failure: EpisodeFailure | None = None
         model_gateway: ModelGateway | None = None
+        external_bridge: RuntimeExternalAgentBridge | None = None
+        external_workspace_rejected = False
         try:
             observation, _ = env.reset(run_id=run_id, trace=trace)
             assert env.tracker is not None
+            assert env.session is not None
+            if external_agent_selected:
+                external_bridge = RuntimeExternalAgentBridge(
+                    session=env.session,
+                    artifact_root=layout.artifacts / "codex_cli",
+                    isolation_level=runtime.descriptor.isolation_level,
+                    policy=env.policy,
+                    trace=trace,
+                )
             model_gateway = (
                 ModelGateway(
                     run_id=run_id,
@@ -337,6 +368,8 @@ class VeriGym:
                     model_gateway=model_gateway,
                     prompt_builder=prompt_builder,
                     max_invalid_actions=config.max_invalid_actions,
+                    agent_options=config.agent_options,
+                    external_bridge=external_bridge,
                 )
             )
             agent_log = layout.logs / "agent.log"
@@ -352,7 +385,22 @@ class VeriGym:
                 except AgentTerminationError as exc:
                     env.tracker.agent_time_s += time.monotonic() - started
                     episode_failure = exc.failure
-                    observation = env.terminate(exc.reason, exc.failure.message)
+                    external_workspace_rejected = (
+                        external_bridge is not None and exc.failure.kind == "policy"
+                    )
+                    try:
+                        observation = env.terminate(exc.reason, exc.failure.message)
+                    except PathPolicyError as workspace_error:
+                        # A rejected external episode can leave a symlink or
+                        # another object that makes even diff observation
+                        # unsafe. terminate() has already moved the state to
+                        # VERIFYING; retain the policy failure without reading
+                        # or following the object.
+                        external_workspace_rejected = True
+                        trace.emit(
+                            "codex_cli_unsafe_workspace_observation_rejected",
+                            {"message": str(workspace_error)},
+                        )
                     trace.emit(
                         "agent_terminated",
                         {
@@ -385,13 +433,54 @@ class VeriGym:
                 observation, _, terminated, truncated, _ = env.step(action)
                 if terminated or truncated:
                     break
+            if external_bridge is not None:
+                try:
+                    external_bridge.validate_workspace()
+                except PathPolicyError as exc:
+                    external_workspace_rejected = True
+                    if episode_failure is None:
+                        episode_failure = EpisodeFailure(
+                            kind="policy",
+                            category="external_workspace_policy",
+                            message=str(exc),
+                        )
+                    env.termination_reason = TerminationReason.POLICY_VIOLATION
+                    if env.state == EpisodeState.RUNNING:
+                        try:
+                            observation = env.terminate(
+                                TerminationReason.POLICY_VIOLATION,
+                                str(exc),
+                            )
+                        except PathPolicyError as workspace_error:
+                            trace.emit(
+                                "codex_cli_unsafe_workspace_observation_rejected",
+                                {"message": str(workspace_error)},
+                            )
+                    trace.emit(
+                        "codex_cli_policy_violation",
+                        {"category": "external_workspace_policy", "message": str(exc)},
+                    )
+            if model_client is not None:
+                model_client.export_run_artifacts(layout.artifacts / "codex_cli")
             if env.termination_reason is None:
                 env.termination_reason = TerminationReason.RUNTIME_ERROR
             assert env.session is not None and env.tracker is not None
             env.session.freeze()
-            diff = env.session.snapshot_diff()
-            layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
-            layout.export_candidate(env.session.root)
+            if external_workspace_rejected:
+                # Never copy or follow a workspace tree rejected by policy.
+                # An empty quarantine snapshot keeps the run terminal and
+                # auditable while the structured policy failure remains the
+                # authoritative outcome.
+                diff = WorkspaceDiff()
+                layout.workspace_diff.write_text(
+                    "# candidate quarantined: external workspace policy violation\n",
+                    encoding="utf-8",
+                )
+                layout.candidate.mkdir()
+            else:
+                diff = env.session.snapshot_diff()
+                layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
+                layout.export_candidate(env.session.root)
             candidate_hash = hash_directory(layout.candidate)
             manifest.candidate_hash = candidate_hash
             dump_json(layout.manifest, manifest)
@@ -401,15 +490,32 @@ class VeriGym:
             )
             trace.emit("verifier_started", {"graph_hash": verifier_hash})
             verifier_started = time.monotonic()
-            verifier_results = self._verify_candidate(
-                task=task,
-                assets=assets,
-                runtime=runtime,
-                candidate_dir=layout.candidate,
-                artifact_root=layout.artifacts,
-                agent_session=env.session,
-            )
-            if synthesis_profile is not None and resolved_profile is not None:
+            if external_workspace_rejected:
+                verifier_results = [
+                    VerifierResult(
+                        node_id=node.id,
+                        plugin=node.plugin,
+                        status=VerifierStatus.SKIPPED,
+                        error_category=ErrorCategory.SUCCESS,
+                        message="candidate quarantined after external workspace policy violation",
+                        request=node.request,
+                    )
+                    for node in task.verifier.nodes
+                ]
+            else:
+                verifier_results = self._verify_candidate(
+                    task=task,
+                    assets=assets,
+                    runtime=runtime,
+                    candidate_dir=layout.candidate,
+                    artifact_root=layout.artifacts,
+                    agent_session=env.session,
+                )
+            if (
+                not external_workspace_rejected
+                and synthesis_profile is not None
+                and resolved_profile is not None
+            ):
                 by_id = {result.node_id: result for result in verifier_results}
                 correctness_passed = all(
                     by_id.get(node_id) is not None
@@ -464,6 +570,14 @@ class VeriGym:
                 if model_gateway is not None
                 else []
             )
+            manifest.external_agent_observations = (
+                external_bridge.observations if external_bridge is not None else []
+            )
+            if (
+                external_bridge is not None
+                and external_bridge.configuration_fingerprint is not None
+            ):
+                manifest.agent_configuration_fingerprint = external_bridge.configuration_fingerprint
             manifest.environment_summary.update(runtime.environment_summary())
             dump_json(layout.manifest, manifest)
             trace.emit(
@@ -502,6 +616,9 @@ class VeriGym:
                 ),
                 reference_synthesis=(
                     synthesis_evaluation.reference if synthesis_evaluation is not None else None
+                ),
+                external_accounting=(
+                    external_bridge.accounting if external_bridge is not None else None
                 ),
             )
             dump_json(layout.scorecard, scorecard)

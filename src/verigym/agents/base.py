@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
+from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
 from verigym.schemas.agent import AgentAction, EpisodeResult, Observation
 from verigym.schemas.common import AgentDescriptor, InteractionMode
+from verigym.schemas.options import JsonValue
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.task import VeriTask
 
@@ -25,6 +28,8 @@ class AgentContext:
     model_gateway: ModelGateway | None = None
     prompt_builder: PromptBuilder | None = None
     max_invalid_actions: int = 3
+    agent_options: Mapping[str, JsonValue] = field(default_factory=dict)
+    external_bridge: ExternalAgentBridge | None = None
 
 
 class AgentTerminationError(Exception):

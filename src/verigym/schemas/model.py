@@ -5,10 +5,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import ModelDescriptor
+from verigym.schemas.options import JsonValue, validate_plugin_options
 
 
 class ModelFinishReason(StrEnum):
@@ -97,6 +98,12 @@ class ModelRunConfig(StrictModel):
     temperature: float = Field(default=0.0, ge=0.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
     sample_index: int | None = Field(default=None, ge=0)
+    client_options: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("client_options", mode="before")
+    @classmethod
+    def validate_client_options(cls, value: object) -> dict[str, JsonValue]:
+        return validate_plugin_options(value)
 
 
 class GenerationParameters(StrictModel):

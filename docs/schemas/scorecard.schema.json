@@ -111,6 +111,147 @@
           "title": "Agent Time S",
           "type": "number"
         },
+        "external_cli_event_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "External Cli Event Count",
+          "type": "integer"
+        },
+        "external_cli_process_wall_time_s": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "External Cli Process Wall Time S",
+          "type": "number"
+        },
+        "external_command_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Command Count"
+        },
+        "external_cost": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Cost"
+        },
+        "external_cost_currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Cost Currency"
+        },
+        "external_file_read_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External File Read Count"
+        },
+        "external_file_write_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External File Write Count"
+        },
+        "external_input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Input Tokens"
+        },
+        "external_output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Output Tokens"
+        },
+        "external_patch_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Patch Count"
+        },
+        "external_tool_call_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Tool Call Count"
+        },
+        "external_total_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Total Tokens"
+        },
         "failed_tool_calls": {
           "default": 0,
           "title": "Failed Tool Calls",

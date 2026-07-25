@@ -19,6 +19,7 @@ from verigym.schemas.common import (
     ToolchainProfileRef,
 )
 from verigym.schemas.model import GenerationParameters, ModelRunConfig
+from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.runtime import DockerRuntimeConfig
@@ -104,6 +105,12 @@ class ExperimentRunsConfig(StrictModel):
 
 class ExperimentAgentConfig(StrictModel):
     id: str
+    options: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def validate_options(cls, value: object) -> dict[str, JsonValue]:
+        return validate_plugin_options(value)
 
 
 class ExperimentModelConfig(StrictModel):
@@ -206,6 +213,12 @@ class ExperimentConfig(StrictModel):
         # bound. Omitting the additive default here preserves those hashes.
         if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
             del payload["execution"]["max_plan_items"]
+        for system in payload["systems"]:
+            if not system["agent"].get("options"):
+                system["agent"].pop("options", None)
+            model = system.get("model")
+            if model is not None and not model["options"].get("client_options"):
+                model["options"].pop("client_options", None)
         return payload
 
 
@@ -214,6 +227,7 @@ class PlannedSystemIdentity(StrictModel):
     agent_id: str
     agent_descriptor: AgentDescriptor
     agent_configuration_hash: str
+    agent_options: dict[str, JsonValue] = Field(default_factory=dict)
     agent_requires_model: bool
     model_id: str | None = None
     model_descriptor: ModelDescriptor | None = None

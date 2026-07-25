@@ -1,0 +1,154 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-agent-call-identity.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "adapter_name": {
+      "title": "Adapter Name",
+      "type": "string"
+    },
+    "adapter_version": {
+      "title": "Adapter Version",
+      "type": "string"
+    },
+    "approval_policy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approval Policy"
+    },
+    "auth_mode_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth Mode Label"
+    },
+    "capability_fingerprint": {
+      "title": "Capability Fingerprint",
+      "type": "string"
+    },
+    "configuration_fingerprint": {
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "executable_name": {
+      "title": "Executable Name",
+      "type": "string"
+    },
+    "executable_sha256": {
+      "title": "Executable Sha256",
+      "type": "string"
+    },
+    "executable_version": {
+      "title": "Executable Version",
+      "type": "string"
+    },
+    "harness_name": {
+      "title": "Harness Name",
+      "type": "string"
+    },
+    "identity_confidence": {
+      "enum": [
+        "observed",
+        "requested_only",
+        "unknown"
+      ],
+      "title": "Identity Confidence",
+      "type": "string"
+    },
+    "integration_track": {
+      "anyOf": [
+        {
+          "const": "codex_cli_external_agent",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Integration Track"
+    },
+    "invocation_count": {
+      "minimum": 0,
+      "title": "Invocation Count",
+      "type": "integer"
+    },
+    "observed_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Observed Model Id"
+    },
+    "reproducibility_scope": {
+      "enum": [
+        "site_specific_cli",
+        "mutable_remote_observation",
+        "unknown"
+      ],
+      "title": "Reproducibility Scope",
+      "type": "string"
+    },
+    "requested_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Requested Model Id"
+    },
+    "sandbox_policy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sandbox Policy"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapter_name",
+    "adapter_version",
+    "harness_name",
+    "requested_model_id",
+    "observed_model_id",
+    "executable_name",
+    "executable_sha256",
+    "executable_version",
+    "capability_fingerprint",
+    "configuration_fingerprint",
+    "invocation_count",
+    "identity_confidence",
+    "reproducibility_scope"
+  ],
+  "title": "ExternalAgentCallIdentity",
+  "type": "object"
+}

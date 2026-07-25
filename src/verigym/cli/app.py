@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -27,6 +28,7 @@ from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.diagnostics import diagnose_docker
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.model import ModelRunConfig
+from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.run import RunConfig
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import SampleSetResult
@@ -83,6 +85,21 @@ def _source_config(
         variant=variant,
         strict_compatibility=strict_compatibility,
     )
+
+
+def _plugin_options(values: list[str] | None, *, flag: str) -> dict[str, JsonValue]:
+    parsed: dict[str, object] = {}
+    for assignment in values or []:
+        if "=" not in assignment:
+            raise ValueError(f"{flag} values must use KEY=JSON")
+        key, encoded = assignment.split("=", 1)
+        if key in parsed:
+            raise ValueError(f"{flag} key {key!r} was repeated")
+        try:
+            parsed[key] = json.loads(encoded)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{flag} value for {key!r} is not valid JSON") from exc
+    return validate_plugin_options(parsed)
 
 
 def _print_sample_result(result: SampleSetResult) -> None:
@@ -290,9 +307,19 @@ def run_task(
     model_connect_timeout_s: float = typer.Option(10.0, "--model-connect-timeout-s"),
     model_read_timeout_s: float = typer.Option(60.0, "--model-read-timeout-s"),
     model_request_timeout_s: float = typer.Option(90.0, "--model-request-timeout-s"),
+    model_option: list[str] | None = typer.Option(
+        None,
+        "--model-option",
+        help="Repeat secret-free model plugin options as KEY=JSON.",
+    ),
     temperature: float = typer.Option(0.0, "--temperature", min=0.0),
     top_p: float | None = typer.Option(None, "--top-p", min=0.000000001, max=1.0),
     max_invalid_actions: int = typer.Option(3, "--max-invalid-actions", min=1),
+    agent_option: list[str] | None = typer.Option(
+        None,
+        "--agent-option",
+        help="Repeat secret-free agent plugin options as KEY=JSON.",
+    ),
     suite_source: Path | None = typer.Option(
         None,
         "--suite-source",
@@ -400,7 +427,9 @@ def run_task(
                 request_timeout_s=model_request_timeout_s,
                 temperature=temperature,
                 top_p=top_p,
+                client_options=_plugin_options(model_option, flag="--model-option"),
             ),
+            agent_options=_plugin_options(agent_option, flag="--agent-option"),
             max_invalid_actions=max_invalid_actions,
             suite_source=source_config,
             runtime=runtime,

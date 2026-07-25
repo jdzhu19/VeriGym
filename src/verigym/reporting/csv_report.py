@@ -65,6 +65,31 @@ CSV_COLUMNS = [
     "artifact_validation_status",
 ]
 
+CODEX_CLI_CSV_COLUMNS = [
+    *CSV_COLUMNS,
+    "integration_track",
+    "cli_version",
+    "cli_executable_sha256",
+    "capability_fingerprint",
+    "requested_model_id",
+    "observed_model_id",
+    "identity_confidence",
+    "auth_mode_label",
+    "sandbox_policy",
+    "approval_policy",
+    "external_tool_call_count",
+    "external_command_count",
+    "external_file_read_count",
+    "external_file_write_count",
+    "external_patch_count",
+    "cli_process_wall_time_s",
+    "external_input_tokens",
+    "external_output_tokens",
+    "external_total_tokens",
+    "external_cost",
+    "external_cost_currency",
+]
+
 
 def build_run_rows(inputs: LoadedReportInputs) -> list[dict[str, Any]]:
     valid = {(run.plan_index, run.attempt): run for run in inputs.valid_runs}
@@ -120,19 +145,25 @@ def build_run_rows(inputs: LoadedReportInputs) -> list[dict[str, Any]]:
                 rows.append(_valid_row(inputs.experiment_id, run))
     else:
         rows.extend(_valid_row(inputs.experiment_id, run) for run in inputs.valid_runs)
-    return [
-        {column: row.get(column) for column in CSV_COLUMNS}
-        for row in sorted(rows, key=lambda row: (int(row["plan_index"]), int(row["attempt"])))
-    ]
+    ordered = sorted(rows, key=lambda row: (int(row["plan_index"]), int(row["attempt"])))
+    columns = _columns_for_rows(ordered)
+    return [{column: row.get(column) for column in columns} for row in ordered]
 
 
 def render_csv(rows: list[dict[str, Any]]) -> str:
+    columns = _columns_for_rows(rows)
     stream = io.StringIO(newline="")
-    writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS, lineterminator="\n")
+    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
     writer.writeheader()
     for row in rows:
-        writer.writerow({column: _csv_value(row.get(column)) for column in CSV_COLUMNS})
+        writer.writerow({column: _csv_value(row.get(column)) for column in columns})
     return stream.getvalue()
+
+
+def _columns_for_rows(rows: list[dict[str, Any]]) -> list[str]:
+    if any(row.get("integration_track") for row in rows):
+        return CODEX_CLI_CSV_COLUMNS
+    return CSV_COLUMNS
 
 
 def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
@@ -158,6 +189,8 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
             "resolved" if score.resolved else classify_sample_outcome(score)[0].value,
         )
     )
+    codex = _codex_dimensions(manifest)
+    cli_accounting = run.codex_cli_accounting
     return {
         "experiment_id": experiment_id,
         "plan_index": run.plan_index,
@@ -174,6 +207,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "difficulty": plan.difficulty if plan else None,
         "interaction_mode": manifest.interaction_mode,
         "system_id": manifest.system_id or (plan.system.system_id if plan else None),
+        **codex,
         "model_id": manifest.model.model_id if manifest.model else None,
         "agent_id": manifest.agent.name,
         "base_seed": manifest.base_seed if manifest.base_seed is not None else manifest.seed,
@@ -215,6 +249,39 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "turns": score.efficiency.turns,
         "tool_calls": score.efficiency.tool_calls,
         "failed_tool_calls": score.efficiency.failed_tool_calls,
+        "external_tool_call_count": (
+            cli_accounting.external_tool_call_count
+            if cli_accounting is not None
+            else score.efficiency.external_tool_call_count
+        ),
+        "external_command_count": (
+            cli_accounting.external_command_count
+            if cli_accounting is not None
+            else score.efficiency.external_command_count
+        ),
+        "external_file_read_count": (
+            cli_accounting.external_file_read_count
+            if cli_accounting is not None
+            else score.efficiency.external_file_read_count
+        ),
+        "external_file_write_count": (
+            cli_accounting.external_file_write_count
+            if cli_accounting is not None
+            else score.efficiency.external_file_write_count
+        ),
+        "external_patch_count": (
+            cli_accounting.external_patch_count
+            if cli_accounting is not None
+            else score.efficiency.external_patch_count
+        ),
+        "cli_process_wall_time_s": (
+            cli_accounting.process_wall_time_s if cli_accounting is not None else None
+        ),
+        "external_input_tokens": score.efficiency.external_input_tokens,
+        "external_output_tokens": score.efficiency.external_output_tokens,
+        "external_total_tokens": score.efficiency.external_total_tokens,
+        "external_cost": score.efficiency.external_cost,
+        "external_cost_currency": score.efficiency.external_cost_currency,
         "changed_files": len(score.patch.changed_files),
         "diff_lines": score.patch.total_diff_lines,
         "warning_count": len(score.warnings),
@@ -223,6 +290,27 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
 
 
 def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
+    codex: dict[str, Any] = {}
+    if plan.system.model_descriptor is not None:
+        configuration = plan.system.model_descriptor.configuration
+        if configuration.get("integration_track") == "codex_cli_model_proxy":
+            codex = {
+                "integration_track": "codex_cli_model_proxy",
+                "cli_version": configuration.get("cli_version"),
+                "cli_executable_sha256": configuration.get("cli_executable_sha256"),
+                "capability_fingerprint": configuration.get("capability_fingerprint"),
+                "requested_model_id": plan.system.model_descriptor.model_id,
+                "auth_mode_label": configuration.get("auth_mode_label"),
+                "sandbox_policy": configuration.get("sandbox_policy"),
+                "approval_policy": configuration.get("approval_policy"),
+            }
+    elif "external_coding_agent" in plan.system.agent_descriptor.capabilities:
+        codex = {
+            "integration_track": "codex_cli_external_agent",
+            "requested_model_id": plan.system.agent_options.get("model_id"),
+            "sandbox_policy": plan.system.agent_options.get("sandbox"),
+            "approval_policy": plan.system.agent_options.get("approval_policy"),
+        }
     return {
         "experiment_id": experiment_id,
         "plan_index": plan.plan_index,
@@ -236,6 +324,7 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
         "difficulty": plan.difficulty,
         "interaction_mode": plan.interaction_mode.value,
         "system_id": plan.system.system_id,
+        **codex,
         "model_id": plan.system.model_descriptor.model_id if plan.system.model_descriptor else None,
         "agent_id": plan.system.agent_id,
         "base_seed": plan.base_seed,
@@ -254,6 +343,46 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
     }
 
 
+def _codex_dimensions(manifest: Any) -> dict[str, Any]:
+    if manifest.external_agent_observations:
+        identity = manifest.external_agent_observations[-1]
+        return {
+            "integration_track": identity.integration_track or "codex_cli_external_agent",
+            "cli_version": identity.executable_version,
+            "cli_executable_sha256": identity.executable_sha256,
+            "capability_fingerprint": identity.capability_fingerprint,
+            "requested_model_id": identity.requested_model_id,
+            "observed_model_id": identity.observed_model_id,
+            "identity_confidence": identity.identity_confidence,
+            "auth_mode_label": identity.auth_mode_label,
+            "sandbox_policy": identity.sandbox_policy,
+            "approval_policy": identity.approval_policy,
+        }
+    if (
+        manifest.model is not None
+        and manifest.model.configuration.get("integration_track") == "codex_cli_model_proxy"
+    ):
+        configuration = manifest.model.configuration
+        observation = manifest.model_observations[-1] if manifest.model_observations else None
+        return {
+            "integration_track": "codex_cli_model_proxy",
+            "cli_version": configuration.get("cli_version"),
+            "cli_executable_sha256": configuration.get("cli_executable_sha256"),
+            "capability_fingerprint": configuration.get("capability_fingerprint"),
+            "requested_model_id": manifest.model.model_id,
+            "observed_model_id": (
+                observation.observed_provider_model_id if observation is not None else None
+            ),
+            "identity_confidence": (
+                observation.identity_confidence if observation is not None else "unknown"
+            ),
+            "auth_mode_label": configuration.get("auth_mode_label"),
+            "sandbox_policy": configuration.get("sandbox_policy"),
+            "approval_policy": configuration.get("approval_policy"),
+        }
+    return {}
+
+
 def _csv_value(value: Any) -> str:
     if value is None:
         return ""
@@ -268,4 +397,9 @@ def _csv_value(value: Any) -> str:
     return text[:4096]
 
 
-__all__ = ["CSV_COLUMNS", "build_run_rows", "render_csv"]
+__all__ = [
+    "CODEX_CLI_CSV_COLUMNS",
+    "CSV_COLUMNS",
+    "build_run_rows",
+    "render_csv",
+]

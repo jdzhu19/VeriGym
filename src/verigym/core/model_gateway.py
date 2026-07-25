@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -21,6 +22,8 @@ from verigym.schemas.model import (
     ModelRequest,
     ModelResponse,
 )
+
+_PLUGIN_EVENT = re.compile(r"^codex_cli_[a-z0-9_]{1,80}$")
 
 
 class ModelBudgetError(Exception):
@@ -85,7 +88,10 @@ class ModelGateway:
         self.tracker.consume_model_call()
         started = time.monotonic()
         try:
-            response = self.client.generate(request)
+            try:
+                response = self.client.generate(request)
+            finally:
+                self._drain_client_events()
             if response.request_id != request.request_id:
                 raise ModelClientError(
                     ModelClientErrorInfo(
@@ -139,6 +145,29 @@ class ModelGateway:
         if exhausted_after is not None:
             raise ModelBudgetError(exhausted_after)
         return response
+
+    def _drain_client_events(self) -> None:
+        for event_type, payload in self.client.drain_events():
+            if not _PLUGIN_EVENT.fullmatch(event_type):
+                raise ModelClientError(
+                    ModelClientErrorInfo(
+                        category=ModelErrorCategory.INVALID_RESPONSE,
+                        message="model plugin emitted an invalid event type",
+                    )
+                )
+            bounded, truncated = bound_value(
+                redact_mapping(payload),
+                self.max_visible_bytes,
+            )
+            if not isinstance(bounded, dict):
+                raise ModelClientError(
+                    ModelClientErrorInfo(
+                        category=ModelErrorCategory.INVALID_RESPONSE,
+                        message="model plugin emitted a non-object event payload",
+                    )
+                )
+            bounded["content_truncated"] = truncated
+            self.trace.emit(event_type, bounded)
 
     def emit_parsed_action(self, request_id: str, action: dict[str, Any]) -> None:
         bounded_action, truncated = bound_value(action, self.max_visible_bytes)

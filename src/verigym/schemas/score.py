@@ -98,6 +98,18 @@ class EfficiencyMetrics(StrictModel):
     tool_calls: int = 0
     failed_tool_calls: int = 0
     peak_memory_bytes: int | None = None
+    external_cli_process_wall_time_s: float = Field(default=0.0, ge=0.0)
+    external_cli_event_count: int = Field(default=0, ge=0)
+    external_tool_call_count: int | None = Field(default=None, ge=0)
+    external_command_count: int | None = Field(default=None, ge=0)
+    external_file_read_count: int | None = Field(default=None, ge=0)
+    external_file_write_count: int | None = Field(default=None, ge=0)
+    external_patch_count: int | None = Field(default=None, ge=0)
+    external_input_tokens: int | None = Field(default=None, ge=0)
+    external_output_tokens: int | None = Field(default=None, ge=0)
+    external_total_tokens: int | None = Field(default=None, ge=0)
+    external_cost: float | None = Field(default=None, ge=0.0)
+    external_cost_currency: str | None = None
 
     @field_validator("model_api_cost_currency", "model_api_cost_unit")
     @classmethod
@@ -119,6 +131,14 @@ class EfficiencyMetrics(StrictModel):
             self.model_api_cost_currency is not None or self.model_api_cost_unit is not None
         ):
             raise ValueError("model cost identity requires a model_api_cost value")
+        if self.external_cost is None and self.external_cost_currency is not None:
+            raise ValueError("external-agent cost currency requires a known cost")
+        if (
+            self.external_total_tokens is None
+            and self.external_input_tokens is not None
+            and self.external_output_tokens is not None
+        ):
+            self.external_total_tokens = self.external_input_tokens + self.external_output_tokens
         return self
 
 

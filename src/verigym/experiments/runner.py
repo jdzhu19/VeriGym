@@ -28,6 +28,7 @@ from verigym.core.integrity import (
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.sampling import classify_sample_outcome
+from verigym.experiments.identity import plan_items_hash_payload
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.schemas import (
     BatchEvent,
@@ -233,7 +234,7 @@ class BatchRunner:
         ):
             raise ConfigurationError("resume configuration hash differs from the stored experiment")
         items = load_jsonl_models(experiment_root / "plan.jsonl", PlanItem)
-        if content_hash([item.model_dump(mode="json") for item in items]) != manifest.plan_hash:
+        if content_hash(plan_items_hash_payload(items)) != manifest.plan_hash:
             raise ConfigurationError("stored plan hash differs from experiment_manifest.json")
         plan = ExperimentPlan(
             experiment_id=manifest.experiment_id,
@@ -800,6 +801,7 @@ def _child_config(
         task_id=item.task_id,
         mode=item.interaction_mode,
         agent=item.system.agent_id,
+        agent_options=item.system.agent_options,
         model=item.system.model_id,
         model_options=item.system.model_options.model_copy(
             update={"sample_index": item.sample_index}

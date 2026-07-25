@@ -50,6 +50,16 @@ _GROUP_DIMENSIONS = {
     "profile_id",
     "profile_hash",
     "base_seed",
+    "integration_track",
+    "cli_version",
+    "cli_executable_sha256",
+    "capability_fingerprint",
+    "requested_model_id",
+    "observed_model_id",
+    "identity_confidence",
+    "auth_mode_label",
+    "sandbox_policy",
+    "approval_policy",
 }
 
 
@@ -191,6 +201,10 @@ class ReportBuilder:
                             for observation in run.manifest.model_observations
                         ).items()
                     )
+                ),
+                "codex_cli_identity_partitions": _codex_cli_partitions(runs),
+                "codex_cli_comparison_policy": (
+                    "tracks, executable versions, and capability fingerprints remain distinct"
                 ),
                 "combined_correctness_scope": (
                     "unavailable_for_mixed_release_or_correctness_partitions"
@@ -359,8 +373,13 @@ def _efficiency_summaries(runs: list[ValidatedRun]) -> dict[str, NumericSummary]
         "total_tokens": ("total_tokens", "tokens"),
         "tool_calls": ("tool_calls", "calls"),
         "turns": ("turns", "turns"),
+        "external_tool_call_count": ("external_tool_call_count", "calls"),
+        "external_command_count": ("external_command_count", "commands"),
+        "external_input_tokens": ("external_input_tokens", "tokens"),
+        "external_output_tokens": ("external_output_tokens", "tokens"),
+        "external_total_tokens": ("external_total_tokens", "tokens"),
     }
-    return {
+    summaries = {
         key: _numeric_summary(
             [getattr(run.scorecard.efficiency, field) for run in resolved],
             population="resolved_runs",
@@ -368,6 +387,31 @@ def _efficiency_summaries(runs: list[ValidatedRun]) -> dict[str, NumericSummary]
         )
         for key, (field, unit) in fields.items()
     }
+    summaries["cli_process_wall_time_s"] = _numeric_summary(
+        [
+            (
+                run.codex_cli_accounting.process_wall_time_s
+                if run.codex_cli_accounting is not None
+                else None
+            )
+            for run in resolved
+        ],
+        population="resolved_runs",
+        unit="seconds",
+    )
+    summaries["external_cli_process_wall_time_s"] = _numeric_summary(
+        [
+            (
+                run.scorecard.efficiency.external_cli_process_wall_time_s
+                if run.manifest.external_agent_observations
+                else None
+            )
+            for run in resolved
+        ],
+        population="resolved_runs",
+        unit="seconds",
+    )
+    return summaries
 
 
 def _cost_summary(runs: list[ValidatedRun]) -> tuple[NumericSummary, CostAccounting]:
@@ -591,9 +635,23 @@ def _sampling(
         duplicate_sample_index = len(
             {index for index in sample_indices if index is not None}
         ) != len([index for index in sample_indices if index is not None])
+        codex_identities = {
+            (
+                identity.get("integration_track", ""),
+                identity.get("requested_model_id", ""),
+                identity.get("observed_model_id", ""),
+                identity.get("cli_version", ""),
+                identity.get("cli_executable_sha256", ""),
+                identity.get("capability_fingerprint", ""),
+            )
+            for run in present
+            if (identity := _run_codex_identity(run))
+        }
         reason = (
             "duplicate_sample_index"
             if duplicate_sample_index
+            else "mixed_codex_cli_identity"
+            if len(codex_identities) > 1
             else "infrastructure_error"
             if infrastructure
             else "cancelled_or_truncated"
@@ -972,6 +1030,7 @@ def _compatibility_aggregates(
 def _group_value(run: ValidatedRun, dimension: str) -> str:
     manifest = run.manifest
     plan = run.plan_item
+    codex = _run_codex_identity(run)
     values: dict[str, str] = {
         "suite": manifest.suite,
         "release": manifest.release_id or manifest.suite_version,
@@ -990,11 +1049,22 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
             if plan
             else (manifest.base_seed if manifest.base_seed is not None else manifest.seed)
         ),
+        "integration_track": codex.get("integration_track", ""),
+        "cli_version": codex.get("cli_version", ""),
+        "cli_executable_sha256": codex.get("cli_executable_sha256", ""),
+        "capability_fingerprint": codex.get("capability_fingerprint", ""),
+        "requested_model_id": codex.get("requested_model_id", ""),
+        "observed_model_id": codex.get("observed_model_id", ""),
+        "identity_confidence": codex.get("identity_confidence", ""),
+        "auth_mode_label": codex.get("auth_mode_label", ""),
+        "sandbox_policy": codex.get("sandbox_policy", ""),
+        "approval_policy": codex.get("approval_policy", ""),
     }
     return values[dimension]
 
 
 def _plan_group_value(item: PlanItem, dimension: str) -> str:
+    codex = _plan_codex_identity(item)
     values: dict[str, str] = {
         "suite": item.suite,
         "release": item.release_id or item.suite_version,
@@ -1009,6 +1079,16 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "profile_id": item.requested_profile_id or "",
         "profile_hash": item.resolved_profile_hash or "",
         "base_seed": str(item.base_seed),
+        "integration_track": codex.get("integration_track", ""),
+        "cli_version": codex.get("cli_version", ""),
+        "cli_executable_sha256": codex.get("cli_executable_sha256", ""),
+        "capability_fingerprint": codex.get("capability_fingerprint", ""),
+        "requested_model_id": codex.get("requested_model_id", ""),
+        "observed_model_id": codex.get("observed_model_id", ""),
+        "identity_confidence": codex.get("identity_confidence", ""),
+        "auth_mode_label": codex.get("auth_mode_label", ""),
+        "sandbox_policy": codex.get("sandbox_policy", ""),
+        "approval_policy": codex.get("approval_policy", ""),
     }
     return values[dimension]
 
@@ -1047,6 +1127,41 @@ def _compatibility_warnings(
         warnings.append("Multiple correctness definitions are reported as partitions.")
     if len(partitions["resolved_profile"]) > 1:
         warnings.append("Multiple area profiles are partitioned and are never ranked together.")
+    codex_partitions = _codex_cli_partitions(runs)
+    tracks = {item["integration_track"] for item in codex_partitions}
+    identities = {
+        (
+            item["requested_model_id"],
+            item["observed_model_id"],
+            item["cli_version"],
+            item["cli_executable_sha256"],
+            item["capability_fingerprint"],
+        )
+        for item in codex_partitions
+    }
+    if len(tracks) > 1:
+        warnings.append(
+            "Codex CLI model-proxy and external-agent tracks are distinct systems, not pooled."
+        )
+    if len(identities) > 1:
+        warnings.append(
+            "Codex model identities, executable versions/hashes, or capability fingerprints "
+            "differ and are not comparable without an explicit partition."
+        )
+    if any(
+        item["observed_model_id"] and item["observed_model_id"] != item["requested_model_id"]
+        for item in codex_partitions
+    ):
+        warnings.append(
+            "At least one observed Codex model identity differs from the requested identity."
+        )
+    if any(
+        item["identity_confidence"] in {"requested_only", "unknown"} for item in codex_partitions
+    ):
+        warnings.append(
+            "At least one Codex run has no provider-observed model identity; "
+            "requested identity is not treated as observed."
+        )
     return warnings
 
 
@@ -1083,6 +1198,132 @@ def _latest_index_records(inputs: LoadedReportInputs) -> dict[int, Any]:
 def _fallback_system(run: ValidatedRun) -> str:
     model = run.manifest.model.model_id if run.manifest.model else "model-free"
     return f"{run.manifest.agent.name}:{model}"
+
+
+def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
+    manifest = run.manifest
+    if manifest.external_agent_observations:
+        identity = manifest.external_agent_observations[-1]
+        return {
+            "integration_track": identity.integration_track or "codex_cli_external_agent",
+            "cli_version": identity.executable_version,
+            "cli_executable_sha256": identity.executable_sha256,
+            "capability_fingerprint": identity.capability_fingerprint,
+            "requested_model_id": identity.requested_model_id or "",
+            "observed_model_id": identity.observed_model_id or "",
+            "identity_confidence": identity.identity_confidence,
+            "auth_mode_label": identity.auth_mode_label or "",
+            "sandbox_policy": identity.sandbox_policy or "",
+            "approval_policy": identity.approval_policy or "",
+        }
+    if (
+        manifest.model is not None
+        and manifest.model.configuration.get("integration_track") == "codex_cli_model_proxy"
+    ):
+        configuration = manifest.model.configuration
+        observation = manifest.model_observations[-1] if manifest.model_observations else None
+        return {
+            "integration_track": "codex_cli_model_proxy",
+            "cli_version": str(configuration.get("cli_version") or ""),
+            "cli_executable_sha256": str(configuration.get("cli_executable_sha256") or ""),
+            "capability_fingerprint": str(configuration.get("capability_fingerprint") or ""),
+            "requested_model_id": manifest.model.model_id,
+            "observed_model_id": (
+                observation.observed_provider_model_id if observation is not None else ""
+            )
+            or "",
+            "identity_confidence": (
+                observation.identity_confidence if observation is not None else "unknown"
+            ),
+            "auth_mode_label": str(configuration.get("auth_mode_label") or ""),
+            "sandbox_policy": str(configuration.get("sandbox_policy") or ""),
+            "approval_policy": str(configuration.get("approval_policy") or ""),
+        }
+    return {}
+
+
+def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
+    descriptor = item.system.model_descriptor
+    if (
+        descriptor is not None
+        and descriptor.configuration.get("integration_track") == "codex_cli_model_proxy"
+    ):
+        return {
+            "integration_track": "codex_cli_model_proxy",
+            "cli_version": str(descriptor.configuration.get("cli_version") or ""),
+            "cli_executable_sha256": str(
+                descriptor.configuration.get("cli_executable_sha256") or ""
+            ),
+            "capability_fingerprint": str(
+                descriptor.configuration.get("capability_fingerprint") or ""
+            ),
+            "requested_model_id": descriptor.model_id,
+            "observed_model_id": "",
+            "identity_confidence": "unknown",
+            "auth_mode_label": str(descriptor.configuration.get("auth_mode_label") or ""),
+            "sandbox_policy": str(descriptor.configuration.get("sandbox_policy") or ""),
+            "approval_policy": str(descriptor.configuration.get("approval_policy") or ""),
+        }
+    if "external_coding_agent" in item.system.agent_descriptor.capabilities:
+        requested = item.system.agent_options.get("model_id")
+        return {
+            "integration_track": "codex_cli_external_agent",
+            "cli_version": "",
+            "cli_executable_sha256": "",
+            "capability_fingerprint": "",
+            "requested_model_id": requested if isinstance(requested, str) else "",
+            "observed_model_id": "",
+            "identity_confidence": "unknown",
+            "auth_mode_label": "",
+            "sandbox_policy": str(item.system.agent_options.get("sandbox") or ""),
+            "approval_policy": str(item.system.agent_options.get("approval_policy") or ""),
+        }
+    return {}
+
+
+def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
+    unique = {
+        (
+            identity.get("integration_track", ""),
+            identity.get("cli_version", ""),
+            identity.get("cli_executable_sha256", ""),
+            identity.get("capability_fingerprint", ""),
+            identity.get("requested_model_id", ""),
+            identity.get("observed_model_id", ""),
+            identity.get("identity_confidence", ""),
+            identity.get("auth_mode_label", ""),
+            identity.get("sandbox_policy", ""),
+            identity.get("approval_policy", ""),
+        )
+        for run in runs
+        if (identity := _run_codex_identity(run))
+    }
+    return [
+        {
+            "integration_track": track,
+            "cli_version": version,
+            "cli_executable_sha256": executable_sha256,
+            "capability_fingerprint": fingerprint,
+            "requested_model_id": requested_model,
+            "observed_model_id": observed_model,
+            "identity_confidence": confidence,
+            "auth_mode_label": auth_mode,
+            "sandbox_policy": sandbox,
+            "approval_policy": approval,
+        }
+        for (
+            track,
+            version,
+            executable_sha256,
+            fingerprint,
+            requested_model,
+            observed_model,
+            confidence,
+            auth_mode,
+            sandbox,
+            approval,
+        ) in sorted(unique)
+    ]
 
 
 __all__ = ["ReportBuilder"]

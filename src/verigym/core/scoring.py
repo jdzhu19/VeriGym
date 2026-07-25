@@ -9,6 +9,7 @@ from verigym.core.hashing import content_hash
 from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.schemas.common import ToolchainProfileRef
+from verigym.schemas.external_agent import ExternalAgentAccounting
 from verigym.schemas.runtime import WorkspaceDiff
 from verigym.schemas.score import (
     CorrectnessMetrics,
@@ -42,6 +43,7 @@ def build_scorecard(
     resolved_profile: ResolvedToolchainProfile | None = None,
     candidate_synthesis: SynthesisMetrics | None = None,
     reference_synthesis: SynthesisMetrics | None = None,
+    external_accounting: ExternalAgentAccounting | None = None,
 ) -> ScoreCard:
     by_id = {result.node_id: result for result in results}
     required = [by_id[node_id] for node_id in task.scoring.correctness_required_nodes]
@@ -179,6 +181,50 @@ def build_scorecard(
             turns=tracker.turns,
             tool_calls=tracker.tool_calls,
             failed_tool_calls=tracker.failed_tool_calls,
+            external_cli_process_wall_time_s=(
+                external_accounting.process_wall_time_s if external_accounting is not None else 0.0
+            ),
+            external_cli_event_count=(
+                external_accounting.cli_event_count if external_accounting is not None else 0
+            ),
+            external_tool_call_count=(
+                external_accounting.external_tool_call_count
+                if external_accounting is not None
+                else None
+            ),
+            external_command_count=(
+                external_accounting.external_command_count
+                if external_accounting is not None
+                else None
+            ),
+            external_file_read_count=(
+                external_accounting.external_file_read_count
+                if external_accounting is not None
+                else None
+            ),
+            external_file_write_count=(
+                external_accounting.external_file_write_count
+                if external_accounting is not None
+                else None
+            ),
+            external_patch_count=(
+                external_accounting.external_patch_count
+                if external_accounting is not None
+                else None
+            ),
+            external_input_tokens=(
+                external_accounting.input_tokens if external_accounting is not None else None
+            ),
+            external_output_tokens=(
+                external_accounting.output_tokens if external_accounting is not None else None
+            ),
+            external_total_tokens=(
+                external_accounting.total_tokens if external_accounting is not None else None
+            ),
+            external_cost=(external_accounting.cost if external_accounting is not None else None),
+            external_cost_currency=(
+                external_accounting.currency if external_accounting is not None else None
+            ),
         ),
         patch=PatchMetrics(
             changed_files=diff.changed_files,

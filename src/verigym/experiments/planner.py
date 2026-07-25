@@ -16,7 +16,9 @@ from verigym.experiments.identity import (
     derive_experiment_id,
     evaluation_config_payload,
     normalized_runtime_descriptor,
+    normalized_system_identity_payload,
     plan_item_identity_payload,
+    plan_items_hash_payload,
     runtime_identity_hash,
 )
 from verigym.experiments.schemas import (
@@ -104,7 +106,7 @@ class ExperimentPlanner:
         finally:
             runtime.close()
 
-        plan_hash = content_hash([item.model_dump(mode="json") for item in items])
+        plan_hash = content_hash(plan_items_hash_payload(items))
         experiment_id = derive_experiment_id(config.name, plan_hash)
         build_provenance = get_build_provenance()
         return ExperimentPlan(
@@ -165,7 +167,7 @@ class ExperimentPlanner:
         evaluation_hash = content_hash(evaluation_config_payload(plan.config))
         if evaluation_hash != plan.evaluation_config_hash:
             raise ConfigurationError("evaluation configuration hash does not match its payload")
-        serialized = [item.model_dump(mode="json") for item in plan.items]
+        serialized = plan_items_hash_payload(plan.items)
         if content_hash(serialized) != plan.plan_hash:
             raise ConfigurationError("ordered plan hash does not match its plan items")
         if derive_experiment_id(plan.config.name, plan.plan_hash) != plan.experiment_id:
@@ -393,7 +395,15 @@ class ExperimentPlanner:
                     system_id=selected.id,
                     agent_id=selected.agent.id,
                     agent_descriptor=agent.descriptor,
-                    agent_configuration_hash=content_hash(agent.descriptor),
+                    agent_configuration_hash=content_hash(
+                        {
+                            "descriptor": agent.descriptor,
+                            "options": selected.agent.options,
+                        }
+                        if selected.agent.options
+                        else agent.descriptor
+                    ),
+                    agent_options=selected.agent.options,
                     agent_requires_model=agent.requires_model,
                     model_id=selected.model.id if selected.model is not None else None,
                     model_descriptor=model_descriptor,
@@ -457,7 +467,8 @@ class ExperimentPlanner:
                     prompt = PromptBuilder(config.runs.mode).descriptor
                 else:
                     prompt = None
-                system_hash = content_hash(system)
+                system_identity = normalized_system_identity_payload(system)
+                system_hash = content_hash(system_identity)
                 for base_seed in config.runs.seeds:
                     for sample_index in range(config.runs.samples_per_task):
                         child_seed = derive_child_seed(
@@ -540,7 +551,7 @@ class ExperimentPlanner:
                             {
                                 "task_hash": task_hash,
                                 "source_identity_hash": task_source_identity,
-                                "system": system,
+                                "system": system_identity,
                                 "prompt_policy": prompt,
                                 "tool_policy": tool_policy,
                                 "base_seed": base_seed,

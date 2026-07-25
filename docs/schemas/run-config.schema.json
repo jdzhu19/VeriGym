@@ -120,6 +120,7 @@
       "title": "InteractionMode",
       "type": "string"
     },
+    "JsonValue": {},
     "ModelRunConfig": {
       "additionalProperties": false,
       "description": "Secret-free per-run options understood by compatible model clients.",
@@ -147,6 +148,13 @@
           ],
           "default": null,
           "title": "Base Url"
+        },
+        "client_options": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Client Options",
+          "type": "object"
         },
         "connect_timeout_s": {
           "default": 10.0,
@@ -1512,6 +1520,13 @@
       "default": "scripted",
       "title": "Agent",
       "type": "string"
+    },
+    "agent_options": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Agent Options",
+      "type": "object"
     },
     "base_seed": {
       "anyOf": [

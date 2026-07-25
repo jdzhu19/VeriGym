@@ -7,7 +7,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
@@ -17,6 +17,7 @@ from verigym.experiments.identity import (
     derive_experiment_id,
     evaluation_config_payload,
     plan_item_identity_payload,
+    plan_items_hash_payload,
     runtime_identity_hash,
 )
 from verigym.experiments.schemas import (
@@ -27,6 +28,7 @@ from verigym.experiments.schemas import (
 )
 from verigym.experiments.state import load_json_model, load_jsonl_models
 from verigym.reporting.schemas import InvalidInput
+from verigym.schemas.external_agent import ExternalAgentAccounting
 from verigym.schemas.run import RunManifest
 from verigym.schemas.score import ScoreCard
 
@@ -57,6 +59,7 @@ class ValidatedRun:
     plan_item: PlanItem | None = None
     index_record: RunIndexRecord | None = None
     integrity_status: str = "legacy_unverified"
+    codex_cli_accounting: ExternalAgentAccounting | None = None
 
 
 @dataclass(frozen=True)
@@ -165,7 +168,7 @@ def _load_experiment(root: Path) -> LoadedReportInputs:
     plan_items = load_jsonl_models(root / "plan.jsonl", PlanItem)
     if [item.plan_index for item in plan_items] != list(range(len(plan_items))):
         raise ConfigurationError("experiment plan indices are not contiguous")
-    if content_hash([item.model_dump(mode="json") for item in plan_items]) != manifest.plan_hash:
+    if content_hash(plan_items_hash_payload(plan_items)) != manifest.plan_hash:
         raise ConfigurationError("experiment plan hash does not match plan.jsonl")
     if derive_experiment_id(config.name, manifest.plan_hash) != manifest.experiment_id:
         raise ConfigurationError("experiment ID does not match its immutable plan identity")
@@ -372,6 +375,7 @@ def _validate_child(
         raise ConfigurationError("child scorecard hash differs from the parent index")
     manifest = _bounded_json(manifest_path, RunManifest)
     scorecard = _bounded_json(score_path, ScoreCard)
+    codex_cli_accounting = _load_codex_cli_accounting(resolved, manifest)
     if record.child_run_id != manifest.run_id or child.name != manifest.run_id:
         raise ConfigurationError("child run ID differs from its parent index or directory")
     if manifest.experiment_id != experiment_id:
@@ -386,6 +390,7 @@ def _validate_child(
         plan_item=plan_item,
         index_record=record,
         integrity_status=integrity.status,
+        codex_cli_accounting=codex_cli_accounting,
     )
 
 
@@ -491,6 +496,7 @@ def _load_arbitrary_root(root: Path) -> LoadedReportInputs:
             integrity = verify_artifact_manifest(child, expected_scope="run")
             manifest = _bounded_json(child / "run_manifest.json", RunManifest)
             scorecard = _bounded_json(child / "scorecard.json", ScoreCard)
+            codex_cli_accounting = _load_codex_cli_accounting(child, manifest)
             _validate_cross_references(manifest, scorecard, None)
             valid.append(
                 ValidatedRun(
@@ -500,6 +506,7 @@ def _load_arbitrary_root(root: Path) -> LoadedReportInputs:
                     manifest=manifest,
                     scorecard=scorecard,
                     integrity_status=integrity.status,
+                    codex_cli_accounting=codex_cli_accounting,
                 )
             )
         except Exception as exc:
@@ -538,6 +545,22 @@ def _load_arbitrary_root(root: Path) -> LoadedReportInputs:
         requested_k=[1],
         samples_per_task=1,
     )
+
+
+def _load_codex_cli_accounting(
+    child: Path,
+    manifest: RunManifest,
+) -> ExternalAgentAccounting | None:
+    is_codex_track = manifest.agent.name == "codex-cli-agent" or (
+        manifest.model is not None
+        and manifest.model.configuration.get("integration_track") == "codex_cli_model_proxy"
+    )
+    if not is_codex_track:
+        return None
+    path = child / "artifacts" / "codex_cli" / "accounting.json"
+    if not path.is_file() or path.is_symlink():
+        raise ConfigurationError("Codex CLI run is missing regular accounting.json")
+    return cast(ExternalAgentAccounting, _bounded_json(path, ExternalAgentAccounting))
 
 
 def _assert_safe_child_tree(root: Path) -> None:

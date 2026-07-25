@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, cast
 
 from verigym.core.hashing import content_hash
@@ -96,10 +97,44 @@ def derive_child_seed(
 def plan_item_identity_payload(item: dict[str, Any]) -> dict[str, Any]:
     """Return only evaluation-relevant plan state, excluding order and paths."""
 
-    payload = dict(item)
+    payload = normalized_plan_item_payload(item)
     payload.pop("plan_index", None)
     payload.pop("plan_item_id", None)
     return payload
+
+
+def normalized_system_identity_payload(system: Any) -> dict[str, Any]:
+    """Omit empty additive options while retaining every configured value."""
+
+    raw = (
+        system.model_dump(mode="json")
+        if hasattr(system, "model_dump")
+        else deepcopy(cast(dict[str, Any], system))
+    )
+    if not raw.get("agent_options"):
+        raw.pop("agent_options", None)
+    model_options = raw.get("model_options")
+    if isinstance(model_options, dict) and not model_options.get("client_options"):
+        model_options.pop("client_options", None)
+    return cast(dict[str, Any], raw)
+
+
+def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
+    """Normalize only empty post-Milestone-9 fields for legacy hash stability."""
+
+    raw = (
+        item.model_dump(mode="json")
+        if hasattr(item, "model_dump")
+        else deepcopy(cast(dict[str, Any], item))
+    )
+    system = raw.get("system")
+    if isinstance(system, dict) or hasattr(system, "model_dump"):
+        raw["system"] = normalized_system_identity_payload(system)
+    return cast(dict[str, Any], raw)
+
+
+def plan_items_hash_payload(items: list[Any]) -> list[dict[str, Any]]:
+    return [normalized_plan_item_payload(item) for item in items]
 
 
 __all__ = [
@@ -107,7 +142,10 @@ __all__ = [
     "derive_experiment_id",
     "derive_child_seed",
     "evaluation_config_payload",
+    "normalized_plan_item_payload",
     "normalized_runtime_descriptor",
+    "normalized_system_identity_payload",
+    "plan_items_hash_payload",
     "plan_item_identity_payload",
     "runtime_identity_hash",
 ]

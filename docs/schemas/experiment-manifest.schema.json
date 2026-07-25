@@ -273,6 +273,7 @@
       "title": "InteractionMode",
       "type": "string"
     },
+    "JsonValue": {},
     "ModelDescriptor": {
       "additionalProperties": false,
       "properties": {
@@ -386,6 +387,13 @@
           "default": null,
           "title": "Base Url"
         },
+        "client_options": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Client Options",
+          "type": "object"
+        },
         "connect_timeout_s": {
           "default": 10.0,
           "exclusiveMinimum": 0.0,
@@ -466,6 +474,13 @@
         "agent_id": {
           "title": "Agent Id",
           "type": "string"
+        },
+        "agent_options": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Agent Options",
+          "type": "object"
         },
         "agent_requires_model": {
           "title": "Agent Requires Model",

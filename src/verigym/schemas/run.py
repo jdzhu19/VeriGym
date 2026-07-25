@@ -17,7 +17,9 @@ from verigym.schemas.common import (
     RuntimeDescriptor,
     ToolchainProfileRef,
 )
+from verigym.schemas.external_agent import ExternalAgentCallIdentity
 from verigym.schemas.model import GenerationParameters, ModelCallIdentity, ModelRunConfig
+from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.runtime import DockerRuntimeConfig
@@ -33,6 +35,7 @@ class RunConfig(StrictModel):
     agent: str = "scripted"
     model: str | None = None
     model_options: ModelRunConfig = Field(default_factory=ModelRunConfig)
+    agent_options: dict[str, JsonValue] = Field(default_factory=dict)
     max_invalid_actions: int = Field(default=3, ge=1)
     suite_source: SuiteSourceConfig | None = None
     sample_index: int | None = Field(default=None, ge=0)
@@ -51,6 +54,22 @@ class RunConfig(StrictModel):
     expected_suite_source_snapshot: SuiteSourceSnapshot | None = None
     expected_runtime: RuntimeDescriptor | None = None
     expected_resolved_profile: ResolvedToolchainProfile | None = None
+
+    def identity_payload(self) -> dict[str, Any]:
+        """Preserve pre-extension hashes while binding every nonempty option."""
+
+        payload = self.model_dump(mode="json")
+        if not payload.get("agent_options"):
+            payload.pop("agent_options", None)
+        model_options = payload.get("model_options")
+        if isinstance(model_options, dict) and not model_options.get("client_options"):
+            model_options.pop("client_options", None)
+        return payload
+
+    @field_validator("agent_options", mode="before")
+    @classmethod
+    def validate_agent_options(cls, value: object) -> dict[str, JsonValue]:
+        return validate_plugin_options(value)
 
     @field_validator("run_id")
     @classmethod
@@ -124,6 +143,8 @@ class RunManifest(StrictModel):
     tool_policy: ToolPolicySnapshot | None = None
     generation: GenerationParameters | None = None
     model_observations: list[ModelCallIdentity] = Field(default_factory=list)
+    external_agent_observations: list[ExternalAgentCallIdentity] = Field(default_factory=list)
+    agent_configuration_fingerprint: str | None = None
     suite_source: SuiteSourceSnapshot | None = None
     runtime: RuntimeDescriptor
     toolchain_profiles: list[ToolchainProfileRef] = Field(default_factory=list)

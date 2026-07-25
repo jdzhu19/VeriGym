@@ -193,6 +193,21 @@ def manifest_configuration_fingerprint(manifest: RunManifest) -> str:
         "isolation_level": manifest.environment_summary.get("unsafe_local_runtime"),
         "verifier_isolation": manifest.environment_summary.get("verifier_isolation"),
     }
+    if manifest.agent_configuration_fingerprint is not None:
+        payload["agent_configuration_fingerprint"] = manifest.agent_configuration_fingerprint
+    if manifest.external_agent_observations:
+        payload["external_agent_identity"] = [
+            {
+                "integration_track": observation.integration_track,
+                "requested_model_id": observation.requested_model_id,
+                "observed_model_id": observation.observed_model_id,
+                "executable_sha256": observation.executable_sha256,
+                "executable_version": observation.executable_version,
+                "capability_fingerprint": observation.capability_fingerprint,
+                "identity_confidence": observation.identity_confidence,
+            }
+            for observation in manifest.external_agent_observations
+        ]
     return content_hash(payload)
 
 

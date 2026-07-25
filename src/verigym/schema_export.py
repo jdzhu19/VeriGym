@@ -30,6 +30,10 @@ from verigym.schemas.common import (
     ToolchainProfile,
     ToolDescriptor,
 )
+from verigym.schemas.external_agent import (
+    ExternalAgentAccounting,
+    ExternalAgentCallIdentity,
+)
 from verigym.schemas.integrity import ArtifactManifest, IntegrityValidation
 from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
@@ -70,6 +74,8 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "experiment-manifest": _model(ExperimentManifest),
     "experiment-plan": _model(ExperimentPlan),
     "experiment-state": _model(ExperimentState),
+    "external-agent-accounting": _model(ExternalAgentAccounting),
+    "external-agent-call-identity": _model(ExternalAgentCallIdentity),
     "integrity-validation": _model(IntegrityValidation),
     "model-call-identity": _model(ModelCallIdentity),
     "model-descriptor": _model(ModelDescriptor),

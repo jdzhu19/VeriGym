@@ -1,0 +1,39 @@
+schema_version: "1.0"
+name: "codex-cli-four-run-conformance-smoke"
+description: "Fixed all-or-none real smoke plan; execute only with the protected launcher."
+
+tasks:
+  - "toy-rtl/and-gate-basic"
+  - "toy-rtl/counter-basic"
+tracks:
+  - id: "codex_cli_model_proxy"
+    label: "Codex CLI model proxy"
+    model_plugin: "codex-cli-exec-model"
+    agent_plugin: "single-turn"
+    interaction_mode: "chat"
+  - id: "codex_cli_external_agent"
+    label: "Codex CLI external agent"
+    model_plugin: null
+    agent_plugin: "codex-cli-agent"
+    interaction_mode: "agent"
+
+sampling:
+  seeds: [0]
+  samples_per_task: 1
+
+execution:
+  planned_runs: 4
+  max_codex_processes: 4
+  max_total_wall_time_s: 1800
+  allow_retry: false
+  allow_best_of_k_selection: false
+  allow_outer_agent_repair: false
+
+required_environment:
+  - "VERIGYM_RUN_CODEX_CLI_TESTS=1"
+  - "VERIGYM_CODEX_BINARY=/absolute/path/to/codex"
+  - "VERIGYM_CODEX_MODEL=<explicit-model-id>"
+  - "VERIGYM_CODEX_AUTH_MODE=<secret-free-label>"
+  - "VERIGYM_CODEX_CAPABILITY_FILE=/absolute/path/to/doctor-report.json"
+
+launcher: "python scripts/run_codex_cli_smoke.py --output <new-audit-directory>"
