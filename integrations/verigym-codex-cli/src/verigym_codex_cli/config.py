@@ -9,7 +9,7 @@ from verigym.plugin_api import JsonValue, ModelRunConfig
 
 from .auth import AuthModeResolution
 from .capabilities import CapabilityReport
-from .process import auth_identity_configuration
+from .process import auth_identity_configuration, forwarded_proxy_environment_names
 from .util import clean_identifier, stable_hash
 
 _COMMON_OPTIONS = {
@@ -29,6 +29,10 @@ class CodexSettings:
     model_id: str
     sandbox_policy: str
     approval_policy: str
+    requested_process_timeout_s: float
+    task_wall_time_s: float
+    effective_process_timeout_s: float
+    timeout_clamped: bool
     max_process_time_s: float
     max_output_bytes: int
     reject_tool_use: bool
@@ -38,6 +42,7 @@ class CodexSettings:
     auth_alias_used: bool
     credential_env: str | None
     allow_proxy_environment: bool
+    forwarded_proxy_environment_names: tuple[str, ...]
     configuration_fingerprint: str
 
     @property
@@ -62,8 +67,15 @@ class CodexSettings:
             "resolved_auth_mode": self.resolved_auth_mode,
             "auth_semantic_id": self.auth_semantic_id,
             "auth_alias_used": self.auth_alias_used,
+            "requested_process_timeout_s": self.requested_process_timeout_s,
+            "task_wall_time_s": self.task_wall_time_s,
+            "effective_process_timeout_s": self.effective_process_timeout_s,
+            "timeout_clamped": self.timeout_clamped,
             "max_process_time_s": self.max_process_time_s,
             "max_output_bytes": self.max_output_bytes,
+            "allow_proxy_environment": self.allow_proxy_environment,
+            "proxy_environment_allowed": self.allow_proxy_environment,
+            "forwarded_proxy_environment_names": list(self.forwarded_proxy_environment_names),
             "reject_tool_use": self.reject_tool_use,
             "pure_api_model_eval": False,
             "direct_api_benchmark": False,
@@ -92,12 +104,20 @@ def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> Co
     auth_resolution, credential_env = auth_identity_configuration(
         default_credential_env=config.api_key_env
     )
+    requested_timeout = _number(
+        options,
+        "max_process_time_s",
+        config.request_timeout_s,
+    )
+    task_wall_time = float(config.request_timeout_s)
     return _settings(
         integration_track="codex_cli_model_proxy",
         model_id=model_id,
         sandbox=sandbox,
         approval=approval,
-        timeout=_number(options, "max_process_time_s", config.request_timeout_s),
+        requested_timeout=requested_timeout,
+        task_wall_time=task_wall_time,
+        effective_timeout=min(requested_timeout, task_wall_time),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
         reject_tool_use=True,
         auth_resolution=auth_resolution,
@@ -125,16 +145,20 @@ def agent_settings(
     if approval not in {"non-interactive", "never"}:
         raise ValueError("Track B requires a non-interactive approval policy")
     auth_resolution, credential_env = auth_identity_configuration()
-    timeout = min(
-        _number(options, "max_process_time_s", float(task_wall_time_s)),
+    requested_timeout = _number(
+        options,
+        "max_process_time_s",
         float(task_wall_time_s),
     )
+    task_wall_time = float(task_wall_time_s)
     return _settings(
         integration_track="codex_cli_external_agent",
         model_id=model_id,
         sandbox=sandbox,
         approval=approval,
-        timeout=timeout,
+        requested_timeout=requested_timeout,
+        task_wall_time=task_wall_time,
+        effective_timeout=min(requested_timeout, task_wall_time),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
         reject_tool_use=False,
         auth_resolution=auth_resolution,
@@ -150,7 +174,9 @@ def _settings(
     model_id: str,
     sandbox: str,
     approval: str,
-    timeout: float,
+    requested_timeout: float,
+    task_wall_time: float,
+    effective_timeout: float,
     max_output: int,
     reject_tool_use: bool,
     auth_resolution: AuthModeResolution,
@@ -158,16 +184,23 @@ def _settings(
     allow_proxy: bool,
     capabilities: CapabilityReport,
 ) -> CodexSettings:
-    if timeout <= 0 or timeout > 1800:
+    if requested_timeout <= 0 or requested_timeout > 1800:
         raise ValueError("Codex process timeout must be in (0, 1800] seconds")
+    if task_wall_time <= 0 or effective_timeout <= 0:
+        raise ValueError("Codex task wall-time budget must be positive")
     if max_output < 1024 or max_output > 16 * 1024 * 1024:
         raise ValueError("Codex output bound must be between 1 KiB and 16 MiB")
+    forwarded_proxy_names = forwarded_proxy_environment_names(allow_proxy)
+    timeout_clamped = effective_timeout != requested_timeout
     safe = {
         "integration_track": integration_track,
         "model_id": model_id,
         "sandbox": sandbox,
         "approval": approval,
-        "timeout": timeout,
+        "requested_process_timeout_s": requested_timeout,
+        "task_wall_time_s": task_wall_time,
+        "effective_process_timeout_s": effective_timeout,
+        "timeout_clamped": timeout_clamped,
         "max_output": max_output,
         "reject_tool_use": reject_tool_use,
         "requested_auth_mode": auth_resolution.requested_auth_mode,
@@ -175,6 +208,8 @@ def _settings(
         "auth_semantic_id": auth_resolution.auth_semantic_id,
         "auth_alias_used": auth_resolution.auth_alias_used,
         "allow_proxy_environment": allow_proxy,
+        "proxy_environment_allowed": allow_proxy,
+        "forwarded_proxy_environment_names": list(forwarded_proxy_names),
         "capability_fingerprint": capabilities.capability_fingerprint,
     }
     return CodexSettings(
@@ -182,7 +217,11 @@ def _settings(
         model_id=model_id,
         sandbox_policy=sandbox,
         approval_policy=approval,
-        max_process_time_s=timeout,
+        requested_process_timeout_s=requested_timeout,
+        task_wall_time_s=task_wall_time,
+        effective_process_timeout_s=effective_timeout,
+        timeout_clamped=timeout_clamped,
+        max_process_time_s=effective_timeout,
         max_output_bytes=max_output,
         reject_tool_use=reject_tool_use,
         requested_auth_mode=auth_resolution.requested_auth_mode,
@@ -191,6 +230,7 @@ def _settings(
         auth_alias_used=auth_resolution.auth_alias_used,
         credential_env=credential_env,
         allow_proxy_environment=allow_proxy,
+        forwarded_proxy_environment_names=forwarded_proxy_names,
         configuration_fingerprint=stable_hash(safe),
     )
 

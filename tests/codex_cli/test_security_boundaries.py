@@ -204,6 +204,15 @@ def test_process_environment_is_allowlisted_and_credentials_are_not_persisted(
     assert record["unrelated_secret_visible"] is False
     assert "VERIGYM_UNRELATED_SECRET" not in record["environment_names"]
     assert record["environment_path"] == "/usr/local/bin:/usr/bin:/bin"
+    assert {
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }.isdisjoint(record["environment_names"])
 
     scenario("credential_output")
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "api_key_env")
@@ -230,10 +239,12 @@ def test_process_environment_forwards_only_explicit_proxy_allowlist(
     _executable, log, scenario = fake_codex
     scenario("valid")
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.example:8080")
-    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
     monkeypatch.setenv("ALL_PROXY", "must-not-reach-child")
     monkeypatch.setenv("http_proxy", "must-not-reach-child")
+    monkeypatch.setenv("https_proxy", "must-not-reach-child")
+    monkeypatch.setenv("no_proxy", "must-not-reach-child")
     monkeypatch.setenv("VERIGYM_UNRELATED_SECRET", "must-not-reach-child")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
@@ -250,8 +261,82 @@ def test_process_environment_forwards_only_explicit_proxy_allowlist(
         if json.loads(line)["kind"] == "model"
     ][-1]
     environment_names = set(record["environment_names"])
-    assert {"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} <= environment_names
-    assert {"ALL_PROXY", "http_proxy", "VERIGYM_UNRELATED_SECRET"}.isdisjoint(environment_names)
+    assert environment_names & {"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} == {
+        "HTTP_PROXY",
+        "NO_PROXY",
+    }
+    assert {
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "VERIGYM_UNRELATED_SECRET",
+    }.isdisjoint(environment_names)
+
+
+def test_proxy_values_are_redacted_and_proxy_policy_partitions_identity(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    proxy_values = {
+        "HTTP_PROXY": "http://proxy-user:proxy-password@proxy.unit.invalid:8080",
+        "HTTPS_PROXY": "https://secure-user:secure-password@proxy.unit.invalid:8443",
+        "NO_PROXY": "localhost,127.0.0.1,private.unit.invalid",
+    }
+    for name, value in proxy_values.items():
+        monkeypatch.setenv(name, value)
+    disabled = _client(ModelRunConfig(model_id="fake-model"))
+    enabled = _client(
+        ModelRunConfig(
+            model_id="fake-model",
+            client_options={"allow_proxy_environment": True},
+        )
+    )
+    assert disabled.descriptor.configuration_fingerprint != (
+        enabled.descriptor.configuration_fingerprint
+    )
+    assert disabled.descriptor.configuration["allow_proxy_environment"] is False
+    assert disabled.descriptor.configuration["proxy_environment_allowed"] is False
+    assert disabled.descriptor.configuration["forwarded_proxy_environment_names"] == []
+    assert enabled.descriptor.configuration["proxy_environment_allowed"] is True
+    assert enabled.descriptor.configuration["allow_proxy_environment"] is True
+    assert enabled.descriptor.configuration["forwarded_proxy_environment_names"] == [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    ]
+
+    scenario("proxy_output")
+    with pytest.raises(ModelClientError) as raised:
+        enabled.generate(_request())
+    persisted_error = str(raised.value)
+    destination = tmp_path / "proxy-artifacts"
+    enabled.export_run_artifacts(destination)
+    persisted = (
+        persisted_error
+        + "\n"
+        + "\n".join(path.read_text(encoding="utf-8") for path in destination.iterdir())
+    )
+    for proxy_value in proxy_values.values():
+        assert proxy_value not in persisted
+    for secret_fragment in (
+        "proxy-user",
+        "proxy-password",
+        "secure-user",
+        "secure-password",
+        "private.unit.invalid",
+    ):
+        assert secret_fragment not in persisted
+    invocation = json.loads((destination / "invocation.json").read_text(encoding="utf-8"))
+    assert invocation["proxy_values_persisted"] is False
+    assert invocation["allow_proxy_environment"] is True
+    assert invocation["forwarded_proxy_environment_names"] == [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    ]
 
 
 def test_output_timeout_and_orphan_cleanup_are_bounded(

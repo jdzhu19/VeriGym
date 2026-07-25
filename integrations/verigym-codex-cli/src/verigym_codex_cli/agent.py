@@ -28,7 +28,12 @@ from ._version import __version__
 from .artifacts import CodexRunEvidence, update_summary
 from .capabilities import CapabilityReport, runtime_capabilities
 from .config import CodexSettings, agent_settings
-from .events import EventParseError, ParsedEventStream, parse_event_stream
+from .events import (
+    EventParseError,
+    ParsedEventStream,
+    parse_event_stream,
+    parse_partial_event_stream,
+)
 from .invocation import build_exec_arguments, sanitized_invocation
 from .process import (
     CodexCliProcessRunner,
@@ -162,28 +167,32 @@ class CodexCliAgentAdapter(AgentAdapter):
                 infrastructure=True,
             )
         if failure is None:
-            try:
-                parsed = _parse_agent_process(process, workspace)
-                validate_external_events(parsed, workspace)
-                assert_safe_workspace_tree(workspace)
-            except CodexPolicyError as exc:
-                failure = _agent_failure(
-                    TerminationReason.POLICY_VIOLATION,
-                    "workspace_policy",
-                    str(exc),
-                    infrastructure=False,
-                )
-                bridge.emit_event(
-                    "codex_cli_policy_violation",
-                    {"category": "workspace_policy", "message": str(exc)},
-                )
-            except EventParseError as exc:
-                failure = _agent_failure(
-                    TerminationReason.MODEL_ERROR,
-                    "parser_error",
-                    str(exc),
-                    infrastructure=True,
-                )
+            if process.timed_out or process.stdout_truncated or process.stderr_truncated:
+                parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
+                failure = _process_failure(process, parsed)
+            else:
+                try:
+                    parsed = _parse_agent_process(process, workspace)
+                    validate_external_events(parsed, workspace)
+                    assert_safe_workspace_tree(workspace)
+                except CodexPolicyError as exc:
+                    failure = _agent_failure(
+                        TerminationReason.POLICY_VIOLATION,
+                        "workspace_policy",
+                        str(exc),
+                        infrastructure=False,
+                    )
+                    bridge.emit_event(
+                        "codex_cli_policy_violation",
+                        {"category": "workspace_policy", "message": str(exc)},
+                    )
+                except EventParseError as exc:
+                    failure = _agent_failure(
+                        TerminationReason.MODEL_ERROR,
+                        "parser_error",
+                        str(exc),
+                        infrastructure=True,
+                    )
         if parsed is not None:
             for event in parsed.events:
                 bridge.emit_event(
@@ -192,6 +201,7 @@ class CodexCliAgentAdapter(AgentAdapter):
                         "sequence": event.sequence,
                         "category": event.category,
                         "upstream_type": event.upstream_type,
+                        "diagnostic_only": parsed.diagnostic_only,
                     },
                 )
         if failure is None:
@@ -331,10 +341,6 @@ def _parse_agent_process(
     process: CodexProcessResult,
     workspace: Path,
 ) -> ParsedEventStream:
-    if process.timed_out:
-        raise EventParseError("Codex CLI external-agent process timed out")
-    if process.stdout_truncated or process.stderr_truncated:
-        raise EventParseError("Codex CLI external-agent output exceeded its bound")
     parsed = parse_event_stream(process.stdout, roots=(workspace,))
     if process.exit_code == 0 and not parsed.terminal_event_seen:
         raise EventParseError("Codex CLI external-agent stream has no terminal event")
@@ -352,6 +358,13 @@ def _process_failure(
             TerminationReason.MODEL_ERROR,
             "timeout",
             "Codex CLI external-agent process timed out",
+            infrastructure=True,
+        )
+    if process.stdout_truncated or process.stderr_truncated:
+        return _agent_failure(
+            TerminationReason.MODEL_ERROR,
+            "output_limit",
+            "Codex CLI external-agent output exceeded the configured bound",
             infrastructure=True,
         )
     if process.exit_code == 0 and parsed is not None and not parsed.error_messages:
@@ -421,17 +434,18 @@ def _external_accounting(
     process: CodexProcessResult,
     parsed: ParsedEventStream | None,
 ) -> ExternalAgentAccounting:
+    canonical = parsed if parsed is not None and parsed.canonical_stream_complete else None
     return ExternalAgentAccounting(
         process_wall_time_s=process.duration_s,
         cli_event_count=len(parsed.events) if parsed is not None else 0,
-        external_tool_call_count=(parsed.external_tool_count if parsed is not None else None),
-        external_command_count=parsed.command_count if parsed is not None else None,
-        external_file_read_count=(parsed.file_read_count if parsed is not None else None),
-        external_file_write_count=(parsed.file_write_count if parsed is not None else None),
-        external_patch_count=parsed.patch_count if parsed is not None else None,
-        input_tokens=parsed.input_tokens if parsed is not None else None,
-        output_tokens=parsed.output_tokens if parsed is not None else None,
-        total_tokens=parsed.total_tokens if parsed is not None else None,
+        external_tool_call_count=(canonical.external_tool_count if canonical is not None else None),
+        external_command_count=canonical.command_count if canonical is not None else None,
+        external_file_read_count=(canonical.file_read_count if canonical is not None else None),
+        external_file_write_count=(canonical.file_write_count if canonical is not None else None),
+        external_patch_count=canonical.patch_count if canonical is not None else None,
+        input_tokens=canonical.input_tokens if canonical is not None else None,
+        output_tokens=canonical.output_tokens if canonical is not None else None,
+        total_tokens=canonical.total_tokens if canonical is not None else None,
         cost=None,
         currency=None,
     )

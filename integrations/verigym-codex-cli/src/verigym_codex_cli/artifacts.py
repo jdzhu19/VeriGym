@@ -64,6 +64,16 @@ class CodexRunEvidence:
             "stderr_truncated": self.process.stderr_truncated,
             "process_group_cleaned": self.process.process_group_cleaned,
             "duration_s": self.process.duration_s,
+            "diagnostic_only": (
+                self.parsed.diagnostic_only
+                if self.parsed is not None
+                else self.process.timed_out
+                or self.process.stdout_truncated
+                or self.process.stderr_truncated
+            ),
+            "canonical_stream_complete": (
+                self.parsed.canonical_stream_complete if self.parsed is not None else False
+            ),
         }
         atomic_json(
             destination / "summary.json",

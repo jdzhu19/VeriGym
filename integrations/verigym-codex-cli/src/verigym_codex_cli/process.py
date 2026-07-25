@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -29,6 +30,11 @@ _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _TEST_ENVIRONMENT_NAMES = (
     "VERIGYM_FAKE_CODEX_SCENARIO",
     "VERIGYM_FAKE_CODEX_LOG",
+)
+_PROXY_ENVIRONMENT_ALLOWLIST = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
 )
 _SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin"
 
@@ -181,12 +187,22 @@ class CodexCliProcessRunner:
         )
 
     def _redact_process_output(self, value: str) -> str:
-        clean = redact_text(value)
+        clean = value
+        if self.allow_proxy_environment:
+            proxy_values = {
+                os.environ[name]
+                for name in forwarded_proxy_environment_names(True)
+                if os.environ[name]
+            }
+            for proxy_value in sorted(proxy_values, key=len, reverse=True):
+                clean = clean.replace(proxy_value, "<redacted-proxy>")
+                json_escaped = json.dumps(proxy_value, ensure_ascii=False)[1:-1]
+                clean = clean.replace(json_escaped, "<redacted-proxy>")
         if self.credential_env is not None:
             credential = os.environ.get(self.credential_env)
             if credential:
                 clean = clean.replace(credential, "<redacted-credential>")
-        return clean
+        return redact_text(clean)
 
     def _environment(self) -> dict[str, str]:
         environment = {
@@ -209,10 +225,8 @@ class CodexCliProcessRunner:
             if self.credential_env is None or self.credential_env not in os.environ:
                 raise CodexProcessError("selected Codex authentication environment is unavailable")
             environment[self.credential_env] = os.environ[self.credential_env]
-        if self.allow_proxy_environment:
-            for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
-                if name in os.environ:
-                    environment[name] = os.environ[name]
+        for name in forwarded_proxy_environment_names(self.allow_proxy_environment):
+            environment[name] = os.environ[name]
         if (
             os.environ.get("VERIGYM_CODEX_TEST_MODE") == "1"
             and "fake_codex" in self.executable.name
@@ -337,6 +351,14 @@ def auth_identity_configuration(
     return resolution, credential_env
 
 
+def forwarded_proxy_environment_names(allowed: bool) -> tuple[str, ...]:
+    """Return only present, explicitly allowlisted proxy names without values."""
+
+    if not allowed:
+        return ()
+    return tuple(name for name in _PROXY_ENVIRONMENT_ALLOWLIST if name in os.environ)
+
+
 def auth_configuration(
     *,
     default_credential_env: str | None = None,
@@ -357,5 +379,6 @@ __all__ = [
     "ExecutableIdentity",
     "auth_configuration",
     "auth_identity_configuration",
+    "forwarded_proxy_environment_names",
     "resolve_executable",
 ]

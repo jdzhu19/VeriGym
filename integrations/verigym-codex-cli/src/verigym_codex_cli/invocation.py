@@ -60,9 +60,17 @@ def sanitized_invocation(
         "auth_semantic_id": settings.auth_semantic_id,
         "auth_alias_used": settings.auth_alias_used,
         "credential_values_persisted": False,
+        "proxy_values_persisted": False,
+        "allow_proxy_environment": settings.allow_proxy_environment,
+        "proxy_environment_allowed": settings.allow_proxy_environment,
+        "forwarded_proxy_environment_names": list(settings.forwarded_proxy_environment_names),
         "shell": False,
         "new_process_session": True,
-        "timeout_s": settings.max_process_time_s,
+        "requested_process_timeout_s": settings.requested_process_timeout_s,
+        "task_wall_time_s": settings.task_wall_time_s,
+        "effective_process_timeout_s": settings.effective_process_timeout_s,
+        "timeout_clamped": settings.timeout_clamped,
+        "timeout_s": settings.effective_process_timeout_s,
         "max_output_bytes": settings.max_output_bytes,
     }
 

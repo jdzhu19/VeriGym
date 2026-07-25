@@ -61,6 +61,17 @@ def main():
             "unrelated_secret_visible": "VERIGYM_UNRELATED_SECRET" in os.environ,
         }
     )
+    if scenario == "timeout_partial_malformed":
+        _emit(
+            {
+                "type": "thread.started",
+                "thread_id": "must-not-be-inferred",
+                "model": model,
+            }
+        )
+        print("{not-json", flush=True)
+        time.sleep(10)
+        return 0
     if scenario == "timeout":
         time.sleep(10)
         return 0
@@ -127,6 +138,15 @@ def main():
                 "message": os.environ.get("OPENAI_API_KEY", "credential-unavailable"),
             }
         )
+        return 1
+    if scenario == "proxy_output":
+        proxy_values = [
+            os.environ.get(name, "")
+            for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+            if name in os.environ
+        ]
+        _emit({"type": "error", "message": " | ".join(proxy_values)})
+        print("proxy diagnostics: " + " | ".join(proxy_values), file=sys.stderr)
         return 1
     if scenario == "auth_error":
         _emit({"type": "error", "message": "authentication unavailable (401)"})

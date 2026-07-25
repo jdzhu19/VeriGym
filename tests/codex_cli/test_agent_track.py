@@ -20,20 +20,27 @@ def _run(
     output: Path,
     *,
     task: str = "toy-rtl/and-gate-basic",
+    max_process_time_s: float = 30,
+    max_output_bytes: int | None = None,
+    allow_proxy_environment: bool = False,
 ) -> RunResult:
     registries = build_registries(discover_external=False)
     registries.agents.register(CodexCliAgentAdapter())
+    agent_options: dict[str, object] = {
+        "model_id": "fake-model",
+        "sandbox": "workspace-write",
+        "approval_policy": "non-interactive",
+        "max_process_time_s": max_process_time_s,
+        "allow_proxy_environment": allow_proxy_environment,
+    }
+    if max_output_bytes is not None:
+        agent_options["max_output_bytes"] = max_output_bytes
     return VeriGym(registries).run(
         RunConfig(
             task_id=task,
             mode=InteractionMode.AGENT,
             agent="codex-cli-agent",
-            agent_options={
-                "model_id": "fake-model",
-                "sandbox": "workspace-write",
-                "approval_policy": "non-interactive",
-                "max_process_time_s": 30,
-            },
+            agent_options=agent_options,
             runtime="local",
             output=output,
         )
@@ -169,3 +176,121 @@ def test_unsafe_external_workspace_mutations_are_policy_failures(
     assert result.scorecard.failure.kind == "policy"
     assert result.scorecard.failure.category == category
     assert result.scorecard.failure.infrastructure is False
+
+
+def test_track_b_timeout_precedes_event_parsing_and_replay_is_model_free(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, log, scenario = fake_codex
+    scenario("timeout")
+    result = _run(tmp_path / "runs", max_process_time_s=0.05)
+    assert result.scorecard.status == "error"
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "timeout"
+    assert result.scorecard.failure.category != "parser_error"
+    assert result.scorecard.failure.infrastructure is True
+    summary = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["timed_out"] is True
+    assert summary["diagnostic_only"] is True
+    assert summary["canonical_stream_complete"] is False
+    before_replay = log.read_bytes()
+    replay_run(result.run_dir, verify=False)
+    assert log.read_bytes() == before_replay
+
+
+def test_track_b_timed_out_malformed_prefix_is_diagnostic_only(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("timeout_partial_malformed")
+    result = _run(tmp_path / "runs", max_process_time_s=0.05)
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "timeout"
+    artifact_root = result.run_dir / "artifacts" / "codex_cli"
+    summary = json.loads((artifact_root / "summary.json").read_text(encoding="utf-8"))
+    identity = json.loads((artifact_root / "identity.json").read_text(encoding="utf-8"))
+    accounting = json.loads((artifact_root / "accounting.json").read_text(encoding="utf-8"))
+    assert summary["diagnostic_only"] is True
+    assert summary["canonical_stream_complete"] is False
+    assert identity["observed_model_id"] is None
+    assert identity["identity_confidence"] == "requested_only"
+    assert accounting["cli_event_count"] == 1
+    assert accounting["external_tool_call_count"] is None
+    assert accounting["input_tokens"] is None
+
+
+def test_track_b_output_overflow_precedes_event_parsing(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("oversized_stderr")
+    result = _run(tmp_path / "runs", max_output_bytes=1024)
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "output_limit"
+    assert result.scorecard.failure.category != "parser_error"
+    summary = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["stderr_truncated"] is True
+    assert summary["diagnostic_only"] is True
+    assert summary["canonical_stream_complete"] is False
+
+
+def test_track_b_complete_malformed_stream_remains_parser_error(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("malformed")
+    result = _run(tmp_path / "runs")
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "parser_error"
+
+
+@pytest.mark.parametrize(
+    ("scenario_name", "category"),
+    [
+        ("auth_error", "authentication"),
+        ("rate_limit", "rate_limit"),
+        ("transport_error", "transport"),
+        ("nonzero", "remote_process_error"),
+    ],
+)
+def test_track_b_non_timeout_remote_taxonomy_is_unchanged(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+    scenario_name: str,
+    category: str,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario(scenario_name)
+    result = _run(tmp_path / "runs")
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == category
+
+
+def test_track_b_fake_flow_succeeds_with_proxy_forwarding(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _executable, log, scenario = fake_codex
+    scenario("agent_good")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.unit.invalid:8080")
+    result = _run(tmp_path / "runs", allow_proxy_environment=True)
+    assert result.scorecard.resolved is True
+    record = [
+        json.loads(line)
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["kind"] == "model"
+    ][-1]
+    assert set(record["environment_names"]) & {
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    }

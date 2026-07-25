@@ -25,6 +25,7 @@ class ModelErrorCategory(StrEnum):
     CONFIGURATION = "configuration"
     AUTHENTICATION = "authentication"
     TIMEOUT = "timeout"
+    OUTPUT_LIMIT = "output_limit"
     TRANSPORT = "transport"
     RATE_LIMIT = "rate_limit"
     INVALID_RESPONSE = "invalid_response"

@@ -27,7 +27,12 @@ from ._version import __version__
 from .artifacts import CodexRunEvidence
 from .capabilities import CapabilityReport, runtime_capabilities
 from .config import CodexSettings, model_settings
-from .events import EventParseError, ParsedEventStream, parse_event_stream
+from .events import (
+    EventParseError,
+    ParsedEventStream,
+    parse_event_stream,
+    parse_partial_event_stream,
+)
 from .invocation import build_exec_arguments, sanitized_invocation
 from .process import (
     CodexCliProcessRunner,
@@ -217,10 +222,14 @@ class CodexExecModelClient(ModelClient):
                     "integration_track": settings.integration_track,
                     "valid_model_response": failure is None,
                     "tool_use_event_count": (
-                        len(parsed.tool_use_events) if parsed is not None else None
+                        len(parsed.tool_use_events)
+                        if parsed is not None and not parsed.diagnostic_only
+                        else None
                     ),
                     "final_message_count": (
-                        len(parsed.final_messages) if parsed is not None else None
+                        len(parsed.final_messages)
+                        if parsed is not None and not parsed.diagnostic_only
+                        else None
                     ),
                     "failure_category": (
                         failure.info.category.value if failure is not None else None
@@ -271,10 +280,12 @@ class CodexExecModelClient(ModelClient):
         workspace: Path,
     ) -> ParsedEventStream:
         if process.timed_out:
+            self._record_partial_diagnostics(process, workspace)
             raise self._error(ModelErrorCategory.TIMEOUT, "Codex CLI process timed out")
         if process.stdout_truncated or process.stderr_truncated:
+            self._record_partial_diagnostics(process, workspace)
             raise self._error(
-                ModelErrorCategory.INVALID_RESPONSE,
+                ModelErrorCategory.OUTPUT_LIMIT,
                 "Codex CLI output exceeded the configured bound",
             )
         parsed: ParsedEventStream | None = None
@@ -329,6 +340,26 @@ class CodexExecModelClient(ModelClient):
         if len(parsed.final_messages) != 1:
             raise EventParseError("Codex CLI must emit exactly one nonempty final response")
         return parsed
+
+    def _record_partial_diagnostics(
+        self,
+        process: CodexProcessResult,
+        workspace: Path,
+    ) -> None:
+        parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
+        self._last_parsed = parsed
+        for event in parsed.events:
+            self._events.append(
+                (
+                    "codex_cli_diagnostic_event_observed",
+                    {
+                        "sequence": event.sequence,
+                        "category": event.category,
+                        "upstream_type": event.upstream_type,
+                        "diagnostic_only": True,
+                    },
+                )
+            )
 
     def _identity(
         self,
@@ -412,18 +443,23 @@ def _accounting(
     process: CodexProcessResult,
     parsed: ParsedEventStream | None,
 ) -> dict[str, Any]:
+    canonical = parsed if parsed is not None and parsed.canonical_stream_complete else None
     return {
         "schema_version": "1.0",
         "process_wall_time_s": process.duration_s,
         "cli_event_count": len(parsed.events) if parsed is not None else 0,
-        "external_tool_call_count": (parsed.external_tool_count if parsed is not None else None),
-        "external_command_count": parsed.command_count if parsed is not None else None,
-        "external_file_read_count": (parsed.file_read_count if parsed is not None else None),
-        "external_file_write_count": (parsed.file_write_count if parsed is not None else None),
-        "external_patch_count": parsed.patch_count if parsed is not None else None,
-        "input_tokens": parsed.input_tokens if parsed is not None else None,
-        "output_tokens": parsed.output_tokens if parsed is not None else None,
-        "total_tokens": parsed.total_tokens if parsed is not None else None,
+        "external_tool_call_count": (
+            canonical.external_tool_count if canonical is not None else None
+        ),
+        "external_command_count": canonical.command_count if canonical is not None else None,
+        "external_file_read_count": (canonical.file_read_count if canonical is not None else None),
+        "external_file_write_count": (
+            canonical.file_write_count if canonical is not None else None
+        ),
+        "external_patch_count": canonical.patch_count if canonical is not None else None,
+        "input_tokens": canonical.input_tokens if canonical is not None else None,
+        "output_tokens": canonical.output_tokens if canonical is not None else None,
+        "total_tokens": canonical.total_tokens if canonical is not None else None,
         "cost": None,
         "currency": None,
     }

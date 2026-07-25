@@ -55,6 +55,8 @@ class ParsedEventStream:
     total_tokens: int | None
     terminal_event_seen: bool
     error_messages: tuple[str, ...]
+    diagnostic_only: bool
+    canonical_stream_complete: bool
 
     @property
     def tool_use_events(self) -> tuple[NormalizedEvent, ...]:
@@ -175,6 +177,48 @@ def parse_event_stream(
         total_tokens=total_tokens,
         terminal_event_seen=terminal,
         error_messages=tuple(errors),
+        diagnostic_only=False,
+        canonical_stream_complete=True,
+    )
+
+
+def parse_partial_event_stream(
+    stdout: str,
+    *,
+    roots: tuple[Path, ...] = (),
+) -> ParsedEventStream:
+    """Safely retain a valid event prefix without inferring canonical results."""
+
+    events: list[NormalizedEvent] = []
+    errors: list[str] = []
+    for line in stdout.splitlines()[:_MAX_EVENTS]:
+        try:
+            parsed_line = parse_event_stream(line, roots=roots)
+        except EventParseError:
+            break
+        event = parsed_line.events[0]
+        events.append(
+            NormalizedEvent(
+                sequence=len(events),
+                category=event.category,
+                upstream_type=event.upstream_type,
+                payload=event.payload,
+            )
+        )
+        errors.extend(parsed_line.error_messages)
+    return ParsedEventStream(
+        events=tuple(events),
+        final_messages=(),
+        session_id=None,
+        observed_model_id=None,
+        system_fingerprint=None,
+        input_tokens=None,
+        output_tokens=None,
+        total_tokens=None,
+        terminal_event_seen=False,
+        error_messages=tuple(errors),
+        diagnostic_only=True,
+        canonical_stream_complete=False,
     )
 
 
@@ -432,5 +476,6 @@ __all__ = [
     "NormalizedEvent",
     "ParsedEventStream",
     "parse_event_stream",
+    "parse_partial_event_stream",
     "raw_event_records",
 ]

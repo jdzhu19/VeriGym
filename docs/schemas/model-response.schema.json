@@ -45,6 +45,7 @@
         "configuration",
         "authentication",
         "timeout",
+        "output_limit",
         "transport",
         "rate_limit",
         "invalid_response",

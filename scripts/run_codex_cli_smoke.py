@@ -27,7 +27,7 @@ from verigym.schemas.run import RunConfig, RunResult
 _TASKS = ("toy-rtl/and-gate-basic", "toy-rtl/counter-basic")
 _TRACKS = ("codex_cli_model_proxy", "codex_cli_external_agent")
 _EXPECTED_PACKAGE = "verigym-codex-cli"
-_MAX_PROCESS_TIME_S = 600
+_MAX_PROCESS_TIME_S = 300
 _MAX_CAMPAIGN_OVERHEAD_S = 10 * 60
 _MAX_TOTAL_WALL_TIME_S = len(_TASKS) * len(_TRACKS) * _MAX_PROCESS_TIME_S + _MAX_CAMPAIGN_OVERHEAD_S
 _SECRET_PATTERN = re.compile(

@@ -24,8 +24,8 @@ sampling:
 execution:
   planned_runs: 4
   max_codex_processes: 4
-  max_process_time_s: 600
-  max_total_wall_time_s: 3000
+  max_process_time_s: 300
+  max_total_wall_time_s: 1800
   allow_retry: false
   allow_best_of_k_selection: false
   allow_outer_agent_repair: false

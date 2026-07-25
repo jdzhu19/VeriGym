@@ -27,14 +27,26 @@ def _request(request_id: str = "request-1") -> ModelRequest:
     )
 
 
-def _client() -> CodexExecModelClient:
+def _client(
+    *,
+    max_process_time_s: float | None = None,
+    max_output_bytes: int | None = None,
+    allow_proxy_environment: bool = False,
+) -> CodexExecModelClient:
+    client_options: dict[str, object] = {
+        "sandbox": "most-restrictive-supported",
+        "reject_tool_use": True,
+        "allow_proxy_environment": allow_proxy_environment,
+    }
+    if max_process_time_s is not None:
+        client_options["max_process_time_s"] = max_process_time_s
+    if max_output_bytes is not None:
+        client_options["max_output_bytes"] = max_output_bytes
     return CodexExecModelClient().clone_for_run(
         ModelRunConfig(
             model_id="fake-model",
-            client_options={
-                "sandbox": "most-restrictive-supported",
-                "reject_tool_use": True,
-            },
+            request_timeout_s=max_process_time_s or 90,
+            client_options=client_options,
         )
     )
 
@@ -166,3 +178,50 @@ def test_secret_shaped_output_is_redacted(
     client.export_run_artifacts(destination)
     persisted = "\n".join(path.read_text(encoding="utf-8") for path in destination.iterdir())
     assert "FAKESECRET" not in persisted
+
+
+def test_track_a_timeout_has_primary_timeout_taxonomy(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("timeout")
+    client = _client(max_process_time_s=0.05)
+    with pytest.raises(ModelClientError) as raised:
+        client.generate(_request())
+    assert raised.value.info.category == ModelErrorCategory.TIMEOUT
+    destination = tmp_path / "codex_cli"
+    client.export_run_artifacts(destination)
+    summary = json.loads((destination / "summary.json").read_text(encoding="utf-8"))
+    assert summary["failure_category"] == "timeout"
+    assert summary["timed_out"] is True
+    assert summary["diagnostic_only"] is True
+    assert summary["canonical_stream_complete"] is False
+
+
+def test_track_a_output_overflow_has_primary_output_limit_taxonomy(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("oversized_stderr")
+    client = _client(max_output_bytes=1024)
+    with pytest.raises(ModelClientError) as raised:
+        client.generate(_request())
+    assert raised.value.info.category == ModelErrorCategory.OUTPUT_LIMIT
+    destination = tmp_path / "codex_cli"
+    client.export_run_artifacts(destination)
+    summary = json.loads((destination / "summary.json").read_text(encoding="utf-8"))
+    assert summary["failure_category"] == "output_limit"
+    assert summary["stderr_truncated"] is True
+    assert summary["diagnostic_only"] is True
+    assert summary["canonical_stream_complete"] is False
+
+
+def test_track_a_fake_flow_succeeds_with_proxy_forwarding(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("valid")
+    response = _client(allow_proxy_environment=True).generate(_request())
+    assert response.text.startswith("module and_gate")
