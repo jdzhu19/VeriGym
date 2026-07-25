@@ -26,6 +26,7 @@ _TEST_ENVIRONMENT_NAMES = (
     "VERIGYM_FAKE_CODEX_SCENARIO",
     "VERIGYM_FAKE_CODEX_LOG",
 )
+_SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
 class CodexProcessError(RuntimeError):
@@ -185,7 +186,7 @@ class CodexCliProcessRunner:
 
     def _environment(self) -> dict[str, str]:
         environment = {
-            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "PATH": _SAFE_EXECUTABLE_PATH,
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
         }

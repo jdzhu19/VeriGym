@@ -203,6 +203,7 @@ def test_process_environment_is_allowlisted_and_credentials_are_not_persisted(
     ][-1]
     assert record["unrelated_secret_visible"] is False
     assert "VERIGYM_UNRELATED_SECRET" not in record["environment_names"]
+    assert record["environment_path"] == "/usr/local/bin:/usr/bin:/bin"
 
     scenario("credential_output")
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "api_key_env")

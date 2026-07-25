@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Offline fake for Codex CLI protocol, policy, and failure tests."""
+"""Offline fake for Codex CLI protocol, policy, and failure tests.
 
-from __future__ import annotations
+The executable intentionally uses Python 3.6-compatible syntax so the safe
+subprocess PATH can select a minimal system interpreter on older hosts.
+"""
 
 import json
 import os
@@ -10,10 +12,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 
-def main() -> int:
+def main():
     arguments = sys.argv[1:]
     scenario = os.environ.get("VERIGYM_FAKE_CODEX_SCENARIO", "valid")
     if arguments == ["--version"]:
@@ -49,6 +50,7 @@ def main() -> int:
             "prompt": prompt,
             "scenario": scenario,
             "environment_names": sorted(os.environ),
+            "environment_path": os.environ.get("PATH"),
             "unrelated_secret_visible": "VERIGYM_UNRELATED_SECRET" in os.environ,
         }
     )
@@ -99,7 +101,7 @@ def main() -> int:
         print("x" * (2 * 1024 * 1024), file=sys.stderr)
         return 1
     if scenario == "deep_event":
-        value: dict[str, Any] = {"leaf": True}
+        value = {"leaf": True}
         for _ in range(40):
             value = {"nested": value}
         _emit({"type": "unknown", "payload": value})
@@ -211,17 +213,15 @@ def main() -> int:
                 "item": {"type": "agent_message", "text": "second final"},
             }
         )
-    usage: dict[str, int] | None = (
-        None if scenario == "unknown_usage" else {"input_tokens": 11, "output_tokens": 7}
-    )
-    completed: dict[str, Any] = {"type": "turn.completed"}
+    usage = None if scenario == "unknown_usage" else {"input_tokens": 11, "output_tokens": 7}
+    completed = {"type": "turn.completed"}
     if usage is not None:
         completed["usage"] = usage
     _emit(completed)
     return 0
 
 
-def _top_help(scenario: str) -> str:
+def _top_help(scenario):
     approval = (
         ""
         if scenario == "unsupported_approval"
@@ -236,7 +236,7 @@ def _top_help(scenario: str) -> str:
     )
 
 
-def _exec_help(scenario: str) -> str:
+def _exec_help(scenario):
     json_flag = "" if scenario == "unsupported_json" else "\n      --json Emit JSONL events"
     sandbox_values = (
         "[read-only]"
@@ -257,7 +257,7 @@ def _exec_help(scenario: str) -> str:
     )
 
 
-def _edit_workspace(cwd: Path, *, good: bool) -> None:
+def _edit_workspace(cwd, *, good):
     and_gate = cwd / "rtl" / "and_gate.v"
     counter = cwd / "rtl" / "counter.v"
     if and_gate.is_file():
@@ -296,7 +296,7 @@ def _edit_workspace(cwd: Path, *, good: bool) -> None:
         )
 
 
-def _model_response(prompt: str) -> str:
+def _model_response(prompt):
     if "counter" in prompt.lower():
         return (
             "module counter (\n"
@@ -321,7 +321,7 @@ def _model_response(prompt: str) -> str:
     )
 
 
-def _argument_value(arguments: list[str], *flags: str) -> str | None:
+def _argument_value(arguments, *flags):
     for flag in flags:
         if flag in arguments:
             index = arguments.index(flag)
@@ -330,11 +330,11 @@ def _argument_value(arguments: list[str], *flags: str) -> str | None:
     return None
 
 
-def _emit(value: dict[str, Any]) -> None:
+def _emit(value):
     print(json.dumps(value, sort_keys=True), flush=True)
 
 
-def _log(value: dict[str, Any]) -> None:
+def _log(value):
     path = os.environ.get("VERIGYM_FAKE_CODEX_LOG")
     if path is None:
         return
