@@ -222,6 +222,38 @@ def test_process_environment_is_allowlisted_and_credentials_are_not_persisted(
     assert "unit-test-credential" not in persisted
 
 
+def test_process_environment_forwards_only_explicit_proxy_allowlist(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _executable, log, scenario = fake_codex
+    scenario("valid")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
+    monkeypatch.setenv("ALL_PROXY", "must-not-reach-child")
+    monkeypatch.setenv("http_proxy", "must-not-reach-child")
+    monkeypatch.setenv("VERIGYM_UNRELATED_SECRET", "must-not-reach-child")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    result = CodexCliProcessRunner(
+        resolve_executable(),
+        auth_mode="inherited_codex_login",
+        max_output_bytes=1024 * 1024,
+        allow_proxy_environment=True,
+    ).run(["exec"], cwd=cwd, timeout_s=2, stdin_bytes=b"safe prompt")
+    assert result.exit_code == 0
+    record = [
+        json.loads(line)
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["kind"] == "model"
+    ][-1]
+    environment_names = set(record["environment_names"])
+    assert {"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} <= environment_names
+    assert {"ALL_PROXY", "http_proxy", "VERIGYM_UNRELATED_SECRET"}.isdisjoint(environment_names)
+
+
 def test_output_timeout_and_orphan_cleanup_are_bounded(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,

@@ -43,4 +43,5 @@ def test_pilot_has_two_independent_execution_guards() -> None:
     source = (ROOT / "scripts" / "run_codex_cli_pilot.py").read_text(encoding="utf-8")
     assert 'os.environ.get("VERIGYM_RUN_CODEX_PILOT") == "1"' in source
     assert 'os.environ.get("VERIGYM_CODEX_PILOT_BUDGET")' in source
+    assert source.count('"allow_proxy_environment": True') == 2
     assert '"status": "plan_only"' in source

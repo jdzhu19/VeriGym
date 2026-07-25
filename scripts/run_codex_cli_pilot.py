@@ -498,6 +498,7 @@ def _run_config(
                     "sandbox": "most-restrictive-supported",
                     "approval_policy": "non-interactive",
                     "reject_tool_use": True,
+                    "allow_proxy_environment": True,
                     "max_process_time_s": max_process_time_s,
                 },
             ),
@@ -510,6 +511,7 @@ def _run_config(
             "model_id": model_id,
             "sandbox": "workspace-write",
             "approval_policy": "non-interactive",
+            "allow_proxy_environment": True,
             "max_process_time_s": max_process_time_s,
         },
     )

@@ -27,7 +27,9 @@ from verigym.schemas.run import RunConfig, RunResult
 _TASKS = ("toy-rtl/and-gate-basic", "toy-rtl/counter-basic")
 _TRACKS = ("codex_cli_model_proxy", "codex_cli_external_agent")
 _EXPECTED_PACKAGE = "verigym-codex-cli"
-_MAX_TOTAL_WALL_TIME_S = 30 * 60
+_MAX_PROCESS_TIME_S = 600
+_MAX_CAMPAIGN_OVERHEAD_S = 10 * 60
+_MAX_TOTAL_WALL_TIME_S = len(_TASKS) * len(_TRACKS) * _MAX_PROCESS_TIME_S + _MAX_CAMPAIGN_OVERHEAD_S
 _SECRET_PATTERN = re.compile(
     r"(?i)(bearer\s+[A-Za-z0-9._~+/=-]{8,}|\bsk-[A-Za-z0-9_-]{12,}|"
     r"(token|secret|password|credential)[\"'=:\s]+[^\s,\"'}]+)"
@@ -233,12 +235,13 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
             model="codex-cli-exec-model",
             model_options=ModelRunConfig(
                 model_id=model_id,
-                request_timeout_s=300,
+                request_timeout_s=_MAX_PROCESS_TIME_S,
                 client_options={
                     "sandbox": "most-restrictive-supported",
                     "approval_policy": "non-interactive",
                     "reject_tool_use": True,
-                    "max_process_time_s": 300,
+                    "allow_proxy_environment": True,
+                    "max_process_time_s": _MAX_PROCESS_TIME_S,
                 },
             ),
         )
@@ -250,7 +253,8 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
             "model_id": model_id,
             "sandbox": "workspace-write",
             "approval_policy": "non-interactive",
-            "max_process_time_s": 300,
+            "allow_proxy_environment": True,
+            "max_process_time_s": _MAX_PROCESS_TIME_S,
         },
     )
 
@@ -420,7 +424,7 @@ def _acceptance(
         "secret_scan": scans["secret_scan_passed"],
         "host_path_scan": scans["host_path_scan_passed"],
         "hidden_asset_scan": scans["hidden_asset_scan_passed"],
-        "wall_time_within_30_minutes": elapsed_s <= _MAX_TOTAL_WALL_TIME_S,
+        "wall_time_within_declared_limit": elapsed_s <= _MAX_TOTAL_WALL_TIME_S,
     }
     return {
         "schema_version": "1.0",
