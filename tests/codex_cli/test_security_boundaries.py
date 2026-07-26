@@ -292,6 +292,21 @@ def test_known_bwrap_namespace_failure_has_stable_infrastructure_category() -> N
         )
         == "sandbox_backend_unavailable"
     )
+    assert (
+        sandbox_backend_failure(
+            "",
+            "permission profiles requiring direct runtime enforcement are incompatible "
+            "with --use-legacy-landlock",
+        )
+        == "sandbox_backend_unavailable"
+    )
+    assert (
+        sandbox_backend_failure(
+            "",
+            "error applying legacy Linux sandbox restrictions: Sandbox(LandlockRestrict)",
+        )
+        == "sandbox_backend_unavailable"
+    )
     assert sandbox_backend_failure("ordinary command failure", "") is None
 
 

@@ -73,11 +73,17 @@ class ParsedEventStream:
 
     @property
     def file_write_count(self) -> int:
-        return sum(event.category == "file_write" for event in self.events)
+        return sum(
+            event.category == "file_write" and _successful_write_event(event)
+            for event in self.events
+        )
 
     @property
     def patch_count(self) -> int:
-        return sum(event.category == "patch_applied" for event in self.events)
+        return sum(
+            event.category == "patch_applied" and _successful_write_event(event)
+            for event in self.events
+        )
 
     @property
     def external_tool_count(self) -> int:
@@ -312,7 +318,10 @@ def _normalize(
         if item_type in {"file_read", "read_file"}:
             return "file_read", {"path": _first_string(item, ("path", "file"))}
         if item_type in {"file_write", "write_file"}:
-            return "file_write", {"path": _first_string(item, ("path", "file"))}
+            return "file_write", {
+                "path": _first_string(item, ("path", "file")),
+                "status": item.get("status"),
+            }
         if item_type in {"mcp_tool_call", "tool_call", "web_search"}:
             return "tool_call", {
                 "tool": _first_string(item, ("tool", "name")) or item_type,
@@ -329,13 +338,37 @@ def _normalize(
     return "unknown", {"shape": canonical[:128]}
 
 
+def _successful_write_event(event: NormalizedEvent) -> bool:
+    """Count committed writes, not started, updated, failed, or cancelled attempts."""
+
+    upstream = event.upstream_type.lower().replace(".", "_").replace("-", "_")
+    if upstream in {"item_started", "item_updated"}:
+        return False
+    status = event.payload.get("status")
+    if status is None:
+        return True
+    return str(status).strip().lower() in {
+        "applied",
+        "complete",
+        "completed",
+        "success",
+        "succeeded",
+    }
+
+
 def _direct_payload(category: str, safe: dict[str, Any]) -> dict[str, Any]:
     if category in {"message_completed", "message_delta"}:
         return {"text": _item_text(safe)}
     if category in {"file_read", "file_write"}:
-        return {"path": _first_string(safe, ("path", "file"))}
+        return {
+            "path": _first_string(safe, ("path", "file")),
+            "status": safe.get("status"),
+        }
     if category == "patch_applied":
-        return {"paths": _file_change_paths(safe)}
+        return {
+            "paths": _file_change_paths(safe),
+            "status": safe.get("status"),
+        }
     if category in {"command_started", "command_completed"}:
         return {
             "command": _first_string(safe, ("command", "cmd")) or "",

@@ -50,6 +50,12 @@ _REDIRECTION_OPERATORS = {"<", ">", "<<", ">>", "<<<", "<>", ">&", "<&"}
 _SANDBOX_BACKEND_MARKERS = (
     "bwrap: creating new namespace failed",
     "kernel does not allow non-root user namespaces",
+    "permission profiles requiring direct runtime enforcement are incompatible with "
+    "--use-legacy-landlock",
+    "split sandbox policies requiring direct runtime enforcement are incompatible with "
+    "--use-legacy-landlock",
+    "error applying legacy linux sandbox restrictions",
+    "sandbox(landlockrestrict)",
 )
 
 

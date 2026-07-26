@@ -75,7 +75,7 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     assert "mcp_servers={}" in model_records[0]["arguments"]
     assert "project_doc_max_bytes=0" in model_records[0]["arguments"]
     assert "sandbox_workspace_write.network_access=false" in model_records[0]["arguments"]
-    assert "features.use_legacy_landlock=true" in model_records[0]["arguments"]
+    assert "features.use_legacy_landlock=true" not in model_records[0]["arguments"]
     assert model_records[0]["arguments"][-3:] == [
         "--config",
         'model_reasoning_effort="xhigh"',
@@ -85,8 +85,8 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
         (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(encoding="utf-8")
     )
     assert summary["candidate_modified_during_finish"] is False
-    assert summary["sandbox_backend"] == "legacy_landlock"
-    assert summary["sandbox_backend_source"] == "verigym_explicit_cli_override"
+    assert summary["sandbox_backend"] == "codex_cli_default"
+    assert summary["sandbox_backend_source"] == "codex_cli_default"
     invocation = json.loads(
         (result.run_dir / "artifacts" / "codex_cli" / "invocation.json").read_text(encoding="utf-8")
     )
@@ -95,8 +95,8 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
             encoding="utf-8"
         )
     )
-    assert invocation["sandbox_backend"] == "legacy_landlock"
-    assert invocation["sandbox_backend_source"] == "verigym_explicit_cli_override"
+    assert invocation["sandbox_backend"] == "codex_cli_default"
+    assert invocation["sandbox_backend_source"] == "codex_cli_default"
     assert workspace_policy["before"]["workspace_hash"]
     assert workspace_policy["after"]["workspace_hash"]
     assert workspace_policy["changed_paths"] == ["rtl/and_gate.v"]
@@ -175,6 +175,35 @@ def test_bwrap_backend_failure_is_observable_infrastructure(
     assert result.scorecard.failure is not None
     assert result.scorecard.failure.category == "sandbox_backend_unavailable"
     assert result.scorecard.failure.infrastructure is True
+    policy = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "workspace_policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert policy["before"]["workspace_hash"] == policy["after"]["workspace_hash"]
+    assert policy["changed_paths"] == []
+
+
+@pytest.mark.parametrize(
+    "scenario_name",
+    [
+        "agent_legacy_landlock_incompatible",
+        "agent_landlock_unavailable",
+    ],
+)
+def test_legacy_backend_failures_are_observable_infrastructure(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+    scenario_name: str,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario(scenario_name)
+    result = _run(tmp_path / "runs")
+    assert result.scorecard.status == "error"
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "sandbox_backend_unavailable"
+    assert result.scorecard.failure.infrastructure is True
+    assert result.scorecard.efficiency.external_patch_count == 0
     policy = json.loads(
         (result.run_dir / "artifacts" / "codex_cli" / "workspace_policy.json").read_text(
             encoding="utf-8"
@@ -271,7 +300,7 @@ def test_track_b_timed_out_malformed_prefix_is_diagnostic_only(
 ) -> None:
     _executable, _log, scenario = fake_codex
     scenario("timeout_partial_malformed")
-    result = _run(tmp_path / "runs", max_process_time_s=0.05)
+    result = _run(tmp_path / "runs", max_process_time_s=0.5)
     assert result.scorecard.failure is not None
     assert result.scorecard.failure.category == "timeout"
     artifact_root = result.run_dir / "artifacts" / "codex_cli"

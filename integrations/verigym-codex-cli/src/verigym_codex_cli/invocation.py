@@ -58,8 +58,6 @@ def build_exec_arguments(
             [
                 capabilities.config_flag,
                 "sandbox_workspace_write.network_access=false",
-                capabilities.config_flag,
-                "features.use_legacy_landlock=true",
             ]
         )
     arguments.extend(

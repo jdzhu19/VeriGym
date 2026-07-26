@@ -60,31 +60,23 @@ def main():
         if inherited_reasoning_effort is not None
         else "unspecified"
     )
-    _log(
-        {
-            "kind": "model",
-            "arguments": arguments,
-            "cwd": str(cwd),
-            "initial_files": initial_files,
-            "prompt": prompt,
-            "scenario": scenario,
-            "environment_names": sorted(os.environ),
-            "environment_path": os.environ.get("PATH"),
-            "unrelated_secret_visible": "VERIGYM_UNRELATED_SECRET" in os.environ,
-            "requested_reasoning_effort": explicit_reasoning_effort,
-            "effective_reasoning_effort": effective_reasoning_effort,
-            "reasoning_effort_source": reasoning_effort_source,
-        }
-    )
-    if scenario == "require_xhigh_override" and explicit_reasoning_effort != "xhigh":
-        _emit(
-            {
-                "type": "error",
-                "message": "explicit model_reasoning_effort xhigh override is required",
-            }
-        )
-        return 1
+    model_record = {
+        "kind": "model",
+        "arguments": arguments,
+        "cwd": str(cwd),
+        "initial_files": initial_files,
+        "prompt": prompt,
+        "scenario": scenario,
+        "environment_names": sorted(os.environ),
+        "environment_path": os.environ.get("PATH"),
+        "unrelated_secret_visible": "VERIGYM_UNRELATED_SECRET" in os.environ,
+        "requested_reasoning_effort": explicit_reasoning_effort,
+        "effective_reasoning_effort": effective_reasoning_effort,
+        "reasoning_effort_source": reasoning_effort_source,
+    }
     if scenario == "timeout_partial_malformed":
+        # Emit before writing the diagnostic log so a busy audit filesystem cannot
+        # consume the entire deliberately short timeout window.
         _emit(
             {
                 "type": "thread.started",
@@ -93,8 +85,18 @@ def main():
             }
         )
         print("{not-json", flush=True)
+        _log(model_record)
         time.sleep(10)
         return 0
+    _log(model_record)
+    if scenario == "require_xhigh_override" and explicit_reasoning_effort != "xhigh":
+        _emit(
+            {
+                "type": "error",
+                "message": "explicit model_reasoning_effort xhigh override is required",
+            }
+        )
+        return 1
     if scenario == "timeout":
         time.sleep(10)
         return 0
@@ -255,6 +257,37 @@ def main():
                     ),
                 },
             }
+        )
+    if scenario == "agent_legacy_landlock_incompatible":
+        _emit(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "file_change",
+                    "changes": [{"path": "rtl/and_gate.v", "kind": "update"}],
+                    "status": "in_progress",
+                },
+            }
+        )
+        _emit(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "file_change",
+                    "changes": [{"path": "rtl/and_gate.v", "kind": "update"}],
+                    "status": "failed",
+                },
+            }
+        )
+        print(
+            "permission profiles requiring direct runtime enforcement are incompatible "
+            "with --use-legacy-landlock",
+            file=sys.stderr,
+        )
+    if scenario == "agent_landlock_unavailable":
+        print(
+            "error applying legacy Linux sandbox restrictions: Sandbox(LandlockRestrict)",
+            file=sys.stderr,
         )
     if scenario == "agent_mcp":
         _emit(

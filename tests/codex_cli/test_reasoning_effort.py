@@ -77,10 +77,10 @@ def test_both_tracks_own_xhigh_as_the_final_cli_config_override(
     readonly_arguments = build_exec_arguments(capabilities, readonly)
     agent_arguments = build_exec_arguments(capabilities, agent)
     assert "features.use_legacy_landlock=true" not in readonly_arguments
-    assert "features.use_legacy_landlock=true" in agent_arguments
+    assert "features.use_legacy_landlock=true" not in agent_arguments
     assert readonly.sandbox_backend == "codex_cli_default"
-    assert agent.sandbox_backend == "legacy_landlock"
-    assert agent.sandbox_backend_source == "verigym_explicit_cli_override"
+    assert agent.sandbox_backend == "codex_cli_default"
+    assert agent.sandbox_backend_source == "codex_cli_default"
     assert agent.tool_use_policy == "visible_task_workspace_policy_v2"
 
     assert (
