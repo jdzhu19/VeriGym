@@ -76,8 +76,11 @@ Locally built images commonly have no repository digest; the manifest stores `nu
 and never invents one.
 
 Every diagnostic, agent, and verifier command in that run is created from the immutable image ID.
-Independent sample children resolve their own image once; aggregate regeneration rejects mixed
-runtime/image fingerprints as non-homogeneous.
+Each child resolves both role tags to exact IDs. Within one campaign process, successful
+tool/version observations may be reused only from an in-memory cache keyed by immutable image,
+backend, user, and executable identities; the recorded source distinguishes `fresh_probe` from
+`in_process_immutable_cache`. Every episode container still undergoes its own effective-control
+inspection. Aggregate regeneration rejects mixed runtime/image fingerprints as non-homogeneous.
 
 ## Isolation topology
 
@@ -93,7 +96,26 @@ hidden inputs. It never receives the external benchmark checkout. Candidate and 
 mode-read-only; only `.verigym_internal/` is writable for compiler output, simulator output such as
 `wave.vcd`, and bounded build state. Hidden files are hashed before and after the verifier DAG.
 Agent and verifier session IDs, writable storage, and command-container IDs are distinct, while all
-use the same resolved image ID.
+ordinary RTL command sessions use the verifier image. Runtime-owned external agents use the
+separate role image described below.
+
+### Runtime-owned external agents
+
+The optional Codex CLI Docker path uses separate agent and verifier image IDs. A host app-server
+retains authentication and delegates all model-controlled shell, patch, and filesystem requests
+to `codex exec-server` inside one episode container. The runtime, not the plugin, creates and owns
+that process. Communication is a loopback-only WebSocket-to-container-stdio bridge; the container
+itself remains `network=none`.
+
+The agent image contains only the exact hash-bound Codex native executable and a minimal base
+image. Runtime configuration overrides it to the current non-root host UID/GID so private
+workspace cleanup remains verifiable. No `HOME`, Codex configuration, credential, proxy, source
+checkout, hidden verifier, or Docker socket is mounted or copied. `/workspace` is the only bind
+mount, and `/tmp` is the only other writable location. The inner execution label
+`outer_runtime_delegated` is valid only inside this inspected outer boundary.
+
+Replay removes the external-agent role configuration and can start only the exact stored verifier
+image. It therefore cannot launch Codex or the stdio bridge.
 
 ## Configuration and defaults
 

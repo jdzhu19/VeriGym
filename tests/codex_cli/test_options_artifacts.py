@@ -46,6 +46,32 @@ def test_legacy_empty_options_are_omitted_from_identity_payload() -> None:
     assert "client_options" not in payload["model_options"]
 
 
+def test_security_absence_evidence_stays_typed_without_exposing_values() -> None:
+    from verigym_codex_cli.util import redact_value
+
+    redacted = redact_value(
+        {
+            "credential_files_mounted": False,
+            "api_key_environment_forwarded": False,
+            "credential_contents_accessed_by_verigym": False,
+            "credential_files_copied": 0,
+            "credential_environment_names_in_container": [],
+            "container_credential_environment_names": ["OPENAI_API_KEY"],
+            "credential_value": "must-never-persist",
+            "api_key_value": "must-never-persist",
+        }
+    )
+
+    assert redacted["credential_files_mounted"] is False
+    assert redacted["api_key_environment_forwarded"] is False
+    assert redacted["credential_contents_accessed_by_verigym"] is False
+    assert redacted["credential_files_copied"] == 0
+    assert redacted["credential_environment_names_in_container"] == []
+    assert redacted["container_credential_environment_names"] == ["OPENAI_API_KEY"]
+    assert redacted["credential_value"] == "<redacted>"
+    assert redacted["api_key_value"] == "<redacted>"
+
+
 def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     fake_codex: tuple[Path, Path, object],
     monkeypatch: pytest.MonkeyPatch,

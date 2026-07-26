@@ -44,6 +44,10 @@ tracks:
     interaction_mode: "agent"
     execution_surface: "codex_cli"
     interaction_class: "cli_agent_single_turn_readonly"
+    runtime: "docker"
+    external_agent_process_backend: "docker_outer_runtime_delegated"
+    inner_codex_sandbox: "outer_runtime_delegated"
+    verifier_network: "none"
     chat_eval_compatible: false
     pure_api_model_eval: false
     direct_api_benchmark: false
@@ -53,6 +57,10 @@ tracks:
     interaction_mode: "agent"
     execution_surface: "codex_cli"
     interaction_class: "cli_agent_workspace_writing"
+    runtime: "docker"
+    external_agent_process_backend: "docker_outer_runtime_delegated"
+    inner_codex_sandbox: "outer_runtime_delegated"
+    verifier_network: "none"
     chat_eval_compatible: false
     pure_api_model_eval: false
     direct_api_benchmark: false

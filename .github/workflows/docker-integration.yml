@@ -20,8 +20,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install base package and test tools
-        run: python -m pip install -e '.[dev]'
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pip install -e integrations/verigym-codex-cli
 
       - name: Build explicit Icarus 12 reference image
         run: >-
@@ -30,10 +37,35 @@ jobs:
           -t verigym/rtl-iverilog:12.0
           docker/iverilog12
 
+      - name: Build exact credential-free Codex exec-server image
+        run: |
+          npm install --prefix /tmp/verigym-codex-01446 @openai/codex@0.144.6
+          codex_native=$(
+            find /tmp/verigym-codex-01446/node_modules \
+              -type f \
+              -path '*/vendor/x86_64-unknown-linux-musl/bin/codex' \
+              -print \
+              -quit
+          )
+          test -n "$codex_native"
+          test "$(
+            sha256sum "$codex_native" | awk '{print $1}'
+          )" = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
+          test "$(
+            sha256sum \
+              /tmp/verigym-codex-01446/node_modules/@openai/codex/bin/codex.js \
+              | awk '{print $1}'
+          )" = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+          scripts/build_codex_agent_image.sh \
+            "$codex_native" \
+            verigym/codex-exec-server:0.144.6
+
       - name: Run opt-in Docker integration tests
         env:
           VERIGYM_RUN_DOCKER_TESTS: "1"
           VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
+          VERIGYM_CODEX_AGENT_IMAGE: verigym/codex-exec-server:0.144.6
+          VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
         run: pytest -m docker
 
       - name: Run the two-outcome Docker batch

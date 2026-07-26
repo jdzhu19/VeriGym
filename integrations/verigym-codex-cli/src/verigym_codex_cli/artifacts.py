@@ -30,6 +30,7 @@ class CodexRunEvidence:
     summary: dict[str, Any]
     event_policy: dict[str, Any] | None = None
     workspace_policy: dict[str, Any] | None = None
+    runtime_process: Any | None = None
     roots_to_redact: tuple[Path, ...] = ()
 
     def write(self, root: Path, *, create: bool) -> None:
@@ -68,6 +69,11 @@ class CodexRunEvidence:
             atomic_json(
                 destination / "workspace_policy.json",
                 redact_value(self.workspace_policy, roots=self.roots_to_redact),
+            )
+        if self.runtime_process is not None:
+            atomic_json(
+                destination / "runtime_process.json",
+                redact_value(_dump(self.runtime_process), roots=self.roots_to_redact),
             )
         process_summary = {
             "exit_code": self.process.exit_code,

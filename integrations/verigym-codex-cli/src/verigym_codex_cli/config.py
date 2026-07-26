@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from verigym.plugin_api import JsonValue
@@ -203,6 +203,34 @@ def agent_settings(
     )
 
 
+def settings_for_execution_backend(
+    settings: CodexSettings,
+    execution_backend: str,
+) -> CodexSettings:
+    """Bind Docker delegation without changing the owner-facing auth semantics."""
+
+    if execution_backend == "host_local_trusted":
+        return settings
+    if execution_backend != "docker_outer_runtime_delegated":
+        raise ValueError(f"unsupported external-agent execution backend: {execution_backend}")
+    fingerprint = stable_hash(
+        {
+            "base_configuration_fingerprint": settings.configuration_fingerprint,
+            "execution_backend": execution_backend,
+            "sandbox_policy": "outer_runtime_delegated",
+            "sandbox_backend": "verigym_docker_outer_runtime",
+            "sandbox_backend_source": "verigym_runtime_effective_controls",
+        }
+    )
+    return replace(
+        settings,
+        sandbox_policy="outer_runtime_delegated",
+        sandbox_backend="verigym_docker_outer_runtime",
+        sandbox_backend_source="verigym_runtime_effective_controls",
+        configuration_fingerprint=fingerprint,
+    )
+
+
 def _settings(
     *,
     integration_track: str,
@@ -347,4 +375,9 @@ def _integer(values: Mapping[str, JsonValue], key: str, default: int) -> int:
     return value
 
 
-__all__ = ["CodexSettings", "agent_settings", "readonly_agent_settings"]
+__all__ = [
+    "CodexSettings",
+    "agent_settings",
+    "readonly_agent_settings",
+    "settings_for_execution_backend",
+]

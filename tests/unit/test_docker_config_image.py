@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from verigym.registry.collections import build_registries
+from verigym.runtimes.docker import runtime as docker_runtime_module
 from verigym.runtimes.docker.engine import EngineResult
 from verigym.runtimes.docker.errors import DockerCapabilityError, DockerImageError
 from verigym.runtimes.docker.image import inspect_backend, resolve_image
@@ -14,8 +16,9 @@ from verigym.runtimes.docker.resources import (
     resource_arguments,
     resource_summary,
 )
+from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import RuntimeDescriptor
-from verigym.schemas.runtime import DockerRuntimeConfig
+from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
 from verigym.schemas.tool import CompletedCommand
 
 IMAGE_ID = "sha256:" + "a" * 64
@@ -144,6 +147,83 @@ def test_docker_runtime_is_discoverable_without_a_python_docker_dependency() -> 
     assert "docker" in registries.runtimes.names()
     assert registries.runtimes.get("local").descriptor.isolation_level == "local_trusted"
     assert registries.runtimes.get("docker").descriptor.isolation_level == "docker_standard"
+
+
+def test_exact_immutable_image_observations_are_cached_only_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier_id = "sha256:" + "c" * 64
+    agent_id = "sha256:" + "d" * 64
+
+    class RoleImageEngine(ImageEngine):
+        def inspect_image(self, reference: str) -> dict[str, Any] | None:
+            payload = super().inspect_image(reference)
+            assert payload is not None
+            payload["Id"] = agent_id if reference == "agent:test" else verifier_id
+            return payload
+
+    docker_runtime_module._IMAGE_OBSERVATION_CACHE.clear()
+    counts = {"verifier": 0, "agent": 0}
+
+    def probe_verifier(runtime: DockerRuntime) -> None:
+        counts["verifier"] += 1
+        assert runtime._descriptor.image is not None
+        runtime._descriptor.image = runtime._descriptor.image.model_copy(
+            update={
+                "observed_uid": 1004,
+                "observed_gid": 100,
+                "iverilog_version": "Icarus Verilog version 12.0",
+                "vvp_version": "Icarus Verilog runtime version 12.0",
+                "compatibility_status": "canonical_or_reference_compatible",
+            }
+        )
+        assert runtime._descriptor.security is not None
+        runtime._descriptor.security = runtime._descriptor.security.model_copy(
+            update={"observed_uid": 1004, "observed_gid": 100}
+        )
+
+    def probe_agent(runtime: DockerRuntime) -> None:
+        counts["agent"] += 1
+        assert runtime._agent_image is not None
+        runtime._agent_image = runtime._agent_image.model_copy(
+            update={
+                "observed_uid": 1004,
+                "observed_gid": 100,
+                "compatibility_status": "codex-cli 0.144.6",
+            }
+        )
+
+    monkeypatch.setattr(DockerRuntime, "_probe_image", probe_verifier)
+    monkeypatch.setattr(DockerRuntime, "_probe_agent_image", probe_agent)
+    config = DockerRuntimeConfig(
+        image="verifier:test",
+        expected_image_id=verifier_id,
+        run_as_user=f"{os.getuid()}:{os.getgid()}",
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image="agent:test",
+            expected_image_id=agent_id,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version="codex-cli 0.144.6",
+            expected_executable_sha256="e" * 64,
+            process_argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
+            protocol="codex_app_server_remote_environment_v1",
+            required_image_labels={"org.example.credentials": "absent"},
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+        ),
+    )
+    first = DockerRuntime(config, engine=RoleImageEngine())
+    first.prepare("cache-first")
+    assert first.environment_summary()["image_observation_source"] == "fresh_probe"
+    first.close()
+    second = DockerRuntime(config, engine=RoleImageEngine())
+    second.prepare("cache-second")
+    assert second.environment_summary()["image_observation_source"] == (
+        "in_process_immutable_cache"
+    )
+    second.close()
+    assert counts == {"verifier": 1, "agent": 1}
+    docker_runtime_module._IMAGE_OBSERVATION_CACHE.clear()
 
 
 def test_pre_milestone7_local_runtime_and_command_artifacts_remain_loadable() -> None:

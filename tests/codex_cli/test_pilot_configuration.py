@@ -19,6 +19,11 @@ def test_prepared_pilot_freezes_exactly_thirty_partitioned_runs() -> None:
         "codex_cli_readonly_single_turn_agent",
         "codex_cli_external_agent",
     ]
+    assert all(track["runtime"] == "docker" for track in payload["tracks"])
+    assert all(
+        track["external_agent_process_backend"] == "docker_outer_runtime_delegated"
+        for track in payload["tracks"]
+    )
     assert payload["sampling"]["sample_indices"] == [0, 1, 2]
     assert (
         len(payload["tasks"]) * len(payload["tracks"]) * len(payload["sampling"]["sample_indices"])
@@ -43,5 +48,6 @@ def test_pilot_has_two_independent_execution_guards() -> None:
     source = (ROOT / "scripts" / "run_codex_cli_pilot.py").read_text(encoding="utf-8")
     assert 'os.environ.get("VERIGYM_RUN_CODEX_PILOT") == "1"' in source
     assert 'os.environ.get("VERIGYM_CODEX_PILOT_BUDGET")' in source
-    assert source.count('"allow_proxy_environment": True') == 2
+    assert source.count('"allow_proxy_environment": True') == 3
+    assert '"proxy_values_persisted_or_hashed": False' in source
     assert '"status": "plan_only"' in source

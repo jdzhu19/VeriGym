@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from verigym.schemas.external_agent import ExternalAgentAccounting
+from verigym.schemas.external_agent import (
+    ExternalAgentAccounting,
+    ExternalProcessRequest,
+    ExternalProcessResult,
+)
 from verigym.schemas.options import JsonValue
 
 
@@ -24,6 +28,14 @@ class ExternalAgentBridge(Protocol):
 
     @property
     def readonly_globs(self) -> tuple[str, ...]: ...
+
+    @property
+    def execution_backend(self) -> str: ...
+
+    @property
+    def logical_workspace_root(self) -> str: ...
+
+    def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult: ...
 
     def emit_event(self, event_type: str, payload: dict[str, JsonValue]) -> None: ...
 

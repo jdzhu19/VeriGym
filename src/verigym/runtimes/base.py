@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from verigym.schemas.common import RuntimeDescriptor
+from verigym.schemas.external_agent import ExternalProcessRequest, ExternalProcessResult
 from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec, WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
 
@@ -37,6 +38,24 @@ class RuntimeSession(ABC):
         """Prevent further mutation before the canonical candidate handoff."""
 
         return None
+
+    @property
+    def external_process_backend(self) -> str:
+        """Stable execution-owner label for external-agent bridges."""
+
+        return "host_local_trusted"
+
+    @property
+    def logical_workspace_root(self) -> str:
+        """Path vocabulary exposed to an external process."""
+
+        return str(self.root)
+
+    def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+        """Execute through the runtime when the backend supports external agents."""
+
+        del request
+        raise ValueError("this runtime does not execute external-agent processes")
 
     @abstractmethod
     def close(self) -> None:

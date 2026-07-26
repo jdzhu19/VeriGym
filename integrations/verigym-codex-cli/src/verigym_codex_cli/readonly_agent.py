@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import json
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 from verigym.agents.parsing import ModelOutputParseError, parse_single_turn_rtl
@@ -21,6 +22,7 @@ from verigym.plugin_api import (
     ExternalAgentAccounting,
     ExternalAgentBridge,
     ExternalAgentCallIdentity,
+    ExternalProcessResult,
     FinalSubmissionAction,
     InteractionMode,
     Observation,
@@ -31,7 +33,11 @@ from verigym.schemas.agent import ApplyPatchAction
 from ._version import __version__
 from .artifacts import CodexRunEvidence, update_summary
 from .capabilities import CapabilityReport, runtime_capabilities
-from .config import CodexSettings, readonly_agent_settings
+from .config import (
+    CodexSettings,
+    readonly_agent_settings,
+    settings_for_execution_backend,
+)
 from .event_policy import (
     EventPolicyContext,
     EventPolicyResult,
@@ -44,13 +50,18 @@ from .events import (
     parse_event_stream,
     parse_partial_event_stream,
 )
-from .invocation import build_exec_arguments, sanitized_invocation
+from .invocation import (
+    build_exec_arguments,
+    sanitized_invocation,
+    sanitized_runtime_invocation,
+)
 from .process import (
     CodexCliProcessRunner,
     CodexProcessError,
     CodexProcessResult,
     ExecutableIdentity,
 )
+from .runtime_execution import execute_runtime_process
 from .security import assert_empty_directory, assert_instruction_isolation
 from .util import redact_text
 
@@ -91,9 +102,12 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
         bridge = context.external_bridge
         if bridge is None:
             raise ValueError("codex-cli-readonly-agent requires ExternalAgentBridge")
-        if bridge.isolation_level != "local_trusted":
+        if bridge.execution_backend not in {
+            "host_local_trusted",
+            "docker_outer_runtime_delegated",
+        }:
             raise ValueError(
-                "codex-cli-readonly-agent supports only host-visible LocalRuntime tasks"
+                "codex-cli-readonly-agent requires a supported external execution backend"
             )
         executable, capabilities = runtime_capabilities()
         settings = readonly_agent_settings(
@@ -101,6 +115,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
             capabilities,
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
+        settings = settings_for_execution_backend(settings, bridge.execution_backend)
         self._context = context
         self._bridge = bridge
         self._executable = executable
@@ -163,12 +178,21 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
             )
         self._launched = True
         context, bridge, executable, capabilities, settings = self._configured()
-        arguments = build_exec_arguments(capabilities, settings)
-        invocation = sanitized_invocation(
-            arguments,
-            settings,
-            capabilities,
-            working_directory_policy=_WORKDIR_IDENTITY,
+        runtime_delegated = bridge.execution_backend == "docker_outer_runtime_delegated"
+        arguments = [] if runtime_delegated else build_exec_arguments(capabilities, settings)
+        invocation = (
+            sanitized_runtime_invocation(
+                settings,
+                capabilities,
+                working_directory_policy=_WORKDIR_IDENTITY,
+            )
+            if runtime_delegated
+            else sanitized_invocation(
+                arguments,
+                settings,
+                capabilities,
+                working_directory_policy=_WORKDIR_IDENTITY,
+            )
         )
         bridge.emit_event(
             "codex_cli_process_started",
@@ -182,43 +206,69 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
             },
         )
         prompt = _readonly_prompt(context, observation)
-        runner = CodexCliProcessRunner(
-            executable,
-            auth_mode=settings.resolved_auth_mode,
-            credential_env=settings.credential_env,
-            max_output_bytes=settings.max_output_bytes,
-            allow_proxy_environment=settings.allow_proxy_environment,
-        )
         parsed: ParsedEventStream | None = None
         policy: EventPolicyResult | None = None
         source: str | None = None
         failure: AgentTerminationError | None = None
         workspace_mutated = False
-        with tempfile.TemporaryDirectory(prefix="verigym-codex-readonly-agent-") as temporary:
-            workspace = Path(temporary).resolve()
-            try:
-                assert_instruction_isolation(workspace)
-                assert_empty_directory(workspace)
-            except Exception as exc:
-                raise _agent_failure(
-                    TerminationReason.POLICY_VIOLATION,
-                    "empty_workdir_precondition",
-                    str(exc),
-                    infrastructure=False,
-                ) from exc
-            try:
-                process = runner.run(
-                    arguments,
-                    cwd=workspace,
-                    timeout_s=settings.max_process_time_s,
-                    stdin_bytes=prompt.encode("utf-8"),
+        runtime_result: ExternalProcessResult | None = None
+        with ExitStack() as stack:
+            if runtime_delegated:
+                workspace = Path(bridge.logical_workspace_root)
+            else:
+                temporary = stack.enter_context(
+                    tempfile.TemporaryDirectory(prefix="verigym-codex-readonly-agent-")
                 )
-            except CodexProcessError as exc:
+                workspace = Path(temporary).resolve()
+                try:
+                    assert_instruction_isolation(workspace)
+                    assert_empty_directory(workspace)
+                except Exception as exc:
+                    raise _agent_failure(
+                        TerminationReason.POLICY_VIOLATION,
+                        "empty_workdir_precondition",
+                        str(exc),
+                        infrastructure=False,
+                    ) from exc
+            try:
+                if runtime_delegated:
+                    outcome = execute_runtime_process(
+                        bridge=bridge,
+                        executable=executable,
+                        capabilities=capabilities,
+                        settings=settings,
+                        prompt=prompt,
+                        workspace_mode="fresh_empty",
+                    )
+                    process = outcome.process
+                    runtime_result = outcome.runtime_result
+                else:
+                    runner = CodexCliProcessRunner(
+                        executable,
+                        auth_mode=settings.resolved_auth_mode,
+                        credential_env=settings.credential_env,
+                        max_output_bytes=settings.max_output_bytes,
+                        allow_proxy_environment=settings.allow_proxy_environment,
+                    )
+                    process = runner.run(
+                        arguments,
+                        cwd=workspace,
+                        timeout_s=settings.max_process_time_s,
+                        stdin_bytes=prompt.encode("utf-8"),
+                    )
+            except (CodexProcessError, ValueError) as exc:
                 process = _failed_process(str(exc))
                 failure = _agent_failure(
                     TerminationReason.MODEL_ERROR,
                     "process_boundary",
                     str(exc),
+                    infrastructure=True,
+                )
+            if runtime_result is not None and not _runtime_security_complete(runtime_result):
+                failure = _agent_failure(
+                    TerminationReason.MODEL_ERROR,
+                    "runtime_security_controls",
+                    "Docker external-agent effective controls or cleanup were incomplete",
                     infrastructure=True,
                 )
             if failure is None:
@@ -289,8 +339,12 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                             str(exc),
                             infrastructure=False,
                         )
-            workspace_mutated = any(workspace.iterdir())
-            if workspace_mutated:
+            workspace_mutated = (
+                bool(runtime_result.security.workspace_changed_paths)
+                if runtime_result is not None
+                else any(workspace.iterdir())
+            )
+            if workspace_mutated and (failure is None or not failure.failure.infrastructure):
                 failure = _agent_failure(
                     TerminationReason.POLICY_VIOLATION,
                     "empty_workdir_modified",
@@ -326,6 +380,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                 identity=identity,
                 accounting=accounting,
                 event_policy=policy.safe_dict() if policy is not None else None,
+                runtime_process=runtime_result,
                 summary={
                     "integration_track": settings.integration_track,
                     "structurally_successful_readonly_episode": failure is None,
@@ -357,7 +412,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                     "failure_category": (failure.failure.category if failure is not None else None),
                     "failure_message": (failure.failure.message if failure is not None else None),
                 },
-                roots_to_redact=(workspace, bridge.workspace_root),
+                roots_to_redact=(bridge.workspace_root,),
             )
             evidence.write(bridge.artifact_root, create=False)
         if failure is not None:
@@ -688,6 +743,26 @@ def _policy_message(policy: EventPolicyResult | None) -> str:
 
 def _harness_id(version_output: str) -> str:
     return "-".join(version_output.strip().lower().split())[:128]
+
+
+def _runtime_security_complete(result: ExternalProcessResult) -> bool:
+    security = result.security
+    return (
+        result.cleanup_complete
+        and security.effective_controls_verified
+        and security.container_exit_inspected
+        and security.cleanup_verified
+        and security.container_removed
+        and security.broker_stopped
+        and security.process_group_cleaned
+        and security.user_config_metadata_unchanged
+        and not security.api_key_environment_forwarded
+        and not security.credential_contents_accessed_by_verigym
+        and not security.user_config_contents_accessed_by_verigym
+        and not security.credential_environment_names_in_container
+        and not security.proxy_environment_names_in_container
+        and security.network_mode == "none"
+    )
 
 
 def _agent_failure(

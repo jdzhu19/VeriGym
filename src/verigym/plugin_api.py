@@ -18,6 +18,8 @@ from verigym.schemas.common import (
 from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalAgentCallIdentity,
+    ExternalProcessRequest,
+    ExternalProcessResult,
 )
 from verigym.schemas.model import (
     ModelClientErrorInfo,
@@ -56,6 +58,8 @@ __all__ = [
     "ExternalAgentAccounting",
     "ExternalAgentBridge",
     "ExternalAgentCallIdentity",
+    "ExternalProcessRequest",
+    "ExternalProcessResult",
     "HealthCheckResult",
     "Observation",
     "InteractionMode",

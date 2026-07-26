@@ -209,6 +209,13 @@ class VeriGym:
             content_hash=content_hash(profile),
         )
         build_provenance = get_build_provenance()
+        runtime_environment = runtime.environment_summary()
+        external_process_backend = str(
+            runtime_environment.get(
+                "external_agent_execution_backend",
+                "host_local_trusted",
+            )
+        )
         manifest = RunManifest(
             run_id=run_id,
             created_at_utc=datetime.now(UTC),
@@ -293,13 +300,18 @@ class VeriGym:
                 "verifier_isolation": "separate_runtime_session",
                 **(
                     {
-                        "external_agent_isolation": ("codex_cli_sandbox_on_trusted_host"),
+                        "external_agent_isolation": (
+                            "docker_outer_runtime_delegated"
+                            if external_process_backend == "docker_outer_runtime_delegated"
+                            else "codex_cli_sandbox_on_trusted_host"
+                        ),
+                        "external_agent_process_backend": external_process_backend,
                         "verigym_runtime_isolation": runtime.descriptor.isolation_level,
                     }
                     if external_agent_selected
                     else {}
                 ),
-                **runtime.environment_summary(),
+                **runtime_environment,
             },
         )
         dump_json(layout.manifest, manifest)

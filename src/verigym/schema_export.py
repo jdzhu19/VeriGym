@@ -33,6 +33,10 @@ from verigym.schemas.common import (
 from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalAgentCallIdentity,
+    ExternalProcessRequest,
+    ExternalProcessResult,
+    ExternalProcessRuntimeIdentity,
+    ExternalProcessSecurityEvidence,
 )
 from verigym.schemas.integrity import ArtifactManifest, IntegrityValidation
 from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
@@ -76,6 +80,10 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "experiment-state": _model(ExperimentState),
     "external-agent-accounting": _model(ExternalAgentAccounting),
     "external-agent-call-identity": _model(ExternalAgentCallIdentity),
+    "external-process-request": _model(ExternalProcessRequest),
+    "external-process-result": _model(ExternalProcessResult),
+    "external-process-runtime-identity": _model(ExternalProcessRuntimeIdentity),
+    "external-process-security-evidence": _model(ExternalProcessSecurityEvidence),
     "integrity-validation": _model(IntegrityValidation),
     "model-call-identity": _model(ModelCallIdentity),
     "model-descriptor": _model(ModelDescriptor),

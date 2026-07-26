@@ -72,6 +72,16 @@ def resolve_image(
 ) -> RuntimeImageIdentity:
     """Resolve a tag once and return only identity reported by Docker Engine."""
 
+    if (
+        expected_image_id is not None
+        and config.expected_image_id is not None
+        and expected_image_id != config.expected_image_id
+    ):
+        raise DockerImageError(
+            "runtime and configuration disagree on the exact expected image ID",
+            subreason="replay_image_mismatch",
+        )
+    expected = expected_image_id or config.expected_image_id
     payload = engine.inspect_image(config.image)
     if payload is None and config.pull_policy == "if_missing":
         engine.pull_image(config.image)
@@ -87,11 +97,11 @@ def resolve_image(
             "Docker image has no valid immutable sha256 image ID",
             subreason="invalid_image_id",
         )
-    if expected_image_id is not None and image_id != expected_image_id:
+    if expected is not None and image_id != expected:
         raise DockerImageError(
-            "resolved Docker image does not match the exact replay image ID",
+            "resolved Docker image does not match the exact replay image ID or configured image ID",
             subreason="replay_image_mismatch",
-            details={"expected_image_id": expected_image_id, "resolved_image_id": image_id},
+            details={"expected_image_id": expected, "resolved_image_id": image_id},
         )
     os_name = payload.get("Os")
     architecture = payload.get("Architecture")

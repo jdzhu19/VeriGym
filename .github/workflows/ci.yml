@@ -174,6 +174,62 @@ jobs:
           cd /tmp
           /tmp/verigym-sdist-venv/bin/python -c "import verigym; print(verigym.__version__)"
 
+  docker-agent-security:
+    name: Docker external-agent zero-model security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install source, plugin, and test tools
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pip install -e integrations/verigym-codex-cli
+      - name: Build explicit Icarus 12 verifier image
+        run: >-
+          docker build
+          -f docker/iverilog12/Dockerfile
+          -t verigym/rtl-iverilog:12.0
+          docker/iverilog12
+      - name: Install and verify exact Codex CLI 0.144.6
+        run: |
+          npm install --prefix /tmp/verigym-codex-01446 @openai/codex@0.144.6
+          codex_native=$(
+            find /tmp/verigym-codex-01446/node_modules \
+              -type f \
+              -path '*/vendor/x86_64-unknown-linux-musl/bin/codex' \
+              -print \
+              -quit
+          )
+          test -n "$codex_native"
+          test "$(
+            sha256sum "$codex_native" | awk '{print $1}'
+          )" = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
+          test "$(
+            sha256sum \
+              /tmp/verigym-codex-01446/node_modules/@openai/codex/bin/codex.js \
+              | awk '{print $1}'
+          )" = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+          printf 'CODEX_NATIVE=%s\n' "$codex_native" >> "$GITHUB_ENV"
+      - name: Build credential-free immutable Codex exec-server image
+        run: >-
+          scripts/build_codex_agent_image.sh
+          "$CODEX_NATIVE"
+          verigym/codex-exec-server:0.144.6
+      - name: Run runtime-owned fake-provider security path
+        env:
+          VERIGYM_RUN_DOCKER_TESTS: "1"
+          VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
+          VERIGYM_CODEX_AGENT_IMAGE: verigym/codex-exec-server:0.144.6
+          VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
+        run: pytest -q tests/integration/test_docker_codex_external_agent.py
+
   reproducible-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

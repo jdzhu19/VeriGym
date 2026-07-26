@@ -326,6 +326,162 @@
       "title": "BuildProvenance",
       "type": "object"
     },
+    "DockerExternalAgentRuntimeConfig": {
+      "additionalProperties": false,
+      "description": "Immutable image and non-disableable limits for one external-agent episode.",
+      "properties": {
+        "cpus": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 16.0,
+          "title": "Cpus",
+          "type": "number"
+        },
+        "expected_executable_name": {
+          "pattern": "^[A-Za-z0-9._+-]{1,128}$",
+          "title": "Expected Executable Name",
+          "type": "string"
+        },
+        "expected_executable_path": {
+          "title": "Expected Executable Path",
+          "type": "string"
+        },
+        "expected_executable_sha256": {
+          "title": "Expected Executable Sha256",
+          "type": "string"
+        },
+        "expected_executable_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Expected Executable Version",
+          "type": "string"
+        },
+        "expected_image_id": {
+          "title": "Expected Image Id",
+          "type": "string"
+        },
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "inner_sandbox_mode": {
+          "const": "outer_runtime_delegated",
+          "default": "outer_runtime_delegated",
+          "title": "Inner Sandbox Mode",
+          "type": "string"
+        },
+        "logical_workspace_root": {
+          "const": "/workspace",
+          "default": "/workspace",
+          "title": "Logical Workspace Root",
+          "type": "string"
+        },
+        "max_output_bytes": {
+          "default": 8388608,
+          "maximum": 16777216,
+          "minimum": 1024,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_process_time_s": {
+          "default": 300,
+          "maximum": 1800,
+          "minimum": 1,
+          "title": "Max Process Time S",
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "default": 536870912,
+          "maximum": 4294967296,
+          "minimum": 67108864,
+          "title": "Memory Bytes",
+          "type": "integer"
+        },
+        "network_mode": {
+          "const": "none",
+          "default": "none",
+          "title": "Network Mode",
+          "type": "string"
+        },
+        "pids_limit": {
+          "default": 128,
+          "maximum": 1024,
+          "minimum": 16,
+          "title": "Pids Limit",
+          "type": "integer"
+        },
+        "process_argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Process Argv",
+          "type": "array"
+        },
+        "protocol": {
+          "pattern": "^[A-Za-z0-9._-]{1,128}$",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "pull_policy": {
+          "default": "never",
+          "enum": [
+            "never",
+            "if_missing"
+          ],
+          "title": "Pull Policy",
+          "type": "string"
+        },
+        "read_only_rootfs": {
+          "const": true,
+          "default": true,
+          "title": "Read Only Rootfs",
+          "type": "boolean"
+        },
+        "required_image_labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "minProperties": 1,
+          "title": "Required Image Labels",
+          "type": "object"
+        },
+        "run_as_user": {
+          "title": "Run As User",
+          "type": "string"
+        },
+        "stop_timeout_s": {
+          "default": 3,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Stop Timeout S",
+          "type": "integer"
+        },
+        "tmpfs_bytes": {
+          "default": 67108864,
+          "maximum": 536870912,
+          "minimum": 1048576,
+          "title": "Tmpfs Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image",
+        "expected_image_id",
+        "expected_executable_name",
+        "expected_executable_path",
+        "expected_executable_version",
+        "expected_executable_sha256",
+        "process_argv",
+        "protocol",
+        "required_image_labels",
+        "run_as_user"
+      ],
+      "title": "DockerExternalAgentRuntimeConfig",
+      "type": "object"
+    },
     "DockerRuntimeConfig": {
       "additionalProperties": false,
       "description": "Fail-closed configuration for the optional Docker CLI runtime.",
@@ -343,6 +499,29 @@
           },
           "title": "Environment Allowlist",
           "type": "array"
+        },
+        "expected_image_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Image Id"
+        },
+        "external_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DockerExternalAgentRuntimeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "image": {
           "title": "Image",

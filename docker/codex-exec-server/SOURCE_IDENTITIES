@@ -1,0 +1,8 @@
+codex_cli_version=0.144.6
+codex_cli_source_tag=rust-v0.144.6
+codex_cli_source_commit=5d1fbf26c43abc65a203928b2e31561cb039e06d
+codex_native_sha256=a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15
+base_image=debian:trixie-slim
+base_image_digest=sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+container_user=10001:10001
+provider_credentials=absent

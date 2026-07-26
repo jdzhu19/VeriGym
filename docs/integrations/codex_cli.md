@@ -34,6 +34,23 @@ not executed; it remains a separate future integration. Neither path is a direct
 The former model-proxy identity is retired; historical sealed bundles and their verdicts remain
 immutable.
 
+## Docker runtime-owned execution
+
+The Docker backend uses [ADR 0012](../adr/0012-docker-runtime-owned-codex-tools.md), architecture
+Path A. The host Codex app-server owns the existing ChatGPT session and provider control plane,
+while every shell, patch, and filesystem operation is delegated through a loopback stdio bridge
+to one credential-free `codex exec-server` container. The plugin calls the generic
+`ExternalAgentBridge.execute_process()` operation; it does not launch a host subprocess against a
+host workspace.
+
+The agent container has `network=none`, an immutable Codex 0.144.6 image, a non-root effective
+UID/GID, read-only rootfs, bounded `/tmp`, and only `/workspace` mounted. It receives no
+credential, proxy, host-home, repository, hidden-verifier, or Docker-socket material. The
+`outer_runtime_delegated` inner label is valid only because the inspected Docker boundary owns
+these controls. A separate immutable Icarus 12 image performs candidate verification after
+freeze. Runtime artifacts record both role image IDs, effective controls, logical paths, process
+limits, and verified cleanup.
+
 ## Capability and identity evidence
 
 Set a binary, run the zero-model-call doctor, and reuse its sealed report:
@@ -64,13 +81,14 @@ export VERIGYM_CODEX_CREDENTIAL_ENV=OPENAI_API_KEY
 
 `chatgpt_cli_session` and `inherited_codex_login` share
 `codex.auth.inherited_chatgpt_session.v1`; reports use that semantic ID for comparison while
-retaining the requested label as provenance. The inherited-login mode passes `HOME`/`CODEX_HOME`
-because current CLI login state may require them. The preflight invokes only `codex login status`;
+retaining the requested label as provenance. The inherited-login host control plane passes
+`HOME`/`CODEX_HOME` because current CLI login state may require them; neither name nor its
+contents enters the agent container. The preflight invokes only `codex login status`;
 it never starts login, logout, account switching, or a model process. Project instructions are
 disabled, MCP is configured empty, execution occurs under `/tmp`, and ancestor
-`AGENTS.md`/`.codex` contamination is rejected. This is still a `local_trusted` pilot, not a
-hardened boundary against a malicious CLI or incomplete upstream event telemetry. Track B is
-intentionally restricted to LocalRuntime.
+`AGENTS.md`/`.codex` contamination is rejected. Host execution remains available only under the
+explicit `host_local_trusted` compatibility label. Docker pilot runs require
+`docker_outer_runtime_delegated`; there is no Docker-to-local fallback.
 
 ## Fixed real smoke
 
@@ -101,7 +119,10 @@ python scripts/run_codex_cli_pilot.py \
   --plan-output /new/path/codex-pilot-plan.json
 ```
 
-Without both `VERIGYM_RUN_CODEX_PILOT=1` and
+Planning also requires exact core/plugin wheels, immutable verifier and agent image IDs, a
+zero-call capability report, and the existing-login preflight. It runs all five official
+transformed references through the network-none Icarus 12 verifier before permitting a model
+process. Without both `VERIGYM_RUN_CODEX_PILOT=1` and
 `VERIGYM_CODEX_PILOT_BUDGET=/path/to/budget.yaml`, this command writes only the immutable plan:
 no run directory and no model call. A valid budget fixes 30 planned/process attempts, at most four
 hours, at most three infrastructure failures, and forbids retry/selection. The pilot is an
@@ -112,8 +133,10 @@ capability fingerprints, and do not publish a universal score.
 
 Both tracks store `capabilities.json`, `invocation.json`, redacted raw/parsed events,
 `identity.json`, `accounting.json`, and `summary.json` in `artifacts/codex_cli/`; the read-only
-track also stores `event_policy.json`. These files are integrity-bound. Replay reads the
-candidate, manifest, verifier inputs, and scorecard; it never imports the plugin or launches
-Codex. Service/auth/transport/parser failures are infrastructure outcomes, while hidden-test
+track also stores `event_policy.json`. Docker runs additionally store `runtime_process.json`
+with sanitized role identities and security evidence. These files are integrity-bound. Replay
+reads the candidate, manifest, verifier inputs, and scorecard; it never imports the plugin or
+launches Codex or its tool bridge. Service/auth/transport/parser failures are infrastructure
+outcomes, while hidden-test
 failures after a structurally successful episode are ordinary benchmark outcomes for the frozen
 candidate, not integration failures. They remain unrepaired.

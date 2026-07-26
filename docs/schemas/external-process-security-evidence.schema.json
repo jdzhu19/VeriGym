@@ -1,0 +1,285 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-process-security-evidence.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "api_key_environment_forwarded": {
+      "const": false,
+      "title": "Api Key Environment Forwarded",
+      "type": "boolean"
+    },
+    "boundary": {
+      "const": "docker_outer_runtime",
+      "title": "Boundary",
+      "type": "string"
+    },
+    "broker_listen_scope": {
+      "const": "127.0.0.1",
+      "title": "Broker Listen Scope",
+      "type": "string"
+    },
+    "broker_stopped": {
+      "title": "Broker Stopped",
+      "type": "boolean"
+    },
+    "broker_transport": {
+      "const": "loopback_websocket_to_container_stdio",
+      "title": "Broker Transport",
+      "type": "string"
+    },
+    "cap_drop": {
+      "items": {
+        "const": "ALL",
+        "type": "string"
+      },
+      "title": "Cap Drop",
+      "type": "array"
+    },
+    "cleanup_verified": {
+      "title": "Cleanup Verified",
+      "type": "boolean"
+    },
+    "container_exit_inspected": {
+      "title": "Container Exit Inspected",
+      "type": "boolean"
+    },
+    "container_removed": {
+      "title": "Container Removed",
+      "type": "boolean"
+    },
+    "cpus": {
+      "exclusiveMinimum": 0.0,
+      "title": "Cpus",
+      "type": "number"
+    },
+    "credential_contents_accessed_by_verigym": {
+      "const": false,
+      "title": "Credential Contents Accessed By Verigym",
+      "type": "boolean"
+    },
+    "credential_environment_names_in_container": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Credential Environment Names In Container",
+      "type": "array"
+    },
+    "credential_files_mounted": {
+      "const": false,
+      "title": "Credential Files Mounted",
+      "type": "boolean"
+    },
+    "docker_socket_mounted": {
+      "const": false,
+      "title": "Docker Socket Mounted",
+      "type": "boolean"
+    },
+    "effective_controls_verified": {
+      "title": "Effective Controls Verified",
+      "type": "boolean"
+    },
+    "effective_timeout_s": {
+      "exclusiveMinimum": 0.0,
+      "title": "Effective Timeout S",
+      "type": "number"
+    },
+    "environment_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Environment Names",
+      "type": "array"
+    },
+    "hidden_verifier_mounted": {
+      "const": false,
+      "title": "Hidden Verifier Mounted",
+      "type": "boolean"
+    },
+    "host_home_mounted": {
+      "const": false,
+      "title": "Host Home Mounted",
+      "type": "boolean"
+    },
+    "init": {
+      "const": true,
+      "title": "Init",
+      "type": "boolean"
+    },
+    "memory_bytes": {
+      "minimum": 1,
+      "title": "Memory Bytes",
+      "type": "integer"
+    },
+    "mount_destinations": {
+      "items": {
+        "const": "/workspace",
+        "type": "string"
+      },
+      "title": "Mount Destinations",
+      "type": "array"
+    },
+    "network_mode": {
+      "const": "none",
+      "title": "Network Mode",
+      "type": "string"
+    },
+    "no_new_privileges": {
+      "const": true,
+      "title": "No New Privileges",
+      "type": "boolean"
+    },
+    "non_root": {
+      "const": true,
+      "title": "Non Root",
+      "type": "boolean"
+    },
+    "output_limit_bytes": {
+      "minimum": 1,
+      "title": "Output Limit Bytes",
+      "type": "integer"
+    },
+    "pids_limit": {
+      "minimum": 1,
+      "title": "Pids Limit",
+      "type": "integer"
+    },
+    "private_ipc_namespace": {
+      "const": true,
+      "title": "Private Ipc Namespace",
+      "type": "boolean"
+    },
+    "private_pid_namespace": {
+      "const": true,
+      "title": "Private Pid Namespace",
+      "type": "boolean"
+    },
+    "process_group_cleaned": {
+      "title": "Process Group Cleaned",
+      "type": "boolean"
+    },
+    "provider_network_in_container": {
+      "const": false,
+      "title": "Provider Network In Container",
+      "type": "boolean"
+    },
+    "proxy_environment_names_in_container": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Proxy Environment Names In Container",
+      "type": "array"
+    },
+    "read_only_rootfs": {
+      "const": true,
+      "title": "Read Only Rootfs",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_repository_mounted": {
+      "const": false,
+      "title": "Source Repository Mounted",
+      "type": "boolean"
+    },
+    "tmpfs_bytes": {
+      "minimum": 1,
+      "title": "Tmpfs Bytes",
+      "type": "integer"
+    },
+    "user_config_contents_accessed_by_verigym": {
+      "const": false,
+      "title": "User Config Contents Accessed By Verigym",
+      "type": "boolean"
+    },
+    "user_config_metadata_unchanged": {
+      "title": "User Config Metadata Unchanged",
+      "type": "boolean"
+    },
+    "workspace_changed_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Workspace Changed Paths",
+      "type": "array"
+    },
+    "workspace_empty_after": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workspace Empty After"
+    },
+    "workspace_empty_before": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workspace Empty Before"
+    },
+    "writable_destinations": {
+      "items": {
+        "enum": [
+          "/workspace",
+          "/tmp"
+        ],
+        "type": "string"
+      },
+      "title": "Writable Destinations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "boundary",
+    "network_mode",
+    "read_only_rootfs",
+    "non_root",
+    "cap_drop",
+    "no_new_privileges",
+    "init",
+    "private_pid_namespace",
+    "private_ipc_namespace",
+    "mount_destinations",
+    "writable_destinations",
+    "environment_names",
+    "credential_environment_names_in_container",
+    "proxy_environment_names_in_container",
+    "host_home_mounted",
+    "source_repository_mounted",
+    "hidden_verifier_mounted",
+    "docker_socket_mounted",
+    "credential_files_mounted",
+    "api_key_environment_forwarded",
+    "credential_contents_accessed_by_verigym",
+    "user_config_contents_accessed_by_verigym",
+    "user_config_metadata_unchanged",
+    "provider_network_in_container",
+    "broker_transport",
+    "broker_listen_scope",
+    "effective_controls_verified",
+    "container_exit_inspected",
+    "cleanup_verified",
+    "container_removed",
+    "broker_stopped",
+    "process_group_cleaned",
+    "memory_bytes",
+    "cpus",
+    "pids_limit",
+    "tmpfs_bytes",
+    "output_limit_bytes",
+    "effective_timeout_s"
+  ],
+  "title": "ExternalProcessSecurityEvidence",
+  "type": "object"
+}

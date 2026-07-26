@@ -48,6 +48,28 @@ benchmark checkout. Artifact acceptance rejects absolute paths, parent traversal
 components, unverified hard links, devices, sockets, FIFOs, and per-file or aggregate size
 violations.
 
+### Runtime-owned Codex external-agent boundary
+
+The Docker-backed Codex CLI integration uses architecture Path A from ADR 0012. The trusted host
+Codex app-server owns the existing ChatGPT authentication and model transport. All
+model-controlled shell, patch, and filesystem operations are routed to a separate, hash-bound
+`codex exec-server` container through a loopback WebSocket-to-stdio bridge. No built-in host tool
+fallback is permitted.
+
+The agent container has `network=none`, a read-only root filesystem, a mapped non-root UID/GID,
+private PID and IPC namespaces, cap-drop `ALL`, no-new-privileges, bounded resources, `/workspace`
+as its only bind mount, and bounded `/tmp` as its only other writable location. Its image and
+environment contain no provider credential, proxy, Codex configuration, host home, source
+repository, hidden verifier, or Docker socket. Effective controls, role image separation,
+container exit state, removal, and absence from the managed-container inventory are recorded for
+every episode. A missing or weakened control is an infrastructure/security failure.
+
+The verifier uses a separate Icarus 12 image and network-none session after candidate freeze.
+Replay discards external-agent configuration, removes Codex/auth/proxy availability, and can
+recreate only verifier sessions. The residual trusted computing base includes the host Codex
+control-plane binary, reviewed VeriGym/plugin code, Docker daemon, and host kernel; Docker does
+not protect against compromise of those components.
+
 ## Yosys and profile-specific protections
 
 Toolchain profile resolution is a verifier-side configuration step and completes before model

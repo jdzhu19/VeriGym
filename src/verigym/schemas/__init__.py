@@ -2,13 +2,19 @@
 
 from verigym.schemas.agent import AgentAction, AgentDescriptor, Observation
 from verigym.schemas.common import SuiteDescriptor, ToolchainProfile, ToolDescriptor
+from verigym.schemas.external_agent import (
+    ExternalProcessRequest,
+    ExternalProcessResult,
+    ExternalProcessRuntimeIdentity,
+    ExternalProcessSecurityEvidence,
+)
 from verigym.schemas.integrity import ArtifactEntry, ArtifactManifest, IntegrityValidation
 from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.replay import ReplayEvidence
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
-from verigym.schemas.runtime import DockerRuntimeConfig
+from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
 from verigym.schemas.sampling import PassAtKReport, SampleSetManifest, SampleSetResult
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.task import VeriTask
@@ -23,7 +29,12 @@ __all__ = [
     "ArtifactManifest",
     "BuildProvenance",
     "EpisodeEvent",
+    "DockerExternalAgentRuntimeConfig",
     "DockerRuntimeConfig",
+    "ExternalProcessRequest",
+    "ExternalProcessResult",
+    "ExternalProcessRuntimeIdentity",
+    "ExternalProcessSecurityEvidence",
     "Observation",
     "IntegrityValidation",
     "ModelCallIdentity",

@@ -21,6 +21,7 @@ from verigym.runtimes.docker.errors import (
     DockerRuntimeError,
     sanitize_diagnostic,
 )
+from verigym.runtimes.docker.external_process import DockerExternalProcessExecutor
 from verigym.runtimes.docker.mounts import mount_arguments, workspace_mount
 from verigym.runtimes.docker.resources import (
     effective_timeout,
@@ -33,12 +34,18 @@ from verigym.runtimes.docker.security import (
     verify_effective_container,
 )
 from verigym.schemas.common import RuntimeImageIdentity
-from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec, WorkspaceDiff
+from verigym.schemas.external_agent import ExternalProcessRequest, ExternalProcessResult
+from verigym.schemas.runtime import (
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+    SessionSpec,
+    WorkspaceDiff,
+)
 from verigym.schemas.tool import CommandSpec, CompletedCommand
 
 
 class DockerSessionOwner(Protocol):
-    def session_registered(self, session_id: str, role: str) -> None: ...
+    def session_registered(self, session_id: str, role: str, resolved_image_id: str) -> None: ...
 
     def container_registered(self, session_id: str, container_id: str) -> None: ...
 
@@ -59,6 +66,8 @@ class DockerRuntimeSession(RuntimeSession):
         engine: DockerEngine,
         config: DockerRuntimeConfig,
         image: RuntimeImageIdentity,
+        agent_config: DockerExternalAgentRuntimeConfig | None = None,
+        agent_image: RuntimeImageIdentity | None = None,
         run_id: str,
         owner: DockerSessionOwner,
     ) -> None:
@@ -71,6 +80,8 @@ class DockerRuntimeSession(RuntimeSession):
         self._engine = engine
         self._config = config
         self._image = image
+        self._agent_config = agent_config
+        self._agent_image = agent_image
         self._run_id = run_id
         self._owner = owner
         self._max_output_bytes = spec.max_output_bytes
@@ -84,11 +95,47 @@ class DockerRuntimeSession(RuntimeSession):
         self._prepare_permissions()
         self._mounts = [workspace_mount(self._root)]
         self._baseline = self._snapshot()
-        owner.session_registered(self.session_id, self.role)
+        owner.session_registered(self.session_id, self.role, self._image.resolved_image_id)
 
     @property
     def root(self) -> Path:
         return self._root
+
+    @property
+    def external_process_backend(self) -> str:
+        if self._agent_config is None or self._agent_image is None:
+            return "runtime_external_process_unavailable"
+        return "docker_outer_runtime_delegated"
+
+    @property
+    def logical_workspace_root(self) -> str:
+        return "/workspace"
+
+    def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+        if self._closed:
+            raise PathPolicyError("Docker session is closed")
+        if self._frozen:
+            raise PathPolicyError("Docker session is frozen")
+        if self.role != "agent":
+            raise PathPolicyError("external-agent processes require an agent runtime session")
+        if self._agent_config is None or self._agent_image is None:
+            raise PathPolicyError("Docker external-agent runtime is not configured")
+
+        def register(container_id: str) -> None:
+            self._active_containers.add(container_id)
+            self._owner.container_registered(self.session_id, container_id)
+
+        executor = DockerExternalProcessExecutor(
+            engine=self._engine,
+            verifier_image=self._image,
+            agent_image=self._agent_image,
+            agent_config=self._agent_config,
+            run_id=self._run_id,
+            session_id=self.session_id,
+            register_container=register,
+            remove_container=self._remove_container,
+        )
+        return executor.execute(request, self._root)
 
     def _resolve(self, raw_path: str, *, allow_root: bool = False) -> Path:
         relative = normalize_relative_path(raw_path, allow_root=allow_root)

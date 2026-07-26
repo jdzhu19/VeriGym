@@ -227,6 +227,56 @@ def test_external_command_event_allows_bounded_visible_rtl_check(tmp_path: Path)
     validate_external_events(parsed, tmp_path)
 
 
+def test_runtime_logical_workspace_validation_does_not_require_a_host_mount() -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.started",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "sed -n 1,20p /workspace/rtl/TopModule.sv",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "file_change",
+                            "changes": [{"path": "/workspace/rtl/TopModule.sv", "kind": "update"}],
+                            "status": "completed",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+
+    validate_external_events(parsed, Path("/workspace"), logical_workspace=True)
+
+    escaped = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.started",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "cat /workspace-neighbor/secret",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    with pytest.raises(CodexPolicyError, match="outside"):
+        validate_external_events(escaped, Path("/workspace"), logical_workspace=True)
+
+
 @pytest.mark.parametrize(
     "command",
     [

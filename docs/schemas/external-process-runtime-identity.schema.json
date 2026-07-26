@@ -1,0 +1,135 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-process-runtime-identity.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "agent_executable_name": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Agent Executable Name",
+      "type": "string"
+    },
+    "agent_executable_sha256": {
+      "title": "Agent Executable Sha256",
+      "type": "string"
+    },
+    "agent_executable_version": {
+      "title": "Agent Executable Version",
+      "type": "string"
+    },
+    "agent_image_architecture": {
+      "title": "Agent Image Architecture",
+      "type": "string"
+    },
+    "agent_image_id": {
+      "title": "Agent Image Id",
+      "type": "string"
+    },
+    "agent_image_os": {
+      "title": "Agent Image Os",
+      "type": "string"
+    },
+    "agent_image_reference": {
+      "title": "Agent Image Reference",
+      "type": "string"
+    },
+    "agent_image_user": {
+      "title": "Agent Image User",
+      "type": "string"
+    },
+    "capability_fingerprint": {
+      "title": "Capability Fingerprint",
+      "type": "string"
+    },
+    "configuration_fingerprint": {
+      "title": "Configuration Fingerprint",
+      "type": "string"
+    },
+    "container_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Container Id"
+    },
+    "exec_server_process_count": {
+      "const": 1,
+      "default": 1,
+      "title": "Exec Server Process Count",
+      "type": "integer"
+    },
+    "execution_backend": {
+      "const": "docker_outer_runtime_delegated",
+      "title": "Execution Backend",
+      "type": "string"
+    },
+    "execution_owner": {
+      "const": "verigym_runtime",
+      "title": "Execution Owner",
+      "type": "string"
+    },
+    "host_executable_name": {
+      "title": "Host Executable Name",
+      "type": "string"
+    },
+    "host_executable_sha256": {
+      "title": "Host Executable Sha256",
+      "type": "string"
+    },
+    "host_executable_version": {
+      "title": "Host Executable Version",
+      "type": "string"
+    },
+    "logical_workspace_root": {
+      "const": "/workspace",
+      "title": "Logical Workspace Root",
+      "type": "string"
+    },
+    "model_process_count": {
+      "const": 1,
+      "default": 1,
+      "title": "Model Process Count",
+      "type": "integer"
+    },
+    "protocol": {
+      "pattern": "^[A-Za-z0-9._-]{1,128}$",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "verifier_image_id": {
+      "title": "Verifier Image Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "execution_owner",
+    "execution_backend",
+    "protocol",
+    "verifier_image_id",
+    "agent_image_id",
+    "agent_image_reference",
+    "agent_image_os",
+    "agent_image_architecture",
+    "agent_image_user",
+    "agent_executable_name",
+    "agent_executable_sha256",
+    "agent_executable_version",
+    "host_executable_name",
+    "host_executable_sha256",
+    "host_executable_version",
+    "capability_fingerprint",
+    "configuration_fingerprint",
+    "logical_workspace_root"
+  ],
+  "title": "ExternalProcessRuntimeIdentity",
+  "type": "object"
+}

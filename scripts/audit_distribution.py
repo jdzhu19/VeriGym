@@ -159,6 +159,8 @@ def _sdist(path: Path) -> tuple[dict[str, Any], list[str]]:
         "/.github/workflows/ci.yml",
         "/build_backend/verigym_build_backend.py",
         "/examples/plugins/conformance/pyproject.toml",
+        "/docker/codex-exec-server/SOURCE_IDENTITIES",
+        "/scripts/build_codex_agent_image.sh",
         "/scripts/run_release_audit.py",
         "/tests/fixtures/verilog_eval_v2_synthetic/LICENSE",
     ]

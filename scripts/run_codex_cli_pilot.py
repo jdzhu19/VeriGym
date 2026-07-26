@@ -29,13 +29,23 @@ from verigym.experiments.state import atomic_dump_json, atomic_dump_jsonl, atomi
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
+from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.run import RunConfig, RunResult
+from verigym.schemas.runtime import (
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+)
 from verigym.schemas.suite import SuiteSourceConfig
-from verigym.suites.verilog_eval.schemas import IcarusCompatibility
-from verigym.suites.verilog_eval.toolchain import detect_icarus
+from verigym.schemas.verifier import VerifierStatus
 
 _EXPECTED_PACKAGE = "verigym-codex-cli"
+_EXPECTED_MODEL = "gpt-5.4"
+_EXPECTED_CODEX_VERSION = "codex-cli 0.144.6"
+_EXPECTED_HOST_CODEX_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+_EXPECTED_AGENT_CODEX_SHA256 = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
+_EXPECTED_AUTH_SEMANTIC_ID = "codex.auth.inherited_chatgpt_session.v1"
+_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
 _REQUIRED_CONFIG_KEYS = {
     "schema_version",
     "name",
@@ -103,10 +113,17 @@ def main() -> int:
     config = _load_yaml(arguments.config, required_keys=_REQUIRED_CONFIG_KEYS)
     _validate_static_config(config)
     model_id = _required_environment("VERIGYM_CODEX_MODEL")
+    if model_id != _EXPECTED_MODEL:
+        raise SystemExit(f"the Docker-backed pilot requires exact model {_EXPECTED_MODEL}")
     _required_environment("VERIGYM_CODEX_BINARY")
     _required_environment("VERIGYM_CODEX_AUTH_MODE")
     capability = _load_capability()
-    toolchain_identity = _toolchain_identity()
+    _validate_capability_identity(capability)
+    auth_identity = _authentication_preflight()
+    package_identities = _package_identities()
+    docker_config = _docker_runtime_config(
+        max_process_time_s=config["execution"]["max_process_time_s"]
+    )
     source_root = Path(_required_environment("VERIGYM_VERILOG_EVAL_ROOT"))
     registries = build_registries()
     _verify_plugin_origins(registries)
@@ -116,6 +133,12 @@ def main() -> int:
         config,
         source_root,
     )
+    runtime_identity, toolchain_identity, reference_preflight = _docker_preflight(
+        service,
+        docker_config=docker_config,
+        source_config=source_config,
+        task_records=task_records,
+    )
     plan = _build_plan(
         config,
         model_id=model_id,
@@ -124,6 +147,10 @@ def main() -> int:
         task_records=task_records,
         registries=registries,
         toolchain_identity=toolchain_identity,
+        auth_identity=auth_identity,
+        package_identities=package_identities,
+        runtime_identity=runtime_identity,
+        reference_preflight=reference_preflight,
     )
     plan_path = arguments.plan_output.expanduser().resolve()
     if plan_path.exists() or plan_path.is_symlink():
@@ -180,6 +207,8 @@ def main() -> int:
     _create_append_only_ledger(execution_ledger)
     for item in plan["items"]:
         elapsed = time.monotonic() - started
+        if stop_reason is None and _proxy_identity() != plan["proxy_identity"]:
+            stop_reason = "identity_mutation:proxy_environment_names"
         if stop_reason is None and elapsed >= budget["max_total_wall_time_s"]:
             stop_reason = "global_wall_time_limit"
         if stop_reason is None and process_attempts >= budget["max_codex_processes"]:
@@ -227,6 +256,7 @@ def main() -> int:
             task_records=task_records,
             experiment_id=plan["experiment_id"],
             max_process_time_s=config["execution"]["max_process_time_s"],
+            docker_config=docker_config,
         )
         run_started = time.monotonic()
         try:
@@ -312,35 +342,276 @@ def main() -> int:
     return 0 if pilot_report["experiment_execution_gate"]["status"] == "PASS" else 1
 
 
-def _toolchain_identity() -> dict[str, Any]:
-    tools: dict[str, dict[str, Any]] = {}
-    for name in ("iverilog", "vvp"):
-        info = detect_icarus(name)
-        executable_sha256 = None
-        if info.executable is not None:
-            executable_sha256 = hashlib.sha256(Path(info.executable).read_bytes()).hexdigest()
-        tools[name] = {
-            "executable": info.executable,
-            "executable_sha256": executable_sha256,
-            "version": info.version,
-            "compatibility": info.compatibility.value,
-        }
-    return {
-        "schema_version": "1.0",
-        "profile": "verilog-eval-v2-icarus-v12",
-        "tools": tools,
-        "reference_compatible": all(
-            tool["compatibility"] == IcarusCompatibility.REFERENCE_COMPATIBLE.value
-            for tool in tools.values()
+def _validate_capability_identity(capability: dict[str, Any]) -> None:
+    if (
+        capability.get("version_output") != _EXPECTED_CODEX_VERSION
+        or capability.get("executable_sha256") != _EXPECTED_HOST_CODEX_SHA256
+        or capability.get("model_call_count") != 0
+    ):
+        raise SystemExit("Codex capability identity differs from the authorized CLI 0.144.6")
+
+
+def _authentication_preflight() -> dict[str, Any]:
+    from verigym_codex_cli.preflight import run_auth_preflight
+
+    _require_no_api_key_environment()
+    result = run_auth_preflight()
+    safe = result.safe_dict()
+    if (
+        result.status != "pass"
+        or result.requested_auth_mode != "chatgpt_cli_session"
+        or result.resolved_auth_mode != "inherited_codex_login"
+        or result.auth_semantic_id != _EXPECTED_AUTH_SEMANTIC_ID
+        or result.model_calls != 0
+        or result.login_processes != 0
+        or result.logout_processes != 0
+        or result.account_switch_processes != 0
+        or result.credential_contents_accessed_by_verigym
+        or result.credential_files_copied != 0
+    ):
+        raise SystemExit("existing ChatGPT CLI authentication did not pass zero-call preflight")
+    return safe
+
+
+def _require_no_api_key_environment() -> None:
+    forbidden = (
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY",
+        "VERIGYM_CODEX_CREDENTIAL_ENV",
+    )
+    present = [name for name in forbidden if name in os.environ]
+    if present:
+        raise SystemExit(
+            "ChatGPT CLI-session execution forbids API-key environment configuration: "
+            + ", ".join(present)
+        )
+
+
+def _package_identities() -> dict[str, Any]:
+    identities: dict[str, Any] = {}
+    for label, environment, expected_prefix in (
+        ("core", "VERIGYM_CORE_WHEEL", "verigym-0.1.0-"),
+        (
+            "codex_cli_plugin",
+            "VERIGYM_CODEX_PLUGIN_WHEEL",
+            "verigym_codex_cli-0.1.0-",
         ),
+    ):
+        path = Path(_required_environment(environment)).expanduser().resolve(strict=True)
+        metadata = os.lstat(path)
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size <= 0
+            or metadata.st_size > 256 * 1024 * 1024
+            or not path.name.startswith(expected_prefix)
+            or path.suffix != ".whl"
+        ):
+            raise SystemExit(f"{environment} does not identify a safe expected wheel")
+        identities[label] = {
+            "filename": path.name,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size_bytes": metadata.st_size,
+        }
+    return identities
+
+
+def _docker_runtime_config(*, max_process_time_s: int) -> DockerRuntimeConfig:
+    verifier_reference = _required_environment("VERIGYM_DOCKER_VERIFIER_IMAGE")
+    verifier_image_id = _required_environment("VERIGYM_DOCKER_VERIFIER_IMAGE_ID")
+    agent_reference = _required_environment("VERIGYM_CODEX_AGENT_IMAGE")
+    agent_image_id = _required_environment("VERIGYM_CODEX_AGENT_IMAGE_ID")
+    if os.getuid() == 0:
+        raise SystemExit("Docker-backed Codex execution requires a non-root host identity")
+    runtime_user = f"{os.getuid()}:{os.getgid()}"
+    return DockerRuntimeConfig(
+        image=verifier_reference,
+        expected_image_id=verifier_image_id,
+        pull_policy="never",
+        network_mode="none",
+        read_only_rootfs=True,
+        memory_bytes=512 * 1024 * 1024,
+        cpus=1.0,
+        pids_limit=128,
+        tmpfs_bytes=64 * 1024 * 1024,
+        stop_timeout_s=3,
+        max_command_time_s=max_process_time_s,
+        max_artifact_file_bytes=16 * 1024 * 1024,
+        max_artifact_bytes=64 * 1024 * 1024,
+        environment_allowlist=[],
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image=agent_reference,
+            expected_image_id=agent_image_id,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version=_EXPECTED_CODEX_VERSION,
+            expected_executable_sha256=_EXPECTED_AGENT_CODEX_SHA256,
+            process_argv=[
+                "/usr/local/bin/codex",
+                "exec-server",
+                "--listen",
+                "stdio://",
+            ],
+            protocol="codex_app_server_remote_environment_v1",
+            required_image_labels={
+                "org.verigym.codex.version": "0.144.6",
+                "org.verigym.codex.binary.sha256": _EXPECTED_AGENT_CODEX_SHA256,
+                "org.verigym.credential_material": "absent",
+                "org.verigym.provider_credentials": "absent",
+                "org.verigym.external_agent.protocol": ("codex_app_server_remote_environment_v1"),
+            },
+            pull_policy="never",
+            run_as_user=runtime_user,
+            read_only_rootfs=True,
+            network_mode="none",
+            memory_bytes=512 * 1024 * 1024,
+            cpus=1.0,
+            pids_limit=128,
+            tmpfs_bytes=64 * 1024 * 1024,
+            stop_timeout_s=3,
+            max_process_time_s=max_process_time_s,
+            max_output_bytes=8 * 1024 * 1024,
+        ),
+    )
+
+
+def _docker_preflight(
+    service: VeriGym,
+    *,
+    docker_config: DockerRuntimeConfig,
+    source_config: SuiteSourceConfig,
+    task_records: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    runtime = DockerRuntime(docker_config)
+    records: list[dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="verigym-pilot-reference-preflight-") as temporary_name:
+        temporary_root = Path(temporary_name)
+        try:
+            runtime.prepare("codex-docker-pilot-zero-call-preflight")
+            descriptor = runtime.descriptor
+            verifier_image = descriptor.image
+            if verifier_image is None:
+                raise SystemExit("Docker verifier image identity is unavailable")
+            for task_record in task_records:
+                suite, task, assets = service.load_task(task_record["id"], source_config)
+                reference = suite.reference_solution(task)
+                if reference is None:
+                    raise SystemExit(f"official reference candidate is unavailable: {task.id}")
+                native_id = task.id.rsplit("/", 1)[-1]
+                candidate = temporary_root / native_id / "candidate"
+                artifact_root = temporary_root / native_id / "verifier-artifacts"
+                for relative, source in reference.files.items():
+                    destination = candidate / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(source, encoding="utf-8")
+                results = service._verify_candidate(
+                    task=task,
+                    assets=assets,
+                    runtime=runtime,
+                    candidate_dir=candidate,
+                    artifact_root=artifact_root,
+                )
+                passed = bool(results) and all(
+                    result.status is VerifierStatus.PASSED for result in results
+                )
+                records.append(
+                    {
+                        "task_id": task.id,
+                        "task_hash": task_record["task_hash"],
+                        "reference_candidate_hash": hash_directory(candidate),
+                        "passed": passed,
+                        "verifier_results": [
+                            {
+                                "node_id": result.node_id,
+                                "plugin": result.plugin,
+                                "status": result.status.value,
+                                "error_category": result.error_category.value,
+                                "exit_code": result.exit_code,
+                                "tests_passed": result.tests_passed,
+                                "tests_total": result.tests_total,
+                                "request": result.request,
+                            }
+                            for result in results
+                        ],
+                    }
+                )
+                if not passed:
+                    raise SystemExit(f"official Docker reference candidate failed: {task.id}")
+        finally:
+            runtime.close()
+    descriptor = runtime.descriptor
+    verifier_image = descriptor.image
+    if verifier_image is None:
+        raise SystemExit("Docker verifier image identity disappeared after preflight")
+    if not (
+        verifier_image.iverilog_version
+        and re.search(r"\bversion\s+12(?:\.|\b)", verifier_image.iverilog_version, re.I)
+        and verifier_image.vvp_version
+        and re.search(r"\bversion\s+12(?:\.|\b)", verifier_image.vvp_version, re.I)
+    ):
+        raise SystemExit("Docker verifier image is not the required Icarus major 12")
+    environment = runtime.environment_summary()
+    role_images = environment.get("docker_role_images")
+    if not isinstance(role_images, dict) or not isinstance(role_images.get("external_agent"), dict):
+        raise SystemExit("Docker external-agent role identity is unavailable")
+    cleanup = descriptor.cleanup
+    if cleanup is None or not cleanup.complete:
+        raise SystemExit("Docker zero-call preflight did not clean up every container")
+    toolchain_identity = {
+        "schema_version": "1.0",
+        "profile": "verilog-eval-v2-icarus-v12-docker",
+        "verifier_image_id": verifier_image.resolved_image_id,
+        "iverilog_version": verifier_image.iverilog_version,
+        "vvp_version": verifier_image.vvp_version,
+        "compatibility": verifier_image.compatibility_status,
+        "network_mode": "none",
+        "reference_compatible": True,
     }
+    runtime_identity = {
+        "schema_version": "1.0",
+        "architecture_path": "A_external_tool_delegation",
+        "external_agent_process_backend": "docker_outer_runtime_delegated",
+        "inner_codex_sandbox": "outer_runtime_delegated",
+        "model_auth_control_plane": "host_codex_app_server",
+        "workspace_tool_plane": "network_none_docker_codex_exec_server",
+        "provider_credentials_in_agent_container": False,
+        "provider_credentials_in_workspace": False,
+        "provider_credentials_available_to_model_tools": False,
+        "provider_credentials_persisted": False,
+        "agent_executable_identity": {
+            "name": docker_config.external_agent.expected_executable_name,
+            "path": docker_config.external_agent.expected_executable_path,
+            "version": docker_config.external_agent.expected_executable_version,
+            "sha256": docker_config.external_agent.expected_executable_sha256,
+            "process_argv": docker_config.external_agent.process_argv,
+        }
+        if docker_config.external_agent is not None
+        else None,
+        "required_agent_image_labels": (
+            docker_config.external_agent.required_image_labels
+            if docker_config.external_agent is not None
+            else None
+        ),
+        "environment": environment,
+        "runtime_configuration_fingerprint": descriptor.configuration_fingerprint,
+        "cleanup": cleanup.model_dump(mode="json"),
+    }
+    reference_preflight = {
+        "schema_version": "1.0",
+        "real_model_process_count": 0,
+        "required_count": 5,
+        "passed_count": sum(record["passed"] for record in records),
+        "all_passed": len(records) == 5 and all(record["passed"] for record in records),
+        "records": records,
+    }
+    return runtime_identity, toolchain_identity, reference_preflight
 
 
 def _require_reference_compatible_toolchain(identity: dict[str, Any]) -> None:
     if identity.get("reference_compatible") is not True:
-        versions = ", ".join(
-            f"{name}={details.get('version') or 'unavailable'}"
-            for name, details in identity["tools"].items()
+        versions = (
+            f"iverilog={identity.get('iverilog_version') or 'unavailable'}, "
+            f"vvp={identity.get('vvp_version') or 'unavailable'}"
         )
         raise SystemExit(
             "real pilot requires the upstream-reference-compatible Icarus v12 profile; " + versions
@@ -392,6 +663,11 @@ def _terminal_execution_record(
     summary = _load_optional_json(artifact_root / "summary.json")
     event_policy = _load_optional_json(artifact_root / "event_policy.json")
     workspace_policy = _load_optional_json(artifact_root / "workspace_policy.json")
+    runtime_process = _load_optional_json(artifact_root / "runtime_process.json")
+    runtime_security = runtime_process.get("security")
+    runtime_security = runtime_security if isinstance(runtime_security, dict) else {}
+    runtime_identity = runtime_process.get("runtime_identity")
+    runtime_identity = runtime_identity if isinstance(runtime_identity, dict) else {}
     if identity.integration_track == "codex_cli_readonly_single_turn_agent":
         typed_policy_passed = summary.get("tool_policy_passed") is True
     else:
@@ -435,6 +711,23 @@ def _terminal_execution_record(
             if isinstance(workspace_policy.get("after"), dict)
             else None
         ),
+        "runtime_process_backend": runtime_identity.get("execution_backend"),
+        "verifier_image_id": runtime_identity.get("verifier_image_id"),
+        "agent_image_id": runtime_identity.get("agent_image_id"),
+        "runtime_container_id": runtime_identity.get("container_id"),
+        "runtime_effective_controls_verified": runtime_security.get("effective_controls_verified"),
+        "runtime_cleanup_verified": runtime_security.get("cleanup_verified"),
+        "runtime_container_removed": runtime_security.get("container_removed"),
+        "runtime_broker_stopped": runtime_security.get("broker_stopped"),
+        "runtime_network_mode": runtime_security.get("network_mode"),
+        "runtime_credential_environment_names": runtime_security.get(
+            "credential_environment_names_in_container"
+        ),
+        "runtime_proxy_environment_names": runtime_security.get(
+            "proxy_environment_names_in_container"
+        ),
+        "runtime_workspace_changed_paths": runtime_security.get("workspace_changed_paths"),
+        "runtime_security_complete": _runtime_process_security_complete(runtime_process),
     }
 
 
@@ -467,12 +760,57 @@ def _actual_security_breach(result: RunResult) -> bool:
     if not isinstance(run_dir, Path):
         return False
     artifact_root = run_dir / "artifacts" / "codex_cli"
-    workspace_policy = _load_optional_json(artifact_root / "workspace_policy.json")
-    violations = workspace_policy.get("violations")
+    runtime_process = _load_optional_json(artifact_root / "runtime_process.json")
+    if not runtime_process:
+        return False
+    return not _runtime_process_security_complete(runtime_process)
+
+
+def _runtime_process_security_complete(runtime_process: dict[str, Any]) -> bool:
+    identity = runtime_process.get("runtime_identity")
+    security = runtime_process.get("security")
+    if not isinstance(identity, dict) or not isinstance(security, dict):
+        return False
+    required_true = (
+        "read_only_rootfs",
+        "non_root",
+        "no_new_privileges",
+        "init",
+        "private_pid_namespace",
+        "private_ipc_namespace",
+        "effective_controls_verified",
+        "container_exit_inspected",
+        "cleanup_verified",
+        "container_removed",
+        "broker_stopped",
+        "process_group_cleaned",
+        "user_config_metadata_unchanged",
+    )
+    required_false = (
+        "host_home_mounted",
+        "source_repository_mounted",
+        "hidden_verifier_mounted",
+        "docker_socket_mounted",
+        "credential_files_mounted",
+        "api_key_environment_forwarded",
+        "credential_contents_accessed_by_verigym",
+        "user_config_contents_accessed_by_verigym",
+        "provider_network_in_container",
+    )
     return bool(
-        workspace_policy.get("policy_passed") is False
-        and isinstance(violations, list)
-        and violations
+        identity.get("execution_owner") == "verigym_runtime"
+        and identity.get("execution_backend") == "docker_outer_runtime_delegated"
+        and identity.get("agent_image_id") != identity.get("verifier_image_id")
+        and security.get("boundary") == "docker_outer_runtime"
+        and security.get("network_mode") == "none"
+        and security.get("cap_drop") == ["ALL"]
+        and security.get("mount_destinations") == ["/workspace"]
+        and security.get("writable_destinations") == ["/workspace", "/tmp"]
+        and security.get("credential_environment_names_in_container") == []
+        and security.get("proxy_environment_names_in_container") == []
+        and all(security.get(name) is True for name in required_true)
+        and all(security.get(name) is False for name in required_false)
+        and runtime_process.get("cleanup_complete") is True
     )
 
 
@@ -554,6 +892,7 @@ def _security_scans(
     secret_hits: list[str] = []
     hidden_hits: list[str] = []
     host_path_hits: list[str] = []
+    auth_path_hits: list[str] = []
     proxy_value_hits: list[str] = []
     host_markers = {
         str(output.resolve()),
@@ -589,6 +928,17 @@ def _security_scans(
                     hidden_hits.append(relative)
                 if any(marker and marker in text for marker in host_markers):
                     host_path_hits.append(relative)
+                if any(
+                    marker in text
+                    for marker in (
+                        "/.codex/",
+                        "\\.codex\\",
+                        "auth.json",
+                        "credentials.json",
+                        "/var/run/docker.sock",
+                    )
+                ):
+                    auth_path_hits.append(relative)
                 if any(value in text for value in proxy_values):
                     proxy_value_hits.append(relative)
     return {
@@ -610,10 +960,14 @@ def _security_scans(
         "reference_equivalent_candidate_is_not_inferred_as_a_leak": True,
         "host_path_scan_passed": not host_path_hits,
         "host_path_hits": sorted(set(host_path_hits)),
+        "auth_path_scan_passed": not auth_path_hits,
+        "auth_path_hits": sorted(set(auth_path_hits)),
         "proxy_value_scan_passed": not proxy_value_hits,
         "proxy_value_hits": sorted(set(proxy_value_hits)),
         "proxy_values_persisted_or_hashed": False,
-        "all_passed": not any((secret_hits, hidden_hits, host_path_hits, proxy_value_hits)),
+        "all_passed": not any(
+            (secret_hits, hidden_hits, host_path_hits, auth_path_hits, proxy_value_hits)
+        ),
     }
 
 
@@ -706,6 +1060,14 @@ def _validate_static_config(config: dict[str, Any]) -> None:
         "codex_cli_external_agent",
     ]:
         raise SystemExit("pilot config must preserve the two ordered integration tracks")
+    if any(
+        track.get("runtime") != "docker"
+        or track.get("external_agent_process_backend") != "docker_outer_runtime_delegated"
+        or track.get("inner_codex_sandbox") != "outer_runtime_delegated"
+        or track.get("verifier_network") != "none"
+        for track in tracks
+    ):
+        raise SystemExit("pilot tracks require the runtime-owned Docker external-agent backend")
     if sampling.get("base_seed") != 0 or sampling.get("sample_indices") != [0, 1, 2]:
         raise SystemExit("pilot config must define three independent samples")
     if (
@@ -791,6 +1153,10 @@ def _build_plan(
     task_records: list[dict[str, Any]],
     registries: Any,
     toolchain_identity: dict[str, Any],
+    auth_identity: dict[str, Any] | None = None,
+    package_identities: dict[str, Any] | None = None,
+    runtime_identity: dict[str, Any] | None = None,
+    reference_preflight: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for task in task_records:
@@ -822,6 +1188,12 @@ def _build_plan(
         "source_commit": source_snapshot.git_commit,
         "dataset_hash": source_snapshot.dataset_content_hash,
         "capability_fingerprint": capability["capability_fingerprint"],
+        "auth_semantic_id": (auth_identity or {}).get("auth_semantic_id"),
+        "package_identities": package_identities,
+        "runtime_configuration_fingerprint": (runtime_identity or {}).get(
+            "runtime_configuration_fingerprint"
+        ),
+        "proxy_identity": _proxy_identity(),
         "items": items,
     }
     return {
@@ -857,13 +1229,29 @@ def _build_plan(
                 "model_call_count",
             )
         },
+        "authentication_identity": auth_identity,
+        "package_identities": package_identities,
+        "runtime_identity": runtime_identity,
+        "proxy_identity": _proxy_identity(),
         "source_snapshot": source_snapshot.model_dump(mode="json"),
         "toolchain_identity": toolchain_identity,
+        "reference_preflight": reference_preflight,
         "task_records": task_records,
         "sampling": config["sampling"],
         "execution": config["execution"],
         "planned_run_count": len(items),
         "items": items,
+    }
+
+
+def _proxy_identity() -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "allow_proxy_environment": True,
+        "allowlist": list(_PROXY_NAMES),
+        "forwarded_present_names": [name for name in _PROXY_NAMES if name in os.environ],
+        "proxy_values_read_for_identity": False,
+        "proxy_values_persisted_or_hashed": False,
     }
 
 
@@ -895,6 +1283,7 @@ def _run_config(
     task_records: list[dict[str, Any]],
     experiment_id: str,
     max_process_time_s: int,
+    docker_config: DockerRuntimeConfig,
 ) -> RunConfig:
     task = next(record for record in task_records if record["id"] == item["task_id"])
     common: dict[str, Any] = {
@@ -903,7 +1292,8 @@ def _run_config(
         "expected_suite_source_snapshot": source_snapshot,
         "expected_task_hash": task["task_hash"],
         "expected_source_hash": task["source_hash"],
-        "runtime": "local",
+        "runtime": "docker",
+        "docker_config": docker_config,
         "seed": item["child_seed"],
         "sample_index": item["sample_index"],
         "output": output,
@@ -951,9 +1341,22 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
         "VERIGYM_CODEX_CREDENTIAL_ENV",
         "OPENAI_API_KEY",
         "CODEX_API_KEY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
     )
     original = {name: os.environ.get(name) for name in protected_names}
-    removed_credential_names = [name for name in protected_names[3:] if name in os.environ]
+    removed_credential_names = [
+        name
+        for name in (
+            "VERIGYM_CODEX_AUTH_MODE",
+            "VERIGYM_CODEX_CREDENTIAL_ENV",
+            "OPENAI_API_KEY",
+            "CODEX_API_KEY",
+        )
+        if name in os.environ
+    ]
+    removed_proxy_names = [name for name in _PROXY_NAMES if name in os.environ]
     records: list[dict[str, Any]] = []
     try:
         with tempfile.TemporaryDirectory(prefix="verigym-credentialless-replay-") as replay_home:
@@ -968,8 +1371,11 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
                     "codex_available": False,
                     "credential_environment_available": False,
                     "credential_environment_names_removed": removed_credential_names,
+                    "proxy_environment_names_removed": removed_proxy_names,
                     "codex_cli_process_count": 0,
                     "model_call_count": 0,
+                    "broker_process_count": 0,
+                    "proxy_environment_available": False,
                 }
                 try:
                     replay = replay_run(result.run_dir, verify=True)
@@ -1035,6 +1441,10 @@ def _pilot_report(
             identity["auth_semantic_id"],
             identity["tool_use_policy"],
             identity["sandbox_policy"],
+            identity["runtime_process_backend"],
+            identity["agent_image_id"],
+            identity["verifier_image_id"],
+            identity["runtime_configuration_fingerprint"],
         )
         comparison_groups[comparison_key].append(result.manifest.run_id)
     for (task_id, track), items in sorted(partition_items.items()):
@@ -1056,6 +1466,10 @@ def _pilot_report(
                     _result_identity(child)["capability_fingerprint"],
                     _result_identity(child)["auth_semantic_id"],
                     _result_identity(child)["tool_use_policy"],
+                    _result_identity(child)["runtime_process_backend"],
+                    _result_identity(child)["agent_image_id"],
+                    _result_identity(child)["verifier_image_id"],
+                    _result_identity(child)["runtime_configuration_fingerprint"],
                 )
                 for child in children
             }
@@ -1119,15 +1533,43 @@ def _pilot_report(
         "all_replays_zero_cli_model_calls": all(
             record["codex_cli_process_count"] == 0
             and record["model_call_count"] == 0
+            and record["broker_process_count"] == 0
+            and record["proxy_environment_available"] is False
             and record["credential_home_file_count"] == 0
             for record in replay_records
         ),
+        "all_runtime_processes_docker_delegated": all(
+            record.get("runtime_process_backend") == "docker_outer_runtime_delegated"
+            for record in execution_records
+            if record.get("terminal")
+        )
+        and terminal == 30,
+        "all_runtime_security_controls_complete": all(
+            record.get("runtime_security_complete") is True
+            for record in execution_records
+            if record.get("terminal")
+        )
+        and terminal == 30,
+        "all_agent_verifier_images_separated": all(
+            record.get("agent_image_id")
+            and record.get("verifier_image_id")
+            and record.get("agent_image_id") != record.get("verifier_image_id")
+            for record in execution_records
+            if record.get("terminal")
+        )
+        and terminal == 30,
         "all_run_integrity_verified": integrity_verified == 30,
         "candidate_freeze_unchanged": candidate_freeze["all_unchanged"],
         "source_immutable": source_integrity["passed"],
         "plan_immutable": plan_unchanged,
         "security_scans_passed": security_scans["all_passed"],
         "reference_compatible_toolchain": plan["toolchain_identity"]["reference_compatible"],
+        "official_references_passed_5_of_5": (
+            isinstance(plan.get("reference_preflight"), dict)
+            and plan["reference_preflight"].get("all_passed") is True
+            and plan["reference_preflight"].get("passed_count") == 5
+            and plan["reference_preflight"].get("real_model_process_count") == 0
+        ),
         "all_pass_at_k_partitions_canonical": all(
             partition["canonical_valid"] for partition in pass_at_k
         ),
@@ -1154,6 +1596,10 @@ def _pilot_report(
                     "auth_semantic_id": key[5],
                     "tool_use_policy": key[6],
                     "sandbox_policy": key[7],
+                    "runtime_process_backend": key[8],
+                    "agent_image_id": key[9],
+                    "verifier_image_id": key[10],
+                    "runtime_configuration_fingerprint": key[11],
                 }
             ),
             "integration_track": key[0],
@@ -1164,6 +1610,10 @@ def _pilot_report(
             "auth_semantic_id": key[5],
             "tool_use_policy": key[6],
             "sandbox_policy": key[7],
+            "runtime_process_backend": key[8],
+            "agent_image_id": key[9],
+            "verifier_image_id": key[10],
+            "runtime_configuration_fingerprint": key[11],
             "run_count": len(run_ids),
             "run_ids": sorted(run_ids),
         }
@@ -1244,6 +1694,11 @@ def _track_metrics(
             for partition in partitions
             if partition["values"]["1"] is not None
         ]
+        canonical_pass_2 = [
+            float(partition["values"]["2"])
+            for partition in partitions
+            if partition["values"]["2"] is not None
+        ]
         canonical_pass_3 = [
             float(partition["values"]["3"])
             for partition in partitions
@@ -1288,6 +1743,11 @@ def _track_metrics(
                     if len(canonical_pass_1) == 5
                     else None
                 ),
+                "pass_at_2_macro": (
+                    sum(canonical_pass_2) / len(canonical_pass_2)
+                    if len(canonical_pass_2) == 5
+                    else None
+                ),
                 "pass_at_3_macro": (
                     sum(canonical_pass_3) / len(canonical_pass_3)
                     if len(canonical_pass_3) == 5
@@ -1303,6 +1763,11 @@ def _result_identity(result: RunResult) -> dict[str, str]:
     if not manifest.external_agent_observations:
         raise RuntimeError("Codex CLI agent run did not record external-agent identity")
     identity = manifest.external_agent_observations[-1]
+    runtime_process = _load_optional_json(
+        result.run_dir / "artifacts" / "codex_cli" / "runtime_process.json"
+    )
+    runtime_identity = runtime_process.get("runtime_identity")
+    runtime_identity = runtime_identity if isinstance(runtime_identity, dict) else {}
     return {
         "integration_track": identity.integration_track,
         "requested_model_id": identity.requested_model_id or "",
@@ -1312,6 +1777,12 @@ def _result_identity(result: RunResult) -> dict[str, str]:
         "auth_semantic_id": identity.auth_semantic_id,
         "tool_use_policy": identity.tool_use_policy,
         "sandbox_policy": identity.sandbox_policy,
+        "runtime_process_backend": str(runtime_identity.get("execution_backend") or ""),
+        "agent_image_id": str(runtime_identity.get("agent_image_id") or ""),
+        "verifier_image_id": str(runtime_identity.get("verifier_image_id") or ""),
+        "runtime_configuration_fingerprint": str(
+            runtime_identity.get("configuration_fingerprint") or ""
+        ),
     }
 
 

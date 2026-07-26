@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 import tempfile
+import threading
 from pathlib import Path
 
 from verigym.core.errors import ConfigurationError
@@ -27,11 +29,20 @@ from verigym.schemas.common import (
     RuntimeSecuritySummary,
     RuntimeSessionRecord,
 )
-from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec
+from verigym.schemas.runtime import (
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+    SessionSpec,
+)
 from verigym.schemas.tool import CommandSpec, HealthCheckResult
 from verigym.suites.verilog_eval.toolchain import classify_icarus_version
 
 _VERSION_LINE = re.compile(r"^Icarus Verilog (?:runtime )?version\b", re.IGNORECASE)
+_IMAGE_OBSERVATION_CACHE_LOCK = threading.Lock()
+_IMAGE_OBSERVATION_CACHE: dict[
+    str,
+    tuple[RuntimeImageIdentity, RuntimeImageIdentity | None],
+] = {}
 
 
 class DockerRuntime(Runtime):
@@ -50,6 +61,8 @@ class DockerRuntime(Runtime):
         self._engine_was_injected = engine is not None
         self._expected_image_id = expected_image_id
         self._replay_image = replay_image
+        self._agent_image: RuntimeImageIdentity | None = None
+        self._image_observation_source: str | None = None
         self._run_id: str | None = None
         self._prepared = False
         self._closed = False
@@ -141,6 +154,32 @@ class DockerRuntime(Runtime):
             )
             self._descriptor.backend = backend
             self._descriptor.image = image
+            if self._config.external_agent is not None:
+                self._agent_image = resolve_image(
+                    engine,
+                    _external_agent_as_runtime_config(self._config.external_agent),
+                    expected_image_id=self._config.external_agent.expected_image_id,
+                )
+                if self._agent_image.resolved_image_id == image.resolved_image_id:
+                    raise DockerImageError(
+                        "agent and verifier resolved to the same image identity",
+                        subreason="role_image_identity_collision",
+                    )
+                expected_user = f"{os.getuid()}:{os.getgid()}"
+                if os.getuid() == 0 or self._agent_image.effective_user != expected_user:
+                    raise DockerImageError(
+                        "external-agent runtime user must match the current non-root host UID:GID",
+                        subreason="agent_user_mapping_invalid",
+                    )
+                self._descriptor.capabilities = sorted(
+                    set(self._descriptor.capabilities)
+                    | {
+                        "external_agent_runtime_process",
+                        "outer_runtime_delegated",
+                        "role_separated_images",
+                        "container_network_none_stdio_broker",
+                    }
+                )
             self._descriptor.security = RuntimeSecuritySummary(
                 network_mode="none",
                 read_only_rootfs=True,
@@ -162,9 +201,17 @@ class DockerRuntime(Runtime):
             self._descriptor.cleanup = RuntimeCleanupSummary(complete=False)
             self._prepared = True
             if self._replay_image is None:
-                self._probe_image()
+                if self._restore_cached_image_observations():
+                    self._image_observation_source = "in_process_immutable_cache"
+                else:
+                    self._probe_image()
+                    if self._agent_image is not None:
+                        self._probe_agent_image()
+                    self._cache_image_observations()
+                    self._image_observation_source = "fresh_probe"
             else:
                 self._restore_replay_observations(self._replay_image)
+                self._image_observation_source = "replay_manifest"
         except BaseException:
             try:
                 self.close()
@@ -210,6 +257,112 @@ class DockerRuntime(Runtime):
         self._descriptor.security = self._descriptor.security.model_copy(
             update={"observed_uid": stored.observed_uid, "observed_gid": stored.observed_gid}
         )
+
+    def _observation_cache_key(self) -> str:
+        descriptor = self._descriptor
+        if descriptor.backend is None or descriptor.image is None:
+            raise RuntimeError("Docker image observation cache identity is unavailable")
+        external = self._require_config().external_agent
+        return content_hash(
+            {
+                "backend": descriptor.backend,
+                "verifier_image": descriptor.image.model_copy(
+                    update={
+                        "observed_uid": None,
+                        "observed_gid": None,
+                        "iverilog_version": None,
+                        "vvp_version": None,
+                        "compatibility_status": None,
+                    }
+                ),
+                "agent_image": (
+                    self._agent_image.model_copy(
+                        update={
+                            "observed_uid": None,
+                            "observed_gid": None,
+                            "iverilog_version": None,
+                            "vvp_version": None,
+                            "compatibility_status": None,
+                        }
+                    )
+                    if self._agent_image is not None
+                    else None
+                ),
+                "agent_expected_executable_version": (
+                    external.expected_executable_version if external is not None else None
+                ),
+                "agent_expected_executable_sha256": (
+                    external.expected_executable_sha256 if external is not None else None
+                ),
+                "agent_runtime_configuration": external,
+            }
+        )
+
+    def _cache_image_observations(self) -> None:
+        verifier = self._descriptor.image
+        if verifier is None:
+            raise RuntimeError("Docker verifier image observations are unavailable")
+        with _IMAGE_OBSERVATION_CACHE_LOCK:
+            _IMAGE_OBSERVATION_CACHE[self._observation_cache_key()] = (
+                verifier.model_copy(deep=True),
+                self._agent_image.model_copy(deep=True) if self._agent_image is not None else None,
+            )
+
+    def _restore_cached_image_observations(self) -> bool:
+        key = self._observation_cache_key()
+        with _IMAGE_OBSERVATION_CACHE_LOCK:
+            cached = _IMAGE_OBSERVATION_CACHE.get(key)
+            if cached is None:
+                return False
+            verifier, agent = (
+                cached[0].model_copy(deep=True),
+                cached[1].model_copy(deep=True) if cached[1] is not None else None,
+            )
+        current = self._descriptor.image
+        if current is None or self._descriptor.security is None:
+            raise RuntimeError("Docker verifier image identity is unavailable")
+        if (
+            verifier.resolved_image_id != current.resolved_image_id
+            or verifier.os != current.os
+            or verifier.architecture != current.architecture
+            or verifier.effective_user != current.effective_user
+            or verifier.observed_uid in {None, 0}
+            or verifier.observed_gid is None
+            or verifier.iverilog_version is None
+            or verifier.vvp_version is None
+        ):
+            raise DockerImageError(
+                "cached Docker verifier observations do not match the immutable image",
+                subreason="image_observation_cache_invalid",
+            )
+        if (self._agent_image is None) != (agent is None):
+            raise DockerImageError(
+                "cached Docker role observations are incomplete",
+                subreason="image_observation_cache_invalid",
+            )
+        if agent is not None and self._agent_image is not None:
+            if (
+                agent.resolved_image_id != self._agent_image.resolved_image_id
+                or agent.os != self._agent_image.os
+                or agent.architecture != self._agent_image.architecture
+                or agent.effective_user != self._agent_image.effective_user
+                or agent.observed_uid in {None, 0}
+                or agent.observed_gid is None
+                or agent.compatibility_status is None
+            ):
+                raise DockerImageError(
+                    "cached Docker external-agent observations do not match the immutable image",
+                    subreason="image_observation_cache_invalid",
+                )
+            self._agent_image = agent
+        self._descriptor.image = verifier
+        self._descriptor.security = self._descriptor.security.model_copy(
+            update={
+                "observed_uid": verifier.observed_uid,
+                "observed_gid": verifier.observed_gid,
+            }
+        )
+        return True
 
     def _probe_image(self) -> None:
         if self._descriptor.image is None:
@@ -293,6 +446,99 @@ class DockerRuntime(Runtime):
             finally:
                 session.close()
 
+    def _probe_agent_image(self) -> None:
+        if self._agent_image is None or self._run_id is None:
+            raise RuntimeError("Docker external-agent image identity is unavailable")
+        external = self._require_config().external_agent
+        if external is None:
+            raise RuntimeError("Docker external-agent configuration is unavailable")
+        probe_config = _external_agent_as_runtime_config(external).model_copy(
+            update={"max_command_time_s": 10}
+        )
+        with tempfile.TemporaryDirectory(prefix="verigym-docker-agent-probe-") as temporary:
+            session = DockerRuntimeSession(
+                spec=SessionSpec(
+                    source_dir=str(Path(temporary)),
+                    label="diagnostic",
+                    max_output_bytes=128 * 1024,
+                ),
+                engine=self._get_engine(),
+                config=probe_config,
+                image=self._agent_image,
+                run_id=self._run_id,
+                owner=self,
+            )
+            self._sessions.append(session)
+            try:
+                uid_result = session.execute(CommandSpec(argv=["id", "-u"], timeout_s=10))
+                gid_result = session.execute(CommandSpec(argv=["id", "-g"], timeout_s=10))
+                version = session.execute(
+                    CommandSpec(
+                        argv=[external.expected_executable_name, "--version"],
+                        timeout_s=10,
+                    )
+                )
+                binary_hash = session.execute(
+                    CommandSpec(
+                        argv=[
+                            "sha256sum",
+                            f"../{external.expected_executable_path.lstrip('/')}",
+                        ],
+                        timeout_s=10,
+                    )
+                )
+                for name, result in (
+                    ("id -u", uid_result),
+                    ("id -g", gid_result),
+                    (f"{external.expected_executable_name} --version", version),
+                    ("external-agent executable SHA-256", binary_hash),
+                ):
+                    if (
+                        result.error
+                        or result.timed_out
+                        or result.oom_killed
+                        or result.output_truncated
+                        or result.exit_code != 0
+                    ):
+                        raise DockerImageError(
+                            f"Docker external-agent image health command failed: {name}",
+                            subreason="agent_image_health_failed",
+                        )
+                uid = int(uid_result.stdout.strip())
+                gid = int(gid_result.stdout.strip())
+                version_output = version.stdout.strip()
+                observed_binary_hash = binary_hash.stdout.partition(" ")[0].strip()
+                if (
+                    uid == 0
+                    or version_output != external.expected_executable_version
+                    or observed_binary_hash != external.expected_executable_sha256
+                ):
+                    raise DockerImageError(
+                        "Docker external-agent image identity is invalid",
+                        subreason="agent_image_identity_invalid",
+                    )
+                raw = self._get_engine().inspect_image(self._agent_image.resolved_image_id)
+                raw_config = raw.get("Config") if isinstance(raw, dict) else None
+                labels = raw_config.get("Labels") if isinstance(raw_config, dict) else None
+                labels = labels if isinstance(labels, dict) else {}
+                if any(
+                    labels.get(key) != value
+                    for key, value in external.required_image_labels.items()
+                ):
+                    raise DockerImageError(
+                        "Docker external-agent image lacks required immutable identity labels",
+                        subreason="agent_image_labels_invalid",
+                    )
+                self._agent_image = self._agent_image.model_copy(
+                    update={
+                        "observed_uid": uid,
+                        "observed_gid": gid,
+                        "compatibility_status": version_output,
+                    }
+                )
+            finally:
+                session.close()
+
     def health_check(self) -> HealthCheckResult:
         temporary_engine = self._engine is None
         engine: DockerEngine = self._engine or DockerCliEngine()
@@ -335,6 +581,8 @@ class DockerRuntime(Runtime):
             engine=self._get_engine(),
             config=self._require_config(),
             image=self._descriptor.image,
+            agent_config=self._require_config().external_agent,
+            agent_image=self._agent_image,
             run_id=self._run_id,
             owner=self,
         )
@@ -356,6 +604,20 @@ class DockerRuntime(Runtime):
             "docker_resources": (
                 descriptor.resources.model_dump(mode="json") if descriptor.resources else None
             ),
+            "docker_role_images": {
+                "verifier": (
+                    descriptor.image.model_dump(mode="json") if descriptor.image else None
+                ),
+                "external_agent": (
+                    self._agent_image.model_dump(mode="json") if self._agent_image else None
+                ),
+            },
+            "external_agent_execution_backend": (
+                "docker_outer_runtime_delegated"
+                if self._agent_image is not None
+                else "runtime_external_process_unavailable"
+            ),
+            "image_observation_source": self._image_observation_source,
         }
 
     def close(self) -> None:
@@ -384,12 +646,16 @@ class DockerRuntime(Runtime):
                 update={"complete": complete}
             )
 
-    def session_registered(self, session_id: str, role: str) -> None:
-        assert self._descriptor.image is not None
+    def session_registered(
+        self,
+        session_id: str,
+        role: str,
+        resolved_image_id: str,
+    ) -> None:
         self._session_records[session_id] = RuntimeSessionRecord(
             session_id=session_id,
             role=role,
-            resolved_image_id=self._descriptor.image.resolved_image_id,
+            resolved_image_id=resolved_image_id,
         )
 
     def container_registered(self, session_id: str, container_id: str) -> None:
@@ -438,6 +704,28 @@ def _extract_version(output: str) -> str | None:
     return next(
         (line.strip() for line in output.splitlines() if _VERSION_LINE.search(line.strip())),
         None,
+    )
+
+
+def _external_agent_as_runtime_config(
+    config: DockerExternalAgentRuntimeConfig,
+) -> DockerRuntimeConfig:
+    return DockerRuntimeConfig(
+        image=config.image,
+        expected_image_id=config.expected_image_id,
+        pull_policy=config.pull_policy,
+        network_mode="none",
+        run_as_user=config.run_as_user,
+        read_only_rootfs=True,
+        memory_bytes=config.memory_bytes,
+        cpus=config.cpus,
+        pids_limit=config.pids_limit,
+        tmpfs_bytes=config.tmpfs_bytes,
+        stop_timeout_s=config.stop_timeout_s,
+        max_command_time_s=config.max_process_time_s,
+        max_artifact_file_bytes=16 * 1024 * 1024,
+        max_artifact_bytes=64 * 1024 * 1024,
+        environment_allowlist=[],
     )
 
 

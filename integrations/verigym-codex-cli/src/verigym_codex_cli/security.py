@@ -203,43 +203,69 @@ def sandbox_backend_failure(stdout: str, stderr: str) -> str | None:
     return None
 
 
-def validate_external_events(parsed: ParsedEventStream, workspace: Path) -> None:
-    root = workspace.resolve(strict=True)
+def validate_external_events(
+    parsed: ParsedEventStream,
+    workspace: Path,
+    *,
+    logical_workspace: bool = False,
+) -> None:
+    """Validate events against either a host path or a runtime-logical path.
+
+    Docker event paths are expressed in the container's ``/workspace`` namespace.
+    Resolving that path on the host would both conflate namespaces and require an
+    unrelated host directory to exist. Logical validation is therefore lexical and
+    fail-closed; host-local validation retains symlink-aware filesystem resolution.
+    """
+
+    if logical_workspace:
+        logical_root = PurePosixPath(workspace.as_posix())
+        if not logical_root.is_absolute() or ".." in logical_root.parts:
+            raise CodexPolicyError("runtime logical workspace root is invalid")
+        root = workspace
+    else:
+        root = workspace.resolve(strict=True)
     for event in parsed.events:
         if event.category in {"file_read", "file_write"}:
             path = event.payload.get("path")
             if isinstance(path, str) and path:
-                _validate_event_path(path, root)
+                _validate_event_path(path, root, logical_workspace=logical_workspace)
         if event.category == "patch_applied":
             paths = event.payload.get("paths")
             if isinstance(paths, list):
                 for path in paths:
                     if isinstance(path, str) and path:
-                        _validate_event_path(path, root)
+                        _validate_event_path(path, root, logical_workspace=logical_workspace)
         if event.category in {"command_started", "command_completed"}:
             command = event.payload.get("command")
             if isinstance(command, str) and command:
-                _validate_command(command, root)
+                _validate_command(command, root, logical_workspace=logical_workspace)
         if event.category == "tool_call":
             tool = str(event.payload.get("tool") or "unknown")
             raise CodexPolicyError(f"external network, MCP, or unknown tool is forbidden: {tool}")
 
 
-def _validate_event_path(raw: str, root: Path) -> None:
+def _validate_event_path(raw: str, root: Path, *, logical_workspace: bool) -> None:
     if "\x00" in raw:
         raise CodexPolicyError("CLI event contains a NUL path")
+    if logical_workspace and "\\" in raw:
+        raise CodexPolicyError("CLI event contains a non-POSIX runtime path")
+    normalized = PurePosixPath(raw.replace("\\", "/"))
+    if any(part == ".." for part in normalized.parts):
+        raise CodexPolicyError("CLI event reports parent-path traversal")
+    if logical_workspace:
+        logical_root = PurePosixPath(root.as_posix())
+        if normalized.is_absolute() and not normalized.is_relative_to(logical_root):
+            raise CodexPolicyError("CLI event reports access outside the visible workspace")
+        return
     path = Path(raw)
     if path.is_absolute():
         resolved = path.resolve(strict=False)
         if not resolved.is_relative_to(root):
             raise CodexPolicyError("CLI event reports access outside the visible workspace")
         return
-    normalized = PurePosixPath(raw.replace("\\", "/"))
-    if any(part == ".." for part in normalized.parts):
-        raise CodexPolicyError("CLI event reports parent-path traversal")
 
 
-def _validate_command(command: str, root: Path) -> None:
+def _validate_command(command: str, root: Path, *, logical_workspace: bool) -> None:
     lowered = command.lower()
     if any(
         marker in lowered
@@ -272,7 +298,11 @@ def _validate_command(command: str, root: Path) -> None:
         nested = False
         for index, token in enumerate(tokens[:-1]):
             if token in {"-c", "-lc"}:
-                _validate_command(tokens[index + 1], root)
+                _validate_command(
+                    tokens[index + 1],
+                    root,
+                    logical_workspace=logical_workspace,
+                )
                 nested = True
                 break
         if not nested:
@@ -292,14 +322,14 @@ def _validate_command(command: str, root: Path) -> None:
             expect_redirection_target = True
             continue
         if expect_redirection_target:
-            _validate_command_path(token, root)
+            _validate_command_path(token, root, logical_workspace=logical_workspace)
             expect_redirection_target = False
             continue
         if expect_command and not token.startswith(("-", ">", "<")):
             commands.append(Path(token).name)
             expect_command = False
             continue
-        _validate_command_path(token, root)
+        _validate_command_path(token, root, logical_workspace=logical_workspace)
     if any(name in _NETWORK_COMMANDS for name in commands):
         raise CodexPolicyError("network-capable external command is forbidden")
     if redirection_seen and "printf" in commands:
@@ -334,7 +364,7 @@ def _glob_variants(pattern: str) -> set[str]:
     return variants
 
 
-def _validate_command_path(token: str, root: Path) -> None:
+def _validate_command_path(token: str, root: Path, *, logical_workspace: bool) -> None:
     value = token.split("=", 1)[-1] if "=" in token else token
     if not value or value.startswith("-"):
         return
@@ -344,6 +374,14 @@ def _validate_command_path(token: str, root: Path) -> None:
     if any(part == ".." for part in normalized.parts):
         raise CodexPolicyError("external command contains parent-path traversal")
     if not normalized.is_absolute() and "/" not in value:
+        return
+    if logical_workspace:
+        if "\\" in value:
+            raise CodexPolicyError("external command contains a non-POSIX runtime path")
+        logical_root = PurePosixPath(root.as_posix())
+        logical_candidate = normalized if normalized.is_absolute() else logical_root / normalized
+        if not logical_candidate.is_relative_to(logical_root):
+            raise CodexPolicyError("external command names a path outside the visible workspace")
         return
     candidate = Path(value)
     resolved = (

@@ -120,4 +120,65 @@ def sanitized_invocation(
     }
 
 
-__all__ = ["build_exec_arguments", "sanitized_invocation"]
+def sanitized_runtime_invocation(
+    settings: CodexSettings,
+    capabilities: CapabilityReport,
+    *,
+    working_directory_policy: str,
+) -> dict[str, object]:
+    """Describe the app-server/remote-environment path without host paths."""
+
+    return {
+        "schema_version": "1.0",
+        "argv": ["<runtime-owned-codex>", "app-server", "--listen", "stdio://"],
+        "stdin_protocol": "jsonrpc_v2",
+        "machine_event_protocol": "codex_app_server_notifications_v2",
+        "remote_environment_protocol": "codex_exec_server_stdio_v1",
+        "working_directory_policy": working_directory_policy,
+        "logical_workspace_root": "/workspace",
+        "execution_owner": "verigym_runtime",
+        "execution_backend": "docker_outer_runtime_delegated",
+        "sandbox_policy": "outer_runtime_delegated",
+        "sandbox_backend": settings.sandbox_backend,
+        "sandbox_backend_source": settings.sandbox_backend_source,
+        "approval_policy": "never",
+        "auth_mode_label": settings.auth_mode_label,
+        "requested_auth_mode": settings.requested_auth_mode,
+        "resolved_auth_mode": settings.resolved_auth_mode,
+        "auth_semantic_id": settings.auth_semantic_id,
+        "auth_alias_used": settings.auth_alias_used,
+        "requested_reasoning_effort": settings.requested_reasoning_effort,
+        "effective_reasoning_effort": settings.effective_reasoning_effort,
+        "reasoning_effort_source": settings.reasoning_effort_source,
+        "inherited_reasoning_effort_allowed": False,
+        "credential_values_persisted": False,
+        "proxy_values_persisted": False,
+        "allow_proxy_environment": settings.allow_proxy_environment,
+        "forwarded_proxy_environment_names": list(settings.forwarded_proxy_environment_names),
+        "container_proxy_environment_names": [],
+        "container_credential_environment_names": [],
+        "shell": False,
+        "new_process_session": True,
+        "requested_process_timeout_s": settings.requested_process_timeout_s,
+        "effective_process_timeout_s": settings.effective_process_timeout_s,
+        "timeout_s": settings.effective_process_timeout_s,
+        "max_output_bytes": settings.max_output_bytes,
+        "execution_surface": "codex_cli",
+        "tool_availability_policy": settings.tool_availability_policy,
+        "tool_use_policy": settings.tool_use_policy,
+        "host_executable_sha256": capabilities.executable_sha256,
+        "capability_fingerprint": capabilities.capability_fingerprint,
+        "user_config_modified": False,
+        "project_instructions_enabled": False,
+        "skills_instructions_enabled": False,
+        "plugins_enabled": False,
+        "web_search_enabled": False,
+        "mcp_servers_enabled": False,
+    }
+
+
+__all__ = [
+    "build_exec_arguments",
+    "sanitized_invocation",
+    "sanitized_runtime_invocation",
+]

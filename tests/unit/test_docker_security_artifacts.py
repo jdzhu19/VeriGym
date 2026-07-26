@@ -50,6 +50,8 @@ def test_security_arguments_have_no_unsafe_escape_hatches() -> None:
     )
     joined = " ".join(arguments)
     assert "--network none" in joined
+    assert "--pid" not in arguments
+    assert "--ipc none" in joined
     assert "--read-only" in arguments
     assert "--cap-drop ALL" in joined
     assert "--security-opt no-new-privileges:true" in joined
@@ -68,6 +70,8 @@ def _effective_payload(root: Path, config: DockerRuntimeConfig) -> dict[str, obj
             "CapDrop": ["ALL"],
             "SecurityOpt": ["no-new-privileges:true"],
             "Init": True,
+            "PidMode": "",
+            "IpcMode": "none",
             "Memory": config.memory_bytes,
             "MemorySwap": config.memory_bytes,
             "NanoCpus": round(config.cpus * 1_000_000_000),

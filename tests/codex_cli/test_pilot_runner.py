@@ -131,7 +131,19 @@ def test_only_shared_external_categories_stop_future_launches() -> None:
     assert runner._shared_external_prerequisite_failure(timeout) is None
 
 
-def test_observed_outside_editable_workspace_mutation_is_security_infrastructure(
+def test_chatgpt_session_execution_rejects_api_key_environment_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _runner()
+    for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "VERIGYM_CODEX_CREDENTIAL_ENV"):
+        monkeypatch.delenv(name, raising=False)
+    runner._require_no_api_key_environment()
+    monkeypatch.setenv("OPENAI_API_KEY", "value-must-not-be-read")
+    with pytest.raises(SystemExit, match="OPENAI_API_KEY"):
+        runner._require_no_api_key_environment()
+
+
+def test_contained_workspace_policy_mutation_is_evaluable_not_a_boundary_escape(
     tmp_path: Path,
 ) -> None:
     runner = _runner()
@@ -154,6 +166,43 @@ def test_observed_outside_editable_workspace_mutation_is_security_infrastructure
             status="failed",
             infrastructure=False,
             category="workspace_policy",
+        ),
+    )
+    assert runner._actual_security_breach(result) is False
+    assert runner._is_infrastructure(result) is False
+
+
+def test_incomplete_outer_runtime_security_evidence_is_a_security_breach(
+    tmp_path: Path,
+) -> None:
+    runner = _runner()
+    artifact_root = tmp_path / "artifacts" / "codex_cli"
+    artifact_root.mkdir(parents=True)
+    (artifact_root / "runtime_process.json").write_text(
+        json.dumps(
+            {
+                "cleanup_complete": False,
+                "runtime_identity": {
+                    "execution_owner": "verigym_runtime",
+                    "execution_backend": "docker_outer_runtime_delegated",
+                    "agent_image_id": "sha256:" + "a" * 64,
+                    "verifier_image_id": "sha256:" + "b" * 64,
+                },
+                "security": {
+                    "boundary": "docker_outer_runtime",
+                    "network_mode": "none",
+                    "effective_controls_verified": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = SimpleNamespace(
+        run_dir=tmp_path,
+        scorecard=_score(
+            status="failed",
+            infrastructure=False,
+            category="runtime_security_controls",
         ),
     )
     assert runner._actual_security_breach(result) is True
@@ -193,6 +242,56 @@ def test_noncanonical_pass_at_k_is_null_not_fallback() -> None:
         "2": 1.0,
         "3": 1.0,
     }
+
+
+def test_track_metrics_report_pass_at_one_two_and_three() -> None:
+    runner = _runner()
+    records = [
+        {
+            "track": "codex_cli_external_agent",
+            "launched": True,
+            "terminal": True,
+            "evaluable": True,
+            "resolved": False,
+            "compile_status": "failed",
+            "hidden_regression_status": "not_run",
+            "infrastructure_error": False,
+            "typed_tool_policy_passed": True,
+            "external_total_tokens": None,
+            "wall_time_s": 1.0,
+        }
+        for _ in range(15)
+    ]
+    partitions = [
+        {
+            "integration_track": "codex_cli_external_agent",
+            "values": {"1": 1 / 3, "2": 2 / 3, "3": 1.0},
+        }
+        for _ in range(5)
+    ]
+    metrics = runner._track_metrics(records, partitions)
+    assert metrics == [
+        {
+            "integration_track": "codex_cli_external_agent",
+            "planned_count": 15,
+            "launched_count": 15,
+            "terminal_count": 15,
+            "evaluable_count": 15,
+            "resolved_count": 0,
+            "compile_pass_count": 0,
+            "hidden_test_pass_count": 0,
+            "infrastructure_failure_count": 0,
+            "infrastructure_failure_rate": 0.0,
+            "typed_tool_policy_failure_count": 0,
+            "known_usage_count": 0,
+            "missing_usage_count": 15,
+            "wall_time_total_s": 15.0,
+            "wall_time_mean_s": 1.0,
+            "pass_at_1_macro": pytest.approx(1 / 3),
+            "pass_at_2_macro": pytest.approx(2 / 3),
+            "pass_at_3_macro": 1.0,
+        }
+    ]
 
 
 def test_historical_track_a_forensic_summary_preserves_all_fifteen_outcomes() -> None:

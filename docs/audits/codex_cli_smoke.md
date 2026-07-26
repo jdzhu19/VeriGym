@@ -66,6 +66,26 @@ BLOCKED or FAIL campaign into a PASS.
 | `aeaa1797075d89579f184ab53743cfe5a4557cdc` | FAIL | The sealed campaign correctly failed its then-current Track A zero-tool rule after one run emitted six CLI tool events. |
 | `1deea550815603f72f68887b8db3577ea9c72462` | PASS | Track A was truthfully reclassified as a read-only agent and the bounded final campaign passed semantic conformance. |
 
+## Historical VerilogEval pilot evidence
+
+The first 30-item pilot at `9a84c60e7b78b10c5ed8a89ec3b2eef23cd328ff`
+remains **FAIL**. It launched 21 unique processes, recorded 21 integrity-verified
+and replayed outcomes, and left nine items unlaunched when the then-current
+circuit breaker fired. Its outcomes must not be appended to or pooled with a
+new pilot. The sealed bundle is
+`verigym-codex-cli-verilog-eval-pilot-9a84c60-JmLJsywy`.
+
+The forensic-repair campaign ending at
+`d27aa8ad1881178fd12745c0be28fa85bea374f7` remains **BLOCKED**. Two bounded
+diagnostic probes showed that the host kernel could provide neither the Codex
+bubblewrap user-namespace backend nor legacy Landlock; no final 30-run plan was
+executed. No credential or sandbox escape occurred. Its sealed bundle is
+`verigym-verilogeval-blocked-d27aa8a-Dz2mSPG5`.
+
+The Docker runtime-owned design in ADR 0012 is a new execution identity. Its
+results, if executed, remain separate from both historical bundles and from the
+semantic-baseline four-run smoke.
+
 The sealed `aeaa179` bundle remains
 `verigym-autonomous-codex-conformance-aeaa1797075d89579f184ab53743cfe5a4557cdc-20260726T034607Z`;
 its audit-manifest hash is
@@ -109,9 +129,10 @@ Its protected, unexecuted 30-item VerilogEval plan used source
 `432b712cea110d4b5d35521f691db1bc3e726a77c6fc72fc1c916a85361ddbf2`, and plan hash
 `c6d6f46e4bba4a7c5e21e9eb805e5d0a5d7878051f3774f2d467f0f372936354`.
 
-## Deferred scope
+## Scope boundary
 
-The prepared 30-run VerilogEval pilot remains unexecuted. No direct API evaluation or other
-Milestone 10 work is part of this baseline.
+Any Docker-backed 30-run pilot is a separately sealed campaign and does not
+alter this semantic baseline or its historical verdicts. Direct API evaluation
+and other Milestone 10 work remain unimplemented and outside this index.
 
 CODEX CLI SEMANTIC CONFORMANCE BASELINE: PASS

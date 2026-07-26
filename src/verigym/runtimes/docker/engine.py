@@ -51,6 +51,8 @@ class DockerEngine(Protocol):
         self, container_id: str, *, timeout_s: int, max_output_bytes: int
     ) -> EngineResult: ...
 
+    def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]: ...
+
     def kill_container(self, container_id: str) -> EngineResult: ...
 
     def remove_container(self, container_id: str, *, force: bool = True) -> EngineResult: ...
@@ -284,6 +286,53 @@ class DockerCliEngine:
             timeout_s=timeout_s,
             max_output_bytes=max_output_bytes,
         )
+
+    def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]:
+        """Attach a bounded-protocol broker to an interactive managed container."""
+
+        if self._closed:
+            raise DockerUnavailableError(
+                "Docker CLI transport is closed",
+                subreason="backend_closed",
+            )
+        if self.executable is None:
+            raise DockerUnavailableError(
+                "Docker CLI is not installed or is not on PATH",
+                subreason="missing_cli",
+            )
+        environment = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        try:
+            return subprocess.Popen(
+                [
+                    self.executable,
+                    "start",
+                    "--attach",
+                    "--interactive",
+                    container_id,
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                shell=False,
+                text=False,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except FileNotFoundError as exc:
+            raise DockerUnavailableError(
+                "Docker CLI disappeared before streaming attach",
+                subreason="missing_cli",
+            ) from exc
+        except OSError as exc:
+            raise DockerUnavailableError(
+                sanitize_diagnostic(f"Docker streaming attach could not start: {exc}"),
+                subreason="cli_launch_failed",
+            ) from exc
 
     def kill_container(self, container_id: str) -> EngineResult:
         return self._invoke(["kill", container_id], timeout_s=10)

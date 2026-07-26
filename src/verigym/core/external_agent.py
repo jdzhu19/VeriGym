@@ -17,6 +17,8 @@ from verigym.runtimes.base import RuntimeSession
 from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalAgentCallIdentity,
+    ExternalProcessRequest,
+    ExternalProcessResult,
 )
 from verigym.schemas.options import JsonValue
 
@@ -70,6 +72,17 @@ class RuntimeExternalAgentBridge:
     @property
     def readonly_globs(self) -> tuple[str, ...]:
         return self._policy.readonly_globs
+
+    @property
+    def execution_backend(self) -> str:
+        return self._session.external_process_backend
+
+    @property
+    def logical_workspace_root(self) -> str:
+        return self._session.logical_workspace_root
+
+    def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+        return self._session.execute_external_process(request)
 
     @property
     def accounting(self) -> ExternalAgentAccounting | None:

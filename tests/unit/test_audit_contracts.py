@@ -95,7 +95,9 @@ def _write_test_archives(
             "verigym-0.1.0/pyproject.toml": b"[project]\nname='verigym'\n",
             "verigym-0.1.0/.github/workflows/ci.yml": b"name: test\n",
             "verigym-0.1.0/build_backend/verigym_build_backend.py": b"",
+            "verigym-0.1.0/docker/codex-exec-server/SOURCE_IDENTITIES": b"",
             "verigym-0.1.0/examples/plugins/conformance/pyproject.toml": b"",
+            "verigym-0.1.0/scripts/build_codex_agent_image.sh": b"",
             "verigym-0.1.0/scripts/run_release_audit.py": b"",
             (
                 "verigym-0.1.0/tests/fixtures/verilog_eval_v2_synthetic/VERIGYM_SYNTHETIC_FIXTURE"

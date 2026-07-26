@@ -17,6 +17,7 @@ _BEARER = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}")
 _API_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
 _AUTH_HEADER = re.compile(r"(?i)(authorization[\"'=:\s]+)[^\s,\"'}]+")
 _PROXY_CREDENTIAL = re.compile(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@")
+_ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _SAFE_USAGE_KEYS = {
     "input_tokens",
     "output_tokens",
@@ -31,6 +32,21 @@ _SAFE_REASONING_IDENTITIES = {
     "requested_reasoning_effort": {"xhigh"},
     "effective_reasoning_effort": {"xhigh"},
     "reasoning_effort_source": {"verigym_explicit_cli_override"},
+}
+_SAFE_SECURITY_BOOLEAN_KEYS = {
+    "api_key_environment_forwarded",
+    "credential_contents_accessed_by_verigym",
+    "credential_files_mounted",
+    "credential_values_persisted",
+}
+_SAFE_SECURITY_COUNT_KEYS = {
+    "credential_files_copied",
+}
+_SAFE_ENVIRONMENT_NAME_KEYS = {
+    "container_credential_environment_names",
+    "credential_environment_names_in_container",
+    "environment_names",
+    "proxy_environment_names_in_container",
 }
 
 
@@ -91,8 +107,21 @@ def redact_value(value: Any, *, roots: tuple[Path, ...] = ()) -> Any:
             safe_usage = lowered in _SAFE_USAGE_KEYS and (
                 item is None or (isinstance(item, int) and not isinstance(item, bool) and item >= 0)
             )
-            safe_persistence_assertion = lowered == "credential_values_persisted" and isinstance(
+            safe_security_boolean = lowered in _SAFE_SECURITY_BOOLEAN_KEYS and isinstance(
                 item, bool
+            )
+            safe_security_count = (
+                lowered in _SAFE_SECURITY_COUNT_KEYS
+                and isinstance(item, int)
+                and not isinstance(item, bool)
+                and item >= 0
+            )
+            safe_environment_name_evidence = (
+                lowered in _SAFE_ENVIRONMENT_NAME_KEYS
+                and isinstance(item, list)
+                and all(
+                    isinstance(name, str) and _ENVIRONMENT_NAME.fullmatch(name) for name in item
+                )
             )
             safe_reasoning_identity = (
                 lowered in _SAFE_REASONING_IDENTITIES
@@ -101,7 +130,9 @@ def redact_value(value: Any, *, roots: tuple[Path, ...] = ()) -> Any:
             )
             if (
                 not safe_usage
-                and not safe_persistence_assertion
+                and not safe_security_boolean
+                and not safe_security_count
+                and not safe_environment_name_evidence
                 and not safe_reasoning_identity
                 and any(
                     part in lowered

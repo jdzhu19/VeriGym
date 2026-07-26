@@ -94,6 +94,8 @@ class RecordingDockerEngine:
                     "CapDrop": [_option_value(arguments, "--cap-drop")],
                     "SecurityOpt": [_option_value(arguments, "--security-opt")],
                     "Init": "--init" in arguments,
+                    "PidMode": "",
+                    "IpcMode": _option_value(arguments, "--ipc"),
                     "Memory": int(_option_value(arguments, "--memory")),
                     "MemorySwap": int(_option_value(arguments, "--memory-swap")),
                     "NanoCpus": round(float(_option_value(arguments, "--cpus")) * 1e9),
@@ -253,6 +255,12 @@ def test_runtime_resolves_once_and_uses_same_image_for_distinct_sessions(tmp_pat
     agent = runtime.create_session(SessionSpec(source_dir=str(source), label="agent"))
     verifier = runtime.create_session(SessionSpec(source_dir=str(source), label="verifier"))
     try:
+        assert agent.external_process_backend == "runtime_external_process_unavailable"
+        assert agent.logical_workspace_root == "/workspace"
+        assert (
+            runtime.environment_summary()["external_agent_execution_backend"]
+            == "runtime_external_process_unavailable"
+        )
         result = agent.execute(CommandSpec(argv=["/usr/bin/example-tool"], timeout_s=5))
         verifier_result = verifier.execute(CommandSpec(argv=["example-tool"], timeout_s=5))
         assert result.argv == ["example-tool"]

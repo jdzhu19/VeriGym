@@ -60,6 +60,8 @@ def security_arguments(
     arguments = [
         "--network",
         "none",
+        "--ipc",
+        "none",
         "--read-only",
         "--tmpfs",
         f"/tmp:rw,noexec,nosuid,nodev,size={config.tmpfs_bytes},mode=1777",
@@ -112,9 +114,11 @@ def verify_effective_container(
         failures.append("no-new-privileges")
     if host.get("Init") is not True:
         failures.append("init/reaping")
-    if host.get("PidMode") == "host":
+    # Docker's default empty PidMode is a private PID namespace. Docker 23
+    # rejects the otherwise intuitive explicit spelling `--pid private`.
+    if host.get("PidMode") != "":
         failures.append("private PID namespace")
-    if host.get("IpcMode") == "host":
+    if host.get("IpcMode") != "none":
         failures.append("private IPC namespace")
     if host.get("UsernsMode") == "host":
         failures.append("private user namespace policy")
