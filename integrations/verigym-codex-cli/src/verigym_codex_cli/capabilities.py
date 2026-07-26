@@ -39,6 +39,9 @@ class CapabilityReport:
     approval_flag: str | None
     config_flag: str
     skip_git_flag: str
+    strict_config_flag: str
+    ignore_user_config_flag: str
+    ignore_rules_flag: str
     stdin_prompt_supported: bool
     supported_sandbox_modes: tuple[str, ...]
     supported_approval_modes: tuple[str, ...]
@@ -64,6 +67,9 @@ class CapabilityReport:
             "approval_flag": self.approval_flag,
             "config_flag": self.config_flag,
             "skip_git_flag": self.skip_git_flag,
+            "strict_config_flag": self.strict_config_flag,
+            "ignore_user_config_flag": self.ignore_user_config_flag,
+            "ignore_rules_flag": self.ignore_rules_flag,
             "stdin_prompt_supported": self.stdin_prompt_supported,
             "supported_sandbox_modes": list(self.supported_sandbox_modes),
             "supported_approval_modes": list(self.supported_approval_modes),
@@ -110,6 +116,21 @@ def discover_capabilities(
         "--skip-git-repo-check",
         "non-project working directories",
     )
+    strict_config_flag = _required_flag(
+        normalized_exec_help,
+        "--strict-config",
+        "strict configuration validation",
+    )
+    ignore_user_config_flag = _required_flag(
+        normalized_exec_help,
+        "--ignore-user-config",
+        "user configuration isolation",
+    )
+    ignore_rules_flag = _required_flag(
+        normalized_exec_help,
+        "--ignore-rules",
+        "exec-policy rule isolation",
+    )
     approval_flag = (
         "--ask-for-approval"
         if "--ask-for-approval" in normalized_exec_help
@@ -143,6 +164,9 @@ def discover_capabilities(
         "approval_flag": approval_flag,
         "config_flag": config_flag,
         "skip_git_flag": skip_git_flag,
+        "strict_config_flag": strict_config_flag,
+        "ignore_user_config_flag": ignore_user_config_flag,
+        "ignore_rules_flag": ignore_rules_flag,
         "stdin_prompt_supported": True,
         "supported_sandbox_modes": sandbox_modes,
         "supported_approval_modes": approval_modes,
@@ -216,6 +240,9 @@ def _report_from_dict(payload: dict[str, Any]) -> CapabilityReport:
             approval_flag=(str(payload["approval_flag"]) if payload.get("approval_flag") else None),
             config_flag=str(payload["config_flag"]),
             skip_git_flag=str(payload["skip_git_flag"]),
+            strict_config_flag=str(payload["strict_config_flag"]),
+            ignore_user_config_flag=str(payload["ignore_user_config_flag"]),
+            ignore_rules_flag=str(payload["ignore_rules_flag"]),
             stdin_prompt_supported=payload["stdin_prompt_supported"] is True,
             supported_sandbox_modes=tuple(str(item) for item in payload["supported_sandbox_modes"]),
             supported_approval_modes=tuple(
@@ -237,6 +264,9 @@ def _report_from_dict(payload: dict[str, Any]) -> CapabilityReport:
         or not report.stdin_prompt_supported
         or report.machine_output_flag != "--json"
         or report.non_interactive_command != "exec"
+        or report.strict_config_flag != "--strict-config"
+        or report.ignore_user_config_flag != "--ignore-user-config"
+        or report.ignore_rules_flag != "--ignore-rules"
         or "read-only" not in report.supported_sandbox_modes
         or "workspace-write" not in report.supported_sandbox_modes
     ):
@@ -268,6 +298,9 @@ def _normalize_help(text: str) -> str:
                 "--ask-for-approval",
                 "--config",
                 "--skip-git-repo-check",
+                "--strict-config",
+                "--ignore-user-config",
+                "--ignore-rules",
                 "stdin",
                 "prompt",
                 "read-only",

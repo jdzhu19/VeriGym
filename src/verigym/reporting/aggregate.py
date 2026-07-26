@@ -68,6 +68,16 @@ _GROUP_DIMENSIONS = {
     "auth_alias_used",
     "sandbox_policy",
     "approval_policy",
+    "execution_surface",
+    "interaction_class",
+    "harness_id",
+    "model_client_kind",
+    "agent_harness_kind",
+    "tool_availability_policy",
+    "tool_use_policy",
+    "chat_eval_compatible",
+    "pure_api_model_eval",
+    "direct_api_benchmark",
 }
 
 
@@ -212,10 +222,18 @@ class ReportBuilder:
                 ),
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
                 "codex_cli_comparison_policy": (
-                    "tracks, executable versions, capability fingerprints, and "
-                    "authentication semantic IDs remain distinct; requested authentication "
-                    "labels are provenance only"
+                    "execution surface, interaction class, harness, tool policy, tracks, "
+                    "executable versions, capability fingerprints, and authentication semantic "
+                    "IDs remain distinct; requested authentication labels are provenance only"
                 ),
+                "direct_llm_api_evaluation": {
+                    "implemented": False,
+                    "executed": False,
+                    "reason": (
+                        "no direct API credential/transport was authorized; "
+                        "Codex CLI is an agent harness"
+                    ),
+                },
                 "combined_correctness_scope": (
                     "unavailable_for_mixed_release_or_correctness_partitions"
                     if mixed_correctness_scope
@@ -658,6 +676,11 @@ def _sampling(
                 identity.get("reasoning_effort_source", ""),
                 identity.get("inherited_reasoning_effort_allowed", ""),
                 _auth_comparison_identity(identity),
+                identity.get("execution_surface", ""),
+                identity.get("interaction_class", ""),
+                identity.get("harness_id", ""),
+                identity.get("tool_availability_policy", ""),
+                identity.get("tool_use_policy", ""),
             )
             for run in present
             if (identity := _run_codex_identity(run))
@@ -1082,6 +1105,16 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
         "auth_alias_used": codex.get("auth_alias_used", ""),
         "sandbox_policy": codex.get("sandbox_policy", ""),
         "approval_policy": codex.get("approval_policy", ""),
+        "execution_surface": codex.get("execution_surface", ""),
+        "interaction_class": codex.get("interaction_class", ""),
+        "harness_id": codex.get("harness_id", ""),
+        "model_client_kind": codex.get("model_client_kind", ""),
+        "agent_harness_kind": codex.get("agent_harness_kind", ""),
+        "tool_availability_policy": codex.get("tool_availability_policy", ""),
+        "tool_use_policy": codex.get("tool_use_policy", ""),
+        "chat_eval_compatible": codex.get("chat_eval_compatible", ""),
+        "pure_api_model_eval": codex.get("pure_api_model_eval", ""),
+        "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
     }
     return values[dimension]
 
@@ -1120,6 +1153,16 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "auth_alias_used": codex.get("auth_alias_used", ""),
         "sandbox_policy": codex.get("sandbox_policy", ""),
         "approval_policy": codex.get("approval_policy", ""),
+        "execution_surface": codex.get("execution_surface", ""),
+        "interaction_class": codex.get("interaction_class", ""),
+        "harness_id": codex.get("harness_id", ""),
+        "model_client_kind": codex.get("model_client_kind", ""),
+        "agent_harness_kind": codex.get("agent_harness_kind", ""),
+        "tool_availability_policy": codex.get("tool_availability_policy", ""),
+        "tool_use_policy": codex.get("tool_use_policy", ""),
+        "chat_eval_compatible": codex.get("chat_eval_compatible", ""),
+        "pure_api_model_eval": codex.get("pure_api_model_eval", ""),
+        "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
     }
     return values[dimension]
 
@@ -1168,12 +1211,18 @@ def _compatibility_warnings(
             item["cli_executable_sha256"],
             item["capability_fingerprint"],
             _auth_comparison_identity(item),
+            item.get("execution_surface", ""),
+            item.get("interaction_class", ""),
+            item.get("harness_id", ""),
+            item.get("tool_availability_policy", ""),
+            item.get("tool_use_policy", ""),
         )
         for item in codex_partitions
     }
     if len(tracks) > 1:
         warnings.append(
-            "Codex CLI model-proxy and external-agent tracks are distinct systems, not pooled."
+            "Codex CLI read-only and workspace-writing agent tracks are distinct systems, "
+            "not pooled."
         )
     if len(identities) > 1:
         warnings.append(
@@ -1268,6 +1317,26 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
             ),
             "sandbox_policy": identity.sandbox_policy or "",
             "approval_policy": identity.approval_policy or "",
+            "execution_surface": identity.execution_surface or "",
+            "interaction_class": identity.interaction_class or "",
+            "harness_id": identity.harness_id or "",
+            "model_client_kind": identity.model_client_kind or "",
+            "agent_harness_kind": identity.agent_harness_kind or "",
+            "tool_availability_policy": identity.tool_availability_policy or "",
+            "tool_use_policy": identity.tool_use_policy or "",
+            "tool_event_count": _optional_int_text(identity.tool_event_count),
+            "side_effecting_tool_event_count": _optional_int_text(
+                identity.side_effecting_tool_event_count
+            ),
+            "read_only_tool_event_count": _optional_int_text(identity.read_only_tool_event_count),
+            "external_network_tool_event_count": _optional_int_text(
+                identity.external_network_tool_event_count
+            ),
+            "mcp_tool_event_count": _optional_int_text(identity.mcp_tool_event_count),
+            "workspace_write_count": _optional_int_text(identity.workspace_write_count),
+            "chat_eval_compatible": _optional_bool_text(identity.chat_eval_compatible),
+            "pure_api_model_eval": _optional_bool_text(identity.pure_api_model_eval),
+            "direct_api_benchmark": _optional_bool_text(identity.direct_api_benchmark),
         }
     if (
         manifest.model is not None
@@ -1319,6 +1388,22 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
             ),
             "sandbox_policy": str(configuration.get("sandbox_policy") or ""),
             "approval_policy": str(configuration.get("approval_policy") or ""),
+            "execution_surface": str(configuration.get("execution_surface") or ""),
+            "interaction_class": str(configuration.get("interaction_class") or ""),
+            "harness_id": str(configuration.get("harness_id") or ""),
+            "model_client_kind": str(configuration.get("model_client_kind") or ""),
+            "agent_harness_kind": str(configuration.get("agent_harness_kind") or ""),
+            "tool_availability_policy": str(configuration.get("tool_availability_policy") or ""),
+            "tool_use_policy": str(configuration.get("tool_use_policy") or ""),
+            "chat_eval_compatible": _configuration_bool_text(
+                configuration.get("chat_eval_compatible")
+            ),
+            "pure_api_model_eval": _configuration_bool_text(
+                configuration.get("pure_api_model_eval")
+            ),
+            "direct_api_benchmark": _configuration_bool_text(
+                configuration.get("direct_api_benchmark")
+            ),
         }
     return {}
 
@@ -1374,11 +1459,32 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             ),
             "sandbox_policy": str(descriptor.configuration.get("sandbox_policy") or ""),
             "approval_policy": str(descriptor.configuration.get("approval_policy") or ""),
+            "execution_surface": str(descriptor.configuration.get("execution_surface") or ""),
+            "interaction_class": str(descriptor.configuration.get("interaction_class") or ""),
+            "harness_id": str(descriptor.configuration.get("harness_id") or ""),
+            "model_client_kind": str(descriptor.configuration.get("model_client_kind") or ""),
+            "agent_harness_kind": str(descriptor.configuration.get("agent_harness_kind") or ""),
+            "tool_availability_policy": str(
+                descriptor.configuration.get("tool_availability_policy") or ""
+            ),
+            "tool_use_policy": str(descriptor.configuration.get("tool_use_policy") or ""),
+            "chat_eval_compatible": _configuration_bool_text(
+                descriptor.configuration.get("chat_eval_compatible")
+            ),
+            "pure_api_model_eval": _configuration_bool_text(
+                descriptor.configuration.get("pure_api_model_eval")
+            ),
+            "direct_api_benchmark": _configuration_bool_text(
+                descriptor.configuration.get("direct_api_benchmark")
+            ),
         }
     if "external_coding_agent" in item.system.agent_descriptor.capabilities:
         requested = item.system.agent_options.get("model_id")
+        readonly = item.system.agent_id == "codex-cli-readonly-agent"
         return {
-            "integration_track": "codex_cli_external_agent",
+            "integration_track": (
+                "codex_cli_readonly_single_turn_agent" if readonly else "codex_cli_external_agent"
+            ),
             "cli_version": "",
             "cli_executable_sha256": "",
             "capability_fingerprint": "",
@@ -1406,6 +1512,26 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "auth_alias_used": "",
             "sandbox_policy": str(item.system.agent_options.get("sandbox") or ""),
             "approval_policy": str(item.system.agent_options.get("approval_policy") or ""),
+            "execution_surface": "codex_cli",
+            "interaction_class": (
+                "cli_agent_single_turn_readonly" if readonly else "cli_agent_workspace_writing"
+            ),
+            "harness_id": "",
+            "model_client_kind": "cli_agent_mediated",
+            "agent_harness_kind": "codex_cli",
+            "tool_availability_policy": (
+                "codex_cli_builtin_tools_readonly_sandboxed"
+                if readonly
+                else "codex_cli_visible_workspace_tools"
+            ),
+            "tool_use_policy": (
+                "typed_readonly_empty_workdir_v1"
+                if readonly
+                else "visible_task_workspace_policy_v1"
+            ),
+            "chat_eval_compatible": "false",
+            "pure_api_model_eval": "false",
+            "direct_api_benchmark": "false",
         }
     return {}
 
@@ -1432,6 +1558,16 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             comparison_auth,
             identity.get("sandbox_policy", ""),
             identity.get("approval_policy", ""),
+            identity.get("execution_surface", ""),
+            identity.get("interaction_class", ""),
+            identity.get("harness_id", ""),
+            identity.get("model_client_kind", ""),
+            identity.get("agent_harness_kind", ""),
+            identity.get("tool_availability_policy", ""),
+            identity.get("tool_use_policy", ""),
+            identity.get("chat_eval_compatible", ""),
+            identity.get("pure_api_model_eval", ""),
+            identity.get("direct_api_benchmark", ""),
         )
         bucket = buckets.setdefault(
             partition_key,
@@ -1464,6 +1600,16 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             comparison_auth,
             sandbox,
             approval,
+            execution_surface,
+            interaction_class,
+            harness_id,
+            model_client_kind,
+            agent_harness_kind,
+            tool_availability_policy,
+            tool_use_policy,
+            chat_eval_compatible,
+            pure_api_model_eval,
+            direct_api_benchmark,
         ) = stored_key
         partitions.append(
             {
@@ -1486,6 +1632,16 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
                 "auth_comparison_partition": comparison_auth,
                 "sandbox_policy": sandbox,
                 "approval_policy": approval,
+                "execution_surface": execution_surface,
+                "interaction_class": interaction_class,
+                "harness_id": harness_id,
+                "model_client_kind": model_client_kind,
+                "agent_harness_kind": agent_harness_kind,
+                "tool_availability_policy": tool_availability_policy,
+                "tool_use_policy": tool_use_policy,
+                "chat_eval_compatible": chat_eval_compatible,
+                "pure_api_model_eval": pure_api_model_eval,
+                "direct_api_benchmark": direct_api_benchmark,
             }
         )
     return partitions
@@ -1497,6 +1653,20 @@ def _merged_auth_alias(values: set[str]) -> str:
     if len(values) == 1:
         return next(iter(values))
     return "mixed"
+
+
+def _optional_bool_text(value: bool | None) -> str:
+    if value is None:
+        return ""
+    return "true" if value else "false"
+
+
+def _optional_int_text(value: int | None) -> str:
+    return "" if value is None else str(value)
+
+
+def _configuration_bool_text(value: Any) -> str:
+    return _optional_bool_text(value if isinstance(value, bool) else None)
 
 
 def _auth_comparison_identity(identity: Mapping[str, str]) -> str:

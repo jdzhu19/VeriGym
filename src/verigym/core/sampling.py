@@ -211,6 +211,16 @@ def manifest_configuration_fingerprint(manifest: RunManifest) -> str:
                 "executable_version": observation.executable_version,
                 "capability_fingerprint": observation.capability_fingerprint,
                 "identity_confidence": observation.identity_confidence,
+                "execution_surface": observation.execution_surface,
+                "interaction_class": observation.interaction_class,
+                "harness_id": observation.harness_id,
+                "model_client_kind": observation.model_client_kind,
+                "agent_harness_kind": observation.agent_harness_kind,
+                "tool_availability_policy": observation.tool_availability_policy,
+                "tool_use_policy": observation.tool_use_policy,
+                "chat_eval_compatible": observation.chat_eval_compatible,
+                "pure_api_model_eval": observation.pure_api_model_eval,
+                "direct_api_benchmark": observation.direct_api_benchmark,
             }
             for observation in manifest.external_agent_observations
         ]

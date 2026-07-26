@@ -26,7 +26,6 @@ from verigym.provenance import get_build_provenance
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.schemas.common import InteractionMode
-from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.run import RunConfig, RunResult
 from verigym.schemas.suite import SuiteSourceConfig
 
@@ -284,7 +283,7 @@ def _validate_static_config(config: dict[str, Any]) -> None:
     if not isinstance(tasks, list) or len(tasks) != 5:
         raise SystemExit("pilot config must freeze exactly five tasks")
     if not isinstance(tracks, list) or [item.get("id") for item in tracks] != [
-        "codex_cli_model_proxy",
+        "codex_cli_readonly_single_turn_agent",
         "codex_cli_external_agent",
     ]:
         raise SystemExit("pilot config must preserve the two ordered integration tracks")
@@ -411,12 +410,20 @@ def _build_plan(
         "name": config["name"],
         "created_at_utc": datetime.now(UTC).isoformat(),
         "study_label": "integration_study_not_direct_api_benchmark",
+        "direct_api_status": {
+            "implemented": False,
+            "executed": False,
+            "reason": (
+                "Both tracks use the Codex CLI agent harness; no direct provider "
+                "credential or transport is implemented."
+            ),
+        },
         "verigym_version": "0.1.0",
         "verigym_commit": provenance.source_commit,
         "verigym_source_tree_hash": provenance.source_tree_hash,
         "plugin_origins": {
-            "model": registries.models.origin("codex-cli-exec-model").__dict__,
-            "agent": registries.agents.origin("codex-cli-agent").__dict__,
+            "readonly_agent": registries.agents.origin("codex-cli-readonly-agent").__dict__,
+            "workspace_agent": registries.agents.origin("codex-cli-agent").__dict__,
         },
         "requested_model_id": model_id,
         "capability_identity": {
@@ -484,24 +491,19 @@ def _run_config(
         "system_id": item["track"],
         "base_seed": item["base_seed"],
     }
-    if item["track"] == "codex_cli_model_proxy":
+    if item["track"] == "codex_cli_readonly_single_turn_agent":
         return RunConfig(
             **common,
-            mode=InteractionMode.CHAT,
-            agent="single-turn",
-            model="codex-cli-exec-model",
-            model_options=ModelRunConfig(
-                model_id=model_id,
-                sample_index=item["sample_index"],
-                request_timeout_s=max_process_time_s,
-                client_options={
-                    "sandbox": "most-restrictive-supported",
-                    "approval_policy": "non-interactive",
-                    "reject_tool_use": True,
-                    "allow_proxy_environment": True,
-                    "max_process_time_s": max_process_time_s,
-                },
-            ),
+            mode=InteractionMode.AGENT,
+            agent="codex-cli-readonly-agent",
+            agent_options={
+                "model_id": model_id,
+                "sandbox": "read-only",
+                "approval_policy": "non-interactive",
+                "reasoning_effort": "xhigh",
+                "allow_proxy_environment": True,
+                "max_process_time_s": max_process_time_s,
+            },
         )
     return RunConfig(
         **common,
@@ -511,6 +513,7 @@ def _run_config(
             "model_id": model_id,
             "sandbox": "workspace-write",
             "approval_policy": "non-interactive",
+            "reasoning_effort": "xhigh",
             "allow_proxy_environment": True,
             "max_process_time_s": max_process_time_s,
         },
@@ -578,13 +581,17 @@ def _pilot_report(
             str(result.manifest.base_seed),
         )
         grouped[key].append(result)
-        if identity["integration_track"] == "codex_cli_model_proxy":
+        if identity["integration_track"] == "codex_cli_readonly_single_turn_agent":
             summary = json.loads(
                 (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(
                     encoding="utf-8"
                 )
             )
-            tool_violations += int(summary.get("tool_use_event_count") or 0)
+            tool_violations += int(summary.get("side_effecting_tool_event_count") or 0)
+            tool_violations += int(summary.get("external_network_tool_event_count") or 0)
+            tool_violations += int(summary.get("mcp_tool_event_count") or 0)
+            tool_violations += int(summary.get("workspace_write_count") or 0)
+            tool_violations += int(not summary.get("tool_policy_passed", False))
         else:
             external_commands += int(result.scorecard.efficiency.external_command_count or 0)
             external_tools += int(result.scorecard.efficiency.external_tool_call_count or 0)
@@ -653,7 +660,7 @@ def _pilot_report(
         "missing_token_run_count": sum(
             result.scorecard.efficiency.total_tokens is None for result in results
         ),
-        "track_a_tool_use_violations": tool_violations,
+        "track_a_readonly_policy_violations": tool_violations,
         "track_b_external_command_count": external_commands,
         "track_b_external_tool_count": external_tools,
         "candidate_changed_files": sum(
@@ -677,28 +684,15 @@ def _pilot_report(
 
 def _result_identity(result: RunResult) -> dict[str, str]:
     manifest = result.manifest
-    if manifest.external_agent_observations:
-        identity = manifest.external_agent_observations[-1]
-        return {
-            "integration_track": "codex_cli_external_agent",
-            "requested_model_id": identity.requested_model_id or "",
-            "observed_model_id": identity.observed_model_id or "",
-            "cli_version": identity.executable_version,
-            "capability_fingerprint": identity.capability_fingerprint,
-        }
-    assert manifest.model is not None
-    configuration = manifest.model.configuration
-    observed = (
-        manifest.model_observations[-1].observed_provider_model_id
-        if manifest.model_observations
-        else None
-    )
+    if not manifest.external_agent_observations:
+        raise RuntimeError("Codex CLI agent run did not record external-agent identity")
+    identity = manifest.external_agent_observations[-1]
     return {
-        "integration_track": "codex_cli_model_proxy",
-        "requested_model_id": manifest.model.model_id,
-        "observed_model_id": observed or "",
-        "cli_version": str(configuration.get("cli_version") or ""),
-        "capability_fingerprint": str(configuration.get("capability_fingerprint") or ""),
+        "integration_track": identity.integration_track,
+        "requested_model_id": identity.requested_model_id or "",
+        "observed_model_id": identity.observed_model_id or "",
+        "cli_version": identity.executable_version,
+        "capability_fingerprint": identity.capability_fingerprint,
     }
 
 
@@ -714,11 +708,8 @@ def _is_infrastructure(result: RunResult) -> bool:
 
 
 def _verify_plugin_origins(registries: Any) -> None:
-    for registry, name in (
-        (registries.models, "codex-cli-exec-model"),
-        (registries.agents, "codex-cli-agent"),
-    ):
-        origin = registry.origin(name)
+    for name in ("codex-cli-readonly-agent", "codex-cli-agent"):
+        origin = registries.agents.origin(name)
         if (
             origin.registration != "entry_point"
             or (origin.package or "").lower() != _EXPECTED_PACKAGE

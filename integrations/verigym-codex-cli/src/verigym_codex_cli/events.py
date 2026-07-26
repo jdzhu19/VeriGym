@@ -13,6 +13,7 @@ _MAX_LINE_BYTES = 1024 * 1024
 _MAX_DEPTH = 32
 _MAX_EVENTS = 10_000
 _TOOL_CATEGORIES = {
+    "plan_update",
     "file_read",
     "file_write",
     "patch_applied",
@@ -272,6 +273,8 @@ def _normalize(
         "command_started": "command_started",
         "command_completed": "command_completed",
         "tool_call": "tool_call",
+        "plan_update": "plan_update",
+        "update_plan": "plan_update",
         "usage": "usage",
         "turn_completed": "turn_completed",
         "session_completed": "session_completed",
@@ -299,6 +302,7 @@ def _normalize(
                 "command": _first_string(item, ("command", "cmd")) or "",
                 "status": item.get("status"),
                 "exit_code": item.get("exit_code"),
+                "output_returned_to_model": bool(item.get("aggregated_output")),
             }
         if item_type in {"file_change", "patch", "patch_application"}:
             return "patch_applied", {
@@ -311,9 +315,11 @@ def _normalize(
             return "file_write", {"path": _first_string(item, ("path", "file"))}
         if item_type in {"mcp_tool_call", "tool_call", "web_search"}:
             return "tool_call", {
-                "tool": item_type,
+                "tool": _first_string(item, ("tool", "name")) or item_type,
                 "status": item.get("status"),
             }
+        if item_type in {"plan", "plan_update", "update_plan"}:
+            return "plan_update", {"status": item.get("status")}
         return "unknown", {"item_type": item_type[:128]}
     if "error" in canonical or raw.get("error") is not None:
         return "error", {
@@ -335,6 +341,7 @@ def _direct_payload(category: str, safe: dict[str, Any]) -> dict[str, Any]:
             "command": _first_string(safe, ("command", "cmd")) or "",
             "status": safe.get("status"),
             "exit_code": safe.get("exit_code"),
+            "output_returned_to_model": bool(safe.get("aggregated_output")),
         }
     if category == "tool_call":
         return {"tool": _first_string(safe, ("tool", "name")) or "unknown"}

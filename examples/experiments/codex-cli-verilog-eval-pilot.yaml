@@ -38,14 +38,24 @@ tasks:
     rationale: "A two-state Moore machine covers explicit transition and output logic."
 
 tracks:
-  - id: "codex_cli_model_proxy"
-    model_plugin: "codex-cli-exec-model"
-    agent_plugin: "single-turn"
-    interaction_mode: "chat"
+  - id: "codex_cli_readonly_single_turn_agent"
+    model_plugin: null
+    agent_plugin: "codex-cli-readonly-agent"
+    interaction_mode: "agent"
+    execution_surface: "codex_cli"
+    interaction_class: "cli_agent_single_turn_readonly"
+    chat_eval_compatible: false
+    pure_api_model_eval: false
+    direct_api_benchmark: false
   - id: "codex_cli_external_agent"
     model_plugin: null
     agent_plugin: "codex-cli-agent"
     interaction_mode: "agent"
+    execution_surface: "codex_cli"
+    interaction_class: "cli_agent_workspace_writing"
+    chat_eval_compatible: false
+    pure_api_model_eval: false
+    direct_api_benchmark: false
 
 sampling:
   base_seed: 0

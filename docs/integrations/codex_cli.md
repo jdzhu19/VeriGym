@@ -5,19 +5,26 @@ plans, reports, and comparisons.
 
 ## Integration tracks
 
-**Codex CLI model proxy** combines `SingleTurnAgent` with `codex-cli-exec-model`. Every generate
-call launches one non-interactive CLI process in a newly created empty directory, passes an
-ordered deterministic message envelope on stdin, and parses JSONL events. A successful response
-requires one terminal event, exactly one final message, no directory changes, and zero command,
-file, patch, web, MCP, or unknown tool events. Token usage stays `null` when the CLI does not
-report it. This path includes CLI prompting and harness behavior and is not direct API model
-performance.
+**Codex CLI read-only single-turn agent** uses `codex-cli-readonly-agent`. Every episode launches
+one non-interactive CLI process in a fresh empty directory, supplies all visible task context on
+stdin, and parses JSONL events. Codex CLI 0.144.6 has no supported true no-tools mode, so this
+path is not a `ModelClient`, is not ChatEval-compatible, and is not a pure model evaluation. Its
+typed fail-closed policy permits only harness planning and explicitly classified
+non-side-effecting reads confined to the empty directory. Writes, patches, outside-directory or
+home/config reads, network, MCP, external, and unknown tools are forbidden. A passing response
+is parsed as one RTL submission, materialized by the adapter through the ordinary
+`file.apply_patch` action, and enters candidate freeze and the hidden-verifier flow. The CLI
+never receives or writes the visible task workspace.
 
 **Codex CLI external agent** uses `codex-cli-agent` with no VeriGym model client. It launches once
 inside the visible task workspace, may read/edit only visible files, and returns a submission
 without judging correctness. VeriGym validates direct edits, freezes the candidate, and invokes
 the existing hidden verifier. CLI event, command, file, patch, token, cost, and wall-time fields
 are recorded as external-agent accounting; VeriGym-native `tool_calls` remains unchanged.
+
+Both paths are Codex CLI agent-harness evaluations. Direct API support is unimplemented and was
+not executed. The former model-proxy identity is retired; historical sealed bundles and their
+verdicts remain immutable.
 
 ## Capability and identity evidence
 
@@ -70,7 +77,7 @@ python scripts/run_codex_cli_smoke.py --output /new/path/codex-smoke
 ```
 
 The launcher refuses an existing output root, retries, best-of-K selection, or outer repair. It
-runs both tracks on `and-gate-basic` and `counter-basic`, retains failures, replays with an
+runs both agent tracks on `and-gate-basic` and `counter-basic`, retains failures, replays with an
 unavailable Codex path, generates JSON/CSV/Markdown reports, and scans for credentials, host
 paths, and hidden assets. PPA stays null.
 
@@ -96,8 +103,8 @@ capability fingerprints, and do not publish a universal score.
 ## Artifacts and interpretation
 
 Both tracks store `capabilities.json`, `invocation.json`, redacted raw/parsed events,
-`identity.json`, `accounting.json`, and `summary.json` in `artifacts/codex_cli/`. These files are
-integrity-bound. Replay reads the candidate, manifest, verifier inputs, and scorecard; it never
-imports the plugin or launches Codex. Service/auth/transport/parser failures are infrastructure
-outcomes, while hidden-test failures after a structurally successful episode are ordinary
-candidate failures.
+`identity.json`, `accounting.json`, and `summary.json` in `artifacts/codex_cli/`; the read-only
+track also stores `event_policy.json`. These files are integrity-bound. Replay reads the
+candidate, manifest, verifier inputs, and scorecard; it never imports the plugin or launches
+Codex. Service/auth/transport/parser failures are infrastructure outcomes, while hidden-test
+failures after a structurally successful episode are ordinary candidate failures.

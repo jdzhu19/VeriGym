@@ -85,6 +85,22 @@ CODEX_CLI_CSV_COLUMNS = [
     "auth_alias_used",
     "sandbox_policy",
     "approval_policy",
+    "execution_surface",
+    "interaction_class",
+    "harness_id",
+    "model_client_kind",
+    "agent_harness_kind",
+    "tool_availability_policy",
+    "tool_use_policy",
+    "tool_event_count",
+    "side_effecting_tool_event_count",
+    "read_only_tool_event_count",
+    "external_network_tool_event_count",
+    "mcp_tool_event_count",
+    "workspace_write_count",
+    "chat_eval_compatible",
+    "pure_api_model_eval",
+    "direct_api_benchmark",
     "external_tool_call_count",
     "external_command_count",
     "external_file_read_count",
@@ -325,8 +341,11 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
                 "approval_policy": configuration.get("approval_policy"),
             }
     elif "external_coding_agent" in plan.system.agent_descriptor.capabilities:
+        readonly = plan.system.agent_id == "codex-cli-readonly-agent"
         codex = {
-            "integration_track": "codex_cli_external_agent",
+            "integration_track": (
+                "codex_cli_readonly_single_turn_agent" if readonly else "codex_cli_external_agent"
+            ),
             "requested_model_id": plan.system.agent_options.get("model_id"),
             "requested_reasoning_effort": plan.system.agent_options.get("reasoning_effort"),
             "effective_reasoning_effort": plan.system.agent_options.get("reasoning_effort"),
@@ -340,6 +359,25 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
             ),
             "sandbox_policy": plan.system.agent_options.get("sandbox"),
             "approval_policy": plan.system.agent_options.get("approval_policy"),
+            "execution_surface": "codex_cli",
+            "interaction_class": (
+                "cli_agent_single_turn_readonly" if readonly else "cli_agent_workspace_writing"
+            ),
+            "model_client_kind": "cli_agent_mediated",
+            "agent_harness_kind": "codex_cli",
+            "tool_availability_policy": (
+                "codex_cli_builtin_tools_readonly_sandboxed"
+                if readonly
+                else "codex_cli_visible_workspace_tools"
+            ),
+            "tool_use_policy": (
+                "typed_readonly_empty_workdir_v1"
+                if readonly
+                else "visible_task_workspace_policy_v1"
+            ),
+            "chat_eval_compatible": False,
+            "pure_api_model_eval": False,
+            "direct_api_benchmark": False,
         }
     return {
         "experiment_id": experiment_id,
@@ -395,6 +433,22 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
             "auth_alias_used": identity.auth_alias_used,
             "sandbox_policy": identity.sandbox_policy,
             "approval_policy": identity.approval_policy,
+            "execution_surface": identity.execution_surface,
+            "interaction_class": identity.interaction_class,
+            "harness_id": identity.harness_id,
+            "model_client_kind": identity.model_client_kind,
+            "agent_harness_kind": identity.agent_harness_kind,
+            "tool_availability_policy": identity.tool_availability_policy,
+            "tool_use_policy": identity.tool_use_policy,
+            "tool_event_count": identity.tool_event_count,
+            "side_effecting_tool_event_count": identity.side_effecting_tool_event_count,
+            "read_only_tool_event_count": identity.read_only_tool_event_count,
+            "external_network_tool_event_count": identity.external_network_tool_event_count,
+            "mcp_tool_event_count": identity.mcp_tool_event_count,
+            "workspace_write_count": identity.workspace_write_count,
+            "chat_eval_compatible": identity.chat_eval_compatible,
+            "pure_api_model_eval": identity.pure_api_model_eval,
+            "direct_api_benchmark": identity.direct_api_benchmark,
         }
     if (
         manifest.model is not None
@@ -429,6 +483,24 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
             "auth_alias_used": configuration.get("auth_alias_used"),
             "sandbox_policy": configuration.get("sandbox_policy"),
             "approval_policy": configuration.get("approval_policy"),
+            "execution_surface": configuration.get("execution_surface"),
+            "interaction_class": configuration.get("interaction_class"),
+            "harness_id": configuration.get("harness_id"),
+            "model_client_kind": configuration.get("model_client_kind"),
+            "agent_harness_kind": configuration.get("agent_harness_kind"),
+            "tool_availability_policy": configuration.get("tool_availability_policy"),
+            "tool_use_policy": configuration.get("tool_use_policy"),
+            "tool_event_count": configuration.get("tool_event_count"),
+            "side_effecting_tool_event_count": configuration.get("side_effecting_tool_event_count"),
+            "read_only_tool_event_count": configuration.get("read_only_tool_event_count"),
+            "external_network_tool_event_count": configuration.get(
+                "external_network_tool_event_count"
+            ),
+            "mcp_tool_event_count": configuration.get("mcp_tool_event_count"),
+            "workspace_write_count": configuration.get("workspace_write_count"),
+            "chat_eval_compatible": configuration.get("chat_eval_compatible"),
+            "pure_api_model_eval": configuration.get("pure_api_model_eval"),
+            "direct_api_benchmark": configuration.get("direct_api_benchmark"),
         }
     return {}
 

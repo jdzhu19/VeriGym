@@ -21,11 +21,13 @@ from verigym.provenance import get_build_provenance
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.schemas.common import InteractionMode
-from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.run import RunConfig, RunResult
 
 _TASKS = ("toy-rtl/and-gate-basic", "toy-rtl/counter-basic")
-_TRACKS = ("codex_cli_model_proxy", "codex_cli_external_agent")
+_TRACKS = (
+    "codex_cli_readonly_single_turn_agent",
+    "codex_cli_external_agent",
+)
 _EXPECTED_PACKAGE = "verigym-codex-cli"
 _REASONING_EFFORT = "xhigh"
 _REASONING_EFFORT_SOURCE = "verigym_explicit_cli_override"
@@ -138,6 +140,11 @@ def main() -> int:
             "effective_reasoning_effort",
             "reasoning_effort_source",
             "inherited_reasoning_effort_allowed",
+            "execution_surface",
+            "interaction_class",
+            "harness_id",
+            "tool_availability_policy",
+            "tool_use_policy",
         ),
     )
     scans = _scan_evidence(root, results)
@@ -202,8 +209,8 @@ def _frozen_plan(
         "verigym_commit": provenance.source_commit,
         "verigym_source_tree_hash": provenance.source_tree_hash,
         "plugin_origins": {
-            "model": registries.models.origin("codex-cli-exec-model").__dict__,
-            "agent": registries.agents.origin("codex-cli-agent").__dict__,
+            "readonly_agent": registries.agents.origin("codex-cli-readonly-agent").__dict__,
+            "workspace_agent": registries.agents.origin("codex-cli-agent").__dict__,
         },
         "capability_identity": {
             "executable_name": capability["executable_name"],
@@ -217,6 +224,11 @@ def _frozen_plan(
         "effective_reasoning_effort": _REASONING_EFFORT,
         "reasoning_effort_source": _REASONING_EFFORT_SOURCE,
         "inherited_reasoning_effort_allowed": False,
+        "direct_llm_api_evaluation_implemented": False,
+        "direct_llm_api_evaluation_executed": False,
+        "direct_llm_api_evaluation_reason": (
+            "no direct API credential/transport was authorized; Codex CLI is an agent harness"
+        ),
         **auth_identity,
         "task_records": task_records,
         "planned_run_count": 4,
@@ -238,24 +250,19 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
         "output": output,
         "run_id": item["run_id"],
     }
-    if item["track"] == "codex_cli_model_proxy":
+    if item["track"] == "codex_cli_readonly_single_turn_agent":
         return RunConfig(
             **common,
-            mode=InteractionMode.CHAT,
-            agent="single-turn",
-            model="codex-cli-exec-model",
-            model_options=ModelRunConfig(
-                model_id=model_id,
-                request_timeout_s=_MAX_PROCESS_TIME_S,
-                client_options={
-                    "sandbox": "most-restrictive-supported",
-                    "approval_policy": "non-interactive",
-                    "reject_tool_use": True,
-                    "reasoning_effort": _REASONING_EFFORT,
-                    "allow_proxy_environment": True,
-                    "max_process_time_s": _MAX_PROCESS_TIME_S,
-                },
-            ),
+            mode=InteractionMode.AGENT,
+            agent="codex-cli-readonly-agent",
+            agent_options={
+                "model_id": model_id,
+                "sandbox": "most-restrictive-supported",
+                "approval_policy": "non-interactive",
+                "reasoning_effort": _REASONING_EFFORT,
+                "allow_proxy_environment": True,
+                "max_process_time_s": _MAX_PROCESS_TIME_S,
+            },
         )
     return RunConfig(
         **common,
@@ -273,8 +280,16 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
 
 
 def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
-    original = os.environ.get("VERIGYM_CODEX_BINARY")
+    protected_names = (
+        "VERIGYM_CODEX_BINARY",
+        "VERIGYM_CODEX_AUTH_MODE",
+        "VERIGYM_CODEX_CREDENTIAL_ENV",
+        "OPENAI_API_KEY",
+    )
+    original = {name: os.environ.get(name) for name in protected_names}
     os.environ["VERIGYM_CODEX_BINARY"] = "/codex-must-not-run-during-replay"
+    for name in protected_names[1:]:
+        os.environ.pop(name, None)
     records = []
     try:
         for result in results:
@@ -286,6 +301,9 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
                         "success": True,
                         "reverified_resolved": replay.reverified_resolved,
                         "codex_available": False,
+                        "credential_environment_available": False,
+                        "codex_cli_process_count": 0,
+                        "model_call_count": 0,
                     }
                 )
             except Exception as exc:
@@ -296,13 +314,17 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
                         "error_category": type(exc).__name__,
                         "message": str(exc)[:1024],
                         "codex_available": False,
+                        "credential_environment_available": False,
+                        "codex_cli_process_count": 0,
+                        "model_call_count": 0,
                     }
                 )
     finally:
-        if original is None:
-            os.environ.pop("VERIGYM_CODEX_BINARY", None)
-        else:
-            os.environ["VERIGYM_CODEX_BINARY"] = original
+        for name, value in original.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
     return records
 
 
@@ -312,6 +334,12 @@ def _scan_evidence(root: Path, results: list[RunResult]) -> dict[str, Any]:
     secret_hits: list[str] = []
     host_path_hits: list[str] = []
     hidden_hits: list[str] = []
+    proxy_value_hits: list[str] = []
+    proxy_values = tuple(
+        value
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+        if (value := os.environ.get(name))
+    )
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
         if (
@@ -328,6 +356,8 @@ def _scan_evidence(root: Path, results: list[RunResult]) -> dict[str, Any]:
             secret_hits.append(relative)
         if home in text or repository in text or "/tmp/verigym-" in text:
             host_path_hits.append(relative)
+        if any(value in text for value in proxy_values):
+            proxy_value_hits.append(relative)
     for result in results:
         visible_paths = [
             result.run_dir / "candidate",
@@ -350,6 +380,10 @@ def _scan_evidence(root: Path, results: list[RunResult]) -> dict[str, Any]:
         "host_path_hits": host_path_hits,
         "hidden_asset_scan_passed": not hidden_hits,
         "hidden_asset_hits": hidden_hits,
+        "proxy_value_scan_passed": not proxy_value_hits,
+        "proxy_value_hits": proxy_value_hits,
+        "proxy_values_persisted": False,
+        "proxy_values_hashed": False,
     }
 
 
@@ -369,10 +403,7 @@ def _acceptance(
         for record in execution_records
     )
     track_a = [
-        result
-        for result in results
-        if result.manifest.model is not None
-        and result.manifest.model.name == "codex-cli-exec-model"
+        result for result in results if result.manifest.agent.name == "codex-cli-readonly-agent"
     ]
     track_b = [result for result in results if result.manifest.agent.name == "codex-cli-agent"]
     identities = [_load_codex_identity(result) for result in results]
@@ -414,20 +445,54 @@ def _acceptance(
             == plan["inherited_reasoning_effort_allowed"]
             and identity.get("invocation_count") == 1
             and identity.get("identity_confidence") in {"observed", "requested_only", "unknown"}
+            and identity.get("execution_surface") == "codex_cli"
+            and identity.get("model_client_kind") == "cli_agent_mediated"
+            and identity.get("agent_harness_kind") == "codex_cli"
+            and identity.get("chat_eval_compatible") is False
+            and identity.get("pure_api_model_eval") is False
+            and identity.get("direct_api_benchmark") is False
             for identity in identities
         ),
         "track_a_count_2": len(track_a) == 2,
-        "track_a_zero_tool_use": len(track_a) == 2
+        "track_a_semantic_identity": len(track_a) == 2
         and all(
-            json.loads(
-                (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(
-                    encoding="utf-8"
+            (identity := _load_codex_identity(result)) is not None
+            and identity.get("integration_track") == "codex_cli_readonly_single_turn_agent"
+            and identity.get("interaction_class") == "cli_agent_single_turn_readonly"
+            and identity.get("tool_use_policy") == "typed_readonly_empty_workdir_v1"
+            and (result.run_dir / "artifacts" / "codex_cli" / "event_policy.json").is_file()
+            for result in track_a
+        ),
+        "track_a_complete_final_response_and_policy": len(track_a) == 2
+        and all(
+            (
+                lambda summary: (
+                    summary.get("complete_final_response") is True
+                    and summary.get("candidate_parsed") is True
+                    and summary.get("tool_policy_passed") is True
+                    and summary.get("side_effecting_tool_event_count") == 0
+                    and summary.get("external_network_tool_event_count") == 0
+                    and summary.get("mcp_tool_event_count") == 0
+                    and summary.get("workspace_write_count") == 0
                 )
-            )["tool_use_event_count"]
-            == 0
+            )(
+                json.loads(
+                    (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            )
             for result in track_a
         ),
         "track_b_count_2": len(track_b) == 2,
+        "track_b_semantic_identity": len(track_b) == 2
+        and all(
+            (identity := _load_codex_identity(result)) is not None
+            and identity.get("integration_track") == "codex_cli_external_agent"
+            and identity.get("interaction_class") == "cli_agent_workspace_writing"
+            and identity.get("tool_use_policy") == "visible_task_workspace_policy_v1"
+            for result in track_b
+        ),
         "track_b_identity_and_accounting": len(track_b) == 2
         and all(
             result.manifest.external_agent_observations
@@ -435,13 +500,25 @@ def _acceptance(
             for result in track_b
         ),
         "replay_4_without_codex": len(replay_records) == 4
-        and all(record["success"] and not record["codex_available"] for record in replay_records),
+        and all(
+            record["success"]
+            and not record["codex_available"]
+            and not record["credential_environment_available"]
+            and record["codex_cli_process_count"] == 0
+            and record["model_call_count"] == 0
+            for record in replay_records
+        ),
         "reports_cover_4": report_coverage.get("planned_plan_items") == 4
         and report_coverage.get("terminal_child_runs") == 4,
         "ppa_null_without_profile": all(result.scorecard.quality.ppa is None for result in results),
         "secret_scan": scans["secret_scan_passed"],
         "host_path_scan": scans["host_path_scan_passed"],
         "hidden_asset_scan": scans["hidden_asset_scan_passed"],
+        "proxy_value_scan": scans["proxy_value_scan_passed"],
+        "direct_api_unimplemented_unexecuted": (
+            plan["direct_llm_api_evaluation_implemented"] is False
+            and plan["direct_llm_api_evaluation_executed"] is False
+        ),
         "wall_time_within_declared_limit": elapsed_s <= _MAX_TOTAL_WALL_TIME_S,
     }
     return {
@@ -472,7 +549,7 @@ def _load_codex_identity(result: RunResult) -> dict[str, Any] | None:
 
 def _verify_plugin_origins(registries: Any) -> None:
     for registry, name in (
-        (registries.models, "codex-cli-exec-model"),
+        (registries.agents, "codex-cli-readonly-agent"),
         (registries.agents, "codex-cli-agent"),
     ):
         origin = registry.origin(name)

@@ -8,7 +8,7 @@ from verigym_codex_cli.capabilities import discover_capabilities
 
 pytestmark = [
     pytest.mark.codex_cli,
-    pytest.mark.codex_cli_model,
+    pytest.mark.codex_cli_readonly_agent,
     pytest.mark.codex_cli_agent,
 ]
 

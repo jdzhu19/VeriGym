@@ -87,7 +87,7 @@ markers = [
   "reproducible_build: rebuilds and compares local distribution archives",
   "release_audit: validates a generated local release-audit bundle",
   "codex_cli: exercises a Codex CLI integration path",
-  "codex_cli_model: exercises the CLI-mediated model-proxy path",
+  "codex_cli_readonly_agent: exercises the read-only single-turn CLI agent path",
   "codex_cli_agent: exercises the external coding-agent path",
   "codex_cli_pilot: exercises the protected real-model pilot",
 ]

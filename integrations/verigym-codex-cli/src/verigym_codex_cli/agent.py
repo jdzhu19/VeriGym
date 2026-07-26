@@ -407,6 +407,27 @@ def _external_identity(
     parsed: ParsedEventStream | None,
 ) -> ExternalAgentCallIdentity:
     observed = parsed.observed_model_id if parsed is not None else None
+    tool_event_count = len(parsed.tool_use_events) if parsed is not None else 0
+    file_writes = parsed.file_write_count if parsed is not None else 0
+    patches = parsed.patch_count if parsed is not None else 0
+    file_reads = parsed.file_read_count if parsed is not None else 0
+    network_events = (
+        sum(
+            event.category == "tool_call"
+            and "web_search" in str(event.payload.get("tool") or "").lower()
+            for event in parsed.events
+        )
+        if parsed is not None
+        else 0
+    )
+    mcp_events = (
+        sum(
+            event.category == "tool_call" and "mcp" in str(event.payload.get("tool") or "").lower()
+            for event in parsed.events
+        )
+        if parsed is not None
+        else 0
+    )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agent",
         adapter_version=__version__,
@@ -426,6 +447,22 @@ def _external_identity(
         identity_confidence="observed" if observed else "requested_only",
         reproducibility_scope="mutable_remote_observation",
         integration_track="codex_cli_external_agent",
+        execution_surface="codex_cli",
+        interaction_class="cli_agent_workspace_writing",
+        harness_id="-".join(capabilities.version_output.strip().lower().split())[:128],
+        model_client_kind="cli_agent_mediated",
+        agent_harness_kind="codex_cli",
+        tool_availability_policy=settings.tool_availability_policy,
+        tool_use_policy=settings.tool_use_policy,
+        tool_event_count=tool_event_count,
+        side_effecting_tool_event_count=file_writes + patches,
+        read_only_tool_event_count=file_reads,
+        external_network_tool_event_count=network_events,
+        mcp_tool_event_count=mcp_events,
+        workspace_write_count=file_writes + patches,
+        chat_eval_compatible=False,
+        pure_api_model_eval=False,
+        direct_api_benchmark=False,
         auth_mode_label=settings.auth_mode_label,
         requested_auth_mode=settings.requested_auth_mode,
         resolved_auth_mode=settings.resolved_auth_mode,

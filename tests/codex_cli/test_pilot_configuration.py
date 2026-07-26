@@ -16,7 +16,7 @@ def test_prepared_pilot_freezes_exactly_thirty_partitioned_runs() -> None:
     assert payload["schema_version"] == "1.0"
     assert len(payload["tasks"]) == 5
     assert [track["id"] for track in payload["tracks"]] == [
-        "codex_cli_model_proxy",
+        "codex_cli_readonly_single_turn_agent",
         "codex_cli_external_agent",
     ]
     assert payload["sampling"]["sample_indices"] == [0, 1, 2]

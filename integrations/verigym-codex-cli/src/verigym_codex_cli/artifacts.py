@@ -28,6 +28,7 @@ class CodexRunEvidence:
     identity: Any
     accounting: Any
     summary: dict[str, Any]
+    event_policy: dict[str, Any] | None = None
     roots_to_redact: tuple[Path, ...] = ()
 
     def write(self, root: Path, *, create: bool) -> None:
@@ -57,6 +58,11 @@ class CodexRunEvidence:
             destination / "accounting.json",
             redact_value(_dump(self.accounting), roots=self.roots_to_redact),
         )
+        if self.event_policy is not None:
+            atomic_json(
+                destination / "event_policy.json",
+                redact_value(self.event_policy, roots=self.roots_to_redact),
+            )
         process_summary = {
             "exit_code": self.process.exit_code,
             "timed_out": self.process.timed_out,

@@ -97,6 +97,9 @@ def validate_external_events(parsed: ParsedEventStream, workspace: Path) -> None
             command = event.payload.get("command")
             if isinstance(command, str) and command:
                 _validate_command(command, root)
+        if event.category == "tool_call":
+            tool = str(event.payload.get("tool") or "unknown")
+            raise CodexPolicyError(f"external network, MCP, or unknown tool is forbidden: {tool}")
 
 
 def _validate_event_path(raw: str, root: Path) -> None:

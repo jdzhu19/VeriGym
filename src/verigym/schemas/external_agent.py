@@ -29,7 +29,35 @@ class ExternalAgentCallIdentity(StrictModel):
     capability_fingerprint: str
     configuration_fingerprint: str
     invocation_count: int = Field(ge=0)
-    integration_track: Literal["codex_cli_external_agent"] | None = None
+    integration_track: (
+        Literal[
+            "codex_cli_readonly_single_turn_agent",
+            "codex_cli_external_agent",
+        ]
+        | None
+    ) = None
+    execution_surface: Literal["codex_cli"] | None = None
+    interaction_class: (
+        Literal[
+            "cli_agent_single_turn_readonly",
+            "cli_agent_workspace_writing",
+        ]
+        | None
+    ) = None
+    harness_id: str | None = Field(default=None, min_length=1, max_length=128)
+    model_client_kind: Literal["cli_agent_mediated"] | None = None
+    agent_harness_kind: Literal["codex_cli"] | None = None
+    tool_availability_policy: str | None = Field(default=None, min_length=1, max_length=128)
+    tool_use_policy: str | None = Field(default=None, min_length=1, max_length=128)
+    tool_event_count: int | None = Field(default=None, ge=0)
+    side_effecting_tool_event_count: int | None = Field(default=None, ge=0)
+    read_only_tool_event_count: int | None = Field(default=None, ge=0)
+    external_network_tool_event_count: int | None = Field(default=None, ge=0)
+    mcp_tool_event_count: int | None = Field(default=None, ge=0)
+    workspace_write_count: int | None = Field(default=None, ge=0)
+    chat_eval_compatible: bool | None = None
+    pure_api_model_eval: bool | None = None
+    direct_api_benchmark: bool | None = None
     auth_mode_label: str | None = None
     requested_auth_mode: str | None = Field(default=None, min_length=1, max_length=64)
     resolved_auth_mode: str | None = Field(default=None, min_length=1, max_length=64)
@@ -92,6 +120,50 @@ class ExternalAgentCallIdentity(StrictModel):
             raise ValueError("external-agent requested and effective reasoning effort must match")
         if self.inherited_reasoning_effort_allowed is True:
             raise ValueError("external-agent reasoning effort cannot permit inherited values")
+        semantic_values = (
+            self.execution_surface,
+            self.interaction_class,
+            self.harness_id,
+            self.model_client_kind,
+            self.agent_harness_kind,
+            self.tool_availability_policy,
+            self.tool_use_policy,
+            self.tool_event_count,
+            self.side_effecting_tool_event_count,
+            self.read_only_tool_event_count,
+            self.external_network_tool_event_count,
+            self.mcp_tool_event_count,
+            self.workspace_write_count,
+            self.chat_eval_compatible,
+            self.pure_api_model_eval,
+            self.direct_api_benchmark,
+        )
+        if any(value is not None for value in semantic_values) and any(
+            value is None for value in semantic_values
+        ):
+            raise ValueError("external-agent semantic identity fields must be recorded together")
+        if self.execution_surface is not None:
+            assert self.tool_event_count is not None
+            assert self.side_effecting_tool_event_count is not None
+            assert self.read_only_tool_event_count is not None
+            assert self.external_network_tool_event_count is not None
+            assert self.mcp_tool_event_count is not None
+            if (
+                self.side_effecting_tool_event_count
+                + self.read_only_tool_event_count
+                + self.external_network_tool_event_count
+                + self.mcp_tool_event_count
+                > self.tool_event_count
+            ):
+                raise ValueError("external-agent classified tool counts exceed total tool events")
+            if (
+                self.chat_eval_compatible is not False
+                or self.pure_api_model_eval is not False
+                or self.direct_api_benchmark is not False
+            ):
+                raise ValueError(
+                    "Codex CLI agent identities cannot claim direct or ChatEval status"
+                )
         return self
 
 

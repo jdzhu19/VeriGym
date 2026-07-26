@@ -6,16 +6,26 @@ tasks:
   - "toy-rtl/and-gate-basic"
   - "toy-rtl/counter-basic"
 tracks:
-  - id: "codex_cli_model_proxy"
-    label: "Codex CLI model proxy"
-    model_plugin: "codex-cli-exec-model"
-    agent_plugin: "single-turn"
-    interaction_mode: "chat"
+  - id: "codex_cli_readonly_single_turn_agent"
+    label: "Codex CLI read-only single-turn agent"
+    model_plugin: null
+    agent_plugin: "codex-cli-readonly-agent"
+    interaction_mode: "agent"
+    execution_surface: "codex_cli"
+    interaction_class: "cli_agent_single_turn_readonly"
+    chat_eval_compatible: false
+    pure_api_model_eval: false
+    direct_api_benchmark: false
   - id: "codex_cli_external_agent"
-    label: "Codex CLI external agent"
+    label: "Codex CLI workspace-writing external agent"
     model_plugin: null
     agent_plugin: "codex-cli-agent"
     interaction_mode: "agent"
+    execution_surface: "codex_cli"
+    interaction_class: "cli_agent_workspace_writing"
+    chat_eval_compatible: false
+    pure_api_model_eval: false
+    direct_api_benchmark: false
 
 sampling:
   seeds: [0]

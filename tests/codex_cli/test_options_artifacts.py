@@ -51,7 +51,7 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from verigym_codex_cli import CodexExecModelClient
+    from verigym_codex_cli import CodexCliReadonlyAgentAdapter
 
     from verigym.core.orchestrator import VeriGym
     from verigym.registry.collections import build_registries
@@ -60,29 +60,28 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     _executable, _log, _scenario = fake_codex
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
     registries = build_registries(discover_external=False)
-    registries.models.register(CodexExecModelClient())
+    registries.agents.register(CodexCliReadonlyAgentAdapter())
     result = VeriGym(registries).run(
         RunConfig(
             task_id="toy-rtl/and-gate-basic",
-            mode=InteractionMode.CHAT,
-            agent="single-turn",
-            model="codex-cli-exec-model",
-            model_options=ModelRunConfig(model_id="fake-model"),
+            mode=InteractionMode.AGENT,
+            agent="codex-cli-readonly-agent",
+            agent_options={
+                "model_id": "fake-model",
+                "sandbox": "read-only",
+                "reasoning_effort": "xhigh",
+            },
             output=tmp_path / "runs",
         )
     )
-    assert result.manifest.model is not None
-    assert result.manifest.model.configuration["requested_auth_mode"] == ("chatgpt_cli_session")
-    assert result.manifest.model.configuration["resolved_auth_mode"] == ("inherited_codex_login")
-    assert result.manifest.model.configuration["auth_semantic_id"] == (
-        "codex.auth.inherited_chatgpt_session.v1"
-    )
-    assert result.manifest.model.configuration["requested_reasoning_effort"] == "xhigh"
-    assert result.manifest.model.configuration["effective_reasoning_effort"] == "xhigh"
-    assert result.manifest.model.configuration["reasoning_effort_source"] == (
-        "verigym_explicit_cli_override"
-    )
-    assert result.manifest.model.configuration["inherited_reasoning_effort_allowed"] is False
+    identity = result.manifest.external_agent_observations[-1]
+    assert identity.requested_auth_mode == "chatgpt_cli_session"
+    assert identity.resolved_auth_mode == "inherited_codex_login"
+    assert identity.auth_semantic_id == ("codex.auth.inherited_chatgpt_session.v1")
+    assert identity.requested_reasoning_effort == "xhigh"
+    assert identity.effective_reasoning_effort == "xhigh"
+    assert identity.reasoning_effort_source == ("verigym_explicit_cli_override")
+    assert identity.inherited_reasoning_effort_allowed is False
     assert verify_artifact_manifest(result.run_dir, expected_scope="run").status == "verified"
     codex_artifacts = result.run_dir / "artifacts" / "codex_cli"
     accounting = json.loads((codex_artifacts / "accounting.json").read_text(encoding="utf-8"))

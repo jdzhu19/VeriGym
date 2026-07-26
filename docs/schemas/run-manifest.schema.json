@@ -337,6 +337,19 @@
           "title": "Adapter Version",
           "type": "string"
         },
+        "agent_harness_kind": {
+          "anyOf": [
+            {
+              "const": "codex_cli",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Harness Kind"
+        },
         "approval_policy": {
           "anyOf": [
             {
@@ -391,9 +404,33 @@
           "title": "Capability Fingerprint",
           "type": "string"
         },
+        "chat_eval_compatible": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Eval Compatible"
+        },
         "configuration_fingerprint": {
           "title": "Configuration Fingerprint",
           "type": "string"
+        },
+        "direct_api_benchmark": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Direct Api Benchmark"
         },
         "effective_reasoning_effort": {
           "anyOf": [
@@ -420,6 +457,46 @@
         "executable_version": {
           "title": "Executable Version",
           "type": "string"
+        },
+        "execution_surface": {
+          "anyOf": [
+            {
+              "const": "codex_cli",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Surface"
+        },
+        "external_network_tool_event_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Network Tool Event Count"
+        },
+        "harness_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Harness Id"
         },
         "harness_name": {
           "title": "Harness Name",
@@ -449,7 +526,10 @@
         "integration_track": {
           "anyOf": [
             {
-              "const": "codex_cli_external_agent",
+              "enum": [
+                "codex_cli_readonly_single_turn_agent",
+                "codex_cli_external_agent"
+              ],
               "type": "string"
             },
             {
@@ -459,10 +539,52 @@
           "default": null,
           "title": "Integration Track"
         },
+        "interaction_class": {
+          "anyOf": [
+            {
+              "enum": [
+                "cli_agent_single_turn_readonly",
+                "cli_agent_workspace_writing"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interaction Class"
+        },
         "invocation_count": {
           "minimum": 0,
           "title": "Invocation Count",
           "type": "integer"
+        },
+        "mcp_tool_event_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mcp Tool Event Count"
+        },
+        "model_client_kind": {
+          "anyOf": [
+            {
+              "const": "cli_agent_mediated",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Client Kind"
         },
         "observed_model_id": {
           "anyOf": [
@@ -474,6 +596,31 @@
             }
           ],
           "title": "Observed Model Id"
+        },
+        "pure_api_model_eval": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pure Api Model Eval"
+        },
+        "read_only_tool_event_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read Only Tool Event Count"
         },
         "reasoning_effort_source": {
           "anyOf": [
@@ -566,6 +713,73 @@
           "default": "1.0",
           "title": "Schema Version",
           "type": "string"
+        },
+        "side_effecting_tool_event_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Side Effecting Tool Event Count"
+        },
+        "tool_availability_policy": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Availability Policy"
+        },
+        "tool_event_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Event Count"
+        },
+        "tool_use_policy": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Use Policy"
+        },
+        "workspace_write_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workspace Write Count"
         }
       },
       "required": [

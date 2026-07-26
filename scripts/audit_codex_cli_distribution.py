@@ -96,10 +96,9 @@ def _scan_wheel(path: Path) -> dict[str, object]:
                 if expected not in metadata:
                     issues.append(f"wheel metadata missing {expected!r}")
             for expected in (
-                "[verigym.models]",
-                "codex-cli-exec-model",
                 "[verigym.agents]",
                 "codex-cli-agent",
+                "codex-cli-readonly-agent",
                 "[console_scripts]",
                 "verigym-codex",
             ):

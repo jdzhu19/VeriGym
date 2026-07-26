@@ -1,15 +1,22 @@
 # VeriGym Codex CLI Integration
 
-This package provides two deliberately separate VeriGym plugins:
+This package provides two deliberately separate VeriGym agent plugins:
 
-- `codex-cli-exec-model` runs one `codex exec` process in a new empty directory and adapts its
-  final machine-readable event to `ModelClient`. It is valid for ChatEval only when the event
-  stream proves zero file, command, web, MCP, or other tool use. This is a CLI-mediated model
-  proxy, not a direct API benchmark.
+- `codex-cli-readonly-agent` runs one `codex exec` process in a fresh empty directory under the
+  CLI read-only sandbox. A typed fail-closed event policy permits only harness planning and
+  non-side-effecting reads confined to that empty directory. It rejects writes, patches,
+  outside-directory or home/config reads, network, MCP, external, and unknown tools. After
+  validation, the trusted adapter materializes the text response through VeriGym's ordinary
+  `file.apply_patch` action; the CLI never receives the visible workspace.
 - `codex-cli-agent` runs one external coding-agent episode in the visible LocalRuntime workspace.
   The CLI may edit visible task files; VeriGym then applies its ordinary workspace-policy check,
   candidate freeze, and hidden verifier. External CLI actions never increment VeriGym-native
   tool-call counters.
+
+Codex CLI 0.144.6 has no supported true no-tools mode, so the former
+`codex-cli-exec-model`/ChatEval identity is retired. Both current paths are CLI agent-harness
+evaluations; neither is direct API evaluation or ChatEval-compatible. Historical sealed bundles
+retain their original labels and verdicts unchanged.
 
 ## Install and discover
 
@@ -21,9 +28,8 @@ python -m pip install dist/verigym-0.1.0-*.whl \
 verigym plugins list
 ```
 
-The package registers `verigym.models` and `verigym.agents` entry points. Configuration accepts
-only bounded, typed, secret-free options. Supply an explicit model ID; no CLI or provider default
-is inferred.
+The package registers two `verigym.agents` entry points. Configuration accepts only bounded,
+typed, secret-free options. Supply an explicit model ID; no CLI or provider default is inferred.
 
 Both tracks own reasoning effort explicitly. The strict `reasoning_effort` option is `xhigh`;
 each process appends `-c model_reasoning_effort="xhigh"` to its argument array so an incompatible
@@ -61,11 +67,12 @@ value reaches a later model process, and its value is never persisted.
 
 ## Evidence and replay
 
-Each run stores exactly these files under `artifacts/codex_cli/`:
+Each run stores these files under `artifacts/codex_cli/`:
 
 ```text
 capabilities.json  invocation.json  raw_stdout.jsonl  raw_stderr.log
 parsed_events.jsonl  identity.json  accounting.json  summary.json
+event_policy.json (read-only track)
 ```
 
 Reasoning is discarded, secrets and runtime roots are redacted, output is bounded, and the

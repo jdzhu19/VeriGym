@@ -302,7 +302,10 @@ def _exec_help(scenario):
         "  -m, --model <MODEL>\n"
         f"  -s, --sandbox <MODE> {sandbox_values}\n"
         "  -a, --ask-for-approval <POLICY> [untrusted, on-request, never]\n"
-        "      --skip-git-repo-check"
+        "      --skip-git-repo-check\n"
+        "      --strict-config\n"
+        "      --ignore-user-config\n"
+        "      --ignore-rules"
         f"{json_flag}{ephemeral}"
     )
 

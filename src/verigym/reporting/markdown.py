@@ -66,17 +66,22 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             "",
             "## Codex CLI integration partitions",
             "",
-            "A CLI model proxy is not a direct API benchmark. Model-proxy and external-agent "
-            "tracks, CLI versions, and capability fingerprints are reported as distinct "
-            "systems. Authentication comparison uses the semantic ID; requested labels remain "
-            "provenance.",
+            "Codex CLI is an agent harness, not a direct API benchmark. Read-only single-turn "
+            "and workspace-writing tracks, CLI versions, harness identities, tool policies, "
+            "and capability fingerprints are reported as distinct systems. Authentication "
+            "comparison uses the semantic ID; requested labels remain provenance.",
             "",
-            "| Track | Requested model | Observed model | Confidence | CLI version | "
+            "Direct LLM API evaluation implemented: false. Direct LLM API evaluation executed: "
+            "false. Reason: no direct API credential/transport was authorized; Codex CLI is an "
+            "agent harness.",
+            "",
+            "| Track | Surface | Interaction | Harness | Tool policy | ChatEval | Direct API | "
+            "Requested model | Observed model | Confidence | CLI version | "
             "Executable SHA-256 | Capability fingerprint | Requested effort | Effective effort | "
             "Effort source | Inherited effort | Requested auth | Resolved auth | "
             "Auth semantic ID | Alias used | Sandbox | Approval |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | "
-            "--- | --- | --- | --- |",
+            "--- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     codex_partitions = aggregate.metadata.get("codex_cli_identity_partitions", [])
@@ -86,6 +91,12 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 continue
             lines.append(
                 f"| {markdown_escape(partition.get('integration_track', ''))} | "
+                f"{markdown_escape(partition.get('execution_surface', ''))} | "
+                f"{markdown_escape(partition.get('interaction_class', ''))} | "
+                f"{markdown_escape(partition.get('harness_id', ''))} | "
+                f"{markdown_escape(partition.get('tool_use_policy', ''))} | "
+                f"{markdown_escape(partition.get('chat_eval_compatible', ''))} | "
+                f"{markdown_escape(partition.get('direct_api_benchmark', ''))} | "
                 f"{markdown_escape(partition.get('requested_model_id', ''))} | "
                 f"{markdown_escape(partition.get('observed_model_id', ''))} | "
                 f"{markdown_escape(partition.get('identity_confidence', ''))} | "

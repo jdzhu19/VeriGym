@@ -12,8 +12,8 @@ from .auth import (
     ResolvedAuthMode,
     resolve_auth_mode,
 )
-from .model import CodexExecModelClient
 from .preflight import AuthPreflightResult, run_auth_preflight
+from .readonly_agent import CodexCliReadonlyAgentAdapter
 
 __all__ = [
     "AUTH_MODE_ALIASES",
@@ -23,7 +23,7 @@ __all__ = [
     "AuthPreflightResult",
     "AuthSemanticId",
     "CodexCliAgentAdapter",
-    "CodexExecModelClient",
+    "CodexCliReadonlyAgentAdapter",
     "RequestedAuthMode",
     "ResolvedAuthMode",
     "__version__",

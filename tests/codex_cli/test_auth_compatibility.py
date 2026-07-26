@@ -11,13 +11,12 @@ from verigym_codex_cli import (
 )
 from verigym_codex_cli.capabilities import discover_capabilities
 from verigym_codex_cli.cli import main
-from verigym_codex_cli.config import model_settings
+from verigym_codex_cli.config import readonly_agent_settings
 from verigym_codex_cli.process import CodexProcessError, auth_configuration
 
 from verigym.core.loaders import load_model
 from verigym.reporting.aggregate import _auth_comparison_identity
 from verigym.schemas.external_agent import ExternalAgentCallIdentity
-from verigym.schemas.model import ModelRunConfig
 
 pytestmark = pytest.mark.codex_cli
 
@@ -93,14 +92,17 @@ def test_alias_preserves_provenance_but_shares_semantic_comparison(
     resolved_mode, credential_env = auth_configuration()
     assert resolved_mode == "inherited_codex_login"
     assert credential_env is None
-    alias = model_settings(ModelRunConfig(model_id="fake-model"), capabilities)
+    options = {"model_id": "fake-model"}
+    alias = readonly_agent_settings(options, capabilities, task_wall_time_s=300)
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "inherited_codex_login")
-    legacy = model_settings(ModelRunConfig(model_id="fake-model"), capabilities)
+    legacy = readonly_agent_settings(options, capabilities, task_wall_time_s=300)
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "api_key_env")
     monkeypatch.setenv("VERIGYM_TEST_API_KEY", "test-only-value-that-must-not-persist")
-    api_key = model_settings(
-        ModelRunConfig(model_id="fake-model", api_key_env="VERIGYM_TEST_API_KEY"),
+    monkeypatch.setenv("VERIGYM_CODEX_CREDENTIAL_ENV", "VERIGYM_TEST_API_KEY")
+    api_key = readonly_agent_settings(
+        options,
         capabilities,
+        task_wall_time_s=300,
     )
 
     assert alias.configuration_fingerprint != legacy.configuration_fingerprint

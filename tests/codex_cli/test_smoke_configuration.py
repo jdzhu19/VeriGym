@@ -7,11 +7,10 @@ from typing import Any
 import pytest
 import yaml
 from verigym_codex_cli.capabilities import runtime_capabilities
-from verigym_codex_cli.config import agent_settings, model_settings
+from verigym_codex_cli.config import agent_settings, readonly_agent_settings
 
 from verigym.core.orchestrator import VeriGym
 from verigym.registry.collections import build_registries
-from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.run import RunConfig
 
 pytestmark = [pytest.mark.codex_cli]
@@ -29,7 +28,7 @@ def test_real_smoke_uses_budget_aligned_five_minute_process_timeouts() -> None:
             "seed": 0,
             "sample_index": 0,
             "run_id": "track-a",
-            "track": "codex_cli_model_proxy",
+            "track": "codex_cli_readonly_single_turn_agent",
         },
         "gpt-5.4",
         Path("runs"),
@@ -47,11 +46,10 @@ def test_real_smoke_uses_budget_aligned_five_minute_process_timeouts() -> None:
     )
 
     assert isinstance(track_a, RunConfig)
-    assert isinstance(track_a.model_options, ModelRunConfig)
-    assert track_a.model_options.request_timeout_s == 300
-    assert track_a.model_options.client_options["allow_proxy_environment"] is True
-    assert track_a.model_options.client_options["max_process_time_s"] == 300
-    assert track_a.model_options.client_options["reasoning_effort"] == "xhigh"
+    assert track_a.agent == "codex-cli-readonly-agent"
+    assert track_a.agent_options["allow_proxy_environment"] is True
+    assert track_a.agent_options["max_process_time_s"] == 300
+    assert track_a.agent_options["reasoning_effort"] == "xhigh"
     assert track_b.agent_options["allow_proxy_environment"] is True
     assert track_b.agent_options["max_process_time_s"] == 300
     assert track_b.agent_options["reasoning_effort"] == "xhigh"
@@ -87,17 +85,15 @@ def test_actual_settings_resolvers_match_each_toy_task_budget(
     task = VeriGym(build_registries(discover_external=False)).load_task(task_id)[1]
     assert task.budget.max_wall_time_s == 300
 
-    track_a = model_settings(
-        ModelRunConfig(
-            model_id="fake-model",
-            request_timeout_s=300,
-            client_options={
-                "allow_proxy_environment": True,
-                "max_process_time_s": 300,
-                "reasoning_effort": "xhigh",
-            },
-        ),
+    track_a = readonly_agent_settings(
+        {
+            "model_id": "fake-model",
+            "allow_proxy_environment": True,
+            "max_process_time_s": 300,
+            "reasoning_effort": "xhigh",
+        },
         capabilities,
+        task_wall_time_s=task.budget.max_wall_time_s,
     )
     track_b = agent_settings(
         {
@@ -126,13 +122,10 @@ def test_actual_settings_resolvers_make_generic_clamping_observable(
 ) -> None:
     _executable, _log, _scenario = fake_codex
     _identity, capabilities = runtime_capabilities()
-    track_a = model_settings(
-        ModelRunConfig(
-            model_id="fake-model",
-            request_timeout_s=300,
-            client_options={"max_process_time_s": 600},
-        ),
+    track_a = readonly_agent_settings(
+        {"model_id": "fake-model", "max_process_time_s": 600},
         capabilities,
+        task_wall_time_s=300,
     )
     track_b = agent_settings(
         {"model_id": "fake-model", "max_process_time_s": 600},

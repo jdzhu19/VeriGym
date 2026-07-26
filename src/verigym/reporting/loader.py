@@ -551,7 +551,10 @@ def _load_codex_cli_accounting(
     child: Path,
     manifest: RunManifest,
 ) -> ExternalAgentAccounting | None:
-    is_codex_track = manifest.agent.name == "codex-cli-agent" or (
+    is_codex_track = manifest.agent.name in {
+        "codex-cli-agent",
+        "codex-cli-readonly-agent",
+    } or (
         manifest.model is not None
         and manifest.model.configuration.get("integration_track") == "codex_cli_model_proxy"
     )

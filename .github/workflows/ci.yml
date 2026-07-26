@@ -98,12 +98,22 @@ jobs:
           /tmp/verigym-codex-plugin-venv/bin/pip check
           cd /tmp
           /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
+          from verigym.core.errors import PluginNotFoundError
           from verigym.registry.collections import build_registries
           from verigym_codex_cli import resolve_auth_mode
 
           registries = build_registries()
-          assert registries.models.origin("codex-cli-exec-model").package == "verigym-codex-cli"
+          assert (
+              registries.agents.origin("codex-cli-readonly-agent").package
+              == "verigym-codex-cli"
+          )
           assert registries.agents.origin("codex-cli-agent").package == "verigym-codex-cli"
+          try:
+              registries.models.origin("codex-cli-exec-model")
+          except PluginNotFoundError:
+              pass
+          else:
+              raise AssertionError("retired Codex CLI model entry point remains installed")
           assert (
               resolve_auth_mode("chatgpt_cli_session").resolved_auth_mode
               == "inherited_codex_login"

@@ -1,4 +1,4 @@
-"""Strict per-run configuration for the two Codex CLI tracks."""
+"""Strict per-run configuration for the two Codex CLI agent tracks."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from verigym.plugin_api import JsonValue, ModelRunConfig
+from verigym.plugin_api import JsonValue
 
 from .auth import AuthModeResolution
 from .capabilities import CapabilityReport
@@ -21,7 +21,6 @@ _COMMON_OPTIONS = {
     "max_output_bytes",
     "allow_proxy_environment",
 }
-_MODEL_OPTIONS = {*_COMMON_OPTIONS, "reject_tool_use"}
 _AGENT_OPTIONS = {*_COMMON_OPTIONS, "model_id"}
 _AUTHORIZED_REASONING_EFFORT = "xhigh"
 ReasoningEffortSource = Literal["verigym_explicit_cli_override"]
@@ -44,7 +43,8 @@ class CodexSettings:
     timeout_clamped: bool
     max_process_time_s: float
     max_output_bytes: int
-    reject_tool_use: bool
+    tool_availability_policy: str
+    tool_use_policy: str
     requested_auth_mode: str
     resolved_auth_mode: str
     auth_semantic_id: str
@@ -73,7 +73,9 @@ class CodexSettings:
             "capability_fingerprint": capabilities.capability_fingerprint,
             "sandbox_policy": self.sandbox_policy,
             "approval_policy": self.approval_policy,
-            "empty_working_directory_policy": self.integration_track == "codex_cli_model_proxy",
+            "empty_working_directory_policy": (
+                self.integration_track == "codex_cli_readonly_single_turn_agent"
+            ),
             "ephemeral_session_policy": True,
             "auth_mode_label": self.auth_mode_label,
             "requested_auth_mode": self.requested_auth_mode,
@@ -89,42 +91,50 @@ class CodexSettings:
             "allow_proxy_environment": self.allow_proxy_environment,
             "proxy_environment_allowed": self.allow_proxy_environment,
             "forwarded_proxy_environment_names": list(self.forwarded_proxy_environment_names),
-            "reject_tool_use": self.reject_tool_use,
+            "execution_surface": "codex_cli",
+            "interaction_class": (
+                "cli_agent_single_turn_readonly"
+                if self.integration_track == "codex_cli_readonly_single_turn_agent"
+                else "cli_agent_workspace_writing"
+            ),
+            "model_client_kind": "cli_agent_mediated",
+            "agent_harness_kind": "codex_cli",
+            "tool_availability_policy": self.tool_availability_policy,
+            "tool_use_policy": self.tool_use_policy,
+            "chat_eval_compatible": False,
             "pure_api_model_eval": False,
             "direct_api_benchmark": False,
         }
 
 
-def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> CodexSettings:
-    if config.base_url is not None:
-        raise ValueError("codex-cli-exec-model does not accept a direct API base URL")
-    if config.temperature != 0.0 or config.top_p is not None:
-        raise ValueError("Codex CLI model proxy does not expose temperature or top_p controls")
-    model_id = _model_id(config.model_id)
-    options = config.client_options
-    _reject_unknown(options, _MODEL_OPTIONS, kind="model")
+def readonly_agent_settings(
+    options: Mapping[str, JsonValue],
+    capabilities: CapabilityReport,
+    *,
+    task_wall_time_s: int,
+) -> CodexSettings:
+    _reject_unknown(options, _AGENT_OPTIONS, kind="read-only agent")
+    model = options.get("model_id")
+    if not isinstance(model, str):
+        raise ValueError("codex-cli-readonly-agent requires string agent option model_id")
+    model_id = _model_id(model)
     sandbox = _string(options, "sandbox", "most-restrictive-supported")
     if sandbox == "most-restrictive-supported":
         sandbox = "read-only"
     if sandbox != "read-only" or sandbox not in capabilities.supported_sandbox_modes:
-        raise ValueError("Track A requires the supported read-only sandbox")
+        raise ValueError("read-only Codex CLI agent requires the supported read-only sandbox")
     approval = _string(options, "approval_policy", "non-interactive")
     if approval not in {"non-interactive", "never"}:
-        raise ValueError("Track A requires a non-interactive approval policy")
-    reject_tool_use = _boolean(options, "reject_tool_use", True)
-    if not reject_tool_use:
-        raise ValueError("Track A cannot disable tool-use rejection")
-    auth_resolution, credential_env = auth_identity_configuration(
-        default_credential_env=config.api_key_env
-    )
+        raise ValueError("read-only Codex CLI agent requires non-interactive approval")
+    auth_resolution, credential_env = auth_identity_configuration()
     requested_timeout = _number(
         options,
         "max_process_time_s",
-        config.request_timeout_s,
+        float(task_wall_time_s),
     )
-    task_wall_time = float(config.request_timeout_s)
+    task_wall_time = float(task_wall_time_s)
     return _settings(
-        integration_track="codex_cli_model_proxy",
+        integration_track="codex_cli_readonly_single_turn_agent",
         model_id=model_id,
         reasoning_effort=_reasoning_effort(options),
         sandbox=sandbox,
@@ -133,7 +143,8 @@ def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> Co
         task_wall_time=task_wall_time,
         effective_timeout=min(requested_timeout, task_wall_time),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
-        reject_tool_use=True,
+        tool_availability_policy="codex_cli_builtin_tools_readonly_sandboxed",
+        tool_use_policy="typed_readonly_empty_workdir_v1",
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
@@ -175,7 +186,8 @@ def agent_settings(
         task_wall_time=task_wall_time,
         effective_timeout=min(requested_timeout, task_wall_time),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
-        reject_tool_use=False,
+        tool_availability_policy="codex_cli_visible_workspace_tools",
+        tool_use_policy="visible_task_workspace_policy_v1",
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
@@ -194,7 +206,8 @@ def _settings(
     task_wall_time: float,
     effective_timeout: float,
     max_output: int,
-    reject_tool_use: bool,
+    tool_availability_policy: str,
+    tool_use_policy: str,
     auth_resolution: AuthModeResolution,
     credential_env: str | None,
     allow_proxy: bool,
@@ -222,7 +235,8 @@ def _settings(
         "effective_process_timeout_s": effective_timeout,
         "timeout_clamped": timeout_clamped,
         "max_output": max_output,
-        "reject_tool_use": reject_tool_use,
+        "tool_availability_policy": tool_availability_policy,
+        "tool_use_policy": tool_use_policy,
         "requested_auth_mode": auth_resolution.requested_auth_mode,
         "resolved_auth_mode": auth_resolution.resolved_auth_mode,
         "auth_semantic_id": auth_resolution.auth_semantic_id,
@@ -247,7 +261,8 @@ def _settings(
         timeout_clamped=timeout_clamped,
         max_process_time_s=effective_timeout,
         max_output_bytes=max_output,
-        reject_tool_use=reject_tool_use,
+        tool_availability_policy=tool_availability_policy,
+        tool_use_policy=tool_use_policy,
         requested_auth_mode=auth_resolution.requested_auth_mode,
         resolved_auth_mode=auth_resolution.resolved_auth_mode,
         auth_semantic_id=auth_resolution.auth_semantic_id,
@@ -318,4 +333,4 @@ def _integer(values: Mapping[str, JsonValue], key: str, default: int) -> int:
     return value
 
 
-__all__ = ["CodexSettings", "agent_settings", "model_settings"]
+__all__ = ["CodexSettings", "agent_settings", "readonly_agent_settings"]

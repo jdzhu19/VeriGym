@@ -6,7 +6,9 @@ import time
 from pathlib import Path
 
 import pytest
-from verigym_codex_cli import CodexExecModelClient
+from verigym_codex_cli import CodexCliReadonlyAgentAdapter
+from verigym_codex_cli.capabilities import runtime_capabilities
+from verigym_codex_cli.config import readonly_agent_settings
 from verigym_codex_cli.events import EventParseError, parse_event_stream
 from verigym_codex_cli.process import CodexCliProcessRunner, resolve_executable
 from verigym_codex_cli.security import (
@@ -16,70 +18,95 @@ from verigym_codex_cli.security import (
     validate_external_events,
 )
 
-from verigym.plugin_api import (
-    ModelClientError,
-    ModelErrorCategory,
-    ModelMessage,
-    ModelRequest,
-    ModelRunConfig,
-)
+from verigym.core.orchestrator import VeriGym
+from verigym.registry.collections import build_registries
+from verigym.schemas.common import InteractionMode
+from verigym.schemas.run import RunConfig, RunResult
 
 pytestmark = pytest.mark.codex_cli
 
 
-def _request() -> ModelRequest:
-    return ModelRequest(
-        request_id="security-request",
-        messages=[ModelMessage(role="user", content="Return a small AND gate.")],
+def _run_track_a(
+    output: Path,
+    *,
+    model_id: str = "fake-model",
+    allow_proxy_environment: bool = False,
+) -> RunResult:
+    registries = build_registries(discover_external=False)
+    registries.agents.register(CodexCliReadonlyAgentAdapter())
+    return VeriGym(registries).run(
+        RunConfig(
+            task_id="toy-rtl/and-gate-basic",
+            mode=InteractionMode.AGENT,
+            agent="codex-cli-readonly-agent",
+            agent_options={
+                "model_id": model_id,
+                "sandbox": "read-only",
+                "approval_policy": "non-interactive",
+                "reasoning_effort": "xhigh",
+                "allow_proxy_environment": allow_proxy_environment,
+            },
+            runtime="local",
+            output=output,
+        )
     )
-
-
-def _client(config: ModelRunConfig | None = None) -> CodexExecModelClient:
-    return CodexExecModelClient().clone_for_run(config or ModelRunConfig(model_id="fake-model"))
 
 
 @pytest.mark.parametrize(
     ("scenario_name", "category"),
     [
-        ("auth_error", ModelErrorCategory.AUTHENTICATION),
-        ("rate_limit", ModelErrorCategory.RATE_LIMIT),
-        ("transport_error", ModelErrorCategory.TRANSPORT),
-        ("nonzero", ModelErrorCategory.INTERNAL),
+        ("auth_error", "authentication"),
+        ("rate_limit", "rate_limit"),
+        ("transport_error", "transport"),
+        ("nonzero", "remote_process_error"),
     ],
 )
 def test_track_a_remote_failures_remain_structured_infrastructure(
     fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
     scenario_name: str,
-    category: ModelErrorCategory,
+    category: str,
 ) -> None:
     _executable, _log, scenario = fake_codex
     scenario(scenario_name)
-    with pytest.raises(ModelClientError) as raised:
-        _client().generate(_request())
-    assert raised.value.info.category == category
+    result = _run_track_a(tmp_path / "runs")
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == category
+    assert result.scorecard.failure.infrastructure is True
 
 
 @pytest.mark.parametrize("scenario_name", ["deep_event", "unknown_flood"])
 def test_bounded_event_parser_rejects_adversarial_fake_streams(
     fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
     scenario_name: str,
 ) -> None:
     _executable, _log, scenario = fake_codex
     scenario(scenario_name)
-    with pytest.raises(ModelClientError) as raised:
-        _client().generate(_request())
-    assert raised.value.info.category == ModelErrorCategory.INVALID_RESPONSE
+    result = _run_track_a(tmp_path / "runs")
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "parser_error"
 
 
-@pytest.mark.parametrize("scenario_name", ["unknown_event", "message_delta"])
-def test_forward_compatible_non_tool_events_do_not_invalidate_final_text(
+def test_known_message_delta_does_not_invalidate_final_text(
     fake_codex: tuple[Path, Path, object],
-    scenario_name: str,
+    tmp_path: Path,
 ) -> None:
     _executable, _log, scenario = fake_codex
-    scenario(scenario_name)
-    response = _client().generate(_request())
-    assert response.text.startswith("module and_gate")
+    scenario("message_delta")
+    result = _run_track_a(tmp_path / "runs")
+    assert result.scorecard.status == "completed"
+
+
+def test_unknown_event_fails_closed(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("unknown_event")
+    result = _run_track_a(tmp_path / "runs")
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "readonly_event_policy"
 
 
 def test_event_parser_rejects_duplicate_keys_and_parent_traversal(tmp_path: Path) -> None:
@@ -216,17 +243,11 @@ def test_process_environment_is_allowlisted_and_credentials_are_not_persisted(
 
     scenario("credential_output")
     monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "api_key_env")
+    monkeypatch.setenv("VERIGYM_CODEX_CREDENTIAL_ENV", "OPENAI_API_KEY")
     monkeypatch.setenv("OPENAI_API_KEY", "unit-test-credential-012345")
-    client = _client(
-        ModelRunConfig(
-            model_id="fake-model",
-            api_key_env="OPENAI_API_KEY",
-        )
-    )
-    with pytest.raises(ModelClientError):
-        client.generate(_request())
-    artifacts = tmp_path / "artifacts"
-    client.export_run_artifacts(artifacts)
+    run = _run_track_a(tmp_path / "runs")
+    assert run.scorecard.failure is not None
+    artifacts = run.run_dir / "artifacts" / "codex_cli"
     persisted = "\n".join(path.read_text(encoding="utf-8") for path in artifacts.iterdir())
     assert "unit-test-credential" not in persisted
 
@@ -287,38 +308,36 @@ def test_proxy_values_are_redacted_and_proxy_policy_partitions_identity(
     }
     for name, value in proxy_values.items():
         monkeypatch.setenv(name, value)
-    disabled = _client(ModelRunConfig(model_id="fake-model"))
-    enabled = _client(
-        ModelRunConfig(
-            model_id="fake-model",
-            client_options={"allow_proxy_environment": True},
-        )
+    _identity, capabilities = runtime_capabilities()
+    disabled = readonly_agent_settings(
+        {"model_id": "fake-model"},
+        capabilities,
+        task_wall_time_s=300,
     )
-    assert disabled.descriptor.configuration_fingerprint != (
-        enabled.descriptor.configuration_fingerprint
+    enabled = readonly_agent_settings(
+        {"model_id": "fake-model", "allow_proxy_environment": True},
+        capabilities,
+        task_wall_time_s=300,
     )
-    assert disabled.descriptor.configuration["allow_proxy_environment"] is False
-    assert disabled.descriptor.configuration["proxy_environment_allowed"] is False
-    assert disabled.descriptor.configuration["forwarded_proxy_environment_names"] == []
-    assert enabled.descriptor.configuration["proxy_environment_allowed"] is True
-    assert enabled.descriptor.configuration["allow_proxy_environment"] is True
-    assert enabled.descriptor.configuration["forwarded_proxy_environment_names"] == [
+    assert disabled.configuration_fingerprint != enabled.configuration_fingerprint
+    disabled_configuration = disabled.safe_configuration(capabilities)
+    enabled_configuration = enabled.safe_configuration(capabilities)
+    assert disabled_configuration["allow_proxy_environment"] is False
+    assert disabled_configuration["proxy_environment_allowed"] is False
+    assert disabled_configuration["forwarded_proxy_environment_names"] == []
+    assert enabled_configuration["proxy_environment_allowed"] is True
+    assert enabled_configuration["allow_proxy_environment"] is True
+    assert enabled_configuration["forwarded_proxy_environment_names"] == [
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "NO_PROXY",
     ]
 
     scenario("proxy_output")
-    with pytest.raises(ModelClientError) as raised:
-        enabled.generate(_request())
-    persisted_error = str(raised.value)
-    destination = tmp_path / "proxy-artifacts"
-    enabled.export_run_artifacts(destination)
-    persisted = (
-        persisted_error
-        + "\n"
-        + "\n".join(path.read_text(encoding="utf-8") for path in destination.iterdir())
-    )
+    result = _run_track_a(tmp_path / "runs", allow_proxy_environment=True)
+    assert result.scorecard.failure is not None
+    destination = result.run_dir / "artifacts" / "codex_cli"
+    persisted = "\n".join(path.read_text(encoding="utf-8") for path in destination.iterdir())
     for proxy_value in proxy_values.values():
         assert proxy_value not in persisted
     for secret_fragment in (
@@ -385,11 +404,12 @@ def test_output_timeout_and_orphan_cleanup_are_bounded(
 
 def test_model_id_argument_injection_is_data_not_shell_syntax(
     fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
 ) -> None:
     _executable, log, _scenario = fake_codex
     model_id = "fake-model;touch-pwned"
-    response = _client(ModelRunConfig(model_id=model_id)).generate(_request())
-    assert response.text.startswith("module and_gate")
+    result = _run_track_a(tmp_path / "runs", model_id=model_id)
+    assert result.scorecard.status == "completed"
     record = [
         json.loads(line)
         for line in log.read_text(encoding="utf-8").splitlines()
@@ -399,10 +419,19 @@ def test_model_id_argument_injection_is_data_not_shell_syntax(
     assert record["arguments"][model_index + 1] == model_id
     assert not Path("pwned").exists()
 
+    _identity, capabilities = runtime_capabilities()
     with pytest.raises(ValueError, match="begin"):
-        _client(ModelRunConfig(model_id="-c"))
+        readonly_agent_settings(
+            {"model_id": "-c"},
+            capabilities,
+            task_wall_time_s=300,
+        )
     with pytest.raises(ValueError, match="identifier"):
-        _client(ModelRunConfig(model_id="fake\nmodel"))
+        readonly_agent_settings(
+            {"model_id": "fake\nmodel"},
+            capabilities,
+            task_wall_time_s=300,
+        )
 
 
 def _process_running(pid: int) -> bool:
