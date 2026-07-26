@@ -3,6 +3,13 @@
 The optional `verigym-codex-cli` distribution exposes two systems that must remain separate in
 plans, reports, and comparisons.
 
+## Baseline status
+
+Commit `1deea550815603f72f68887b8db3577ea9c72462` is the final Codex CLI
+semantic-conformance baseline. Its sealed PASS evidence and every earlier FAIL/BLOCKED bundle
+are immutable. See the [release/audit index](../audits/codex_cli_smoke.md) for identities and
+historical verdicts.
+
 ## Integration tracks
 
 **Codex CLI read-only single-turn agent** uses `codex-cli-readonly-agent`. Every episode launches
@@ -23,8 +30,9 @@ the existing hidden verifier. CLI event, command, file, patch, token, cost, and 
 are recorded as external-agent accounting; VeriGym-native `tool_calls` remains unchanged.
 
 Both paths are Codex CLI agent-harness evaluations. Direct API support is unimplemented and was
-not executed. The former model-proxy identity is retired; historical sealed bundles and their
-verdicts remain immutable.
+not executed; it remains a separate future integration. Neither path is a direct API benchmark.
+The former model-proxy identity is retired; historical sealed bundles and their verdicts remain
+immutable.
 
 ## Capability and identity evidence
 
@@ -107,4 +115,5 @@ Both tracks store `capabilities.json`, `invocation.json`, redacted raw/parsed ev
 track also stores `event_policy.json`. These files are integrity-bound. Replay reads the
 candidate, manifest, verifier inputs, and scorecard; it never imports the plugin or launches
 Codex. Service/auth/transport/parser failures are infrastructure outcomes, while hidden-test
-failures after a structurally successful episode are ordinary candidate failures.
+failures after a structurally successful episode are ordinary benchmark outcomes for the frozen
+candidate, not integration failures. They remain unrepaired.

@@ -1,6 +1,7 @@
 # ADR 0011: Separate Codex CLI read-only and workspace-writing agent tracks
 
 - Status: accepted
+- Semantic baseline: `1deea550815603f72f68887b8db3577ea9c72462`
 
 ## Context
 
@@ -40,6 +41,8 @@ immutable and retains its original verdict.
 
 Results can be displayed side by side but are not interchangeable systems. Improvements on
 either track cannot be attributed solely to the model. Direct API evaluation is unimplemented
-and unexecuted. Missing identity, token, or cost values remain unknown, and infrastructure
-failures never become incorrect candidates. These LocalRuntime paths are conformance pilots, not
-untrusted-code sandboxes.
+and unexecuted; any future direct API integration must use a separately identified execution
+surface. A candidate that reaches the hidden verifier and fails its tests is a benchmark outcome,
+not an integration failure, and must not be repaired after freeze. Missing identity, token, or
+cost values remain unknown, and infrastructure failures never become incorrect candidates.
+These LocalRuntime paths are conformance pilots, not untrusted-code sandboxes.
