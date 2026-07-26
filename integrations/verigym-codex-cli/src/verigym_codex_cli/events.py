@@ -305,30 +305,30 @@ def _normalize(
         if item_type in {"command_execution", "command"}:
             category = "command_completed" if canonical == "item_completed" else "command_started"
             return category, {
-                "command": _first_string(item, ("command", "cmd")) or "",
-                "status": item.get("status"),
-                "exit_code": item.get("exit_code"),
-                "output_returned_to_model": bool(item.get("aggregated_output")),
+                "command": _first_string(safe_item, ("command", "cmd")) or "",
+                "status": safe_item.get("status"),
+                "exit_code": safe_item.get("exit_code"),
+                "output_returned_to_model": bool(safe_item.get("aggregated_output")),
             }
         if item_type in {"file_change", "patch", "patch_application"}:
             return "patch_applied", {
-                "paths": _file_change_paths(item),
-                "status": item.get("status"),
+                "paths": _file_change_paths(safe_item),
+                "status": safe_item.get("status"),
             }
         if item_type in {"file_read", "read_file"}:
-            return "file_read", {"path": _first_string(item, ("path", "file"))}
+            return "file_read", {"path": _first_string(safe_item, ("path", "file"))}
         if item_type in {"file_write", "write_file"}:
             return "file_write", {
-                "path": _first_string(item, ("path", "file")),
-                "status": item.get("status"),
+                "path": _first_string(safe_item, ("path", "file")),
+                "status": safe_item.get("status"),
             }
         if item_type in {"mcp_tool_call", "tool_call", "web_search"}:
             return "tool_call", {
-                "tool": _first_string(item, ("tool", "name")) or item_type,
-                "status": item.get("status"),
+                "tool": _first_string(safe_item, ("tool", "name")) or item_type,
+                "status": safe_item.get("status"),
             }
         if item_type in {"plan", "plan_update", "update_plan"}:
-            return "plan_update", {"status": item.get("status")}
+            return "plan_update", {"status": safe_item.get("status")}
         return "unknown", {"item_type": item_type[:128]}
     if "error" in canonical or raw.get("error") is not None:
         return "error", {

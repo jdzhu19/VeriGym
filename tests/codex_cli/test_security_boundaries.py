@@ -133,6 +133,49 @@ def test_event_parser_rejects_duplicate_keys_and_parent_traversal(tmp_path: Path
         validate_external_events(parsed, tmp_path)
 
 
+def test_normalized_events_never_persist_runtime_root_paths(tmp_path: Path) -> None:
+    workspace = tmp_path / "visible-workspace"
+    workspace.mkdir()
+    target = workspace / "rtl" / "TopModule.sv"
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.started",
+                        "item": {
+                            "type": "command_execution",
+                            "command": f"sed -n 1,20p {target}",
+                            "status": "in_progress",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "file_change",
+                            "changes": [{"path": str(target), "kind": "update"}],
+                            "status": "failed",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "file_read", "path": str(target)},
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        ),
+        roots=(workspace,),
+    )
+    rendered = json.dumps([event.safe_dict() for event in parsed.events], sort_keys=True)
+    assert str(workspace) not in rendered
+    assert "<runtime-root>/rtl/TopModule.sv" in rendered
+
+
 @pytest.mark.parametrize(
     "command",
     [
