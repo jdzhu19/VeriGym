@@ -77,6 +77,7 @@ testpaths = ["tests"]
 markers = [
   "integration: exercises an installed external RTL tool",
   "conformance: validates suite semantics",
+  "requires_iverilog: requires a local Icarus Verilog installation",
   "docker: exercises the opt-in real Docker runtime",
   "yosys: exercises an opt-in real local Yosys installation",
   "docker_yosys: exercises the opt-in pinned Docker Yosys profile",

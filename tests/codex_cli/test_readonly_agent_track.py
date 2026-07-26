@@ -46,6 +46,7 @@ def _run(
     )
 
 
+@pytest.mark.requires_iverilog
 def test_one_episode_runs_in_empty_directory_and_uses_ordinary_verifier(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
@@ -120,6 +121,7 @@ def test_unknown_usage_remains_null(
     assert result.scorecard.efficiency.external_total_tokens is None
 
 
+@pytest.mark.requires_iverilog
 def test_bounded_empty_workdir_read_events_are_typed_and_permitted(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,

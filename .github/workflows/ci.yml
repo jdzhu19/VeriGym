@@ -51,7 +51,7 @@ jobs:
       - name: Run ordinary no-daemon tests
         run: >-
           pytest
-          -m "not docker and not yosys and not external_benchmark and not release_audit"
+          -m "not requires_iverilog and not docker and not yosys and not external_benchmark and not release_audit"
 
   package:
     runs-on: ubuntu-24.04
@@ -84,6 +84,8 @@ jobs:
           sudo apt-get install --yes --no-install-recommends iverilog
           iverilog -V
           vvp -V
+      - name: Run Icarus-backed fake Codex tests
+        run: pytest -m requires_iverilog
       - name: Installed wheel, plugin, CLI, and public API
         run: >-
           python scripts/installed_conformance.py

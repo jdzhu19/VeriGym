@@ -47,6 +47,7 @@ def _run(
     )
 
 
+@pytest.mark.requires_iverilog
 def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
@@ -117,6 +118,7 @@ def test_alias_mode_track_b_records_identity_and_replays_without_cli(
     assert log.read_bytes() == before
 
 
+@pytest.mark.requires_iverilog
 def test_bad_candidate_is_normal_candidate_failure(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
@@ -279,6 +281,7 @@ def test_track_b_non_timeout_remote_taxonomy_is_unchanged(
     assert result.scorecard.failure.category == category
 
 
+@pytest.mark.requires_iverilog
 def test_track_b_fake_flow_succeeds_with_proxy_forwarding(
     fake_codex: tuple[Path, Path, object],
     monkeypatch: pytest.MonkeyPatch,

@@ -221,8 +221,10 @@ def test_package_ci_alone_provisions_icarus_for_full_conformance() -> None:
         "  reproducible-build:\n", maxsplit=1
     )[0]
 
-    assert "iverilog" not in ordinary
+    assert "apt-get install" not in ordinary
+    assert "not requires_iverilog" in ordinary
     assert "sudo apt-get install --yes --no-install-recommends iverilog" in package
     assert "iverilog -V" in package
     assert "vvp -V" in package
+    assert "pytest -m requires_iverilog" in package
     assert "scripts/installed_conformance.py" in package

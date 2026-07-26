@@ -88,6 +88,7 @@ def test_bounded_event_parser_rejects_adversarial_fake_streams(
     assert result.scorecard.failure.category == "parser_error"
 
 
+@pytest.mark.requires_iverilog
 def test_known_message_delta_does_not_invalidate_final_text(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
@@ -402,6 +403,7 @@ def test_output_timeout_and_orphan_cleanup_are_bounded(
     assert not _process_running(orphan_pid)
 
 
+@pytest.mark.requires_iverilog
 def test_model_id_argument_injection_is_data_not_shell_syntax(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
