@@ -490,7 +490,7 @@ def _acceptance(
             (identity := _load_codex_identity(result)) is not None
             and identity.get("integration_track") == "codex_cli_external_agent"
             and identity.get("interaction_class") == "cli_agent_workspace_writing"
-            and identity.get("tool_use_policy") == "visible_task_workspace_policy_v1"
+            and identity.get("tool_use_policy") == "visible_task_workspace_policy_v2"
             for result in track_b
         ),
         "track_b_identity_and_accounting": len(track_b) == 2
