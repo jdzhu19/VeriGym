@@ -36,6 +36,8 @@ class CodexSettings:
     reasoning_effort_source: ReasoningEffortSource
     inherited_reasoning_effort_allowed: bool
     sandbox_policy: str
+    sandbox_backend: str
+    sandbox_backend_source: str
     approval_policy: str
     requested_process_timeout_s: float
     task_wall_time_s: float
@@ -72,6 +74,8 @@ class CodexSettings:
             "cli_executable_sha256": capabilities.executable_sha256,
             "capability_fingerprint": capabilities.capability_fingerprint,
             "sandbox_policy": self.sandbox_policy,
+            "sandbox_backend": self.sandbox_backend,
+            "sandbox_backend_source": self.sandbox_backend_source,
             "approval_policy": self.approval_policy,
             "empty_working_directory_policy": (
                 self.integration_track == "codex_cli_readonly_single_turn_agent"
@@ -138,6 +142,8 @@ def readonly_agent_settings(
         model_id=model_id,
         reasoning_effort=_reasoning_effort(options),
         sandbox=sandbox,
+        sandbox_backend="codex_cli_default",
+        sandbox_backend_source="codex_cli_default",
         approval=approval,
         requested_timeout=requested_timeout,
         task_wall_time=task_wall_time,
@@ -181,13 +187,15 @@ def agent_settings(
         model_id=model_id,
         reasoning_effort=_reasoning_effort(options),
         sandbox=sandbox,
+        sandbox_backend="legacy_landlock",
+        sandbox_backend_source="verigym_explicit_cli_override",
         approval=approval,
         requested_timeout=requested_timeout,
         task_wall_time=task_wall_time,
         effective_timeout=min(requested_timeout, task_wall_time),
         max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
         tool_availability_policy="codex_cli_visible_workspace_tools",
-        tool_use_policy="visible_task_workspace_policy_v1",
+        tool_use_policy="visible_task_workspace_policy_v2",
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
@@ -201,6 +209,8 @@ def _settings(
     model_id: str,
     reasoning_effort: str,
     sandbox: str,
+    sandbox_backend: str,
+    sandbox_backend_source: str,
     approval: str,
     requested_timeout: float,
     task_wall_time: float,
@@ -229,6 +239,8 @@ def _settings(
         "reasoning_effort_source": _REASONING_EFFORT_SOURCE,
         "inherited_reasoning_effort_allowed": False,
         "sandbox": sandbox,
+        "sandbox_backend": sandbox_backend,
+        "sandbox_backend_source": sandbox_backend_source,
         "approval": approval,
         "requested_process_timeout_s": requested_timeout,
         "task_wall_time_s": task_wall_time,
@@ -254,6 +266,8 @@ def _settings(
         reasoning_effort_source=_REASONING_EFFORT_SOURCE,
         inherited_reasoning_effort_allowed=False,
         sandbox_policy=sandbox,
+        sandbox_backend=sandbox_backend,
+        sandbox_backend_source=sandbox_backend_source,
         approval_policy=approval,
         requested_process_timeout_s=requested_timeout,
         task_wall_time_s=task_wall_time,

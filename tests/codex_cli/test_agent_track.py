@@ -75,6 +75,7 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     assert "mcp_servers={}" in model_records[0]["arguments"]
     assert "project_doc_max_bytes=0" in model_records[0]["arguments"]
     assert "sandbox_workspace_write.network_access=false" in model_records[0]["arguments"]
+    assert "features.use_legacy_landlock=true" in model_records[0]["arguments"]
     assert model_records[0]["arguments"][-3:] == [
         "--config",
         'model_reasoning_effort="xhigh"',
@@ -84,6 +85,23 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
         (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(encoding="utf-8")
     )
     assert summary["candidate_modified_during_finish"] is False
+    assert summary["sandbox_backend"] == "legacy_landlock"
+    assert summary["sandbox_backend_source"] == "verigym_explicit_cli_override"
+    invocation = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "invocation.json").read_text(encoding="utf-8")
+    )
+    workspace_policy = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "workspace_policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert invocation["sandbox_backend"] == "legacy_landlock"
+    assert invocation["sandbox_backend_source"] == "verigym_explicit_cli_override"
+    assert workspace_policy["before"]["workspace_hash"]
+    assert workspace_policy["after"]["workspace_hash"]
+    assert workspace_policy["changed_paths"] == ["rtl/and_gate.v"]
+    assert workspace_policy["policy_passed"] is True
+    assert workspace_policy["content_values_persisted"] is False
     candidate_hash = hash_directory(result.run_dir / "candidate")
     before_replay = log.read_text(encoding="utf-8")
     replay = replay_run(result.run_dir, verify=False)
@@ -144,6 +162,45 @@ def test_remote_failure_is_infrastructure_failure(
     assert result.scorecard.failure.category == "authentication"
     assert result.scorecard.failure.kind == "model"
     assert result.scorecard.failure.infrastructure is True
+
+
+def test_bwrap_backend_failure_is_observable_infrastructure(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("agent_bwrap")
+    result = _run(tmp_path / "runs")
+    assert result.scorecard.status == "error"
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "sandbox_backend_unavailable"
+    assert result.scorecard.failure.infrastructure is True
+    policy = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "workspace_policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert policy["before"]["workspace_hash"] == policy["after"]["workspace_hash"]
+    assert policy["changed_paths"] == []
+
+
+def test_contained_mcp_policy_failure_is_not_infrastructure(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("agent_mcp")
+    result = _run(tmp_path / "runs")
+    assert result.scorecard.status == "failed"
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "workspace_policy"
+    assert result.scorecard.failure.infrastructure is False
+    event_policy = json.loads(
+        (result.run_dir / "artifacts" / "codex_cli" / "event_policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert event_policy["policy_passed"] is False
 
 
 def test_path_escape_is_policy_failure(

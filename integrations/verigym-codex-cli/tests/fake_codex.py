@@ -231,6 +231,42 @@ def main():
                 "item": {"type": "file_read", "path": "/etc/passwd"},
             }
         )
+    if scenario == "agent_bwrap":
+        _emit(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": "printf test",
+                    "status": "running",
+                },
+            }
+        )
+        _emit(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": "printf test",
+                    "status": "failed",
+                    "exit_code": 1,
+                    "aggregated_output": (
+                        "bwrap: Creating new namespace failed: Operation not permitted"
+                    ),
+                },
+            }
+        )
+    if scenario == "agent_mcp":
+        _emit(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "mcp_tool_call",
+                    "name": "list_mcp_resources",
+                    "status": "completed",
+                },
+            }
+        )
     if scenario in {
         "agent_good",
         "agent_bad",

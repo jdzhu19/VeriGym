@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "historical_commit": "9a84c60e7b78b10c5ed8a89ec3b2eef23cd328ff",
+  "historical_bundle_mutated": false,
+  "records": [
+    {"task":"Prob014_andgate","sample":0,"message":"b3fd5f8f6b78a1dc58be3dd5062843de39f5fcf183cd660b4caac1f1aea0a703","candidate":"2e4bfb47bf818e09ae7fa8f70416eeb32083cace8e4b31b84f44ad879350d37c","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob014_andgate","sample":1,"message":"b3fd5f8f6b78a1dc58be3dd5062843de39f5fcf183cd660b4caac1f1aea0a703","candidate":"2e4bfb47bf818e09ae7fa8f70416eeb32083cace8e4b31b84f44ad879350d37c","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob014_andgate","sample":2,"message":"8c19a9194163248aae7dde289f73db00a3cec861f3f701b5379cb38408268abd","candidate":"ff13074c1c8922f23f3958b34d22d7169150c5208183e056c1e9a97b485623f2","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob024_hadd","sample":0,"message":"87ad6d18d28fbeaf982e9b2b3bd4ab4c11c28b6663b1b32e9f1e38374a2a31b7","candidate":"ef8d152dc5c70cc3aaa3981f5d1a3994d1f3c432e584ddcd84fc218ee138c6dd","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob024_hadd","sample":1,"message":"86ccb3a6d54334db4744665275ed64ee09db6a22a4069cd08a67db886778ff79","candidate":"72741824ecaf731e14cd6d7529a96b8eb240514d049002af1e1d4093484864d4","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob024_hadd","sample":2,"message":"8f5c1ca66b0bcde4fdb16da72f0ce2126ad225a6d05fdb68d7148452b06eb368","candidate":"605e7bcf3920422da069526d1220aa8e1dcbb2aad5f78d1450a10d3aa7ce6fe5","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob035_count1to10","sample":0,"message":"2eba04bfac71d7328374d2a90678552dd8980b8cbffe4dad6024e8605d3dafce","candidate":"c6b8a41586adaec7bdcfdf8b3da0bf1dc7f06dc13cb4d6771980a86599e1af79","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob035_count1to10","sample":1,"message":"fc1dfbe391ab7a1d9dd554b7d6b033b66db2f1863b59bfb9b5c45a631a8c3e3e","candidate":"509d0a829d7a20a1e540eced88743f77a0b2cefa47d379326b39c9cef7314eaf","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob035_count1to10","sample":2,"message":"3e0395a918b7e9446be746e88de8b9a91e4551514ac131c66ec039795ed9f662","candidate":"b29138906cb4d2f2916ba643dae7842c00a4e82a5542d2604426710f37a97e0c","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob085_shift4","sample":0,"message":"d278f7abcc1c23b206be8bb927253c0702bbeff7ae28bbd060fdc23083125796","candidate":"93cea10d65e1a917fcb11807bafcc9dc798a40434ea36abef9f953122d15a66f","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob085_shift4","sample":1,"message":"d278f7abcc1c23b206be8bb927253c0702bbeff7ae28bbd060fdc23083125796","candidate":"93cea10d65e1a917fcb11807bafcc9dc798a40434ea36abef9f953122d15a66f","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob085_shift4","sample":2,"message":"7afe3840ca448f749a389964708738e86dd0f0325f47263ce8265b7afb0df2d2","candidate":"7199077d542e0284a099f056d7139fc59074aa85f4fd821c514a14da53ad2c94","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob107_fsm1s","sample":0,"message":"8cdbcaf751dbb301fcf4bb13b5e79022afb659db3d45b5d942fd7bbeff4a6845","candidate":"e4b5fe3fdba3942ca574e20e903f8132704ea6bafdd6af2cfe8f8e0a9e434e65","origin":"hidden_testbench","v12_exit":0},
+    {"task":"Prob107_fsm1s","sample":1,"message":"2df25fa8a63704f727b41c348c6d186d2863f6448c1ce090f9d3386906174107","candidate":"eae2ad9ebc7e9d585e605ca26c63649dd12dded96eb169cce2dbaece450d32c2","origin":"candidate","v12_exit":2},
+    {"task":"Prob107_fsm1s","sample":2,"message":"0dac12ff2080c1d450eeccc533fc0b460037a18cfbd82472dfa359ddb8dd3a52","candidate":"0bf2b6db6a12a2387c01e7acac3777b99c65622f4db5c2fe5203e3716a602feb","origin":"candidate","v12_exit":2}
+  ]
+}

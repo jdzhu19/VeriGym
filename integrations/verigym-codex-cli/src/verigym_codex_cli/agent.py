@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
@@ -43,8 +44,12 @@ from .process import (
 )
 from .security import (
     CodexPolicyError,
+    WorkspaceSnapshot,
     assert_instruction_isolation,
     assert_safe_workspace_tree,
+    compare_workspace_snapshots,
+    sandbox_backend_failure,
+    snapshot_visible_workspace,
     validate_external_events,
 )
 from .util import redact_text
@@ -78,6 +83,7 @@ class CodexCliAgentAdapter(AgentAdapter):
         self._prompt: str | None = None
         self._launched = False
         self._artifact_root: Path | None = None
+        self._workspace_before: WorkspaceSnapshot | None = None
 
     def start(self, context: AgentContext) -> None:
         bridge = context.external_bridge
@@ -90,6 +96,7 @@ class CodexCliAgentAdapter(AgentAdapter):
         workspace = bridge.workspace_root.resolve(strict=True)
         assert_instruction_isolation(workspace)
         assert_safe_workspace_tree(workspace)
+        workspace_before = snapshot_visible_workspace(workspace)
         executable, capabilities = runtime_capabilities()
         settings = agent_settings(
             context.agent_options,
@@ -104,6 +111,7 @@ class CodexCliAgentAdapter(AgentAdapter):
         self._prompt = _agent_prompt(context, bridge)
         self._launched = False
         self._artifact_root = bridge.artifact_root
+        self._workspace_before = workspace_before
         bridge.emit_event(
             "codex_cli_capabilities_resolved",
             {
@@ -139,6 +147,8 @@ class CodexCliAgentAdapter(AgentAdapter):
             {
                 "integration_track": settings.integration_track,
                 "sandbox_policy": settings.sandbox_policy,
+                "sandbox_backend": settings.sandbox_backend,
+                "sandbox_backend_source": settings.sandbox_backend_source,
                 "approval_policy": settings.approval_policy,
                 "effective_reasoning_effort": settings.effective_reasoning_effort,
                 "reasoning_effort_source": settings.reasoning_effort_source,
@@ -153,6 +163,17 @@ class CodexCliAgentAdapter(AgentAdapter):
         )
         parsed: ParsedEventStream | None = None
         failure: AgentTerminationError | None = None
+        event_policy: dict[str, Any] = {
+            "schema_version": "1.0",
+            "policy_id": settings.tool_use_policy,
+            "policy_passed": False,
+            "evaluation_complete": False,
+        }
+        workspace_policy: dict[str, Any]
+        workspace_after: WorkspaceSnapshot | None = None
+        workspace_before = self._workspace_before
+        if workspace_before is None:
+            raise RuntimeError("codex-cli-agent workspace identity was not captured")
         try:
             process = runner.run(
                 arguments,
@@ -176,7 +197,12 @@ class CodexCliAgentAdapter(AgentAdapter):
                 try:
                     parsed = _parse_agent_process(process, workspace)
                     validate_external_events(parsed, workspace)
-                    assert_safe_workspace_tree(workspace)
+                    event_policy = {
+                        "schema_version": "1.0",
+                        "policy_id": settings.tool_use_policy,
+                        "policy_passed": True,
+                        "evaluation_complete": True,
+                    }
                 except CodexPolicyError as exc:
                     failure = _agent_failure(
                         TerminationReason.POLICY_VIOLATION,
@@ -188,13 +214,55 @@ class CodexCliAgentAdapter(AgentAdapter):
                         "codex_cli_policy_violation",
                         {"category": "workspace_policy", "message": str(exc)},
                     )
+                    event_policy = {
+                        "schema_version": "1.0",
+                        "policy_id": settings.tool_use_policy,
+                        "policy_passed": False,
+                        "evaluation_complete": True,
+                        "failure_category": "workspace_policy",
+                        "failure_message": str(exc),
+                    }
                 except EventParseError as exc:
+                    backend_category = sandbox_backend_failure(process.stdout, process.stderr)
                     failure = _agent_failure(
                         TerminationReason.MODEL_ERROR,
-                        "parser_error",
-                        str(exc),
+                        backend_category or "parser_error",
+                        (
+                            "Codex CLI workspace sandbox backend was unavailable"
+                            if backend_category is not None
+                            else str(exc)
+                        ),
                         infrastructure=True,
                     )
+        try:
+            workspace_after = snapshot_visible_workspace(workspace)
+            workspace_policy = compare_workspace_snapshots(
+                workspace_before,
+                workspace_after,
+                editable_globs=bridge.editable_globs,
+                readonly_globs=bridge.readonly_globs,
+            )
+        except CodexPolicyError as exc:
+            workspace_policy = {
+                "schema_version": "1.0",
+                "policy_id": settings.tool_use_policy,
+                "before": workspace_before.safe_dict(),
+                "after": workspace_after.safe_dict() if workspace_after is not None else None,
+                "policy_passed": False,
+                "failure_category": "workspace_policy",
+                "failure_message": str(exc),
+                "content_values_persisted": False,
+            }
+            failure = _agent_failure(
+                TerminationReason.POLICY_VIOLATION,
+                "workspace_policy",
+                str(exc),
+                infrastructure=False,
+            )
+            bridge.emit_event(
+                "codex_cli_policy_violation",
+                {"category": "workspace_policy", "message": str(exc)},
+            )
         if parsed is not None:
             for event in parsed.events:
                 bridge.emit_event(
@@ -208,7 +276,13 @@ class CodexCliAgentAdapter(AgentAdapter):
                 )
         if failure is None:
             failure = _process_failure(process, parsed)
-        identity = _external_identity(settings, capabilities, parsed)
+        workspace_write_count = int(workspace_policy.get("changed_file_count") or 0)
+        identity = _external_identity(
+            settings,
+            capabilities,
+            parsed,
+            workspace_write_count=workspace_write_count,
+        )
         accounting = _external_accounting(process, parsed)
         bridge.emit_event(
             "codex_cli_process_completed",
@@ -232,11 +306,15 @@ class CodexCliAgentAdapter(AgentAdapter):
             accounting=accounting,
             summary={
                 "integration_track": settings.integration_track,
+                "sandbox_backend": settings.sandbox_backend,
+                "sandbox_backend_source": settings.sandbox_backend_source,
                 "structurally_successful_external_episode": failure is None,
                 "candidate_correctness_inferred_from_cli": False,
                 "failure_category": (failure.failure.category if failure is not None else None),
                 "failure_message": (failure.failure.message if failure is not None else None),
             },
+            event_policy=event_policy,
+            workspace_policy=workspace_policy,
             roots_to_redact=(workspace,),
         )
         evidence.write(bridge.artifact_root, create=False)
@@ -369,6 +447,14 @@ def _process_failure(
             "Codex CLI external-agent output exceeded the configured bound",
             infrastructure=True,
         )
+    sandbox_failure = sandbox_backend_failure(process.stdout, process.stderr)
+    if sandbox_failure is not None:
+        return _agent_failure(
+            TerminationReason.MODEL_ERROR,
+            sandbox_failure,
+            "Codex CLI workspace sandbox backend was unavailable",
+            infrastructure=True,
+        )
     if process.exit_code == 0 and parsed is not None and not parsed.error_messages:
         return None
     text = " ".join(
@@ -405,6 +491,8 @@ def _external_identity(
     settings: CodexSettings,
     capabilities: CapabilityReport,
     parsed: ParsedEventStream | None,
+    *,
+    workspace_write_count: int,
 ) -> ExternalAgentCallIdentity:
     observed = parsed.observed_model_id if parsed is not None else None
     tool_event_count = len(parsed.tool_use_events) if parsed is not None else 0
@@ -459,7 +547,7 @@ def _external_identity(
         read_only_tool_event_count=file_reads,
         external_network_tool_event_count=network_events,
         mcp_tool_event_count=mcp_events,
-        workspace_write_count=file_writes + patches,
+        workspace_write_count=max(file_writes + patches, workspace_write_count),
         chat_eval_compatible=False,
         pure_api_model_eval=False,
         direct_api_benchmark=False,

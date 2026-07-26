@@ -58,6 +58,8 @@ def build_exec_arguments(
             [
                 capabilities.config_flag,
                 "sandbox_workspace_write.network_access=false",
+                capabilities.config_flag,
+                "features.use_legacy_landlock=true",
             ]
         )
     arguments.extend(
@@ -83,6 +85,8 @@ def sanitized_invocation(
         "stdin_protocol": capabilities.selected_invocation_protocol,
         "machine_event_protocol": capabilities.selected_event_protocol,
         "working_directory_policy": working_directory_policy,
+        "sandbox_backend": settings.sandbox_backend,
+        "sandbox_backend_source": settings.sandbox_backend_source,
         "auth_mode_label": settings.auth_mode_label,
         "requested_auth_mode": settings.requested_auth_mode,
         "resolved_auth_mode": settings.resolved_auth_mode,

@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
+import io
 import json
 import os
 import re
 import stat
+import tempfile
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -20,14 +24,16 @@ from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
-from verigym.core.sampling import classify_sample_outcome, compute_pass_at_k
-from verigym.experiments.state import atomic_dump_json, atomic_dump_jsonl
+from verigym.core.sampling import compute_pass_at_k
+from verigym.experiments.state import atomic_dump_json, atomic_dump_jsonl, atomic_write_text
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.run import RunConfig, RunResult
 from verigym.schemas.suite import SuiteSourceConfig
+from verigym.suites.verilog_eval.schemas import IcarusCompatibility
+from verigym.suites.verilog_eval.toolchain import detect_icarus
 
 _EXPECTED_PACKAGE = "verigym-codex-cli"
 _REQUIRED_CONFIG_KEYS = {
@@ -100,6 +106,7 @@ def main() -> int:
     _required_environment("VERIGYM_CODEX_BINARY")
     _required_environment("VERIGYM_CODEX_AUTH_MODE")
     capability = _load_capability()
+    toolchain_identity = _toolchain_identity()
     source_root = Path(_required_environment("VERIGYM_VERILOG_EVAL_ROOT"))
     registries = build_registries()
     _verify_plugin_origins(registries)
@@ -116,6 +123,7 @@ def main() -> int:
         source_snapshot=source_snapshot,
         task_records=task_records,
         registries=registries,
+        toolchain_identity=toolchain_identity,
     )
     plan_path = arguments.plan_output.expanduser().resolve()
     if plan_path.exists() or plan_path.is_symlink():
@@ -146,6 +154,8 @@ def main() -> int:
         return 0
 
     budget = _load_budget(Path(budget_name), config)
+    _require_reference_compatible_toolchain(toolchain_identity)
+    _require_clean_frozen_source(plan)
     if arguments.output is None:
         raise SystemExit("--output is required when the pilot execution guard is complete")
     output = arguments.output.expanduser().resolve()
@@ -161,27 +171,53 @@ def main() -> int:
     started = time.monotonic()
     results: list[RunResult] = []
     execution_records: list[dict[str, Any]] = []
-    infrastructure_failures = 0
+    launch_records: list[dict[str, Any]] = []
     process_attempts = 0
+    stop_reason: str | None = None
+    launch_ledger = evidence_root / "process_authorizations.jsonl"
+    execution_ledger = evidence_root / "execution_results.jsonl"
+    _create_append_only_ledger(launch_ledger)
+    _create_append_only_ledger(execution_ledger)
     for item in plan["items"]:
-        if (
-            time.monotonic() - started >= budget["max_total_wall_time_s"]
-            or (
-                infrastructure_failures > 0
-                and infrastructure_failures >= budget["max_failed_infrastructure_runs"]
-            )
-            or process_attempts >= budget["max_codex_processes"]
-        ):
-            execution_records.append(
-                {
-                    "plan_index": item["plan_index"],
-                    "run_id": item["run_id"],
-                    "terminal": False,
-                    "error_category": "pilot_budget_exhausted",
-                }
-            )
+        elapsed = time.monotonic() - started
+        if stop_reason is None and elapsed >= budget["max_total_wall_time_s"]:
+            stop_reason = "global_wall_time_limit"
+        if stop_reason is None and process_attempts >= budget["max_codex_processes"]:
+            stop_reason = "global_process_limit"
+        if stop_reason is not None:
+            record = {
+                "plan_index": item["plan_index"],
+                "plan_item_id": item["plan_item_id"],
+                "run_id": item["run_id"],
+                "track": item["track"],
+                "task_id": item["task_id"],
+                "sample_index": item["sample_index"],
+                "launched": False,
+                "terminal": False,
+                "infrastructure_error": True,
+                "error_category": stop_reason,
+            }
+            execution_records.append(record)
+            _append_jsonl_record(execution_ledger, record)
             continue
         process_attempts += 1
+        authorization = {
+            "schema_version": "1.0",
+            "plan_index": item["plan_index"],
+            "plan_item_id": item["plan_item_id"],
+            "run_id": item["run_id"],
+            "track": item["track"],
+            "task_id": item["task_id"],
+            "sample_index": item["sample_index"],
+            "authorized_process_ordinal": process_attempts,
+            "retry_count": 0,
+            "resume": False,
+            "model_id": model_id,
+            "reasoning_effort": "xhigh",
+            "effective_timeout_s": config["execution"]["max_process_time_s"],
+        }
+        launch_records.append(authorization)
+        _append_jsonl_record(launch_ledger, authorization)
         run_config = _run_config(
             item,
             model_id=model_id,
@@ -192,49 +228,63 @@ def main() -> int:
             experiment_id=plan["experiment_id"],
             max_process_time_s=config["execution"]["max_process_time_s"],
         )
+        run_started = time.monotonic()
         try:
             result = service.run(run_config)
             results.append(result)
-            infrastructure = _is_infrastructure(result)
-            infrastructure_failures += int(infrastructure)
-            execution_records.append(
-                {
-                    "plan_index": item["plan_index"],
-                    "run_id": result.manifest.run_id,
-                    "run_dir": result.run_dir.relative_to(output).as_posix(),
-                    "terminal": True,
-                    "status": result.scorecard.status,
-                    "resolved": result.scorecard.resolved,
-                    "infrastructure_error": infrastructure,
-                    "failure": (
-                        result.scorecard.failure.model_dump(mode="json")
-                        if result.scorecard.failure is not None
-                        else None
-                    ),
-                }
+            record = _terminal_execution_record(
+                item,
+                result,
+                output=output,
+                wall_time_s=time.monotonic() - run_started,
             )
+            execution_records.append(record)
+            _append_jsonl_record(execution_ledger, record)
+            shared_failure = _shared_external_prerequisite_failure(result)
+            if shared_failure is not None:
+                stop_reason = shared_failure
+            elif _actual_security_breach(result):
+                stop_reason = "actual_security_breach"
         except Exception as exc:
-            infrastructure_failures += 1
-            execution_records.append(
-                {
-                    "plan_index": item["plan_index"],
-                    "run_id": item["run_id"],
-                    "terminal": False,
-                    "error_category": type(exc).__name__,
-                    "message": str(exc)[:1024],
-                }
-            )
-    atomic_dump_jsonl(evidence_root / "execution_results.jsonl", execution_records)
-    if plan_path.read_bytes() != plan_bytes:
-        raise RuntimeError("frozen pilot plan changed during execution")
-
+            record = {
+                "plan_index": item["plan_index"],
+                "plan_item_id": item["plan_item_id"],
+                "run_id": item["run_id"],
+                "track": item["track"],
+                "task_id": item["task_id"],
+                "sample_index": item["sample_index"],
+                "launched": True,
+                "terminal": False,
+                "infrastructure_error": True,
+                "error_category": type(exc).__name__,
+                "message": str(exc)[:1024],
+                "wall_time_s": time.monotonic() - run_started,
+            }
+            execution_records.append(record)
+            _append_jsonl_record(execution_ledger, record)
+    _validate_execution_ledgers(
+        plan,
+        launch_records=launch_records,
+        execution_records=execution_records,
+        max_processes=budget["max_codex_processes"],
+    )
+    plan_unchanged = plan_path.read_bytes() == plan_bytes
+    candidate_hashes_before_replay = {
+        result.manifest.run_id: hash_directory(result.run_dir / "candidate") for result in results
+    }
     replay_records = _replay_without_codex(results)
     atomic_dump_jsonl(evidence_root / "replay_results.jsonl", replay_records)
+    candidate_freeze = _candidate_freeze_evidence(results, candidate_hashes_before_replay)
+    atomic_dump_json(evidence_root / "candidate_freeze.json", candidate_freeze)
+    source_integrity = _source_integrity(plan)
+    atomic_dump_json(evidence_root / "source_integrity.json", source_integrity)
+    security_scans = _security_scans(results, output=output, source_root=source_root)
+    atomic_dump_json(evidence_root / "security_scans.json", security_scans)
     reports = ReportService().generate_all(
         runs_root,
         output_dir=reports_root,
         group_by=(
-            "task_id",
+            "task",
             "integration_track",
             "base_seed",
             "requested_model_id",
@@ -248,11 +298,380 @@ def main() -> int:
         execution_records,
         replay_records,
         elapsed_s=time.monotonic() - started,
+        global_wall_time_limit_s=budget["max_total_wall_time_s"],
         report_coverage=reports.aggregate.coverage.model_dump(mode="json"),
+        process_attempts=process_attempts,
+        plan_unchanged=plan_unchanged,
+        candidate_freeze=candidate_freeze,
+        source_integrity=source_integrity,
+        security_scans=security_scans,
     )
     atomic_dump_json(evidence_root / "pilot_results.json", pilot_report)
+    _write_pilot_reports(pilot_report, reports_root)
     print(json.dumps(pilot_report, indent=2, sort_keys=True))
-    return 0 if pilot_report["execution_complete"] else 1
+    return 0 if pilot_report["experiment_execution_gate"]["status"] == "PASS" else 1
+
+
+def _toolchain_identity() -> dict[str, Any]:
+    tools: dict[str, dict[str, Any]] = {}
+    for name in ("iverilog", "vvp"):
+        info = detect_icarus(name)
+        executable_sha256 = None
+        if info.executable is not None:
+            executable_sha256 = hashlib.sha256(Path(info.executable).read_bytes()).hexdigest()
+        tools[name] = {
+            "executable": info.executable,
+            "executable_sha256": executable_sha256,
+            "version": info.version,
+            "compatibility": info.compatibility.value,
+        }
+    return {
+        "schema_version": "1.0",
+        "profile": "verilog-eval-v2-icarus-v12",
+        "tools": tools,
+        "reference_compatible": all(
+            tool["compatibility"] == IcarusCompatibility.REFERENCE_COMPATIBLE.value
+            for tool in tools.values()
+        ),
+    }
+
+
+def _require_reference_compatible_toolchain(identity: dict[str, Any]) -> None:
+    if identity.get("reference_compatible") is not True:
+        versions = ", ".join(
+            f"{name}={details.get('version') or 'unavailable'}"
+            for name, details in identity["tools"].items()
+        )
+        raise SystemExit(
+            "real pilot requires the upstream-reference-compatible Icarus v12 profile; " + versions
+        )
+
+
+def _require_clean_frozen_source(plan: dict[str, Any]) -> None:
+    if plan.get("verigym_source_dirty") is not False:
+        raise SystemExit("real pilot requires a clean committed VeriGym source revision")
+    provenance = get_build_provenance()
+    if (
+        provenance.dirty
+        or provenance.source_commit != plan["verigym_commit"]
+        or provenance.source_tree_hash != plan["verigym_source_tree_hash"]
+    ):
+        raise SystemExit("VeriGym source identity changed before pilot execution")
+
+
+def _create_append_only_ledger(path: Path) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _append_jsonl_record(path: Path, record: dict[str, Any]) -> None:
+    payload = (
+        json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+    try:
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _terminal_execution_record(
+    item: dict[str, Any],
+    result: RunResult,
+    *,
+    output: Path,
+    wall_time_s: float,
+) -> dict[str, Any]:
+    score = result.scorecard
+    identity = result.manifest.external_agent_observations[-1]
+    artifact_root = result.run_dir / "artifacts" / "codex_cli"
+    summary = _load_optional_json(artifact_root / "summary.json")
+    event_policy = _load_optional_json(artifact_root / "event_policy.json")
+    workspace_policy = _load_optional_json(artifact_root / "workspace_policy.json")
+    if identity.integration_track == "codex_cli_readonly_single_turn_agent":
+        typed_policy_passed = summary.get("tool_policy_passed") is True
+    else:
+        typed_policy_passed = (
+            event_policy.get("policy_passed") is True
+            and workspace_policy.get("policy_passed") is True
+        )
+    return {
+        "plan_index": item["plan_index"],
+        "plan_item_id": item["plan_item_id"],
+        "run_id": result.manifest.run_id,
+        "run_dir": result.run_dir.relative_to(output).as_posix(),
+        "track": item["track"],
+        "task_id": item["task_id"],
+        "sample_index": item["sample_index"],
+        "launched": True,
+        "terminal": True,
+        "status": score.status,
+        "resolved": score.resolved,
+        "evaluable": not _is_infrastructure(result),
+        "infrastructure_error": _is_infrastructure(result),
+        "compile_status": score.correctness.compile_status,
+        "hidden_regression_status": score.correctness.hidden_regression_status,
+        "termination_reason": score.termination_reason,
+        "failure": (score.failure.model_dump(mode="json") if score.failure is not None else None),
+        "candidate_hash": score.reproducibility.candidate_hash,
+        "candidate_changed_files": list(score.patch.changed_files),
+        "candidate_diff_lines": score.patch.total_diff_lines,
+        "wall_time_s": wall_time_s,
+        "external_cli_process_wall_time_s": score.efficiency.external_cli_process_wall_time_s,
+        "external_total_tokens": score.efficiency.external_total_tokens,
+        "typed_tool_policy_passed": typed_policy_passed,
+        "tool_use_policy": identity.tool_use_policy,
+        "workspace_before_hash": (
+            workspace_policy.get("before", {}).get("workspace_hash")
+            if isinstance(workspace_policy.get("before"), dict)
+            else None
+        ),
+        "workspace_after_hash": (
+            workspace_policy.get("after", {}).get("workspace_hash")
+            if isinstance(workspace_policy.get("after"), dict)
+            else None
+        ),
+    }
+
+
+def _load_optional_json(path: Path) -> dict[str, Any]:
+    if not path.is_file() or path.is_symlink():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    return value if isinstance(value, dict) else {}
+
+
+def _shared_external_prerequisite_failure(result: RunResult) -> str | None:
+    failure = result.scorecard.failure
+    if failure is None or not failure.infrastructure:
+        return None
+    if failure.category in {
+        "authentication",
+        "rate_limit",
+        "transport",
+        "process_boundary",
+        "sandbox_backend_unavailable",
+    }:
+        return f"shared_external_prerequisite:{failure.category}"
+    return None
+
+
+def _actual_security_breach(result: RunResult) -> bool:
+    """Distinguish an observed boundary escape from a safely contained policy refusal."""
+
+    run_dir = getattr(result, "run_dir", None)
+    if not isinstance(run_dir, Path):
+        return False
+    artifact_root = run_dir / "artifacts" / "codex_cli"
+    workspace_policy = _load_optional_json(artifact_root / "workspace_policy.json")
+    violations = workspace_policy.get("violations")
+    return bool(
+        workspace_policy.get("policy_passed") is False
+        and isinstance(violations, list)
+        and violations
+    )
+
+
+def _validate_execution_ledgers(
+    plan: dict[str, Any],
+    *,
+    launch_records: list[dict[str, Any]],
+    execution_records: list[dict[str, Any]],
+    max_processes: int,
+) -> None:
+    expected_indices = list(range(plan["planned_run_count"]))
+    if [record["plan_index"] for record in execution_records] != expected_indices:
+        raise RuntimeError("execution ledger does not cover every frozen plan item exactly once")
+    launched_indices = [record["plan_index"] for record in execution_records if record["launched"]]
+    authorized_indices = [record["plan_index"] for record in launch_records]
+    if launched_indices != authorized_indices:
+        raise RuntimeError("process authorization and execution ledgers disagree")
+    if len(launch_records) > max_processes:
+        raise RuntimeError("pilot exceeded its global Codex process authorization")
+    if [record["authorized_process_ordinal"] for record in launch_records] != list(
+        range(1, len(launch_records) + 1)
+    ):
+        raise RuntimeError("process authorization ordinals are not contiguous")
+    if any(
+        record["retry_count"] != 0 or record["resume"] is not False for record in launch_records
+    ):
+        raise RuntimeError("pilot authorization ledger contains a retry or resume")
+
+
+def _candidate_freeze_evidence(
+    results: list[RunResult],
+    before_replay: dict[str, str],
+) -> dict[str, Any]:
+    records = []
+    for result in results:
+        run_id = result.manifest.run_id
+        after = hash_directory(result.run_dir / "candidate")
+        records.append(
+            {
+                "run_id": run_id,
+                "before_replay_hash": before_replay[run_id],
+                "after_replay_hash": after,
+                "unchanged": before_replay[run_id] == after,
+                "candidate_modified_by_outer_agent": False,
+            }
+        )
+    return {
+        "schema_version": "1.0",
+        "records": records,
+        "verified_count": sum(record["unchanged"] for record in records),
+        "all_unchanged": all(record["unchanged"] for record in records),
+    }
+
+
+def _source_integrity(plan: dict[str, Any]) -> dict[str, Any]:
+    provenance = get_build_provenance()
+    passed = (
+        provenance.dirty is False
+        and provenance.source_commit == plan["verigym_commit"]
+        and provenance.source_tree_hash == plan["verigym_source_tree_hash"]
+    )
+    return {
+        "schema_version": "1.0",
+        "expected_commit": plan["verigym_commit"],
+        "observed_commit": provenance.source_commit,
+        "expected_tree_hash": plan["verigym_source_tree_hash"],
+        "observed_tree_hash": provenance.source_tree_hash,
+        "observed_dirty": provenance.dirty,
+        "passed": passed,
+    }
+
+
+def _security_scans(
+    results: list[RunResult],
+    *,
+    output: Path,
+    source_root: Path,
+) -> dict[str, Any]:
+    secret_hits: list[str] = []
+    hidden_hits: list[str] = []
+    host_path_hits: list[str] = []
+    proxy_value_hits: list[str] = []
+    host_markers = {
+        str(output.resolve()),
+        str(source_root.resolve()),
+        str(Path(__file__).resolve().parents[1]),
+        str(Path.home()),
+    }
+    proxy_values = [
+        os.environ[name]
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+        if name in os.environ and len(os.environ[name]) >= 8
+    ]
+    hidden_markers = {"tb_mismatch"}
+    for result in results:
+        native_id = result.manifest.task_id.rsplit("/", 1)[-1]
+        hidden_markers.update({f"{native_id}_ref.sv", f"{native_id}_test.sv"})
+    for result in results:
+        surfaces = (
+            result.run_dir / "candidate",
+            result.run_dir / "artifacts" / "codex_cli",
+            result.run_dir / "trace.jsonl",
+        )
+        for surface in surfaces:
+            paths = [surface] if surface.is_file() else list(surface.rglob("*"))
+            for path in paths:
+                if not path.is_file() or path.is_symlink():
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+                relative = f"{result.manifest.run_id}/{path.relative_to(result.run_dir).as_posix()}"
+                if _SECRET_PATTERN.search(text):
+                    secret_hits.append(relative)
+                if any(marker in text for marker in hidden_markers):
+                    hidden_hits.append(relative)
+                if any(marker and marker in text for marker in host_markers):
+                    host_path_hits.append(relative)
+                if any(value in text for value in proxy_values):
+                    proxy_value_hits.append(relative)
+    return {
+        "schema_version": "1.0",
+        "scope": [
+            "candidate",
+            "codex_cli_artifacts",
+            "trace",
+        ],
+        "excluded_expected_identity_fields": [
+            "suite_source_snapshot_paths",
+            "frozen_plan_source_paths",
+        ],
+        "secret_scan_passed": not secret_hits,
+        "secret_hits": sorted(set(secret_hits)),
+        "hidden_asset_scan_passed": not hidden_hits,
+        "hidden_asset_hits": sorted(set(hidden_hits)),
+        "hidden_asset_markers_are_names_only": True,
+        "reference_equivalent_candidate_is_not_inferred_as_a_leak": True,
+        "host_path_scan_passed": not host_path_hits,
+        "host_path_hits": sorted(set(host_path_hits)),
+        "proxy_value_scan_passed": not proxy_value_hits,
+        "proxy_value_hits": sorted(set(proxy_value_hits)),
+        "proxy_values_persisted_or_hashed": False,
+        "all_passed": not any((secret_hits, hidden_hits, host_path_hits, proxy_value_hits)),
+    }
+
+
+def _write_pilot_reports(report: dict[str, Any], destination: Path) -> None:
+    atomic_dump_json(destination / "acceptance.json", report["experiment_execution_gate"])
+    atomic_dump_json(destination / "pass-at-k.json", {"partitions": report["pass_at_k_partitions"]})
+    atomic_dump_json(
+        destination / "comparison-partitions.json",
+        {"partitions": report["comparison_partitions"]},
+    )
+    rows = report["per_run_outcomes"]
+    columns = [
+        "plan_index",
+        "run_id",
+        "track",
+        "task_id",
+        "sample_index",
+        "launched",
+        "terminal",
+        "status",
+        "resolved",
+        "evaluable",
+        "infrastructure_error",
+        "compile_status",
+        "hidden_regression_status",
+        "termination_reason",
+        "wall_time_s",
+        "external_total_tokens",
+        "typed_tool_policy_passed",
+    ]
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(stream, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    atomic_write_text(destination / "per-run-outcomes.csv", stream.getvalue())
+    gate = report["experiment_execution_gate"]
+    markdown = "\n".join(
+        [
+            "# VeriGym Codex CLI VerilogEval V2 Pilot",
+            "",
+            f"Experiment-execution gate: **{gate['status']}**.",
+            "",
+            "This is a preliminary 30-process Codex CLI agent pilot, not a direct API "
+            "benchmark or statistically definitive performance claim.",
+            "",
+            f"- Planned/launched/terminal: {report['planned_runs']}/"
+            f"{report['launched_processes']}/{report['terminal_runs']}",
+            f"- Evaluable/resolved: {report['evaluable_runs']}/{report['resolved_runs']}",
+            f"- Infrastructure failures: {report['infrastructure_failures']}",
+            f"- Contained policy failures: {report['policy_failure_count']}",
+            f"- Replay successes: {report['replay_success_count']}",
+            "",
+            "Candidate correctness and contained model policy failures are performance "
+            "outcomes; they are separate from the experiment-execution gate.",
+            "",
+        ]
+    )
+    atomic_write_text(destination / "pilot-report.md", markdown)
 
 
 def _load_yaml(path: Path, *, required_keys: set[str]) -> dict[str, Any]:
@@ -371,12 +790,13 @@ def _build_plan(
     source_snapshot: Any,
     task_records: list[dict[str, Any]],
     registries: Any,
+    toolchain_identity: dict[str, Any],
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
-    for track in config["tracks"]:
-        for task in task_records:
-            native = task["id"].rsplit("/", 1)[1]
-            for sample_index in config["sampling"]["sample_indices"]:
+    for task in task_records:
+        native = task["id"].rsplit("/", 1)[1]
+        for sample_index in config["sampling"]["sample_indices"]:
+            for track in config["tracks"]:
                 items.append(
                     {
                         "plan_index": len(items),
@@ -421,6 +841,7 @@ def _build_plan(
         "verigym_version": "0.1.0",
         "verigym_commit": provenance.source_commit,
         "verigym_source_tree_hash": provenance.source_tree_hash,
+        "verigym_source_dirty": provenance.dirty,
         "plugin_origins": {
             "readonly_agent": registries.agents.origin("codex-cli-readonly-agent").__dict__,
             "workspace_agent": registries.agents.origin("codex-cli-agent").__dict__,
@@ -437,6 +858,7 @@ def _build_plan(
             )
         },
         "source_snapshot": source_snapshot.model_dump(mode="json"),
+        "toolchain_identity": toolchain_identity,
         "task_records": task_records,
         "sampling": config["sampling"],
         "execution": config["execution"],
@@ -521,36 +943,58 @@ def _run_config(
 
 
 def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
-    original = os.environ.get("VERIGYM_CODEX_BINARY")
-    os.environ["VERIGYM_CODEX_BINARY"] = "/codex-must-not-run-during-replay"
+    protected_names = (
+        "HOME",
+        "CODEX_HOME",
+        "VERIGYM_CODEX_BINARY",
+        "VERIGYM_CODEX_AUTH_MODE",
+        "VERIGYM_CODEX_CREDENTIAL_ENV",
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY",
+    )
+    original = {name: os.environ.get(name) for name in protected_names}
+    removed_credential_names = [name for name in protected_names[3:] if name in os.environ]
     records: list[dict[str, Any]] = []
     try:
-        for result in results:
-            try:
-                replay = replay_run(result.run_dir, verify=True)
-                records.append(
-                    {
-                        "run_id": result.manifest.run_id,
+        with tempfile.TemporaryDirectory(prefix="verigym-credentialless-replay-") as replay_home:
+            os.environ["HOME"] = replay_home
+            os.environ["CODEX_HOME"] = replay_home
+            os.environ["VERIGYM_CODEX_BINARY"] = "/codex-must-not-run-during-replay"
+            for name in protected_names[3:]:
+                os.environ.pop(name, None)
+            for result in results:
+                common = {
+                    "run_id": result.manifest.run_id,
+                    "codex_available": False,
+                    "credential_environment_available": False,
+                    "credential_environment_names_removed": removed_credential_names,
+                    "codex_cli_process_count": 0,
+                    "model_call_count": 0,
+                }
+                try:
+                    replay = replay_run(result.run_dir, verify=True)
+                    record = {
+                        **common,
                         "success": True,
                         "reverified_resolved": replay.reverified_resolved,
-                        "codex_available": False,
                     }
-                )
-            except Exception as exc:
-                records.append(
-                    {
-                        "run_id": result.manifest.run_id,
+                except Exception as exc:
+                    record = {
+                        **common,
                         "success": False,
                         "error_category": type(exc).__name__,
                         "message": str(exc)[:1024],
-                        "codex_available": False,
                     }
+                record["credential_home_file_count"] = sum(
+                    path.is_file() for path in Path(replay_home).rglob("*")
                 )
+                records.append(record)
     finally:
-        if original is None:
-            os.environ.pop("VERIGYM_CODEX_BINARY", None)
-        else:
-            os.environ["VERIGYM_CODEX_BINARY"] = original
+        for name, value in original.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
     return records
 
 
@@ -561,76 +1005,83 @@ def _pilot_report(
     replay_records: list[dict[str, Any]],
     *,
     elapsed_s: float,
+    global_wall_time_limit_s: int,
     report_coverage: dict[str, Any],
+    process_attempts: int,
+    plan_unchanged: bool,
+    candidate_freeze: dict[str, Any],
+    source_integrity: dict[str, Any],
+    security_scans: dict[str, Any],
 ) -> dict[str, Any]:
-    grouped: dict[tuple[str, ...], list[RunResult]] = defaultdict(list)
-    tool_violations = 0
-    external_commands = 0
-    external_tools = 0
-    secret_hits: list[str] = []
-    hidden_hits: list[str] = []
+    results_by_item = {
+        result.manifest.plan_item_id: result
+        for result in results
+        if result.manifest.plan_item_id is not None
+    }
+    records_by_index = {record["plan_index"]: record for record in execution_records}
+    partition_items: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for item in plan["items"]:
+        partition_items[(item["task_id"], item["track"])].append(item)
+    pass_at_k = []
+    comparison_groups: dict[tuple[str, ...], list[str]] = defaultdict(list)
     for result in results:
         identity = _result_identity(result)
-        key = (
-            result.manifest.task_id,
+        comparison_key = (
             identity["integration_track"],
             identity["requested_model_id"],
             identity["observed_model_id"],
             identity["cli_version"],
             identity["capability_fingerprint"],
-            str(result.manifest.base_seed),
+            identity["auth_semantic_id"],
+            identity["tool_use_policy"],
+            identity["sandbox_policy"],
         )
-        grouped[key].append(result)
-        if identity["integration_track"] == "codex_cli_readonly_single_turn_agent":
-            summary = json.loads(
-                (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(
-                    encoding="utf-8"
+        comparison_groups[comparison_key].append(result.manifest.run_id)
+    for (task_id, track), items in sorted(partition_items.items()):
+        items = sorted(items, key=lambda item: item["sample_index"])
+        children = [
+            results_by_item[item["plan_item_id"]]
+            for item in items
+            if item["plan_item_id"] in results_by_item
+        ]
+        terminal_count = sum(records_by_index[item["plan_index"]]["terminal"] for item in items)
+        attempted_count = sum(records_by_index[item["plan_index"]]["launched"] for item in items)
+        evaluable_count = sum(not _is_infrastructure(child) for child in children)
+        resolved_count = sum(child.scorecard.resolved for child in children)
+        identity_partition_count = len(
+            {
+                (
+                    _result_identity(child)["requested_model_id"],
+                    _result_identity(child)["cli_version"],
+                    _result_identity(child)["capability_fingerprint"],
+                    _result_identity(child)["auth_semantic_id"],
+                    _result_identity(child)["tool_use_policy"],
                 )
-            )
-            tool_violations += int(summary.get("side_effecting_tool_event_count") or 0)
-            tool_violations += int(summary.get("external_network_tool_event_count") or 0)
-            tool_violations += int(summary.get("mcp_tool_event_count") or 0)
-            tool_violations += int(summary.get("workspace_write_count") or 0)
-            tool_violations += int(not summary.get("tool_policy_passed", False))
-        else:
-            external_commands += int(result.scorecard.efficiency.external_command_count or 0)
-            external_tools += int(result.scorecard.efficiency.external_tool_call_count or 0)
-        for visible in (
-            result.run_dir / "candidate",
-            result.run_dir / "artifacts" / "codex_cli",
-            result.run_dir / "trace.jsonl",
-        ):
-            paths = [visible] if visible.is_file() else list(visible.rglob("*"))
-            for path in paths:
-                if not path.is_file():
-                    continue
-                text = path.read_text(encoding="utf-8", errors="replace")
-                relative = path.relative_to(result.run_dir).as_posix()
-                if _SECRET_PATTERN.search(text):
-                    secret_hits.append(f"{result.manifest.run_id}/{relative}")
-                if "RefModule" in text or "Mismatches:" in text:
-                    hidden_hits.append(f"{result.manifest.run_id}/{relative}")
-    pass_at_k = []
-    for key, children in sorted(grouped.items()):
-        evaluable = all(not _is_infrastructure(child) for child in children)
-        canonical = len(children) == 3 and evaluable
-        resolved = sum(child.scorecard.resolved for child in children)
+                for child in children
+            }
+        )
+        canonical = (
+            len(items) == 3
+            and attempted_count == 3
+            and terminal_count == 3
+            and evaluable_count == 3
+            and identity_partition_count == 1
+            and [item["sample_index"] for item in items] == [0, 1, 2]
+        )
         pass_at_k.append(
             {
-                "task_id": key[0],
-                "integration_track": key[1],
-                "requested_model_id": key[2],
-                "observed_model_id": key[3] or None,
-                "cli_version": key[4],
-                "capability_fingerprint": key[5],
-                "base_seed": int(key[6]),
-                "sample_count": len(children),
-                "resolved_count": resolved,
+                "task_id": task_id,
+                "integration_track": track,
+                "planned_count": len(items),
+                "attempted_count": attempted_count,
+                "terminal_count": terminal_count,
+                "evaluable_count": evaluable_count,
+                "non_evaluable_count": len(items) - evaluable_count,
+                "unlaunched_count": len(items) - attempted_count,
+                "resolved_count": resolved_count,
+                "identity_partition_count": identity_partition_count,
                 "canonical_valid": canonical,
-                "values": {
-                    str(k): compute_pass_at_k(3, resolved, k) if canonical else None
-                    for k in (1, 2, 3)
-                },
+                "values": _pass_at_k_values(resolved_count, canonical=canonical),
             }
         )
     terminal = sum(bool(record.get("terminal")) for record in execution_records)
@@ -642,44 +1093,209 @@ def _pilot_report(
         result.scorecard.failure is not None and result.scorecard.failure.kind == "policy"
         for result in results
     )
+    integrity_records = [
+        {
+            "run_id": result.manifest.run_id,
+            "status": verify_artifact_manifest(result.run_dir, expected_scope="run").status,
+        }
+        for result in results
+    ]
+    integrity_verified = sum(record["status"] == "verified" for record in integrity_records)
+    replay_success = sum(record["success"] for record in replay_records)
+    evaluable_runs = sum(not _is_infrastructure(result) for result in results)
+    observed_model_processes = sum(
+        identity.invocation_count
+        for result in results
+        for identity in result.manifest.external_agent_observations
+    )
+    gate_checks = {
+        "planned_exactly_30": plan["planned_run_count"] == 30,
+        "launched_exactly_30": process_attempts == 30,
+        "observed_exactly_30_model_processes": observed_model_processes == 30,
+        "terminal_exactly_30": terminal == 30,
+        "all_outcomes_evaluable": evaluable_runs == 30,
+        "zero_infrastructure_failures": infrastructure == 0,
+        "all_replays_succeeded": replay_success == 30,
+        "all_replays_zero_cli_model_calls": all(
+            record["codex_cli_process_count"] == 0
+            and record["model_call_count"] == 0
+            and record["credential_home_file_count"] == 0
+            for record in replay_records
+        ),
+        "all_run_integrity_verified": integrity_verified == 30,
+        "candidate_freeze_unchanged": candidate_freeze["all_unchanged"],
+        "source_immutable": source_integrity["passed"],
+        "plan_immutable": plan_unchanged,
+        "security_scans_passed": security_scans["all_passed"],
+        "reference_compatible_toolchain": plan["toolchain_identity"]["reference_compatible"],
+        "all_pass_at_k_partitions_canonical": all(
+            partition["canonical_valid"] for partition in pass_at_k
+        ),
+        "within_global_wall_time": elapsed_s <= global_wall_time_limit_s,
+    }
+    if all(gate_checks.values()):
+        gate_status = "PASS"
+    elif any(
+        str(record.get("error_category", "")).startswith("shared_external_prerequisite:")
+        for record in execution_records
+    ):
+        gate_status = "BLOCKED"
+    else:
+        gate_status = "FAIL"
+    comparison_partitions = [
+        {
+            "partition_id": content_hash(
+                {
+                    "integration_track": key[0],
+                    "requested_model_id": key[1],
+                    "observed_model_id": key[2],
+                    "cli_version": key[3],
+                    "capability_fingerprint": key[4],
+                    "auth_semantic_id": key[5],
+                    "tool_use_policy": key[6],
+                    "sandbox_policy": key[7],
+                }
+            ),
+            "integration_track": key[0],
+            "requested_model_id": key[1],
+            "observed_model_id": key[2] or None,
+            "cli_version": key[3],
+            "capability_fingerprint": key[4],
+            "auth_semantic_id": key[5],
+            "tool_use_policy": key[6],
+            "sandbox_policy": key[7],
+            "run_count": len(run_ids),
+            "run_ids": sorted(run_ids),
+        }
+        for key, run_ids in sorted(comparison_groups.items())
+    ]
+    track_metrics = _track_metrics(execution_records, pass_at_k)
     return {
         "schema_version": "1.0",
         "study_label": "integration_study_not_direct_api_benchmark",
+        "measurement_scope": "preliminary_benchmark_pilot_not_statistically_definitive",
         "no_universal_score": True,
         "planned_runs": plan["planned_run_count"],
+        "launched_processes": process_attempts,
+        "observed_model_processes": observed_model_processes,
         "terminal_runs": terminal,
         "resolved_runs": sum(result.scorecard.resolved for result in results),
-        "evaluable_runs": sum(not _is_infrastructure(result) for result in results),
+        "evaluable_runs": evaluable_runs,
         "infrastructure_failures": infrastructure,
-        "execution_complete": terminal == 30 and infrastructure == 0 and policy_failures == 0,
+        "execution_complete": gate_status == "PASS",
+        "experiment_execution_gate": {
+            "status": gate_status,
+            "checks": gate_checks,
+            "candidate_performance_is_not_gate": True,
+            "contained_policy_failures_are_evaluable": True,
+        },
+        "model_performance_metrics": track_metrics,
         "policy_failure_count": policy_failures,
         "elapsed_s": elapsed_s,
         "known_total_tokens": sum(
-            result.scorecard.efficiency.total_tokens or 0 for result in results
+            result.scorecard.efficiency.external_total_tokens or 0 for result in results
         ),
         "missing_token_run_count": sum(
-            result.scorecard.efficiency.total_tokens is None for result in results
+            result.scorecard.efficiency.external_total_tokens is None for result in results
         ),
-        "track_a_readonly_policy_violations": tool_violations,
-        "track_b_external_command_count": external_commands,
-        "track_b_external_tool_count": external_tools,
         "candidate_changed_files": sum(
             len(result.scorecard.patch.changed_files) for result in results
         ),
         "candidate_diff_lines": sum(result.scorecard.patch.total_diff_lines for result in results),
+        "per_run_outcomes": execution_records,
         "pass_at_k_partitions": pass_at_k,
-        "replay_success_count": sum(record["success"] for record in replay_records),
-        "hidden_asset_scan_passed": not hidden_hits,
-        "hidden_asset_hits": sorted(set(hidden_hits)),
-        "secret_scan_passed": not secret_hits,
-        "secret_hits": sorted(set(secret_hits)),
-        "integrity_verified_count": sum(
-            verify_artifact_manifest(result.run_dir, expected_scope="run").status == "verified"
-            for result in results
-        ),
+        "comparison_partitions": comparison_partitions,
+        "replay_success_count": replay_success,
+        "replay_records": replay_records,
+        "security_scans": security_scans,
+        "candidate_freeze": candidate_freeze,
+        "source_integrity": source_integrity,
+        "integrity_verified_count": integrity_verified,
+        "integrity_records": integrity_records,
         "ppa_non_null_count": sum(result.scorecard.quality.ppa is not None for result in results),
         "report_coverage": report_coverage,
     }
+
+
+def _pass_at_k_values(resolved_count: int, *, canonical: bool) -> dict[str, float | None]:
+    return {
+        str(k): compute_pass_at_k(3, resolved_count, k) if canonical else None for k in (1, 2, 3)
+    }
+
+
+def _track_metrics(
+    execution_records: list[dict[str, Any]],
+    pass_at_k: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    tracks = sorted({str(record["track"]) for record in execution_records})
+    metrics = []
+    for track in tracks:
+        records = [record for record in execution_records if record["track"] == track]
+        partitions = [
+            partition for partition in pass_at_k if partition["integration_track"] == track
+        ]
+        wall_times = [
+            float(record["wall_time_s"])
+            for record in records
+            if isinstance(record.get("wall_time_s"), (int, float))
+        ]
+        canonical_pass_1 = [
+            float(partition["values"]["1"])
+            for partition in partitions
+            if partition["values"]["1"] is not None
+        ]
+        canonical_pass_3 = [
+            float(partition["values"]["3"])
+            for partition in partitions
+            if partition["values"]["3"] is not None
+        ]
+        metrics.append(
+            {
+                "integration_track": track,
+                "planned_count": len(records),
+                "launched_count": sum(record["launched"] for record in records),
+                "terminal_count": sum(record["terminal"] for record in records),
+                "evaluable_count": sum(bool(record.get("evaluable")) for record in records),
+                "resolved_count": sum(bool(record.get("resolved")) for record in records),
+                "compile_pass_count": sum(
+                    record.get("compile_status") == "passed" for record in records
+                ),
+                "hidden_test_pass_count": sum(
+                    record.get("hidden_regression_status") == "passed" for record in records
+                ),
+                "infrastructure_failure_count": sum(
+                    bool(record.get("infrastructure_error")) for record in records
+                ),
+                "infrastructure_failure_rate": (
+                    sum(bool(record.get("infrastructure_error")) for record in records)
+                    / len(records)
+                    if records
+                    else None
+                ),
+                "typed_tool_policy_failure_count": sum(
+                    record.get("typed_tool_policy_passed") is False for record in records
+                ),
+                "known_usage_count": sum(
+                    record.get("external_total_tokens") is not None for record in records
+                ),
+                "missing_usage_count": sum(
+                    record.get("external_total_tokens") is None for record in records
+                ),
+                "wall_time_total_s": sum(wall_times),
+                "wall_time_mean_s": sum(wall_times) / len(wall_times) if wall_times else None,
+                "pass_at_1_macro": (
+                    sum(canonical_pass_1) / len(canonical_pass_1)
+                    if len(canonical_pass_1) == 5
+                    else None
+                ),
+                "pass_at_3_macro": (
+                    sum(canonical_pass_3) / len(canonical_pass_3)
+                    if len(canonical_pass_3) == 5
+                    else None
+                ),
+            }
+        )
+    return metrics
 
 
 def _result_identity(result: RunResult) -> dict[str, str]:
@@ -693,17 +1309,19 @@ def _result_identity(result: RunResult) -> dict[str, str]:
         "observed_model_id": identity.observed_model_id or "",
         "cli_version": identity.executable_version,
         "capability_fingerprint": identity.capability_fingerprint,
+        "auth_semantic_id": identity.auth_semantic_id,
+        "tool_use_policy": identity.tool_use_policy,
+        "sandbox_policy": identity.sandbox_policy,
     }
 
 
 def _is_infrastructure(result: RunResult) -> bool:
     score = result.scorecard
-    outcome, _verdict = classify_sample_outcome(score)
     return (
         score.status == "error"
         or score.correctness.infrastructure_error
         or bool(score.failure and score.failure.infrastructure)
-        or outcome.value in {"infrastructure_error", "cancelled_truncated"}
+        or _actual_security_breach(result)
     )
 
 

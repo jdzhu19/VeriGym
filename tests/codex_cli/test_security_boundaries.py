@@ -15,6 +15,9 @@ from verigym_codex_cli.security import (
     CodexPolicyError,
     assert_instruction_isolation,
     assert_safe_workspace_tree,
+    compare_workspace_snapshots,
+    sandbox_backend_failure,
+    snapshot_visible_workspace,
     validate_external_events,
 )
 
@@ -179,6 +182,117 @@ def test_external_command_event_allows_bounded_visible_rtl_check(tmp_path: Path)
         )
     )
     validate_external_events(parsed, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf test",
+        (
+            "pwd && ls && sed -n '1,220p' README.md && "
+            "printf '\\n--- rtl/TopModule.sv ---\\n' && "
+            "sed -n '1,240p' rtl/TopModule.sv"
+        ),
+    ],
+)
+def test_historical_stdout_only_printf_commands_are_not_policy_false_positives(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": command,
+                            "status": "failed",
+                            "exit_code": 1,
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    validate_external_events(parsed, tmp_path)
+
+
+def test_printf_redirection_and_mcp_remain_fail_closed(tmp_path: Path) -> None:
+    redirected = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "printf unsafe > rtl/TopModule.sv",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    with pytest.raises(CodexPolicyError, match="stdout-only"):
+        validate_external_events(redirected, tmp_path)
+
+    mcp = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "mcp_tool_call",
+                            "name": "list_mcp_resources",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    with pytest.raises(CodexPolicyError, match="MCP"):
+        validate_external_events(mcp, tmp_path)
+
+
+def test_workspace_snapshots_record_before_after_hashes_without_contents(
+    tmp_path: Path,
+) -> None:
+    rtl = tmp_path / "rtl"
+    rtl.mkdir()
+    candidate = rtl / "TopModule.sv"
+    candidate.write_text("module TopModule; endmodule\n", encoding="utf-8")
+    (tmp_path / ".verigym_internal").mkdir()
+    before = snapshot_visible_workspace(tmp_path)
+    candidate.write_text("module TopModule(input a, output y); assign y=a; endmodule\n")
+    after = snapshot_visible_workspace(tmp_path)
+    evidence = compare_workspace_snapshots(
+        before,
+        after,
+        editable_globs=("rtl/TopModule.sv",),
+        readonly_globs=("README.md",),
+    )
+    assert before.workspace_hash != after.workspace_hash
+    assert evidence["changed_paths"] == ["rtl/TopModule.sv"]
+    assert evidence["policy_passed"] is True
+    assert evidence["content_values_persisted"] is False
+    assert "module TopModule" not in json.dumps(evidence)
+
+
+def test_known_bwrap_namespace_failure_has_stable_infrastructure_category() -> None:
+    assert (
+        sandbox_backend_failure(
+            "",
+            "bwrap: Creating new namespace failed: Operation not permitted",
+        )
+        == "sandbox_backend_unavailable"
+    )
+    assert sandbox_backend_failure("ordinary command failure", "") is None
 
 
 def test_instruction_symlink_and_hardlink_contamination_is_rejected(
