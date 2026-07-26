@@ -77,6 +77,12 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     assert result.manifest.model.configuration["auth_semantic_id"] == (
         "codex.auth.inherited_chatgpt_session.v1"
     )
+    assert result.manifest.model.configuration["requested_reasoning_effort"] == "xhigh"
+    assert result.manifest.model.configuration["effective_reasoning_effort"] == "xhigh"
+    assert result.manifest.model.configuration["reasoning_effort_source"] == (
+        "verigym_explicit_cli_override"
+    )
+    assert result.manifest.model.configuration["inherited_reasoning_effort_allowed"] is False
     assert verify_artifact_manifest(result.run_dir, expected_scope="run").status == "verified"
     codex_artifacts = result.run_dir / "artifacts" / "codex_cli"
     accounting = json.loads((codex_artifacts / "accounting.json").read_text(encoding="utf-8"))
@@ -85,6 +91,11 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     assert accounting["output_tokens"] == 7
     assert accounting["total_tokens"] == 18
     assert invocation["credential_values_persisted"] is False
+    assert invocation["argv"][-3:] == [
+        "--config",
+        'model_reasoning_effort="xhigh"',
+        "-",
+    ]
     from verigym.reporting.service import ReportService
 
     reports = ReportService().generate_all(
@@ -100,6 +111,10 @@ def test_codex_artifacts_are_integrity_bound_and_tamper_detected(
     assert rows[0]["resolved_auth_mode"] == "inherited_codex_login"
     assert rows[0]["auth_semantic_id"] == ("codex.auth.inherited_chatgpt_session.v1")
     assert rows[0]["auth_alias_used"] == "true"
+    assert rows[0]["requested_reasoning_effort"] == "xhigh"
+    assert rows[0]["effective_reasoning_effort"] == "xhigh"
+    assert rows[0]["reasoning_effort_source"] == "verigym_explicit_cli_override"
+    assert rows[0]["inherited_reasoning_effort_allowed"] == "false"
     summary = result.run_dir / "artifacts" / "codex_cli" / "summary.json"
     payload = json.loads(summary.read_text(encoding="utf-8"))
     payload["tampered"] = True

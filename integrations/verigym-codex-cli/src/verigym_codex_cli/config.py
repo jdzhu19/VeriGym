@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 from verigym.plugin_api import JsonValue, ModelRunConfig
 
@@ -15,18 +16,26 @@ from .util import clean_identifier, stable_hash
 _COMMON_OPTIONS = {
     "sandbox",
     "approval_policy",
+    "reasoning_effort",
     "max_process_time_s",
     "max_output_bytes",
     "allow_proxy_environment",
 }
 _MODEL_OPTIONS = {*_COMMON_OPTIONS, "reject_tool_use"}
 _AGENT_OPTIONS = {*_COMMON_OPTIONS, "model_id"}
+_AUTHORIZED_REASONING_EFFORT = "xhigh"
+ReasoningEffortSource = Literal["verigym_explicit_cli_override"]
+_REASONING_EFFORT_SOURCE: ReasoningEffortSource = "verigym_explicit_cli_override"
 
 
 @dataclass(frozen=True)
 class CodexSettings:
     integration_track: str
     model_id: str
+    requested_reasoning_effort: str
+    effective_reasoning_effort: str
+    reasoning_effort_source: ReasoningEffortSource
+    inherited_reasoning_effort_allowed: bool
     sandbox_policy: str
     approval_policy: str
     requested_process_timeout_s: float
@@ -55,6 +64,10 @@ class CodexSettings:
         return {
             "integration_track": self.integration_track,
             "requested_model_id": self.model_id,
+            "requested_reasoning_effort": self.requested_reasoning_effort,
+            "effective_reasoning_effort": self.effective_reasoning_effort,
+            "reasoning_effort_source": self.reasoning_effort_source,
+            "inherited_reasoning_effort_allowed": self.inherited_reasoning_effort_allowed,
             "cli_version": capabilities.version_output,
             "cli_executable_sha256": capabilities.executable_sha256,
             "capability_fingerprint": capabilities.capability_fingerprint,
@@ -113,6 +126,7 @@ def model_settings(config: ModelRunConfig, capabilities: CapabilityReport) -> Co
     return _settings(
         integration_track="codex_cli_model_proxy",
         model_id=model_id,
+        reasoning_effort=_reasoning_effort(options),
         sandbox=sandbox,
         approval=approval,
         requested_timeout=requested_timeout,
@@ -154,6 +168,7 @@ def agent_settings(
     return _settings(
         integration_track="codex_cli_external_agent",
         model_id=model_id,
+        reasoning_effort=_reasoning_effort(options),
         sandbox=sandbox,
         approval=approval,
         requested_timeout=requested_timeout,
@@ -172,6 +187,7 @@ def _settings(
     *,
     integration_track: str,
     model_id: str,
+    reasoning_effort: str,
     sandbox: str,
     approval: str,
     requested_timeout: float,
@@ -195,6 +211,10 @@ def _settings(
     safe = {
         "integration_track": integration_track,
         "model_id": model_id,
+        "requested_reasoning_effort": reasoning_effort,
+        "effective_reasoning_effort": reasoning_effort,
+        "reasoning_effort_source": _REASONING_EFFORT_SOURCE,
+        "inherited_reasoning_effort_allowed": False,
         "sandbox": sandbox,
         "approval": approval,
         "requested_process_timeout_s": requested_timeout,
@@ -215,6 +235,10 @@ def _settings(
     return CodexSettings(
         integration_track=integration_track,
         model_id=model_id,
+        requested_reasoning_effort=reasoning_effort,
+        effective_reasoning_effort=reasoning_effort,
+        reasoning_effort_source=_REASONING_EFFORT_SOURCE,
+        inherited_reasoning_effort_allowed=False,
         sandbox_policy=sandbox,
         approval_policy=approval,
         requested_process_timeout_s=requested_timeout,
@@ -242,6 +266,17 @@ def _model_id(value: str | None) -> str:
     if clean.startswith("-"):
         raise ValueError("Codex model ID cannot begin with '-'")
     return clean
+
+
+def _reasoning_effort(values: Mapping[str, JsonValue]) -> str:
+    effort = _string(
+        values,
+        "reasoning_effort",
+        _AUTHORIZED_REASONING_EFFORT,
+    )
+    if effort != _AUTHORIZED_REASONING_EFFORT:
+        raise ValueError("this Codex CLI conformance integration requires reasoning_effort='xhigh'")
+    return effort
 
 
 def _reject_unknown(

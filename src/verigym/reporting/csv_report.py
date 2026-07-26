@@ -74,6 +74,10 @@ CODEX_CLI_CSV_COLUMNS = [
     "requested_model_id",
     "observed_model_id",
     "identity_confidence",
+    "requested_reasoning_effort",
+    "effective_reasoning_effort",
+    "reasoning_effort_source",
+    "inherited_reasoning_effort_allowed",
     "auth_mode_label",
     "requested_auth_mode",
     "resolved_auth_mode",
@@ -304,6 +308,12 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
                 "cli_executable_sha256": configuration.get("cli_executable_sha256"),
                 "capability_fingerprint": configuration.get("capability_fingerprint"),
                 "requested_model_id": plan.system.model_descriptor.model_id,
+                "requested_reasoning_effort": configuration.get("requested_reasoning_effort"),
+                "effective_reasoning_effort": configuration.get("effective_reasoning_effort"),
+                "reasoning_effort_source": configuration.get("reasoning_effort_source"),
+                "inherited_reasoning_effort_allowed": configuration.get(
+                    "inherited_reasoning_effort_allowed"
+                ),
                 "auth_mode_label": configuration.get("auth_mode_label"),
                 "requested_auth_mode": (
                     configuration.get("requested_auth_mode") or configuration.get("auth_mode_label")
@@ -318,6 +328,16 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
         codex = {
             "integration_track": "codex_cli_external_agent",
             "requested_model_id": plan.system.agent_options.get("model_id"),
+            "requested_reasoning_effort": plan.system.agent_options.get("reasoning_effort"),
+            "effective_reasoning_effort": plan.system.agent_options.get("reasoning_effort"),
+            "reasoning_effort_source": (
+                "verigym_explicit_cli_override"
+                if plan.system.agent_options.get("reasoning_effort")
+                else None
+            ),
+            "inherited_reasoning_effort_allowed": (
+                False if plan.system.agent_options.get("reasoning_effort") else None
+            ),
             "sandbox_policy": plan.system.agent_options.get("sandbox"),
             "approval_policy": plan.system.agent_options.get("approval_policy"),
         }
@@ -364,6 +384,10 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
             "requested_model_id": identity.requested_model_id,
             "observed_model_id": identity.observed_model_id,
             "identity_confidence": identity.identity_confidence,
+            "requested_reasoning_effort": identity.requested_reasoning_effort,
+            "effective_reasoning_effort": identity.effective_reasoning_effort,
+            "reasoning_effort_source": identity.reasoning_effort_source,
+            "inherited_reasoning_effort_allowed": identity.inherited_reasoning_effort_allowed,
             "auth_mode_label": identity.auth_mode_label,
             "requested_auth_mode": (identity.requested_auth_mode or identity.auth_mode_label),
             "resolved_auth_mode": identity.resolved_auth_mode,
@@ -389,6 +413,12 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
             ),
             "identity_confidence": (
                 observation.identity_confidence if observation is not None else "unknown"
+            ),
+            "requested_reasoning_effort": configuration.get("requested_reasoning_effort"),
+            "effective_reasoning_effort": configuration.get("effective_reasoning_effort"),
+            "reasoning_effort_source": configuration.get("reasoning_effort_source"),
+            "inherited_reasoning_effort_allowed": configuration.get(
+                "inherited_reasoning_effort_allowed"
             ),
             "auth_mode_label": configuration.get("auth_mode_label"),
             "requested_auth_mode": (

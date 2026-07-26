@@ -48,6 +48,18 @@ def main():
         path.relative_to(cwd).as_posix() for path in cwd.rglob("*") if path.is_file()
     )
     model = _argument_value(arguments, "--model", "-m") or "fake-unconfigured"
+    explicit_reasoning_effort = _config_value(arguments, "model_reasoning_effort")
+    inherited_reasoning_effort = (
+        _inherited_reasoning_effort() if scenario == "require_xhigh_override" else None
+    )
+    effective_reasoning_effort = explicit_reasoning_effort or inherited_reasoning_effort
+    reasoning_effort_source = (
+        "verigym_explicit_cli_override"
+        if explicit_reasoning_effort is not None
+        else "inherited_codex_config"
+        if inherited_reasoning_effort is not None
+        else "unspecified"
+    )
     _log(
         {
             "kind": "model",
@@ -59,8 +71,19 @@ def main():
             "environment_names": sorted(os.environ),
             "environment_path": os.environ.get("PATH"),
             "unrelated_secret_visible": "VERIGYM_UNRELATED_SECRET" in os.environ,
+            "requested_reasoning_effort": explicit_reasoning_effort,
+            "effective_reasoning_effort": effective_reasoning_effort,
+            "reasoning_effort_source": reasoning_effort_source,
         }
     )
+    if scenario == "require_xhigh_override" and explicit_reasoning_effort != "xhigh":
+        _emit(
+            {
+                "type": "error",
+                "message": "explicit model_reasoning_effort xhigh override is required",
+            }
+        )
+        return 1
     if scenario == "timeout_partial_malformed":
         _emit(
             {
@@ -354,6 +377,40 @@ def _argument_value(arguments, *flags):
             index = arguments.index(flag)
             if index + 1 < len(arguments):
                 return arguments[index + 1]
+    return None
+
+
+def _config_value(arguments, key):
+    value = None
+    for index, argument in enumerate(arguments[:-1]):
+        if argument not in {"--config", "-c"}:
+            continue
+        candidate = arguments[index + 1]
+        prefix = key + "="
+        if not candidate.startswith(prefix):
+            continue
+        value = candidate[len(prefix) :]
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+    return value
+
+
+def _inherited_reasoning_effort():
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home is None:
+        return None
+    config = Path(codex_home) / "config.toml"
+    if not config.is_file():
+        return None
+    with config.open(encoding="utf-8") as stream:
+        for line in stream:
+            stripped = line.strip()
+            if not stripped.startswith("model_reasoning_effort"):
+                continue
+            _, _, raw = stripped.partition("=")
+            value = raw.strip().split("#", 1)[0].strip()
+            if len(value) >= 2 and value[0] == value[-1] == '"':
+                return value[1:-1]
     return None
 
 

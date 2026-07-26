@@ -37,6 +37,12 @@ def build_exec_arguments(
                 "sandbox_workspace_write.network_access=false",
             ]
         )
+    arguments.extend(
+        [
+            capabilities.config_flag,
+            f'model_reasoning_effort="{settings.effective_reasoning_effort}"',
+        ]
+    )
     arguments.append("-")
     return arguments
 
@@ -59,6 +65,10 @@ def sanitized_invocation(
         "resolved_auth_mode": settings.resolved_auth_mode,
         "auth_semantic_id": settings.auth_semantic_id,
         "auth_alias_used": settings.auth_alias_used,
+        "requested_reasoning_effort": settings.requested_reasoning_effort,
+        "effective_reasoning_effort": settings.effective_reasoning_effort,
+        "reasoning_effort_source": settings.reasoning_effort_source,
+        "inherited_reasoning_effort_allowed": settings.inherited_reasoning_effort_allowed,
         "credential_values_persisted": False,
         "proxy_values_persisted": False,
         "allow_proxy_environment": settings.allow_proxy_environment,

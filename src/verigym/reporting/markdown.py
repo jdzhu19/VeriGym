@@ -72,9 +72,11 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             "provenance.",
             "",
             "| Track | Requested model | Observed model | Confidence | CLI version | "
-            "Executable SHA-256 | Capability fingerprint | Requested auth | Resolved auth | "
+            "Executable SHA-256 | Capability fingerprint | Requested effort | Effective effort | "
+            "Effort source | Inherited effort | Requested auth | Resolved auth | "
             "Auth semantic ID | Alias used | Sandbox | Approval |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | "
+            "--- | --- | --- | --- |",
         ]
     )
     codex_partitions = aggregate.metadata.get("codex_cli_identity_partitions", [])
@@ -90,6 +92,10 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"{markdown_escape(partition.get('cli_version', ''))} | "
                 f"`{markdown_escape(partition.get('cli_executable_sha256', ''))}` | "
                 f"`{markdown_escape(partition.get('capability_fingerprint', ''))}` | "
+                f"{markdown_escape(partition.get('requested_reasoning_effort', ''))} | "
+                f"{markdown_escape(partition.get('effective_reasoning_effort', ''))} | "
+                f"{markdown_escape(partition.get('reasoning_effort_source', ''))} | "
+                f"{markdown_escape(partition.get('inherited_reasoning_effort_allowed', ''))} | "
                 f"{markdown_escape(partition.get('requested_auth_mode', ''))} | "
                 f"{markdown_escape(partition.get('resolved_auth_mode', ''))} | "
                 f"`{markdown_escape(partition.get('auth_semantic_id', ''))}` | "

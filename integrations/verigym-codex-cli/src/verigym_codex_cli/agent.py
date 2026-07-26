@@ -140,6 +140,8 @@ class CodexCliAgentAdapter(AgentAdapter):
                 "integration_track": settings.integration_track,
                 "sandbox_policy": settings.sandbox_policy,
                 "approval_policy": settings.approval_policy,
+                "effective_reasoning_effort": settings.effective_reasoning_effort,
+                "reasoning_effort_source": settings.reasoning_effort_source,
             },
         )
         runner = CodexCliProcessRunner(
@@ -411,6 +413,10 @@ def _external_identity(
         harness_name="verigym-external-agent-bridge",
         requested_model_id=settings.model_id,
         observed_model_id=observed,
+        requested_reasoning_effort=settings.requested_reasoning_effort,
+        effective_reasoning_effort=settings.effective_reasoning_effort,
+        reasoning_effort_source=settings.reasoning_effort_source,
+        inherited_reasoning_effort_allowed=settings.inherited_reasoning_effort_allowed,
         executable_name=capabilities.executable_name,
         executable_sha256=capabilities.executable_sha256,
         executable_version=capabilities.version_output,

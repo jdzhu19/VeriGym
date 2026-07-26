@@ -27,6 +27,11 @@ _SAFE_USAGE_KEYS = {
     "output_token_count",
     "total_token_count",
 }
+_SAFE_REASONING_IDENTITIES = {
+    "requested_reasoning_effort": {"xhigh"},
+    "effective_reasoning_effort": {"xhigh"},
+    "reasoning_effort_source": {"verigym_explicit_cli_override"},
+}
 
 
 def stable_hash(value: Any) -> str:
@@ -89,16 +94,22 @@ def redact_value(value: Any, *, roots: tuple[Path, ...] = ()) -> Any:
             safe_persistence_assertion = lowered == "credential_values_persisted" and isinstance(
                 item, bool
             )
+            safe_reasoning_identity = (
+                lowered in _SAFE_REASONING_IDENTITIES
+                and isinstance(item, str)
+                and item in _SAFE_REASONING_IDENTITIES[lowered]
+            )
             if (
                 not safe_usage
                 and not safe_persistence_assertion
+                and not safe_reasoning_identity
                 and any(
                     part in lowered
                     for part in ("token", "secret", "password", "credential", "api_key")
                 )
             ):
                 result[str(key)] = "<redacted>"
-            elif "reasoning" in lowered and isinstance(item, str):
+            elif not safe_reasoning_identity and "reasoning" in lowered and isinstance(item, str):
                 result[str(key)] = "<discarded-reasoning>"
             else:
                 result[str(key)] = redact_value(item, roots=roots)

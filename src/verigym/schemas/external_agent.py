@@ -19,6 +19,10 @@ class ExternalAgentCallIdentity(StrictModel):
     harness_name: str
     requested_model_id: str | None
     observed_model_id: str | None
+    requested_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=32)
+    effective_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=32)
+    reasoning_effort_source: Literal["verigym_explicit_cli_override"] | None = None
+    inherited_reasoning_effort_allowed: bool | None = None
     executable_name: str
     executable_sha256: str
     executable_version: str
@@ -69,6 +73,25 @@ class ExternalAgentCallIdentity(StrictModel):
             and self.requested_auth_mode != self.auth_mode_label
         ):
             raise ValueError("auth_mode_label must preserve the requested authentication mode")
+        reasoning_values = (
+            self.requested_reasoning_effort,
+            self.effective_reasoning_effort,
+            self.reasoning_effort_source,
+            self.inherited_reasoning_effort_allowed,
+        )
+        if any(value is not None for value in reasoning_values) and any(
+            value is None for value in reasoning_values
+        ):
+            raise ValueError(
+                "external-agent reasoning-effort identity fields must be recorded together"
+            )
+        if (
+            self.requested_reasoning_effort is not None
+            and self.requested_reasoning_effort != self.effective_reasoning_effort
+        ):
+            raise ValueError("external-agent requested and effective reasoning effort must match")
+        if self.inherited_reasoning_effort_allowed is True:
+            raise ValueError("external-agent reasoning effort cannot permit inherited values")
         return self
 
 

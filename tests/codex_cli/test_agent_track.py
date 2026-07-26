@@ -74,6 +74,11 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     assert "mcp_servers={}" in model_records[0]["arguments"]
     assert "project_doc_max_bytes=0" in model_records[0]["arguments"]
     assert "sandbox_workspace_write.network_access=false" in model_records[0]["arguments"]
+    assert model_records[0]["arguments"][-3:] == [
+        "--config",
+        'model_reasoning_effort="xhigh"',
+        "-",
+    ]
     summary = json.loads(
         (result.run_dir / "artifacts" / "codex_cli" / "summary.json").read_text(encoding="utf-8")
     )

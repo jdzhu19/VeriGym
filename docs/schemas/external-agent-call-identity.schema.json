@@ -68,6 +68,20 @@
       "title": "Configuration Fingerprint",
       "type": "string"
     },
+    "effective_reasoning_effort": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effective Reasoning Effort"
+    },
     "executable_name": {
       "title": "Executable Name",
       "type": "string"
@@ -92,6 +106,18 @@
       ],
       "title": "Identity Confidence",
       "type": "string"
+    },
+    "inherited_reasoning_effort_allowed": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Inherited Reasoning Effort Allowed"
     },
     "integration_track": {
       "anyOf": [
@@ -121,6 +147,19 @@
         }
       ],
       "title": "Observed Model Id"
+    },
+    "reasoning_effort_source": {
+      "anyOf": [
+        {
+          "const": "verigym_explicit_cli_override",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Effort Source"
     },
     "reproducibility_scope": {
       "enum": [
@@ -155,6 +194,20 @@
         }
       ],
       "title": "Requested Model Id"
+    },
+    "requested_reasoning_effort": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Reasoning Effort"
     },
     "resolved_auth_mode": {
       "anyOf": [

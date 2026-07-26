@@ -192,6 +192,10 @@ def test_legacy_external_agent_identity_fixture_round_trips_and_schema_is_stable
     assert identity.resolved_auth_mode is None
     assert identity.auth_semantic_id is None
     assert identity.auth_alias_used is None
+    assert identity.requested_reasoning_effort is None
+    assert identity.effective_reasoning_effort is None
+    assert identity.reasoning_effort_source is None
+    assert identity.inherited_reasoning_effort_allowed is None
     assert ExternalAgentCallIdentity.model_validate(identity.model_dump(mode="json")) == identity
     assert ExternalAgentCallIdentity.model_json_schema(
         mode="serialization"

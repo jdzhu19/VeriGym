@@ -201,6 +201,12 @@ def manifest_configuration_fingerprint(manifest: RunManifest) -> str:
                 "integration_track": observation.integration_track,
                 "requested_model_id": observation.requested_model_id,
                 "observed_model_id": observation.observed_model_id,
+                "requested_reasoning_effort": observation.requested_reasoning_effort,
+                "effective_reasoning_effort": observation.effective_reasoning_effort,
+                "reasoning_effort_source": observation.reasoning_effort_source,
+                "inherited_reasoning_effort_allowed": (
+                    observation.inherited_reasoning_effort_allowed
+                ),
                 "executable_sha256": observation.executable_sha256,
                 "executable_version": observation.executable_version,
                 "capability_fingerprint": observation.capability_fingerprint,

@@ -57,6 +57,10 @@ _GROUP_DIMENSIONS = {
     "requested_model_id",
     "observed_model_id",
     "identity_confidence",
+    "requested_reasoning_effort",
+    "effective_reasoning_effort",
+    "reasoning_effort_source",
+    "inherited_reasoning_effort_allowed",
     "auth_mode_label",
     "requested_auth_mode",
     "resolved_auth_mode",
@@ -649,6 +653,10 @@ def _sampling(
                 identity.get("cli_version", ""),
                 identity.get("cli_executable_sha256", ""),
                 identity.get("capability_fingerprint", ""),
+                identity.get("requested_reasoning_effort", ""),
+                identity.get("effective_reasoning_effort", ""),
+                identity.get("reasoning_effort_source", ""),
+                identity.get("inherited_reasoning_effort_allowed", ""),
                 _auth_comparison_identity(identity),
             )
             for run in present
@@ -1063,6 +1071,10 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
         "requested_model_id": codex.get("requested_model_id", ""),
         "observed_model_id": codex.get("observed_model_id", ""),
         "identity_confidence": codex.get("identity_confidence", ""),
+        "requested_reasoning_effort": codex.get("requested_reasoning_effort", ""),
+        "effective_reasoning_effort": codex.get("effective_reasoning_effort", ""),
+        "reasoning_effort_source": codex.get("reasoning_effort_source", ""),
+        "inherited_reasoning_effort_allowed": codex.get("inherited_reasoning_effort_allowed", ""),
         "auth_mode_label": codex.get("auth_mode_label", ""),
         "requested_auth_mode": codex.get("requested_auth_mode", ""),
         "resolved_auth_mode": codex.get("resolved_auth_mode", ""),
@@ -1097,6 +1109,10 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "requested_model_id": codex.get("requested_model_id", ""),
         "observed_model_id": codex.get("observed_model_id", ""),
         "identity_confidence": codex.get("identity_confidence", ""),
+        "requested_reasoning_effort": codex.get("requested_reasoning_effort", ""),
+        "effective_reasoning_effort": codex.get("effective_reasoning_effort", ""),
+        "reasoning_effort_source": codex.get("reasoning_effort_source", ""),
+        "inherited_reasoning_effort_allowed": codex.get("inherited_reasoning_effort_allowed", ""),
         "auth_mode_label": codex.get("auth_mode_label", ""),
         "requested_auth_mode": codex.get("requested_auth_mode", ""),
         "resolved_auth_mode": codex.get("resolved_auth_mode", ""),
@@ -1229,6 +1245,16 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
             "requested_model_id": identity.requested_model_id or "",
             "observed_model_id": identity.observed_model_id or "",
             "identity_confidence": identity.identity_confidence,
+            "requested_reasoning_effort": identity.requested_reasoning_effort or "",
+            "effective_reasoning_effort": identity.effective_reasoning_effort or "",
+            "reasoning_effort_source": identity.reasoning_effort_source or "",
+            "inherited_reasoning_effort_allowed": (
+                ""
+                if identity.inherited_reasoning_effort_allowed is None
+                else "true"
+                if identity.inherited_reasoning_effort_allowed
+                else "false"
+            ),
             "auth_mode_label": identity.auth_mode_label or "",
             "requested_auth_mode": (identity.requested_auth_mode or identity.auth_mode_label or ""),
             "resolved_auth_mode": identity.resolved_auth_mode or "",
@@ -1261,6 +1287,20 @@ def _run_codex_identity(run: ValidatedRun) -> dict[str, str]:
             or "",
             "identity_confidence": (
                 observation.identity_confidence if observation is not None else "unknown"
+            ),
+            "requested_reasoning_effort": str(
+                configuration.get("requested_reasoning_effort") or ""
+            ),
+            "effective_reasoning_effort": str(
+                configuration.get("effective_reasoning_effort") or ""
+            ),
+            "reasoning_effort_source": str(configuration.get("reasoning_effort_source") or ""),
+            "inherited_reasoning_effort_allowed": (
+                ""
+                if configuration.get("inherited_reasoning_effort_allowed") is None
+                else "true"
+                if configuration.get("inherited_reasoning_effort_allowed") is True
+                else "false"
             ),
             "auth_mode_label": str(configuration.get("auth_mode_label") or ""),
             "requested_auth_mode": str(
@@ -1301,6 +1341,22 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "requested_model_id": descriptor.model_id,
             "observed_model_id": "",
             "identity_confidence": "unknown",
+            "requested_reasoning_effort": str(
+                descriptor.configuration.get("requested_reasoning_effort") or ""
+            ),
+            "effective_reasoning_effort": str(
+                descriptor.configuration.get("effective_reasoning_effort") or ""
+            ),
+            "reasoning_effort_source": str(
+                descriptor.configuration.get("reasoning_effort_source") or ""
+            ),
+            "inherited_reasoning_effort_allowed": (
+                ""
+                if descriptor.configuration.get("inherited_reasoning_effort_allowed") is None
+                else "true"
+                if descriptor.configuration.get("inherited_reasoning_effort_allowed") is True
+                else "false"
+            ),
             "auth_mode_label": str(descriptor.configuration.get("auth_mode_label") or ""),
             "requested_auth_mode": str(
                 descriptor.configuration.get("requested_auth_mode")
@@ -1329,6 +1385,20 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "requested_model_id": requested if isinstance(requested, str) else "",
             "observed_model_id": "",
             "identity_confidence": "unknown",
+            "requested_reasoning_effort": str(
+                item.system.agent_options.get("reasoning_effort") or ""
+            ),
+            "effective_reasoning_effort": str(
+                item.system.agent_options.get("reasoning_effort") or ""
+            ),
+            "reasoning_effort_source": (
+                "verigym_explicit_cli_override"
+                if item.system.agent_options.get("reasoning_effort")
+                else ""
+            ),
+            "inherited_reasoning_effort_allowed": (
+                "false" if item.system.agent_options.get("reasoning_effort") else ""
+            ),
             "auth_mode_label": "",
             "requested_auth_mode": "",
             "resolved_auth_mode": "",
@@ -1355,6 +1425,10 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             identity.get("requested_model_id", ""),
             identity.get("observed_model_id", ""),
             identity.get("identity_confidence", ""),
+            identity.get("requested_reasoning_effort", ""),
+            identity.get("effective_reasoning_effort", ""),
+            identity.get("reasoning_effort_source", ""),
+            identity.get("inherited_reasoning_effort_allowed", ""),
             comparison_auth,
             identity.get("sandbox_policy", ""),
             identity.get("approval_policy", ""),
@@ -1383,6 +1457,10 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
             requested_model,
             observed_model,
             confidence,
+            requested_reasoning_effort,
+            effective_reasoning_effort,
+            reasoning_effort_source,
+            inherited_reasoning_effort_allowed,
             comparison_auth,
             sandbox,
             approval,
@@ -1396,6 +1474,10 @@ def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:
                 "requested_model_id": requested_model,
                 "observed_model_id": observed_model,
                 "identity_confidence": confidence,
+                "requested_reasoning_effort": requested_reasoning_effort,
+                "effective_reasoning_effort": effective_reasoning_effort,
+                "reasoning_effort_source": reasoning_effort_source,
+                "inherited_reasoning_effort_allowed": inherited_reasoning_effort_allowed,
                 "auth_mode_label": ",".join(sorted(provenance["auth_mode_label"])),
                 "requested_auth_mode": ",".join(sorted(provenance["requested_auth_mode"])),
                 "resolved_auth_mode": ",".join(sorted(provenance["resolved_auth_mode"])),

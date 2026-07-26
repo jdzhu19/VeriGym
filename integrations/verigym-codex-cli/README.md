@@ -25,6 +25,13 @@ The package registers `verigym.models` and `verigym.agents` entry points. Config
 only bounded, typed, secret-free options. Supply an explicit model ID; no CLI or provider default
 is inferred.
 
+Both tracks own reasoning effort explicitly. The strict `reasoning_effort` option is `xhigh`;
+each process appends `-c model_reasoning_effort="xhigh"` to its argument array so an incompatible
+user default cannot affect the request. Safe configuration, invocation, manifest, and report
+identities record requested/effective effort, the `verigym_explicit_cli_override` source, and
+that inherited effort is not allowed. User Codex configuration is neither edited nor copied into
+evidence.
+
 ## Zero-call doctor
 
 ```bash

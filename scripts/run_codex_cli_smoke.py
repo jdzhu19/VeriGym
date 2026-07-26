@@ -27,6 +27,8 @@ from verigym.schemas.run import RunConfig, RunResult
 _TASKS = ("toy-rtl/and-gate-basic", "toy-rtl/counter-basic")
 _TRACKS = ("codex_cli_model_proxy", "codex_cli_external_agent")
 _EXPECTED_PACKAGE = "verigym-codex-cli"
+_REASONING_EFFORT = "xhigh"
+_REASONING_EFFORT_SOURCE = "verigym_explicit_cli_override"
 _MAX_PROCESS_TIME_S = 300
 _MAX_CAMPAIGN_OVERHEAD_S = 10 * 60
 _MAX_TOTAL_WALL_TIME_S = len(_TASKS) * len(_TRACKS) * _MAX_PROCESS_TIME_S + _MAX_CAMPAIGN_OVERHEAD_S
@@ -132,6 +134,10 @@ def main() -> int:
             "requested_model_id",
             "cli_version",
             "capability_fingerprint",
+            "requested_reasoning_effort",
+            "effective_reasoning_effort",
+            "reasoning_effort_source",
+            "inherited_reasoning_effort_allowed",
         ),
     )
     scans = _scan_evidence(root, results)
@@ -180,6 +186,7 @@ def _frozen_plan(
                     "task_id": task_id,
                     "run_id": f"codex-cli-smoke-{track}-{suffix}",
                     "model_id": model_id,
+                    "reasoning_effort": _REASONING_EFFORT,
                     "seed": 0,
                     "sample_index": 0,
                     "retry_count": 0,
@@ -206,6 +213,10 @@ def _frozen_plan(
             "model_call_count": capability["model_call_count"],
         },
         "requested_model_id": model_id,
+        "requested_reasoning_effort": _REASONING_EFFORT,
+        "effective_reasoning_effort": _REASONING_EFFORT,
+        "reasoning_effort_source": _REASONING_EFFORT_SOURCE,
+        "inherited_reasoning_effort_allowed": False,
         **auth_identity,
         "task_records": task_records,
         "planned_run_count": 4,
@@ -240,6 +251,7 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
                     "sandbox": "most-restrictive-supported",
                     "approval_policy": "non-interactive",
                     "reject_tool_use": True,
+                    "reasoning_effort": _REASONING_EFFORT,
                     "allow_proxy_environment": True,
                     "max_process_time_s": _MAX_PROCESS_TIME_S,
                 },
@@ -253,6 +265,7 @@ def _run_config(item: dict[str, Any], model_id: str, output: Path) -> RunConfig:
             "model_id": model_id,
             "sandbox": "workspace-write",
             "approval_policy": "non-interactive",
+            "reasoning_effort": _REASONING_EFFORT,
             "allow_proxy_environment": True,
             "max_process_time_s": _MAX_PROCESS_TIME_S,
         },
@@ -394,6 +407,11 @@ def _acceptance(
             and identity.get("resolved_auth_mode") == plan["resolved_auth_mode"]
             and identity.get("auth_semantic_id") == plan["auth_semantic_id"]
             and identity.get("auth_alias_used") == plan["auth_alias_used"]
+            and identity.get("requested_reasoning_effort") == plan["requested_reasoning_effort"]
+            and identity.get("effective_reasoning_effort") == plan["effective_reasoning_effort"]
+            and identity.get("reasoning_effort_source") == plan["reasoning_effort_source"]
+            and identity.get("inherited_reasoning_effort_allowed")
+            == plan["inherited_reasoning_effort_allowed"]
             and identity.get("invocation_count") == 1
             and identity.get("identity_confidence") in {"observed", "requested_only", "unknown"}
             for identity in identities
