@@ -12,7 +12,16 @@ from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-_PROXY_ENVIRONMENT_NAMES = {"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+_FORWARDED_PROXY_ENVIRONMENT_NAMES = {"HTTP_PROXY", "HTTPS_PROXY"}
+_CONTAINER_PROXY_ENVIRONMENT_NAMES = {
+    *_FORWARDED_PROXY_ENVIRONMENT_NAMES,
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+}
 
 
 class ExternalProcessRequest(StrictModel):
@@ -62,11 +71,12 @@ class ExternalProcessRequest(StrictModel):
         if len(values) != len(set(values)):
             raise ValueError("forwarded proxy environment names must be unique")
         if any(
-            not _SAFE_ENVIRONMENT_NAME.fullmatch(value) or value not in _PROXY_ENVIRONMENT_NAMES
+            not _SAFE_ENVIRONMENT_NAME.fullmatch(value)
+            or value not in _FORWARDED_PROXY_ENVIRONMENT_NAMES
             for value in values
         ):
             raise ValueError("external process proxy forwarding is outside the strict allowlist")
-        return sorted(values)
+        return [name for name in ("HTTP_PROXY", "HTTPS_PROXY") if name in set(values)]
 
     @field_validator("argv")
     @classmethod
@@ -86,7 +96,7 @@ class ExternalProcessRequest(StrictModel):
         if any(not _SAFE_ENVIRONMENT_NAME.fullmatch(value) for value in values):
             raise ValueError("invalid container environment name")
         if any(
-            value in _PROXY_ENVIRONMENT_NAMES
+            value in _CONTAINER_PROXY_ENVIRONMENT_NAMES
             or re.search(r"(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|AUTH)", value, re.I)
             for value in values
         ):
@@ -166,6 +176,14 @@ class ExternalProcessSecurityEvidence(StrictModel):
     environment_names: list[str]
     credential_environment_names_in_container: list[str]
     proxy_environment_names_in_container: list[str]
+    control_plane_proxy_forwarding_enabled: bool = False
+    control_plane_forwarded_proxy_environment_names: list[Literal["HTTP_PROXY", "HTTPS_PROXY"]] = (
+        Field(default_factory=list)
+    )
+    control_plane_synthesized_environment_names: list[Literal["NO_PROXY", "no_proxy"]] = Field(
+        default_factory=list
+    )
+    control_plane_mandatory_loopback_bypass_present: bool = True
     host_home_mounted: Literal[False]
     source_repository_mounted: Literal[False]
     hidden_verifier_mounted: Literal[False]
@@ -200,6 +218,26 @@ class ExternalProcessSecurityEvidence(StrictModel):
             raise ValueError("agent container may not receive credential environment names")
         if self.proxy_environment_names_in_container:
             raise ValueError("agent container may not receive proxy environment names")
+        if self.control_plane_forwarded_proxy_environment_names != [
+            name
+            for name in ("HTTP_PROXY", "HTTPS_PROXY")
+            if name in set(self.control_plane_forwarded_proxy_environment_names)
+        ]:
+            raise ValueError("trusted host proxy-name identity must be canonical and unique")
+        if self.control_plane_proxy_forwarding_enabled:
+            if (
+                self.control_plane_mandatory_loopback_bypass_present
+                and self.control_plane_synthesized_environment_names != ["NO_PROXY", "no_proxy"]
+            ):
+                raise ValueError(
+                    "trusted host loopback bypass requires both synthesized environment names"
+                )
+        elif (
+            self.control_plane_forwarded_proxy_environment_names
+            or self.control_plane_synthesized_environment_names
+            or not self.control_plane_mandatory_loopback_bypass_present
+        ):
+            raise ValueError("disabled trusted host proxy forwarding has inconsistent evidence")
         if self.cap_drop != ["ALL"]:
             raise ValueError("agent container must drop all capabilities")
         if self.mount_destinations != ["/workspace"]:
@@ -224,6 +262,8 @@ class ExternalProcessResult(StrictModel):
     cleanup_complete: bool
     terminal_event_seen: bool
     failure_reason: str | None = None
+    failure_kind: Literal["infrastructure"] | None = None
+    failure_category: str | None = None
     failure_origin: (
         Literal[
             "host_control_plane",
@@ -235,6 +275,14 @@ class ExternalProcessResult(StrictModel):
     ) = None
     runtime_identity: ExternalProcessRuntimeIdentity
     security: ExternalProcessSecurityEvidence
+
+    @model_validator(mode="after")
+    def validate_failure_taxonomy(self) -> ExternalProcessResult:
+        if (self.failure_kind is None) != (self.failure_category is None):
+            raise ValueError("external process failure kind and category must be paired")
+        if self.failure_category is not None and self.failure_reason != self.failure_category:
+            raise ValueError("external process failure category must match its stable reason")
+        return self
 
     @model_validator(mode="after")
     def validate_result_consistency(self) -> ExternalProcessResult:

@@ -128,6 +128,7 @@ def sanitized_runtime_invocation(
 ) -> dict[str, object]:
     """Describe the app-server/remote-environment path without host paths."""
 
+    synthesized_names = ["NO_PROXY", "no_proxy"] if settings.allow_proxy_environment else []
     return {
         "schema_version": "1.0",
         "argv": ["<runtime-owned-codex>", "app-server", "--listen", "stdio://"],
@@ -154,7 +155,13 @@ def sanitized_runtime_invocation(
         "credential_values_persisted": False,
         "proxy_values_persisted": False,
         "allow_proxy_environment": settings.allow_proxy_environment,
-        "forwarded_proxy_environment_names": list(settings.forwarded_proxy_environment_names),
+        "forwarded_proxy_environment_names": list(
+            settings.runtime_forwarded_proxy_environment_names
+        ),
+        "synthesized_control_plane_environment_names": synthesized_names,
+        "mandatory_loopback_bypass_present": True,
+        "host_lowercase_proxy_variables_forwarded": False,
+        "all_proxy_forwarded": False,
         "container_proxy_environment_names": [],
         "container_credential_environment_names": [],
         "shell": False,

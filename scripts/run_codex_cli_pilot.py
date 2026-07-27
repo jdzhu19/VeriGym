@@ -45,7 +45,16 @@ _EXPECTED_CODEX_VERSION = "codex-cli 0.144.6"
 _EXPECTED_HOST_CODEX_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
 _EXPECTED_AGENT_CODEX_SHA256 = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
 _EXPECTED_AUTH_SEMANTIC_ID = "codex.auth.inherited_chatgpt_session.v1"
-_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+_FORWARDED_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY")
+_ALL_PROXY_NAMES = (
+    *_FORWARDED_PROXY_NAMES,
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+)
 _REQUIRED_CONFIG_KEYS = {
     "schema_version",
     "name",
@@ -578,6 +587,14 @@ def _docker_preflight(
         "provider_credentials_in_workspace": False,
         "provider_credentials_available_to_model_tools": False,
         "provider_credentials_persisted": False,
+        "control_plane_proxy_forwarding_enabled": True,
+        "control_plane_forwarded_proxy_environment_names": [
+            name for name in _FORWARDED_PROXY_NAMES if name in os.environ
+        ],
+        "control_plane_synthesized_environment_names": ["NO_PROXY", "no_proxy"],
+        "control_plane_mandatory_loopback_bypass_present": True,
+        "host_lowercase_proxy_variables_forwarded": False,
+        "all_proxy_forwarded": False,
         "agent_executable_identity": {
             "name": docker_config.external_agent.expected_executable_name,
             "path": docker_config.external_agent.expected_executable_path,
@@ -726,6 +743,21 @@ def _terminal_execution_record(
         "runtime_proxy_environment_names": runtime_security.get(
             "proxy_environment_names_in_container"
         ),
+        "control_plane_proxy_forwarding_enabled": runtime_security.get(
+            "control_plane_proxy_forwarding_enabled"
+        ),
+        "control_plane_forwarded_proxy_environment_names": runtime_security.get(
+            "control_plane_forwarded_proxy_environment_names"
+        ),
+        "control_plane_synthesized_environment_names": runtime_security.get(
+            "control_plane_synthesized_environment_names"
+        ),
+        "control_plane_mandatory_loopback_bypass_present": runtime_security.get(
+            "control_plane_mandatory_loopback_bypass_present"
+        ),
+        "runtime_failure_kind": runtime_process.get("failure_kind"),
+        "runtime_failure_category": runtime_process.get("failure_category"),
+        "runtime_failure_origin": runtime_process.get("failure_origin"),
         "runtime_workspace_changed_paths": runtime_security.get("workspace_changed_paths"),
         "runtime_security_complete": _runtime_process_security_complete(runtime_process),
     }
@@ -785,6 +817,7 @@ def _runtime_process_security_complete(runtime_process: dict[str, Any]) -> bool:
         "broker_stopped",
         "process_group_cleaned",
         "user_config_metadata_unchanged",
+        "control_plane_mandatory_loopback_bypass_present",
     )
     required_false = (
         "host_home_mounted",
@@ -808,6 +841,11 @@ def _runtime_process_security_complete(runtime_process: dict[str, Any]) -> bool:
         and security.get("writable_destinations") == ["/workspace", "/tmp"]
         and security.get("credential_environment_names_in_container") == []
         and security.get("proxy_environment_names_in_container") == []
+        and (
+            security.get("control_plane_proxy_forwarding_enabled") is not True
+            or security.get("control_plane_synthesized_environment_names")
+            == ["NO_PROXY", "no_proxy"]
+        )
         and all(security.get(name) is True for name in required_true)
         and all(security.get(name) is False for name in required_false)
         and runtime_process.get("cleanup_complete") is True
@@ -902,7 +940,7 @@ def _security_scans(
     }
     proxy_values = [
         os.environ[name]
-        for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+        for name in _ALL_PROXY_NAMES
         if name in os.environ and len(os.environ[name]) >= 8
     ]
     hidden_markers = {"tb_mismatch"}
@@ -1248,8 +1286,12 @@ def _proxy_identity() -> dict[str, Any]:
     return {
         "schema_version": "1.0",
         "allow_proxy_environment": True,
-        "allowlist": list(_PROXY_NAMES),
-        "forwarded_present_names": [name for name in _PROXY_NAMES if name in os.environ],
+        "allowlist": list(_FORWARDED_PROXY_NAMES),
+        "forwarded_present_names": [name for name in _FORWARDED_PROXY_NAMES if name in os.environ],
+        "synthesized_control_plane_environment_names": ["NO_PROXY", "no_proxy"],
+        "mandatory_loopback_bypass_present": True,
+        "host_lowercase_proxy_variables_forwarded": False,
+        "all_proxy_forwarded": False,
         "proxy_values_read_for_identity": False,
         "proxy_values_persisted_or_hashed": False,
     }
@@ -1344,6 +1386,11 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "ALL_PROXY",
+        "all_proxy",
     )
     original = {name: os.environ.get(name) for name in protected_names}
     removed_credential_names = [
@@ -1356,7 +1403,7 @@ def _replay_without_codex(results: list[RunResult]) -> list[dict[str, Any]]:
         )
         if name in os.environ
     ]
-    removed_proxy_names = [name for name in _PROXY_NAMES if name in os.environ]
+    removed_proxy_names = [name for name in _ALL_PROXY_NAMES if name in os.environ]
     records: list[dict[str, Any]] = []
     try:
         with tempfile.TemporaryDirectory(prefix="verigym-credentialless-replay-") as replay_home:

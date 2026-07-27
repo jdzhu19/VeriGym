@@ -143,6 +143,37 @@ def test_chatgpt_session_execution_rejects_api_key_environment_names(
         runner._require_no_api_key_environment()
 
 
+def test_pilot_proxy_identity_records_names_and_synthesized_controls_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _runner()
+    values = {
+        "HTTP_PROXY": "http://proxy-user:proxy-password@proxy.invalid:8080",
+        "HTTPS_PROXY": "http://proxy-user:proxy-password@proxy.invalid:8443",
+        "NO_PROXY": "private.invalid",
+        "http_proxy": "http://ignored-lower.invalid:8080",
+        "https_proxy": "http://ignored-lower.invalid:8443",
+        "no_proxy": "ignored.lower.invalid",
+        "ALL_PROXY": "http://ignored-all.invalid:1080",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    identity = runner._proxy_identity()
+
+    assert identity["allowlist"] == ["HTTP_PROXY", "HTTPS_PROXY"]
+    assert identity["forwarded_present_names"] == ["HTTP_PROXY", "HTTPS_PROXY"]
+    assert identity["synthesized_control_plane_environment_names"] == [
+        "NO_PROXY",
+        "no_proxy",
+    ]
+    assert identity["mandatory_loopback_bypass_present"] is True
+    assert identity["host_lowercase_proxy_variables_forwarded"] is False
+    assert identity["all_proxy_forwarded"] is False
+    serialized = json.dumps(identity, sort_keys=True)
+    assert all(value not in serialized for value in values.values())
+
+
 def test_contained_workspace_policy_mutation_is_evaluable_not_a_boundary_escape(
     tmp_path: Path,
 ) -> None:

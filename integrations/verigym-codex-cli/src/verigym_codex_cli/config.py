@@ -10,7 +10,11 @@ from verigym.plugin_api import JsonValue
 
 from .auth import AuthModeResolution
 from .capabilities import CapabilityReport
-from .process import auth_identity_configuration, forwarded_proxy_environment_names
+from .process import (
+    auth_identity_configuration,
+    forwarded_proxy_environment_names,
+    forwarded_runtime_proxy_environment_names,
+)
 from .util import clean_identifier, stable_hash
 
 _COMMON_OPTIONS = {
@@ -54,6 +58,7 @@ class CodexSettings:
     credential_env: str | None
     allow_proxy_environment: bool
     forwarded_proxy_environment_names: tuple[str, ...]
+    runtime_forwarded_proxy_environment_names: tuple[str, ...]
     configuration_fingerprint: str
 
     @property
@@ -95,6 +100,13 @@ class CodexSettings:
             "allow_proxy_environment": self.allow_proxy_environment,
             "proxy_environment_allowed": self.allow_proxy_environment,
             "forwarded_proxy_environment_names": list(self.forwarded_proxy_environment_names),
+            "runtime_forwarded_proxy_environment_names": list(
+                self.runtime_forwarded_proxy_environment_names
+            ),
+            "synthesized_control_plane_environment_names": (
+                ["NO_PROXY", "no_proxy"] if self.allow_proxy_environment else []
+            ),
+            "mandatory_loopback_bypass_present": True,
             "execution_surface": "codex_cli",
             "interaction_class": (
                 "cli_agent_single_turn_readonly"
@@ -258,6 +270,7 @@ def _settings(
     if max_output < 1024 or max_output > 16 * 1024 * 1024:
         raise ValueError("Codex output bound must be between 1 KiB and 16 MiB")
     forwarded_proxy_names = forwarded_proxy_environment_names(allow_proxy)
+    runtime_forwarded_proxy_names = forwarded_runtime_proxy_environment_names(allow_proxy)
     timeout_clamped = effective_timeout != requested_timeout
     safe = {
         "integration_track": integration_track,
@@ -284,6 +297,11 @@ def _settings(
         "allow_proxy_environment": allow_proxy,
         "proxy_environment_allowed": allow_proxy,
         "forwarded_proxy_environment_names": list(forwarded_proxy_names),
+        "runtime_forwarded_proxy_environment_names": list(runtime_forwarded_proxy_names),
+        "synthesized_control_plane_environment_names": (
+            ["NO_PROXY", "no_proxy"] if allow_proxy else []
+        ),
+        "mandatory_loopback_bypass_present": True,
         "capability_fingerprint": capabilities.capability_fingerprint,
     }
     return CodexSettings(
@@ -312,6 +330,7 @@ def _settings(
         credential_env=credential_env,
         allow_proxy_environment=allow_proxy,
         forwarded_proxy_environment_names=forwarded_proxy_names,
+        runtime_forwarded_proxy_environment_names=runtime_forwarded_proxy_names,
         configuration_fingerprint=stable_hash(safe),
     )
 

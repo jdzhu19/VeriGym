@@ -194,3 +194,55 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
     records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert records
     assert all(record["kind"] == "diagnostic" for record in records)
+
+
+def test_runtime_request_forwards_only_uppercase_transport_proxy_names(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _executable_path, _log, _scenario = fake_codex
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8443")
+    monkeypatch.setenv("NO_PROXY", "private.invalid")
+    monkeypatch.setenv("http_proxy", "http://ignored-lower.invalid:8080")
+    monkeypatch.setenv("https_proxy", "http://ignored-lower.invalid:8443")
+    monkeypatch.setenv("no_proxy", "ignored.lower.invalid")
+    monkeypatch.setenv("ALL_PROXY", "http://ignored-all.invalid:1080")
+    executable, capabilities = runtime_capabilities()
+    settings = agent_settings(
+        {
+            "model_id": "fake-model",
+            "sandbox": "workspace-write",
+            "approval_policy": "never",
+            "reasoning_effort": "xhigh",
+            "max_process_time_s": 300,
+            "allow_proxy_environment": True,
+        },
+        capabilities,
+        task_wall_time_s=300,
+    )
+    settings = settings_for_execution_backend(
+        settings,
+        "docker_outer_runtime_delegated",
+    )
+    bridge = RuntimeBridge(tmp_path)
+
+    execute_runtime_process(
+        bridge=bridge,
+        executable=executable,
+        capabilities=capabilities,
+        settings=settings,
+        prompt="Return one RTL candidate.",
+        workspace_mode="visible_task_workspace",
+    )
+
+    request = bridge.requests[0]
+    assert request.forwarded_proxy_environment_names == [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+    ]
+    assert settings.runtime_forwarded_proxy_environment_names == (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+    )

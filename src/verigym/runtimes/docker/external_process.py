@@ -18,6 +18,10 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 from verigym.core.hashing import content_hash
+from verigym.runtimes.docker.control_plane_environment import (
+    ControlPlaneEnvironmentError,
+    build_trusted_host_app_server_environment,
+)
 from verigym.runtimes.docker.engine import DockerEngine
 from verigym.runtimes.docker.errors import DockerContainerError, DockerRuntimeError
 from verigym.runtimes.docker.mounts import mount_arguments, workspace_mount
@@ -44,7 +48,16 @@ _CONTAINER_ENVIRONMENT = {
     "LC_ALL": "C.UTF-8",
     "TMPDIR": "/tmp",
 }
-_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+_FORWARDED_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY")
+_ALL_PROXY_NAMES = (
+    *_FORWARDED_PROXY_NAMES,
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+)
 _CREDENTIAL_NAME_MARKERS = (
     "API_KEY",
     "TOKEN",
@@ -162,6 +175,14 @@ class DockerExternalProcessExecutor:
         ) = None
         effective_verified = False
         app_result: dict[str, Any] = {}
+        control_plane_proxy_forwarding_enabled = request.allow_proxy_environment
+        control_plane_forwarded_proxy_environment_names = cast(
+            list[Literal["HTTP_PROXY", "HTTPS_PROXY"]],
+            list(request.forwarded_proxy_environment_names),
+        )
+        control_plane_synthesized_environment_names: list[Literal["NO_PROXY", "no_proxy"]] = []
+        control_plane_mandatory_loopback_bypass_present = not request.allow_proxy_environment
+        proxy_redaction_values: tuple[str, ...] = ()
         effective_timeout = min(
             request.timeout_s,
             float(self._agent_config.max_process_time_s),
@@ -248,11 +269,35 @@ class DockerExternalProcessExecutor:
                 | None,
                 app_result["failure_origin"],
             )
+            control_plane_identity = app_result.get("control_plane_environment_identity")
+            if isinstance(control_plane_identity, dict):
+                control_plane_proxy_forwarding_enabled = bool(
+                    control_plane_identity["proxy_forwarding_enabled"]
+                )
+                control_plane_forwarded_proxy_environment_names = cast(
+                    list[Literal["HTTP_PROXY", "HTTPS_PROXY"]],
+                    list(control_plane_identity["forwarded_proxy_environment_names"]),
+                )
+                control_plane_synthesized_environment_names = cast(
+                    list[Literal["NO_PROXY", "no_proxy"]],
+                    list(control_plane_identity["synthesized_control_plane_environment_names"]),
+                )
+                control_plane_mandatory_loopback_bypass_present = bool(
+                    control_plane_identity["mandatory_loopback_bypass_present"]
+                )
+                proxy_redaction_values = tuple(app_result.get("_proxy_redaction_values", ()))
+            elif request.allow_proxy_environment:
+                raise ValueError("app-server result omitted its loopback proxy-bypass identity")
             broker.assert_healthy()
         except DockerRuntimeError as exc:
             exit_code = None
             failure_reason = exc.subreason
             failure_origin = "agent_container"
+            app_stderr = str(exc)
+        except ControlPlaneEnvironmentError as exc:
+            exit_code = None
+            failure_reason = exc.reason
+            failure_origin = "host_control_plane"
             app_stderr = str(exc)
         except (OSError, RuntimeError, ValueError) as exc:
             exit_code = None
@@ -332,11 +377,13 @@ class DockerExternalProcessExecutor:
             normalized_stdout,
             request=request,
             workspace=workspace,
+            proxy_values=proxy_redaction_values,
         )
         combined_stderr, stderr_redaction_truncated = _sanitize_and_bound(
             combined_stderr,
             request=request,
             workspace=workspace,
+            proxy_values=proxy_redaction_values,
         )
         stdout_truncated = stdout_truncated or stdout_redaction_truncated
         stderr_truncated = stderr_truncated or attach_stderr_truncated or stderr_redaction_truncated
@@ -371,6 +418,12 @@ class DockerExternalProcessExecutor:
                     "reasoning_effort": request.requested_reasoning_effort,
                     "auth_semantic_id": request.auth_semantic_id,
                     "proxy_names": request.forwarded_proxy_environment_names,
+                    "synthesized_control_plane_environment_names": (
+                        control_plane_synthesized_environment_names
+                    ),
+                    "mandatory_loopback_bypass_present": (
+                        control_plane_mandatory_loopback_bypass_present
+                    ),
                     "overrides": list(_APP_SERVER_CONFIG_OVERRIDES),
                 }
             ),
@@ -391,6 +444,16 @@ class DockerExternalProcessExecutor:
             environment_names=sorted(_CONTAINER_ENVIRONMENT),
             credential_environment_names_in_container=[],
             proxy_environment_names_in_container=[],
+            control_plane_proxy_forwarding_enabled=(control_plane_proxy_forwarding_enabled),
+            control_plane_forwarded_proxy_environment_names=(
+                control_plane_forwarded_proxy_environment_names
+            ),
+            control_plane_synthesized_environment_names=(
+                control_plane_synthesized_environment_names
+            ),
+            control_plane_mandatory_loopback_bypass_present=(
+                control_plane_mandatory_loopback_bypass_present
+            ),
             host_home_mounted=False,
             source_repository_mounted=False,
             hidden_verifier_mounted=False,
@@ -442,6 +505,12 @@ class DockerExternalProcessExecutor:
             ),
             terminal_event_seen=terminal,
             failure_reason=failure_reason,
+            failure_kind=(
+                "infrastructure" if failure_reason == "control_plane_loopback_proxy" else None
+            ),
+            failure_category=(
+                failure_reason if failure_reason == "control_plane_loopback_proxy" else None
+            ),
             failure_origin=failure_origin,
             runtime_identity=identity,
             security=security,
@@ -471,7 +540,7 @@ class DockerExternalProcessExecutor:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != request.executable_sha256 or path.name != request.executable_name:
             raise ValueError("external control-plane executable identity changed")
-        present_names = sorted(name for name in _PROXY_NAMES if name in os.environ)
+        present_names = [name for name in _FORWARDED_PROXY_NAMES if name in os.environ]
         if request.allow_proxy_environment:
             if present_names != request.forwarded_proxy_environment_names:
                 raise ValueError("external process proxy-name identity changed")
@@ -490,27 +559,16 @@ def _run_app_server(
     for override in _APP_SERVER_CONFIG_OVERRIDES:
         arguments.extend(["-c", override])
     arguments.extend(["app-server", "--listen", "stdio://"])
-    environment = {
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "LANG": "C.UTF-8",
-        "LC_ALL": "C.UTF-8",
-    }
-    if "HOME" not in os.environ:
-        raise RuntimeError("inherited Codex login requires HOME")
-    environment["HOME"] = os.environ["HOME"]
-    if "CODEX_HOME" in os.environ:
-        environment["CODEX_HOME"] = os.environ["CODEX_HOME"]
-    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "TMPDIR"):
-        if name in os.environ:
-            environment[name] = os.environ[name]
-    if request.allow_proxy_environment:
-        for name in request.forwarded_proxy_environment_names:
-            environment[name] = os.environ[name]
+    control_plane_environment = build_trusted_host_app_server_environment(
+        allow_proxy_environment=request.allow_proxy_environment,
+        forwarded_proxy_environment_names=request.forwarded_proxy_environment_names,
+        broker_url=broker_url,
+    )
     config_metadata_before = _codex_config_metadata()
     process = subprocess.Popen(
         arguments,
         cwd=workspace,
-        env=environment,
+        env=control_plane_environment.values,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -628,7 +686,11 @@ def _run_app_server(
                 "message": f"{type(exc).__name__}: {exc}",
             }
         )
-        failure_reason = "app_server_protocol_error"
+        failure_reason = (
+            "control_plane_loopback_proxy"
+            if _is_loopback_proxy_failure(exc, broker_url)
+            else "app_server_protocol_error"
+        )
         failure_origin = "host_control_plane"
     finally:
         process_group_cleaned = _terminate_process(process)
@@ -647,7 +709,34 @@ def _run_app_server(
         "failure_reason": failure_reason,
         "failure_origin": failure_origin,
         "user_config_metadata_unchanged": (config_metadata_before == config_metadata_after),
+        "control_plane_environment_identity": (control_plane_environment.safe_identity()),
+        "_proxy_redaction_values": control_plane_environment.redaction_values,
     }
+
+
+def _is_loopback_proxy_failure(exc: BaseException, broker_url: str) -> bool:
+    """Classify an app-server attempt to proxy its runtime-owned loopback channel."""
+
+    parsed = urlsplit(broker_url)
+    if parsed.scheme != "ws" or parsed.hostname != "127.0.0.1":
+        return False
+    message = str(exc).casefold()
+    proxy_markers = (
+        "proxy connection failed",
+        "http connect failed",
+        "proxy connect",
+        "tunnel connection failed",
+    )
+    runtime_markers = (
+        "exec-server",
+        "exec server",
+        "environment/info",
+        "environment info",
+        broker_url.casefold(),
+    )
+    return any(marker in message for marker in proxy_markers) and any(
+        marker in message for marker in runtime_markers
+    )
 
 
 class _AppServerClient:
@@ -957,7 +1046,7 @@ def _verify_agent_inspection(payload: dict[str, Any]) -> None:
     forbidden = sorted(
         name
         for name in names
-        if name in _PROXY_NAMES
+        if name in _ALL_PROXY_NAMES
         or any(marker in name.upper() for marker in _CREDENTIAL_NAME_MARKERS)
     )
     if forbidden:
@@ -997,6 +1086,7 @@ def _sanitize_and_bound(
     *,
     request: ExternalProcessRequest,
     workspace: Path,
+    proxy_values: tuple[str, ...] = (),
 ) -> tuple[str, bool]:
     clean = value.replace(str(workspace), "<task_workspace>")
     home = os.environ.get("HOME")
@@ -1006,14 +1096,14 @@ def _sanitize_and_bound(
     if codex_home:
         clean = clean.replace(codex_home, "<codex_home>")
     if request.allow_proxy_environment:
-        for name in request.forwarded_proxy_environment_names:
-            proxy = os.environ.get(name)
-            if proxy:
-                clean = clean.replace(proxy, "<redacted-proxy>")
-                clean = clean.replace(
-                    json.dumps(proxy, ensure_ascii=False)[1:-1],
-                    "<redacted-proxy>",
-                )
+        values = {proxy for name in _ALL_PROXY_NAMES for proxy in (os.environ.get(name),) if proxy}
+        values.update(proxy for proxy in proxy_values if proxy)
+        for proxy in sorted(values, key=len, reverse=True):
+            clean = clean.replace(proxy, "<redacted-proxy>")
+            clean = clean.replace(
+                json.dumps(proxy, ensure_ascii=False)[1:-1],
+                "<redacted-proxy>",
+            )
     encoded = clean.encode("utf-8")
     if len(encoded) <= request.max_output_bytes:
         return clean, False

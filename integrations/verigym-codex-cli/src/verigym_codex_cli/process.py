@@ -36,6 +36,10 @@ _PROXY_ENVIRONMENT_ALLOWLIST = (
     "HTTPS_PROXY",
     "NO_PROXY",
 )
+_RUNTIME_PROXY_ENVIRONMENT_ALLOWLIST = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+)
 _SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
@@ -359,6 +363,14 @@ def forwarded_proxy_environment_names(allowed: bool) -> tuple[str, ...]:
     return tuple(name for name in _PROXY_ENVIRONMENT_ALLOWLIST if name in os.environ)
 
 
+def forwarded_runtime_proxy_environment_names(allowed: bool) -> tuple[str, ...]:
+    """Return only provider-transport proxy names for the trusted app-server."""
+
+    if not allowed:
+        return ()
+    return tuple(name for name in _RUNTIME_PROXY_ENVIRONMENT_ALLOWLIST if name in os.environ)
+
+
 def auth_configuration(
     *,
     default_credential_env: str | None = None,
@@ -380,5 +392,6 @@ __all__ = [
     "auth_configuration",
     "auth_identity_configuration",
     "forwarded_proxy_environment_names",
+    "forwarded_runtime_proxy_environment_names",
     "resolve_executable",
 ]

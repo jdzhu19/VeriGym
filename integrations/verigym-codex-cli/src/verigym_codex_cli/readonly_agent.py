@@ -274,7 +274,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
             if failure is None:
                 if process.timed_out or process.stdout_truncated or process.stderr_truncated:
                     parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
-                    failure = _process_failure(process, parsed)
+                    failure = _process_failure(process, parsed, runtime_result)
                 else:
                     try:
                         parsed = parse_event_stream(process.stdout, roots=(workspace,))
@@ -299,7 +299,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                 )
                 _emit_events(bridge, parsed)
             if failure is None:
-                failure = _process_failure(process, parsed)
+                failure = _process_failure(process, parsed, runtime_result)
             if failure is None and parsed is not None:
                 if not parsed.terminal_event_seen:
                     failure = _agent_failure(
@@ -605,7 +605,24 @@ def _emit_events(bridge: ExternalAgentBridge, parsed: ParsedEventStream) -> None
 def _process_failure(
     process: CodexProcessResult,
     parsed: ParsedEventStream | None,
+    runtime_result: ExternalProcessResult | None = None,
 ) -> AgentTerminationError | None:
+    if (
+        runtime_result is not None
+        and runtime_result.failure_reason == "control_plane_loopback_proxy"
+        and runtime_result.failure_origin == "host_control_plane"
+    ):
+        return AgentTerminationError(
+            TerminationReason.MODEL_ERROR,
+            EpisodeFailure(
+                kind="runtime",
+                category="control_plane_loopback_proxy",
+                message=(
+                    "trusted host control plane attempted proxy transport for its loopback broker"
+                ),
+                infrastructure=True,
+            ),
+        )
     if process.timed_out:
         return _agent_failure(
             TerminationReason.MODEL_ERROR,
@@ -761,6 +778,11 @@ def _runtime_security_complete(result: ExternalProcessResult) -> bool:
         and not security.user_config_contents_accessed_by_verigym
         and not security.credential_environment_names_in_container
         and not security.proxy_environment_names_in_container
+        and security.control_plane_mandatory_loopback_bypass_present
+        and (
+            not security.control_plane_proxy_forwarding_enabled
+            or security.control_plane_synthesized_environment_names == ["NO_PROXY", "no_proxy"]
+        )
         and security.network_mode == "none"
     )
 

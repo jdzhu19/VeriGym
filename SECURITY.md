@@ -56,6 +56,12 @@ model-controlled shell, patch, and filesystem operations are routed to a separat
 `codex exec-server` container through a loopback WebSocket-to-stdio bridge. No built-in host tool
 fallback is permitted.
 
+When provider proxy forwarding is enabled, the trusted host app-server receives only the approved
+uppercase `HTTP_PROXY` and `HTTPS_PROXY` values. VeriGym synthesizes identical `NO_PROXY` and
+`no_proxy` values that always contain `localhost`, `127.0.0.1`, and `::1`; host lowercase
+transport proxies and `ALL_PROXY` are never forwarded. The runtime records only environment
+names and the presence of the mandatory bypass, never proxy values.
+
 The agent container has `network=none`, a read-only root filesystem, a mapped non-root UID/GID,
 private PID and IPC namespaces, cap-drop `ALL`, no-new-privileges, bounded resources, `/workspace`
 as its only bind mount, and bounded `/tmp` as its only other writable location. Its image and

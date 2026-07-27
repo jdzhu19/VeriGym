@@ -11,12 +11,16 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from verigym.runtimes.docker.control_plane_environment import (
+    build_trusted_host_app_server_environment,
+)
 from verigym.runtimes.docker.engine import EngineResult
 from verigym.runtimes.docker.external_process import (
     _APP_SERVER_CONFIG_OVERRIDES,
     DockerExternalProcessExecutor,
     _is_logical_workspace_uri,
     _run_app_server,
+    _sanitize_and_bound,
 )
 from verigym.schemas.common import RuntimeImageIdentity
 from verigym.schemas.external_agent import ExternalProcessRequest
@@ -505,3 +509,97 @@ def test_app_server_eof_is_observable_without_waiting_for_timeout(
     assert result["failure_origin"] == "host_control_plane"
     assert result["timed_out"] is False
     assert "stdout closed" in result["stdout"]
+
+
+def test_loopback_proxy_attempt_has_stable_host_control_plane_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "proxy-error-app-server"
+    executable.write_text(
+        """#!/usr/bin/env python3
+import json
+import sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if "id" not in request:
+        continue
+    if request["method"] == "environment/info":
+        response = {
+            "jsonrpc": "2.0",
+            "id": request["id"],
+            "error": {
+                "message": (
+                    "exec-server connection attempt failed: "
+                    "Proxy connection failed: HTTP CONNECT failed with status 502"
+                )
+            },
+        }
+    else:
+        response = {"jsonrpc": "2.0", "id": request["id"], "result": {}}
+    print(json.dumps(response), flush=True)
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    result = _run_app_server(
+        _request(executable),
+        broker_url="ws://127.0.0.1:32123/verigym-test",
+        workspace=tmp_path,
+        effective_timeout_s=5,
+    )
+
+    assert result["failure_reason"] == "control_plane_loopback_proxy"
+    assert result["failure_origin"] == "host_control_plane"
+    assert result["exit_code"] is None
+    assert result["terminal_event_seen"] is False
+
+
+def test_all_proxy_values_are_redacted_from_runtime_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "codex"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    values = {
+        "HTTP_PROXY": "http://proxy-user:proxy-password@proxy.invalid:8080",
+        "HTTPS_PROXY": "http://proxy-user:proxy-password@proxy.invalid:8443",
+        "NO_PROXY": "private.invalid",
+        "http_proxy": "http://ignored-lower.invalid:8080",
+        "https_proxy": "http://ignored-lower.invalid:8443",
+        "no_proxy": "ignored.lower.invalid",
+        "ALL_PROXY": "http://ignored-all.invalid:1080",
+        "all_proxy": "http://ignored-all-lower.invalid:1080",
+    }
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    environment = build_trusted_host_app_server_environment(
+        allow_proxy_environment=True,
+        forwarded_proxy_environment_names=("HTTP_PROXY", "HTTPS_PROXY"),
+        broker_url="ws://127.0.0.1:32123/verigym-test",
+    )
+    request = _request(
+        executable,
+        allow_proxy_environment=True,
+        forwarded_proxy_environment_names=["HTTP_PROXY", "HTTPS_PROXY"],
+    )
+    raw = "\n".join([*values.values(), environment.values["NO_PROXY"]])
+
+    clean, truncated = _sanitize_and_bound(
+        raw,
+        request=request,
+        workspace=tmp_path,
+        proxy_values=environment.redaction_values,
+    )
+
+    assert not truncated
+    assert "<redacted-proxy>" in clean
+    assert all(value not in clean for value in values.values())
+    assert environment.values["NO_PROXY"] not in clean

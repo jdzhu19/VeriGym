@@ -139,6 +139,14 @@ def _fake_runtime_result(
             environment_names=["CODEX_HOME", "HOME", "LANG", "LC_ALL", "PATH", "TMPDIR"],
             credential_environment_names_in_container=[],
             proxy_environment_names_in_container=[],
+            control_plane_proxy_forwarding_enabled=request.allow_proxy_environment,
+            control_plane_forwarded_proxy_environment_names=(
+                request.forwarded_proxy_environment_names
+            ),
+            control_plane_synthesized_environment_names=(
+                ["NO_PROXY", "no_proxy"] if request.allow_proxy_environment else []
+            ),
+            control_plane_mandatory_loopback_bypass_present=True,
             host_home_mounted=False,
             source_repository_mounted=False,
             hidden_verifier_mounted=False,

@@ -87,7 +87,9 @@ class FakeProviderHandler(BaseHTTPRequestHandler):
                 "test ! -e /workspace/../sibling-run; "
                 "test ! -e /dev/docker; "
                 "test ! -e /dev/shm; "
-                "for name in OPENAI_API_KEY CODEX_API_KEY HTTP_PROXY HTTPS_PROXY NO_PROXY; "
+                "for name in OPENAI_API_KEY CODEX_API_KEY "
+                "HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy "
+                "ALL_PROXY all_proxy; "
                 'do test -z "${!name+x}"; done; '
                 "if touch /verigym-rootfs-write 2>/dev/null; then exit 41; fi; "
                 "if touch /workspace/../sibling-run 2>/dev/null; then exit 42; fi; "
@@ -143,6 +145,28 @@ class FakeProviderHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+class FakeProxyHandler(BaseHTTPRequestHandler):
+    requests: list[tuple[str, str]] = []
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+    def _reject(self) -> None:
+        self.requests.append((self.command, self.path))
+        self.send_response(502)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_CONNECT(self) -> None:  # noqa: N802
+        self._reject()
+
+    def do_GET(self) -> None:  # noqa: N802
+        self._reject()
+
+    def do_POST(self) -> None:  # noqa: N802
+        self._reject()
+
+
 def _image_id(engine: DockerCliEngine, reference: str) -> str:
     payload = engine.inspect_image(reference)
     if payload is None or not isinstance(payload.get("Id"), str):
@@ -183,6 +207,19 @@ def test_real_docker_exec_server_uses_fake_provider_without_container_credential
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeProviderHandler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
+    FakeProxyHandler.requests = []
+    proxy = ThreadingHTTPServer(("127.0.0.1", 0), FakeProxyHandler)
+    proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    proxy_thread.start()
+    proxy_url = f"http://proxy-user:proxy-password@127.0.0.1:{proxy.server_address[1]}"
+    monkeypatch.setenv("HTTP_PROXY", proxy_url)
+    monkeypatch.setenv("HTTPS_PROXY", proxy_url)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.setenv("http_proxy", "http://ignored-lower.invalid:9000")
+    monkeypatch.setenv("https_proxy", "http://ignored-lower.invalid:9443")
+    monkeypatch.setenv("no_proxy", "ignored.lower.invalid")
+    monkeypatch.setenv("ALL_PROXY", "http://ignored-all.invalid:1080")
+    monkeypatch.setenv("all_proxy", "http://ignored-all-lower.invalid:1080")
     codex_home = tmp_path / "fake-codex-home"
     codex_home.mkdir()
     port = server.server_address[1]
@@ -286,8 +323,8 @@ def test_real_docker_exec_server_uses_fake_provider_without_container_credential
                 requested_auth_mode="chatgpt_cli_session",
                 resolved_auth_mode="inherited_codex_login",
                 auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
-                allow_proxy_environment=False,
-                forwarded_proxy_environment_names=[],
+                allow_proxy_environment=True,
+                forwarded_proxy_environment_names=["HTTP_PROXY", "HTTPS_PROXY"],
                 timeout_s=30,
                 max_output_bytes=1024 * 1024,
                 editable_globs=["rtl/**"],
@@ -304,7 +341,19 @@ def test_real_docker_exec_server_uses_fake_provider_without_container_credential
         assert result.security.user_config_metadata_unchanged
         assert not result.security.credential_environment_names_in_container
         assert not result.security.proxy_environment_names_in_container
+        assert result.security.control_plane_proxy_forwarding_enabled
+        assert result.security.control_plane_forwarded_proxy_environment_names == [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+        ]
+        assert result.security.control_plane_synthesized_environment_names == [
+            "NO_PROXY",
+            "no_proxy",
+        ]
+        assert result.security.control_plane_mandatory_loopback_bypass_present
         assert not result.security.api_key_environment_forwarded
+        assert proxy_url not in result.stdout
+        assert proxy_url not in result.stderr
         assert result.runtime_identity.agent_image_id == agent_id
         assert result.runtime_identity.verifier_image_id == verifier_id
         assert session.read_file("runtime-proof.txt") == b"docker-runtime-only"
@@ -321,8 +370,11 @@ def test_real_docker_exec_server_uses_fake_provider_without_container_credential
         runtime.close()
         server.shutdown()
         server.server_close()
+        proxy.shutdown()
+        proxy.server_close()
     inventory_engine = DockerCliEngine()
     assert inventory_engine.list_managed_containers() == before_managed
     inventory_engine.close()
     assert runtime.descriptor.cleanup is not None
     assert runtime.descriptor.cleanup.complete
+    assert FakeProxyHandler.requests == []

@@ -43,6 +43,12 @@ to one credential-free `codex exec-server` container. The plugin calls the gener
 `ExternalAgentBridge.execute_process()` operation; it does not launch a host subprocess against a
 host workspace.
 
+The trusted app-server environment is built centrally and fails closed before launch unless its
+loopback WebSocket is guaranteed to bypass HTTP(S) proxies. Only uppercase `HTTP_PROXY` and
+`HTTPS_PROXY` provider transport values are forwarded. `NO_PROXY` and `no_proxy` are synthesized
+with mandatory localhost, IPv4-loopback, and IPv6-loopback entries; lowercase host transport
+proxies and `ALL_PROXY` are ignored. Evidence contains the control names and bypass status only.
+
 The agent container has `network=none`, an immutable Codex 0.144.6 image, a non-root effective
 UID/GID, read-only rootfs, bounded `/tmp`, and only `/workspace` mounted. It receives no
 credential, proxy, host-home, repository, hidden-verifier, or Docker-socket material. The

@@ -107,6 +107,11 @@ to `codex exec-server` inside one episode container. The runtime, not the plugin
 that process. Communication is a loopback-only WebSocket-to-container-stdio bridge; the container
 itself remains `network=none`.
 
+For the trusted host app-server only, the runtime preserves approved uppercase provider proxies
+and synthesizes matching uppercase/lowercase bypass variables containing all loopback identities.
+It rejects the launch if that bypass cannot be guaranteed. No proxy value is persisted or sent to
+the agent container.
+
 The agent image contains only the exact hash-bound Codex native executable and a minimal base
 image. Runtime configuration overrides it to the current non-root host UID/GID so private
 workspace cleanup remains verifiable. No `HOME`, Codex configuration, credential, proxy, source

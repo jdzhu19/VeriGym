@@ -181,6 +181,38 @@
           "title": "Container Removed",
           "type": "boolean"
         },
+        "control_plane_forwarded_proxy_environment_names": {
+          "items": {
+            "enum": [
+              "HTTP_PROXY",
+              "HTTPS_PROXY"
+            ],
+            "type": "string"
+          },
+          "title": "Control Plane Forwarded Proxy Environment Names",
+          "type": "array"
+        },
+        "control_plane_mandatory_loopback_bypass_present": {
+          "default": true,
+          "title": "Control Plane Mandatory Loopback Bypass Present",
+          "type": "boolean"
+        },
+        "control_plane_proxy_forwarding_enabled": {
+          "default": false,
+          "title": "Control Plane Proxy Forwarding Enabled",
+          "type": "boolean"
+        },
+        "control_plane_synthesized_environment_names": {
+          "items": {
+            "enum": [
+              "NO_PROXY",
+              "no_proxy"
+            ],
+            "type": "string"
+          },
+          "title": "Control Plane Synthesized Environment Names",
+          "type": "array"
+        },
         "cpus": {
           "exclusiveMinimum": 0.0,
           "title": "Cpus",
@@ -441,6 +473,31 @@
         }
       ],
       "title": "Exit Code"
+    },
+    "failure_category": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Category"
+    },
+    "failure_kind": {
+      "anyOf": [
+        {
+          "const": "infrastructure",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Kind"
     },
     "failure_origin": {
       "anyOf": [

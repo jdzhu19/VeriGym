@@ -35,6 +35,10 @@ def main() -> int:
     output_name = os.environ.get("VERIGYM_CODEX_DOCKER_PROBE_OUTPUT")
     if not output_name:
         raise SystemExit("VERIGYM_CODEX_DOCKER_PROBE_OUTPUT is required")
+    probe_ordinal_name = os.environ.get("VERIGYM_CODEX_DOCKER_PROBE_ORDINAL", "1")
+    if probe_ordinal_name not in {"1", "2"}:
+        raise SystemExit("VERIGYM_CODEX_DOCKER_PROBE_ORDINAL must be 1 or 2")
+    probe_ordinal = int(probe_ordinal_name)
     output = Path(output_name).expanduser().resolve()
     if output.exists() or output.is_symlink():
         raise SystemExit(f"probe output already exists: {output}")
@@ -75,8 +79,8 @@ def main() -> int:
     provenance = get_build_provenance()
     item = {
         "plan_index": 0,
-        "plan_item_id": "codex-docker-track-b-probe-Prob014_andgate",
-        "run_id": "codex-docker-track-b-probe-Prob014_andgate",
+        "plan_item_id": (f"codex-docker-track-b-probe-{probe_ordinal}-Prob014_andgate"),
+        "run_id": f"codex-docker-track-b-probe-{probe_ordinal}-Prob014_andgate",
         "track": "codex_cli_external_agent",
         "task_id": task_records[0]["id"],
         "task_hash": task_records[0]["task_hash"],
@@ -124,8 +128,8 @@ def main() -> int:
 
     launch = {
         "schema_version": "1.0",
-        "authorized_process_ordinal": 1,
-        "model_bearing_process_limit": 1,
+        "authorized_process_ordinal": probe_ordinal,
+        "model_bearing_process_limit": 2,
         "item": item,
         "retry_count": 0,
         "resume": False,
@@ -202,6 +206,14 @@ def main() -> int:
         "docker_runtime_backend": execution.get("runtime_process_backend")
         == "docker_outer_runtime_delegated",
         "docker_security_complete": execution.get("runtime_security_complete") is True,
+        "loopback_proxy_bypass": (
+            execution.get("control_plane_proxy_forwarding_enabled") is True
+            and execution.get("control_plane_forwarded_proxy_environment_names")
+            == plan["proxy_identity"]["forwarded_present_names"]
+            and execution.get("control_plane_synthesized_environment_names")
+            == ["NO_PROXY", "no_proxy"]
+            and execution.get("control_plane_mandatory_loopback_bypass_present") is True
+        ),
         "evaluable": execution.get("evaluable") is True,
         "candidate_frozen": candidate_before == candidate_after,
         "replay_zero_call": replay.get("success") is True

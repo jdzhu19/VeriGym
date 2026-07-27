@@ -76,7 +76,7 @@ def execute_runtime_process(
         ),
         auth_semantic_id=settings.auth_semantic_id,
         allow_proxy_environment=settings.allow_proxy_environment,
-        forwarded_proxy_environment_names=list(settings.forwarded_proxy_environment_names),
+        forwarded_proxy_environment_names=list(settings.runtime_forwarded_proxy_environment_names),
         timeout_s=settings.max_process_time_s,
         max_output_bytes=settings.max_output_bytes,
         editable_globs=list(bridge.editable_globs),
