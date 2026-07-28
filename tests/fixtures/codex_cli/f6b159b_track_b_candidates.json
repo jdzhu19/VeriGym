@@ -1,0 +1,81 @@
+{
+  "candidates": [
+    {
+      "candidate_sha256": "007aadf1619a107f1f904f6644eb595770db4e5156752ead19c79de3957db999",
+      "rtl": "module TopModule(\n    input  logic a,\n    input  logic b,\n    output logic out\n);\n    assign out = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob014_andgate-0"
+    },
+    {
+      "candidate_sha256": "eec1d592eb1f94922e8820c4c1eec419fc5a94b3636140cbec69bff7e64d2519",
+      "rtl": "module TopModule(\n    input  a,\n    input  b,\n    output out\n);\n    assign out = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob014_andgate-1"
+    },
+    {
+      "candidate_sha256": "007aadf1619a107f1f904f6644eb595770db4e5156752ead19c79de3957db999",
+      "rtl": "module TopModule(\n    input  logic a,\n    input  logic b,\n    output logic out\n);\n    assign out = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob014_andgate-2"
+    },
+    {
+      "candidate_sha256": "b222d5ceb4f274b7861eb71dc5c0027bf857dd97fcc72b30c2b4cd1d951d52e8",
+      "rtl": "module TopModule(\n    input  a,\n    input  b,\n    output sum,\n    output cout\n);\n    assign sum  = a ^ b;\n    assign cout = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob024_hadd-0"
+    },
+    {
+      "candidate_sha256": "b222d5ceb4f274b7861eb71dc5c0027bf857dd97fcc72b30c2b4cd1d951d52e8",
+      "rtl": "module TopModule(\n    input  a,\n    input  b,\n    output sum,\n    output cout\n);\n    assign sum  = a ^ b;\n    assign cout = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob024_hadd-1"
+    },
+    {
+      "candidate_sha256": "e4a33471dfaed0d2065401b5eb6410541b3acef4f47aebb2b983599e4ffc9a85",
+      "rtl": "module TopModule(\n    input  logic a,\n    input  logic b,\n    output logic sum,\n    output logic cout\n);\n    assign sum  = a ^ b;\n    assign cout = a & b;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob024_hadd-2"
+    },
+    {
+      "candidate_sha256": "5a48083fb09e13b1b4e00cf6d282534f01a53ce7c6ee9c0258532c895aabd99e",
+      "rtl": "module TopModule (\n    input  logic       clk,\n    input  logic       reset,\n    output logic [3:0] q\n);\n\n    always_ff @(posedge clk) begin\n        if (reset) begin\n            q <= 4'd1;\n        end else if (q == 4'd10) begin\n            q <= 4'd1;\n        end else begin\n            q <= q + 4'd1;\n        end\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob035_count1to10-0"
+    },
+    {
+      "candidate_sha256": "5a48083fb09e13b1b4e00cf6d282534f01a53ce7c6ee9c0258532c895aabd99e",
+      "rtl": "module TopModule (\n    input  logic       clk,\n    input  logic       reset,\n    output logic [3:0] q\n);\n\n    always_ff @(posedge clk) begin\n        if (reset) begin\n            q <= 4'd1;\n        end else if (q == 4'd10) begin\n            q <= 4'd1;\n        end else begin\n            q <= q + 4'd1;\n        end\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob035_count1to10-1"
+    },
+    {
+      "candidate_sha256": "cb30c640b7900d75e2819ebab61ec2f9a2be06b70fc0d888c129c8e8821b133f",
+      "rtl": "module TopModule(\n    input  logic       clk,\n    input  logic       reset,\n    output logic [3:0] q\n);\n\n    always_ff @(posedge clk) begin\n        if (reset) begin\n            q <= 4'd1;\n        end else if (q == 4'd10) begin\n            q <= 4'd1;\n        end else begin\n            q <= q + 4'd1;\n        end\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob035_count1to10-2"
+    },
+    {
+      "candidate_sha256": "0095591cfe62f5886aeadddddca769043f7fc1ddfd5883d91fb5efc1356fb581",
+      "rtl": "module TopModule(\n    input  logic       clk,\n    input  logic       areset,\n    input  logic       load,\n    input  logic       ena,\n    input  logic [3:0] data,\n    output logic [3:0] q\n);\n    always_ff @(posedge clk or posedge areset) begin\n        if (areset)\n            q <= 4'b0000;\n        else if (load)\n            q <= data;\n        else if (ena)\n            q <= {1'b0, q[3:1]};\n    end\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob085_shift4-0"
+    },
+    {
+      "candidate_sha256": "23d10a414f5601d63a37f3adbf43a51cc261b8949b897ef1faf25efa6888bf79",
+      "rtl": "module TopModule (\n    input        clk,\n    input        areset,\n    input        load,\n    input        ena,\n    input  [3:0] data,\n    output reg [3:0] q\n);\n\n    always @(posedge clk or posedge areset) begin\n        if (areset)\n            q <= 4'b0000;\n        else if (load)\n            q <= data;\n        else if (ena)\n            q <= {1'b0, q[3:1]};\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob085_shift4-1"
+    },
+    {
+      "candidate_sha256": "799822d9cc6fab15d8ec999620ba561cc6f65ac0361f5db6864ab3d0ab7a79e8",
+      "rtl": "module TopModule (\n    input        clk,\n    input        areset,\n    input        load,\n    input        ena,\n    input  [3:0] data,\n    output reg [3:0] q\n);\n    always @(posedge clk or posedge areset) begin\n        if (areset)\n            q <= 4'b0000;\n        else if (load)\n            q <= data;\n        else if (ena)\n            q <= {1'b0, q[3:1]};\n    end\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob085_shift4-2"
+    },
+    {
+      "candidate_sha256": "4650155300027139bef29336fb23ab06af907cae6a6d9c7f35d5c3d2a58c62e8",
+      "rtl": "module TopModule (\n    input  logic clk,\n    input  logic reset,\n    input  logic in,\n    output logic out\n);\n\n    typedef enum logic {\n        A = 1'b0,\n        B = 1'b1\n    } state_t;\n\n    state_t state, next_state;\n\n    always_comb begin\n        case (state)\n            A: next_state = in ? A : B;\n            B: next_state = in ? B : A;\n            default: next_state = B;\n        endcase\n    end\n\n    always_ff @(posedge clk) begin\n        if (reset)\n            state <= B;\n        else\n            state <= next_state;\n    end\n\n    always_comb begin\n        case (state)\n            A: out = 1'b0;\n            B: out = 1'b1;\n            default: out = 1'b1;\n        endcase\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob107_fsm1s-0"
+    },
+    {
+      "candidate_sha256": "f70e1ab8006add8432c15ab93ad8368f8afacdacf9ff6b1d255d6da626844c89",
+      "rtl": "module TopModule (\n    input  logic clk,\n    input  logic reset,\n    input  logic in,\n    output logic out\n);\n\n    typedef enum logic {\n        A = 1'b0,\n        B = 1'b1\n    } state_t;\n\n    state_t state, next_state;\n\n    always_comb begin\n        case (state)\n            B: next_state = in ? B : A;\n            A: next_state = in ? A : B;\n            default: next_state = B;\n        endcase\n    end\n\n    always_ff @(posedge clk) begin\n        if (reset)\n            state <= B;\n        else\n            state <= next_state;\n    end\n\n    always_comb begin\n        case (state)\n            B: out = 1'b1;\n            A: out = 1'b0;\n            default: out = 1'b1;\n        endcase\n    end\n\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob107_fsm1s-1"
+    },
+    {
+      "candidate_sha256": "c8586c821d9aa91227134e27ece9dfb99a2ee1de99d20cdd117790048e0b734c",
+      "rtl": "module TopModule(\n    input  clk,\n    input  reset,\n    input  in,\n    output out\n);\n    reg state;\n\n    localparam A = 1'b0;\n    localparam B = 1'b1;\n\n    always @(posedge clk) begin\n        if (reset)\n            state <= B;\n        else if (!in)\n            state <= ~state;\n    end\n\n    assign out = state;\nendmodule\n",
+      "run_id": "codex-pilot-codex_cli_external_agent-Prob107_fsm1s-2"
+    }
+  ],
+  "schema_version": "1.0",
+  "source_commit": "f6b159b01050806f9e20ef6626fc755dfa36f048"
+}

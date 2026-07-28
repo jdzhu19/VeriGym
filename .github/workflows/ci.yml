@@ -229,6 +229,14 @@ jobs:
           VERIGYM_CODEX_AGENT_IMAGE: verigym/codex-exec-server:0.144.6
           VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
         run: pytest -q tests/integration/test_docker_codex_external_agent.py
+      - name: Verify historical Track B candidate dispositions with Icarus 12
+        run: |
+          git clone https://github.com/NVlabs/verilog-eval.git /tmp/verilog-eval
+          git -C /tmp/verilog-eval checkout c498220d0a52248f8e3fdffe279075215bde2da6
+          VERIGYM_VERILOG_EVAL_ROOT=/tmp/verilog-eval \
+          VERIGYM_DOCKER_IMAGE=verigym/rtl-iverilog:12.0 \
+            pytest -q \
+            tests/codex_cli/test_verilog_eval_pilot_candidates.py::test_f6b159b_track_b_forensic_candidates_reach_exact_hidden_verifier
 
   reproducible-build:
     runs-on: ubuntu-24.04

@@ -237,6 +237,7 @@ class CodexCliAgentAdapter(AgentAdapter):
                         parsed,
                         Path(bridge.logical_workspace_root),
                         logical_workspace=runtime_delegated,
+                        editable_globs=bridge.editable_globs,
                     )
                     event_policy = {
                         "schema_version": "1.0",

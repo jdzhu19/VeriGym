@@ -6,6 +6,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import shlex
 import stat
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ _VISIBLE_COMMANDS = {
     "rg",
     "sed",
     "sh",
+    "sort",
     "tail",
     "true",
     "vvp",
@@ -47,6 +49,8 @@ _VISIBLE_COMMANDS = {
 _SHELL_COMMANDS = {"bash", "sh", "zsh"}
 _COMMAND_SEPARATORS = {"&&", "||", ";", "|", "&"}
 _REDIRECTION_OPERATORS = {"<", ">", "<<", ">>", "<<<", "<>", ">&", "<&"}
+_OPAQUE_LINE_BREAK = "\ue000"
+_MAX_HEREDOC_BODY_BYTES = 2_000_000
 _SANDBOX_BACKEND_MARKERS = (
     "bwrap: creating new namespace failed",
     "kernel does not allow non-root user namespaces",
@@ -208,6 +212,7 @@ def validate_external_events(
     workspace: Path,
     *,
     logical_workspace: bool = False,
+    editable_globs: tuple[str, ...] = (),
 ) -> None:
     """Validate events against either a host path or a runtime-logical path.
 
@@ -238,7 +243,12 @@ def validate_external_events(
         if event.category in {"command_started", "command_completed"}:
             command = event.payload.get("command")
             if isinstance(command, str) and command:
-                _validate_command(command, root, logical_workspace=logical_workspace)
+                _validate_command(
+                    command,
+                    root,
+                    logical_workspace=logical_workspace,
+                    editable_globs=editable_globs,
+                )
         if event.category == "tool_call":
             tool = str(event.payload.get("tool") or "unknown")
             raise CodexPolicyError(f"external network, MCP, or unknown tool is forbidden: {tool}")
@@ -265,17 +275,17 @@ def _validate_event_path(raw: str, root: Path, *, logical_workspace: bool) -> No
         return
 
 
-def _validate_command(command: str, root: Path, *, logical_workspace: bool) -> None:
+def _validate_command(
+    command: str,
+    root: Path,
+    *,
+    logical_workspace: bool,
+    editable_globs: tuple[str, ...] = (),
+) -> None:
     lowered = command.lower()
     if any(
         marker in lowered
         for marker in (
-            "http://",
-            "https://",
-            "/etc/",
-            "/proc/",
-            "/sys/",
-            "../",
             "$home",
             "${home",
             "$(",
@@ -285,60 +295,247 @@ def _validate_command(command: str, root: Path, *, logical_workspace: bool) -> N
         )
     ):
         raise CodexPolicyError("external command crosses the visible task policy")
-    if "\n" in command or "\r" in command:
-        raise CodexPolicyError("external command contains a line break")
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
+        outer_tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise CodexPolicyError("external command cannot be safely tokenized") from exc
+    if outer_tokens and Path(outer_tokens[0]).name in _SHELL_COMMANDS:
+        _validate_executable(outer_tokens[0])
+        if len(outer_tokens) != 3 or outer_tokens[1] not in {"-c", "-lc"}:
+            raise CodexPolicyError("external shell commands require an inspectable -c payload")
+        payload = outer_tokens[2]
+    else:
+        payload = command
+    if "\r" in payload:
+        raise CodexPolicyError("external command contains an unsupported carriage return")
+    if "\n" in payload and _validate_heredoc(
+        payload,
+        root,
+        logical_workspace=logical_workspace,
+        editable_globs=editable_globs,
+    ):
+        return
+    _validate_simple_command(payload, root, logical_workspace=logical_workspace)
+
+
+def _validate_heredoc(
+    payload: str,
+    root: Path,
+    *,
+    logical_workspace: bool,
+    editable_globs: tuple[str, ...],
+) -> bool:
+    """Accept only one expansion-disabled heredoc write and no trailing command."""
+
+    lines = payload.splitlines()
+    if len(lines) < 2:
+        return False
+    header = re.fullmatch(
+        r"[ \t]*cat[ \t]+>[ \t]+(?P<target>[A-Za-z0-9_./-]+)"
+        r"[ \t]+<<'(?P<delimiter>[A-Za-z_][A-Za-z0-9_]{0,63})'[ \t]*",
+        lines[0],
+    )
+    if header is None:
+        return False
+    delimiter = header.group("delimiter")
+    delimiter_indexes = [
+        index for index, line in enumerate(lines[1:], start=1) if line == delimiter
+    ]
+    if delimiter_indexes != [len(lines) - 1]:
+        raise CodexPolicyError("external heredoc must end at its single static delimiter")
+    body = "\n".join(lines[1:-1])
+    if len(body.encode("utf-8")) > _MAX_HEREDOC_BODY_BYTES:
+        raise CodexPolicyError("external heredoc body exceeds the bounded workspace policy")
+    target = header.group("target")
+    _validate_command_path(target, root, logical_workspace=logical_workspace)
+    relative_target = _relative_workspace_path(
+        target,
+        root,
+        logical_workspace=logical_workspace,
+    )
+    if not editable_globs or not _matches_any_glob(relative_target, editable_globs):
+        raise CodexPolicyError("external heredoc output target is not declared editable")
+    return True
+
+
+def _validate_simple_command(
+    command: str,
+    root: Path,
+    *,
+    logical_workspace: bool,
+) -> None:
+    protected = _protect_quoted_line_breaks(command)
+    try:
+        lexer = shlex.shlex(protected, posix=True, punctuation_chars=";&|<>")
         lexer.whitespace_split = True
         lexer.commenters = ""
         tokens = list(lexer)
     except ValueError as exc:
         raise CodexPolicyError("external command cannot be safely tokenized") from exc
-    if tokens and Path(tokens[0]).name in _SHELL_COMMANDS:
-        nested = False
-        for index, token in enumerate(tokens[:-1]):
-            if token in {"-c", "-lc"}:
-                _validate_command(
-                    tokens[index + 1],
-                    root,
-                    logical_workspace=logical_workspace,
-                )
-                nested = True
-                break
-        if not nested:
-            raise CodexPolicyError("external shell commands require an inspectable -c payload")
-        tokens = tokens[:1]
-    commands: list[str] = []
-    redirection_seen = False
-    expect_command = True
-    expect_redirection_target = False
+    if not tokens:
+        raise CodexPolicyError("external command is empty")
+
+    invocations: list[tuple[list[str], list[tuple[str, str]]]] = []
+    arguments: list[str] = []
+    redirections: list[tuple[str, str]] = []
+    expect_redirection: str | None = None
     for token in tokens:
-        if token in _COMMAND_SEPARATORS:
-            expect_command = True
-            expect_redirection_target = False
+        if expect_redirection is not None:
+            if token in _COMMAND_SEPARATORS or token in _REDIRECTION_OPERATORS:
+                raise CodexPolicyError("external command has an incomplete redirection")
+            if _OPAQUE_LINE_BREAK in token:
+                raise CodexPolicyError("external redirection target contains a line break")
+            redirections.append((expect_redirection, token))
+            expect_redirection = None
             continue
         if token in _REDIRECTION_OPERATORS:
-            redirection_seen = True
-            expect_redirection_target = True
+            if token in {"<<", "<<<"}:
+                raise CodexPolicyError("external heredoc form is not statically permitted")
+            expect_redirection = token
             continue
-        if expect_redirection_target:
-            _validate_command_path(token, root, logical_workspace=logical_workspace)
-            expect_redirection_target = False
+        if token in _COMMAND_SEPARATORS:
+            if not arguments:
+                raise CodexPolicyError("external command contains an empty command segment")
+            invocations.append((arguments, redirections))
+            arguments = []
+            redirections = []
             continue
-        if expect_command and not token.startswith(("-", ">", "<")):
-            commands.append(Path(token).name)
-            expect_command = False
-            continue
-        _validate_command_path(token, root, logical_workspace=logical_workspace)
+        arguments.append(token)
+    if expect_redirection is not None:
+        raise CodexPolicyError("external command has an incomplete redirection")
+    if not arguments:
+        raise CodexPolicyError("external command contains a trailing separator")
+    invocations.append((arguments, redirections))
+
+    commands: list[str] = []
+    for arguments, redirections in invocations:
+        executable = arguments[0]
+        if _OPAQUE_LINE_BREAK in executable:
+            raise CodexPolicyError("external executable contains a line break")
+        name = _validate_executable(executable)
+        commands.append(name)
+        for _operator, target in redirections:
+            _validate_command_path(target, root, logical_workspace=logical_workspace)
+        if name == "printf" and redirections:
+            raise CodexPolicyError("printf is permitted only as a stdout-only command")
+        _validate_command_operands(
+            name,
+            arguments[1:],
+            root,
+            logical_workspace=logical_workspace,
+        )
     if any(name in _NETWORK_COMMANDS for name in commands):
         raise CodexPolicyError("network-capable external command is forbidden")
-    if redirection_seen and "printf" in commands:
-        raise CodexPolicyError("printf is permitted only as a stdout-only command")
     unsupported = [name for name in commands if name not in _VISIBLE_COMMANDS]
     if unsupported:
         raise CodexPolicyError(
             f"external command is outside the visible command allowlist: {unsupported[0]}"
         )
+    if any(name in _SHELL_COMMANDS for name in commands):
+        raise CodexPolicyError("nested external shell commands are forbidden")
+
+
+def _protect_quoted_line_breaks(command: str) -> str:
+    if _OPAQUE_LINE_BREAK in command:
+        raise CodexPolicyError("external command contains a reserved parser character")
+    output: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for character in command:
+        if escaped:
+            if character == "\n":
+                raise CodexPolicyError("external command contains an unquoted line break")
+            output.append(character)
+            escaped = False
+            continue
+        if quote != "'" and character == "\\":
+            output.append(character)
+            escaped = True
+            continue
+        if character in {"'", '"'}:
+            if quote is None:
+                quote = character
+            elif quote == character:
+                quote = None
+            output.append(character)
+            continue
+        if character == "\n":
+            if quote is None:
+                raise CodexPolicyError("external command contains an unquoted line break")
+            output.append(_OPAQUE_LINE_BREAK)
+            continue
+        output.append(character)
+    if escaped or quote is not None:
+        raise CodexPolicyError("external command cannot be safely tokenized")
+    return "".join(output)
+
+
+def _validate_executable(token: str) -> str:
+    if _OPAQUE_LINE_BREAK in token or "\\" in token or "$" in token or token.startswith("~"):
+        raise CodexPolicyError("external executable path is not statically bounded")
+    normalized = PurePosixPath(token)
+    if any(part == ".." for part in normalized.parts):
+        raise CodexPolicyError("external executable contains parent-path traversal")
+    name = normalized.name
+    if "/" in token and normalized not in {
+        PurePosixPath("/bin") / name,
+        PurePosixPath("/usr/bin") / name,
+    }:
+        raise CodexPolicyError("external executable path is outside the system allowlist")
+    return name
+
+
+def _validate_command_operands(
+    name: str,
+    operands: list[str],
+    root: Path,
+    *,
+    logical_workspace: bool,
+) -> None:
+    if name == "printf":
+        return
+    if any(_OPAQUE_LINE_BREAK in operand for operand in operands):
+        raise CodexPolicyError("external command contains a non-printf multiline operand")
+    if name == "sed":
+        _validate_sed_operands(operands, root, logical_workspace=logical_workspace)
+        return
+    for operand in operands:
+        _validate_command_path(operand, root, logical_workspace=logical_workspace)
+
+
+def _validate_sed_operands(
+    operands: list[str],
+    root: Path,
+    *,
+    logical_workspace: bool,
+) -> None:
+    expression_seen = False
+    expect_expression = False
+    expect_script_path = False
+    for operand in operands:
+        if expect_expression:
+            expect_expression = False
+            expression_seen = True
+            continue
+        if expect_script_path:
+            _validate_command_path(operand, root, logical_workspace=logical_workspace)
+            expect_script_path = False
+            expression_seen = True
+            continue
+        if operand == "-e":
+            expect_expression = True
+            continue
+        if operand == "-f":
+            expect_script_path = True
+            continue
+        if operand.startswith("-"):
+            continue
+        if not expression_seen:
+            expression_seen = True
+            continue
+        _validate_command_path(operand, root, logical_workspace=logical_workspace)
+    if expect_expression or expect_script_path:
+        raise CodexPolicyError("external sed command has an incomplete operand")
 
 
 def _matches_any_glob(path: str, patterns: tuple[str, ...]) -> bool:
@@ -391,6 +588,26 @@ def _validate_command_path(token: str, root: Path, *, logical_workspace: bool) -
     )
     if not resolved.is_relative_to(root):
         raise CodexPolicyError("external command names a path outside the visible workspace")
+
+
+def _relative_workspace_path(
+    token: str,
+    root: Path,
+    *,
+    logical_workspace: bool,
+) -> str:
+    normalized = PurePosixPath(token)
+    if logical_workspace:
+        logical_root = PurePosixPath(root.as_posix())
+        logical_candidate = normalized if normalized.is_absolute() else logical_root / normalized
+        return logical_candidate.relative_to(logical_root).as_posix()
+    resolved_root = root.resolve(strict=True)
+    host_candidate = (
+        Path(token).resolve(strict=False)
+        if Path(token).is_absolute()
+        else (resolved_root / token).resolve(strict=False)
+    )
+    return host_candidate.relative_to(resolved_root).as_posix()
 
 
 __all__ = [

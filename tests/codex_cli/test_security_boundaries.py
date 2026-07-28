@@ -28,6 +28,10 @@ from verigym.schemas.run import RunConfig, RunResult
 
 pytestmark = pytest.mark.codex_cli
 
+HISTORICAL_TRACK_B_COMMANDS = (
+    Path(__file__).parents[1] / "fixtures" / "codex_cli" / "f6b159b_track_b_command_streams.json"
+)
+
 
 def _run_track_a(
     output: Path,
@@ -311,6 +315,119 @@ def test_historical_stdout_only_printf_commands_are_not_policy_false_positives(
         )
     )
     validate_external_events(parsed, tmp_path)
+
+
+def _validate_logical_track_b_command(command: str) -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": command,
+                            "status": "completed",
+                            "exit_code": 0,
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    validate_external_events(
+        parsed,
+        Path("/workspace"),
+        logical_workspace=True,
+        editable_globs=("rtl/TopModule.sv",),
+    )
+
+
+def _historical_track_b_streams() -> dict[str, list[str]]:
+    fixture = json.loads(HISTORICAL_TRACK_B_COMMANDS.read_text(encoding="utf-8"))
+    assert fixture["schema_version"] == "1.0"
+    assert fixture["source_commit"] == "f6b159b01050806f9e20ef6626fc755dfa36f048"
+    streams = {
+        str(record["run_id"]): [str(command) for command in record["commands"]]
+        for record in fixture["streams"]
+    }
+    assert len(streams) == 15
+    assert sum(len(commands) for commands in streams.values()) == 40
+    return streams
+
+
+def test_all_fifteen_historical_first_policy_failures_clear_parser_regressions() -> None:
+    streams = _historical_track_b_streams()
+    for run_id, commands in streams.items():
+        original_failure_index = 1 if run_id.endswith("Prob024_hadd-0") else 0
+        _validate_logical_track_b_command(commands[original_failure_index])
+
+
+def test_historical_printf_physical_line_break_is_opaque_data() -> None:
+    streams = _historical_track_b_streams()
+    command = streams["codex-pilot-codex_cli_external_agent-Prob035_count1to10-0"][1]
+    assert "\n" in command
+    _validate_logical_track_b_command(command)
+
+
+@pytest.mark.parametrize(
+    ("run_id", "command_index"),
+    [
+        ("codex-pilot-codex_cli_external_agent-Prob035_count1to10-0", 2),
+        ("codex-pilot-codex_cli_external_agent-Prob085_shift4-0", 3),
+        ("codex-pilot-codex_cli_external_agent-Prob107_fsm1s-0", 2),
+    ],
+)
+def test_three_historical_secondary_violations_remain_policy_failures(
+    run_id: str,
+    command_index: int,
+) -> None:
+    command = _historical_track_b_streams()[run_id][command_index]
+    with pytest.raises(CodexPolicyError, match="outside the visible workspace"):
+        _validate_logical_track_b_command(command)
+
+
+def test_git_remains_forbidden_without_dev_null_masking_the_reason() -> None:
+    with pytest.raises(CodexPolicyError, match="network-capable"):
+        _validate_logical_track_b_command("git diff -- rtl/TopModule.sv")
+
+
+def test_strict_single_target_quoted_heredoc_is_accepted() -> None:
+    _validate_logical_track_b_command(
+        "/usr/bin/bash -lc \"cat > rtl/TopModule.sv <<'EOF'\nmodule TopModule;\nendmodule\nEOF\""
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat > rtl/TopModule.sv <<EOF\nmodule TopModule; endmodule\nEOF",
+        "cat > rtl/TopModule.sv <<'EOF'\nmodule TopModule; endmodule\nEOF\ncat rtl/TopModule.sv",
+        "cat > rtl/TopModule.sv <<'EOF' | cat\nmodule TopModule; endmodule\nEOF",
+        "cat > rtl/TopModule.sv > rtl/second.sv <<'EOF'\nmodule TopModule; endmodule\nEOF",
+        "cat > README.md <<'EOF'\nreplacement\nEOF",
+        "cat > ../TopModule.sv <<'EOF'\nmodule TopModule; endmodule\nEOF",
+        "cat > /tmp/TopModule.sv <<'EOF'\nmodule TopModule; endmodule\nEOF",
+        "curl > rtl/TopModule.sv <<'EOF'\nhttps://example.invalid\nEOF",
+        "cat > rtl/TopModule.sv <<'EOF'\n$(cat /etc/passwd)\nEOF",
+        "cat > rtl/TopModule.sv <<'EOF'\n`cat /etc/passwd`\nEOF",
+        "cat > rtl/TopModule.sv <<'EOF'\n<(cat /etc/passwd)\nEOF",
+        "printf safe\ncat rtl/TopModule.sv",
+        "printf 'unterminated",
+    ],
+)
+def test_multiline_and_quoting_abuse_remain_fail_closed(command: str) -> None:
+    with pytest.raises(CodexPolicyError):
+        _validate_logical_track_b_command(command)
+
+
+def test_printf_path_like_operands_are_opaque_but_redirections_are_validated() -> None:
+    _validate_logical_track_b_command(
+        "printf '%s\\\\n' '../not-a-path /etc/not-a-read https://example.invalid'"
+    )
+    with pytest.raises(CodexPolicyError, match="outside the visible workspace"):
+        _validate_logical_track_b_command("printf safe > /dev/null")
 
 
 def test_printf_redirection_and_mcp_remain_fail_closed(tmp_path: Path) -> None:

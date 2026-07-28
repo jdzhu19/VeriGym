@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from verigym.models.static import StaticModelClient
 from verigym.registry.collections import build_registries
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.run import RunConfig, RunResult
+from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.suites.verilog_eval.schemas import IcarusCompatibility
 from verigym.suites.verilog_eval.toolchain import detect_icarus
@@ -27,6 +30,7 @@ pytestmark = [
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ENV = "VERIGYM_VERILOG_EVAL_ROOT"
 SOURCE = os.environ.get(SOURCE_ENV)
+FORENSIC_CANDIDATES = ROOT / "tests" / "fixtures" / "codex_cli" / "f6b159b_track_b_candidates.json"
 requires_pilot_source = pytest.mark.skipif(
     SOURCE is None,
     reason=f"{SOURCE_ENV} is required for exact frozen-pilot candidate conformance",
@@ -111,6 +115,16 @@ def _run_candidate(
 ) -> RunResult:
     model = StaticModelClient(name=model_name, responses=[candidate])
     service.registries.models.register(model)
+    runtime: dict[str, object] = {}
+    docker_image = os.environ.get("VERIGYM_DOCKER_IMAGE")
+    if docker_image is not None:
+        runtime = {
+            "runtime": "docker",
+            "docker_config": DockerRuntimeConfig(
+                image=docker_image,
+                pull_policy="never",
+            ),
+        }
     return service.run(
         RunConfig(
             task_id=task_id,
@@ -119,6 +133,7 @@ def _run_candidate(
             model=model_name,
             suite_source=source,
             output=output,
+            **runtime,
         )
     )
 
@@ -198,3 +213,66 @@ def test_genuine_invalid_pilot_candidate_remains_evaluable_candidate_failure(
     assert result.scorecard.failure is None
     failed = next(item for item in result.scorecard.verifier_results if item.status == "failed")
     assert failed.metadata["candidate_failure"] is True
+
+
+@requires_pilot_source
+def test_f6b159b_track_b_forensic_candidates_reach_exact_hidden_verifier(
+    tmp_path: Path,
+) -> None:
+    assert SOURCE is not None
+    fixture = json.loads(FORENSIC_CANDIDATES.read_text(encoding="utf-8"))
+    assert fixture["schema_version"] == "1.0"
+    assert fixture["source_commit"] == "f6b159b01050806f9e20ef6626fc755dfa36f048"
+    records = fixture["candidates"]
+    assert len(records) == 15
+    for record in records:
+        assert (
+            hashlib.sha256(str(record["rtl"]).encode("utf-8")).hexdigest()
+            == record["candidate_sha256"]
+        )
+
+    secondary_policy_runs = {
+        "codex-pilot-codex_cli_external_agent-Prob035_count1to10-0",
+        "codex-pilot-codex_cli_external_agent-Prob085_shift4-0",
+        "codex-pilot-codex_cli_external_agent-Prob107_fsm1s-0",
+    }
+    compile_failure_run = "codex-pilot-codex_cli_external_agent-Prob107_fsm1s-1"
+    verifier_records = [
+        record for record in records if record["run_id"] not in secondary_policy_runs
+    ]
+    assert len(verifier_records) == 12
+
+    service = _service()
+    source = SuiteSourceConfig(
+        source_root=Path(SOURCE),
+        variant="v2-spec-to-rtl",
+    )
+    passed = 0
+    compile_failed = 0
+    for record in verifier_records:
+        native_id = str(record["run_id"]).rsplit("-", 1)[0].rsplit("-", 1)[1]
+        result = _run_candidate(
+            service,
+            task_id=f"verilog-eval/v2-spec-to-rtl/{native_id}",
+            source=source,
+            candidate=str(record["rtl"]),
+            model_name=f"f6b159b-forensic-{native_id}-{record['run_id'][-1]}",
+            output=tmp_path / str(record["run_id"]),
+        )
+        assert result.scorecard.status == "completed"
+        frozen = (result.run_dir / "candidate" / "rtl" / "TopModule.sv").read_text(encoding="utf-8")
+        assert hashlib.sha256(frozen.encode("utf-8")).hexdigest() == record["candidate_sha256"]
+        if record["run_id"] == compile_failure_run:
+            assert result.scorecard.resolved is False
+            assert result.scorecard.correctness.infrastructure_error is False
+            assert result.scorecard.failure is None
+            failed = next(
+                item for item in result.scorecard.verifier_results if item.status == "failed"
+            )
+            assert failed.metadata["candidate_failure"] is True
+            compile_failed += 1
+        else:
+            assert result.scorecard.resolved is True
+            passed += 1
+    assert passed == 11
+    assert compile_failed == 1
