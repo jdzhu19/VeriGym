@@ -16,6 +16,9 @@ from verigym_codex_cli.util import atomic_json
 from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.experiments.planner import ExperimentPlanner
+from verigym.experiments.runner import BatchRunner
+from verigym.experiments.schemas import ExperimentConfig
 from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.external_process import DockerExternalProcessExecutor
@@ -338,3 +341,140 @@ def test_zero_model_fake_docker_pilot_is_30_of_30_terminal_and_evaluable(
     acceptance["status"] = "PASS" if all(checks.values()) else "FAIL"
     atomic_json(output / "fake30-acceptance.json", acceptance)
     assert acceptance["status"] == "PASS"
+
+
+def test_zero_model_fake_docker_pilot_uses_generic_experiment_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if os.environ.get("VERIGYM_RUN_DOCKER_FAKE_PILOT") != "1":
+        pytest.skip("set VERIGYM_RUN_DOCKER_FAKE_PILOT=1 for fake 30-run acceptance")
+    source_root = Path(os.environ["VERIGYM_VERILOG_EVAL_ROOT"]).resolve(strict=True)
+    fake_codex = (ROOT / "integrations/verigym-codex-cli/tests/fake_codex.py").resolve()
+    fake_log = tmp_path / "fake-codex-calls.jsonl"
+    capability_path = tmp_path / "fake-capabilities.json"
+    monkeypatch.setenv("VERIGYM_CODEX_BINARY", str(fake_codex))
+    monkeypatch.setenv("VERIGYM_CODEX_TEST_MODE", "1")
+    monkeypatch.setenv("VERIGYM_FAKE_CODEX_SCENARIO", "valid")
+    monkeypatch.setenv("VERIGYM_FAKE_CODEX_LOG", str(fake_log))
+    monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
+    _identity, capability = discover_capabilities(force=True)
+    atomic_json(capability_path, capability.safe_dict())
+    monkeypatch.setenv("VERIGYM_CODEX_CAPABILITY_FILE", str(capability_path))
+    monkeypatch.setattr(DockerExternalProcessExecutor, "execute", _fake_runtime_result)
+
+    auth = {
+        "expected_requested_auth_mode": "chatgpt_cli_session",
+        "expected_resolved_auth_mode": "inherited_codex_login",
+        "expected_auth_semantic_id": "codex.auth.inherited_chatgpt_session.v1",
+    }
+    common = {
+        "model_id": "fake-docker-zero-call",
+        "reasoning_effort": "xhigh",
+        "approval_policy": "non-interactive",
+        "max_process_time_s": 300,
+        "max_output_bytes": 8 * 1024 * 1024,
+        "allow_proxy_environment": True,
+        "expected_cli_version": capability.version_output,
+        "expected_cli_executable_sha256": capability.executable_sha256,
+        "expected_capability_fingerprint": capability.capability_fingerprint,
+        "expected_execution_backend": "docker_outer_runtime_delegated",
+        **auth,
+    }
+    docker_config = _runner()._docker_runtime_config(max_process_time_s=300)
+    config = ExperimentConfig.model_validate(
+        {
+            "schema_version": "1.0",
+            "name": "generic-fake-docker-30",
+            "suite": {
+                "id": "verilog-eval",
+                "source": str(source_root),
+                "variant": "v2-spec-to-rtl",
+                "tasks": {
+                    "include": [
+                        "Prob014_andgate",
+                        "Prob024_hadd",
+                        "Prob035_count1to10",
+                        "Prob085_shift4",
+                        "Prob107_fsm1s",
+                    ],
+                    "exclude": [],
+                },
+            },
+            "runs": {
+                "mode": "agent",
+                "seeds": [0],
+                "samples_per_task": 3,
+                "pass_k": [1, 2, 3],
+            },
+            "systems": [
+                {
+                    "id": "codex-cli-readonly-agent",
+                    "agent": {
+                        "id": "codex-cli-readonly-agent",
+                        "options": {
+                            **common,
+                            "sandbox": "read-only",
+                            "prompt_contract_id": ("codex_cli_readonly_verilog_task_context_v1"),
+                        },
+                    },
+                },
+                {
+                    "id": "codex-cli-agent",
+                    "agent": {
+                        "id": "codex-cli-agent",
+                        "options": {
+                            **common,
+                            "sandbox": "workspace-write",
+                            "prompt_contract_id": ("codex_cli_workspace_verilog_task_context_v1"),
+                        },
+                    },
+                },
+            ],
+            "runtime": {
+                "id": "docker",
+                "docker": docker_config.model_dump(mode="json"),
+            },
+            "execution": {
+                "max_workers": 1,
+                "max_plan_items": 30,
+                "max_model_processes": 30,
+                "resume_model_process_policy": "never_rerun_after_authorization",
+                "max_consecutive_identical_shared_infrastructure_failures": 2,
+                "max_total_infrastructure_failures": 5,
+                "summary_checkpoint_interval": 8,
+                "seal_plan_before_execution": True,
+                "frozen_campaign_identity": {
+                    "campaign": "generic_zero_model_fake_30",
+                    "provider": "synthetic_events_only",
+                },
+            },
+            "output": {"root": str(tmp_path / "experiment")},
+        }
+    )
+    service = VeriGym(build_registries())
+    planner = ExperimentPlanner(service)
+    result = BatchRunner(
+        planner=planner,
+        service_factory=lambda: VeriGym(build_registries()),
+    ).run(planner.build(config))
+    assert result.exit_code == 0
+    assert result.state.planned_count == 30
+    assert result.state.terminal_count == 30
+    assert result.state.valid_terminal_count == 30
+    assert result.state.authorized_model_process_count == 30
+    assert result.state.infrastructure_error_count == 0
+    assert (
+        len(
+            (result.experiment_dir / "process-ledger.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        == 30
+    )
+    aggregate = json.loads(
+        (result.experiment_dir / "reports" / "aggregate.json").read_text(encoding="utf-8")
+    )
+    assert aggregate["coverage"]["planned_plan_items"] == 30
+    assert aggregate["coverage"]["evaluable_candidate_runs"] == 30
+    assert aggregate["coverage"]["infrastructure_error_runs"] == 0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import stat
@@ -11,6 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from verigym.core.errors import (
     ArtifactIntegrityError,
@@ -37,6 +39,7 @@ from verigym.experiments.schemas import (
     ExperimentManifest,
     ExperimentPlan,
     ExperimentState,
+    ModelProcessLedgerRecord,
     PlanItem,
     RunIndexRecord,
 )
@@ -49,6 +52,7 @@ from verigym.experiments.state import (
 )
 from verigym.reporting.loader import load_report_inputs, validate_plan_binding
 from verigym.reporting.service import ReportService
+from verigym.schemas.external_agent import ExternalProcessResult
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
 from verigym.schemas.sampling import SampleOutcome
 
@@ -64,12 +68,16 @@ class _ParentArtifacts:
         *,
         events: list[BatchEvent] | None = None,
         records: list[RunIndexRecord] | None = None,
+        process_ledger: list[ModelProcessLedgerRecord] | None = None,
+        checkpoints: list[dict[str, object]] | None = None,
     ) -> None:
         self.root = root
         self.manifest = manifest
         self.state = state
         self.events = events or []
         self.records = records or []
+        self.process_ledger = process_ledger or []
+        self.checkpoints = checkpoints or []
         self.log_lines: list[str] = []
         self.lock = threading.Lock()
 
@@ -147,6 +155,87 @@ class _ParentArtifacts:
             },
         )
 
+    def authorize_model_process(
+        self,
+        item: PlanItem,
+        attempt: int,
+        *,
+        resume: bool,
+        maximum: int | None,
+    ) -> ModelProcessLedgerRecord | None:
+        reason = _model_bearing_reason(item)
+        if reason is None:
+            return None
+        with self.lock:
+            if any(record.plan_index == item.plan_index for record in self.process_ledger):
+                raise ConfigurationError(
+                    f"plan item {item.plan_index} already consumed a model-process authorization"
+                )
+            if maximum is not None and len(self.process_ledger) >= maximum:
+                raise ConfigurationError("campaign-wide model-process budget is exhausted")
+            requested_model = item.system.model_id
+            if requested_model is None:
+                value = item.system.agent_options.get("model_id")
+                requested_model = value if isinstance(value, str) else None
+            record = ModelProcessLedgerRecord(
+                ordinal=len(self.process_ledger) + 1,
+                timestamp_utc=datetime.now(UTC),
+                experiment_id=self.manifest.experiment_id,
+                plan_index=item.plan_index,
+                plan_item_id=item.plan_item_id,
+                attempt=attempt,
+                task_id=item.task_id,
+                system_id=item.system.system_id,
+                base_seed=item.base_seed,
+                sample_index=item.sample_index,
+                model_bearing_reason=reason,
+                requested_model_id=requested_model,
+                resume=resume,
+            )
+            _append_jsonl_record(self.root / "process-ledger.jsonl", record)
+            self.process_ledger.append(record)
+            self.state = self.state.model_copy(
+                update={"authorized_model_process_count": len(self.process_ledger)}
+            )
+            atomic_dump_json(self.root / "state.json", self.state)
+        self.event(
+            "model_process_authorized",
+            item=item,
+            attempt=attempt,
+            detail={
+                "ordinal": record.ordinal,
+                "model_bearing_reason": record.model_bearing_reason,
+                "retry": False,
+                "resume": resume,
+            },
+        )
+        return record
+
+    def checkpoint(self, *, reason: str) -> None:
+        record: dict[str, object] = {
+            "schema_version": "1.0",
+            "sequence": len(self.checkpoints),
+            "timestamp_utc": datetime.now(UTC).isoformat(),
+            "reason": reason,
+            "planned_count": self.state.planned_count,
+            "scheduled_count": self.state.scheduled_count,
+            "terminal_count": self.state.terminal_count,
+            "valid_terminal_count": self.state.valid_terminal_count,
+            "infrastructure_error_count": self.state.infrastructure_error_count,
+            "authorized_model_process_count": self.state.authorized_model_process_count,
+            "active_count": self.state.active_count,
+        }
+        _append_jsonl_record(self.root / "summary-checkpoints.jsonl", record)
+        self.checkpoints.append(record)
+        self.event(
+            "execution_checkpoint",
+            detail={
+                "checkpoint_sequence": record["sequence"],
+                "reason": reason,
+                "terminal_count": self.state.terminal_count,
+            },
+        )
+
     def replace_record(self, old: RunIndexRecord, new: RunIndexRecord) -> None:
         with self.lock:
             index = self.records.index(old)
@@ -202,9 +291,19 @@ class BatchRunner:
 
     def run(self, plan: ExperimentPlan) -> BatchResult:
         self.planner.verify_frozen_inputs(plan)
+        _validate_execution_plan(plan)
         root = _prepare_new_root(plan.config.output.root)
         parent = self._initialize(plan, root)
         return self._execute(plan, parent, completed=set())
+
+    def prepare(self, plan: ExperimentPlan) -> Path:
+        """Persist and optionally seal an immutable plan without executing a child."""
+
+        self.planner.verify_frozen_inputs(plan)
+        _validate_execution_plan(plan)
+        root = _prepare_new_root(plan.config.output.root)
+        self._initialize(plan, root)
+        return root
 
     def resume(
         self,
@@ -250,6 +349,7 @@ class BatchRunner:
             items=items,
         )
         self.planner.verify_frozen_inputs(plan)
+        _validate_execution_plan(plan)
         events = (
             load_jsonl_models(experiment_root / "events.jsonl", BatchEvent)
             if (experiment_root / "events.jsonl").is_file()
@@ -260,14 +360,27 @@ class BatchRunner:
             if (experiment_root / "run_index.jsonl").is_file()
             else []
         )
+        process_ledger = (
+            load_jsonl_models(
+                experiment_root / "process-ledger.jsonl",
+                ModelProcessLedgerRecord,
+            )
+            if (experiment_root / "process-ledger.jsonl").is_file()
+            else []
+        )
+        _validate_process_ledger(plan, process_ledger)
+        checkpoints = _load_checkpoint_records(experiment_root / "summary-checkpoints.jsonl")
         state = load_json_model(experiment_root / "state.json", ExperimentState)
         state = _recovered_state(plan, manifest, state, events, records)
+        state = state.model_copy(update={"authorized_model_process_count": len(process_ledger)})
         parent = _ParentArtifacts(
             experiment_root,
             manifest,
             state,
             events=events,
             records=records,
+            process_ledger=process_ledger,
+            checkpoints=checkpoints,
         )
         self._reconcile_unindexed_children(plan, parent)
         completed = self._validate_resume_children(plan, parent)
@@ -330,6 +443,10 @@ class BatchRunner:
                 "events": "events.jsonl",
                 "state": "state.json",
                 "run_index": "run_index.jsonl",
+                "process_ledger": "process-ledger.jsonl",
+                "summary_checkpoints": "summary-checkpoints.jsonl",
+                "plan_audit": "plan-audit.json",
+                "normalized_config": "normalized-config.json",
                 "runs": "runs",
                 "reports": "reports",
             },
@@ -343,12 +460,19 @@ class BatchRunner:
             planned_count=len(plan.items),
         )
         atomic_dump_json(root / "experiment_config.json", persisted_config)
+        atomic_dump_json(root / "normalized-config.json", plan.config.identity_payload())
         atomic_dump_jsonl(root / "plan.jsonl", plan.items)
+        atomic_dump_json(root / "plan-audit.json", _plan_audit(plan, root / "plan.jsonl"))
         atomic_dump_json(root / "experiment_manifest.json", manifest)
         atomic_dump_json(root / "state.json", state)
         atomic_dump_jsonl(root / "events.jsonl", [])
         atomic_dump_jsonl(root / "run_index.jsonl", [])
+        _create_append_only_ledger(root / "process-ledger.jsonl")
+        _create_append_only_ledger(root / "summary-checkpoints.jsonl")
         atomic_write_text(root / "logs" / "batch.log", "")
+        if plan.config.execution.seal_plan_before_execution:
+            mode = stat.S_IMODE(os.lstat(root / "plan.jsonl").st_mode)
+            os.chmod(root / "plan.jsonl", mode & ~0o222)
         return _ParentArtifacts(root, manifest, state)
 
     def _execute(
@@ -384,11 +508,27 @@ class BatchRunner:
             for item in pending
         }
         internal_failures = 0
+        breaker_reason = _circuit_breaker_reason(parent.records, plan)
+        if breaker_reason is not None:
+            parent.event(
+                "circuit_breaker_opened",
+                detail={"reason": breaker_reason, "before_scheduling": True},
+            )
+            pending = []
         try:
             if plan.config.execution.max_workers == 1:
                 for item in pending:
-                    record, internal = self._run_item(parent, item, attempts[item.plan_index])
+                    _assert_persisted_plan(parent.root, plan)
+                    record, internal = self._run_item(
+                        parent,
+                        item,
+                        attempts[item.plan_index],
+                        resume=resume,
+                    )
                     internal_failures += int(internal)
+                    interval = plan.config.execution.summary_checkpoint_interval
+                    if interval is not None and parent.state.terminal_count % interval == 0:
+                        parent.checkpoint(reason=f"terminal_interval_{interval}")
                     if internal:
                         break
                     if (
@@ -396,8 +536,23 @@ class BatchRunner:
                         and not plan.config.execution.continue_on_infrastructure_error
                     ):
                         break
+                    breaker_reason = _circuit_breaker_reason(parent.records, plan)
+                    if breaker_reason is not None:
+                        parent.event(
+                            "circuit_breaker_opened",
+                            item=item,
+                            attempt=record.attempt,
+                            detail={"reason": breaker_reason},
+                        )
+                        break
             else:
-                internal_failures += self._run_parallel(plan, parent, pending, attempts)
+                internal_failures += self._run_parallel(
+                    plan,
+                    parent,
+                    pending,
+                    attempts,
+                    resume=resume,
+                )
         except KeyboardInterrupt:
             parent.set_status("interrupted")
             parent.event("experiment_interrupted", detail={"reason": "keyboard_interrupt"})
@@ -409,6 +564,11 @@ class BatchRunner:
         infrastructure_failures = sum(
             record.infrastructure_error for record in _latest_records(parent.records).values()
         )
+        if plan.config.execution.summary_checkpoint_interval is not None and (
+            not parent.checkpoints
+            or parent.checkpoints[-1].get("terminal_count") != parent.state.terminal_count
+        ):
+            parent.checkpoint(reason="execution_terminal")
         if internal_failures:
             status = "failed_internal"
             exit_code = 5
@@ -457,6 +617,8 @@ class BatchRunner:
         parent: _ParentArtifacts,
         pending: list[PlanItem],
         attempts: dict[int, int],
+        *,
+        resume: bool,
     ) -> int:
         internal_failures = 0
         iterator = iter(pending)
@@ -471,7 +633,11 @@ class BatchRunner:
                     item = next(iterator, None)
                     if item is not None:
                         future = executor.submit(
-                            self._run_item, parent, item, attempts[item.plan_index]
+                            self._run_item,
+                            parent,
+                            item,
+                            attempts[item.plan_index],
+                            resume,
                         )
                         futures[future] = item
                 while futures:
@@ -498,6 +664,7 @@ class BatchRunner:
                                     parent,
                                     next_item,
                                     attempts[next_item.plan_index],
+                                    resume,
                                 )
                                 futures[next_future] = next_item
                     if stop:
@@ -514,6 +681,7 @@ class BatchRunner:
         parent: _ParentArtifacts,
         item: PlanItem,
         attempt: int,
+        resume: bool = False,
     ) -> tuple[RunIndexRecord, bool]:
         parent.scheduled(item, attempt)
         parent.started(item, attempt)
@@ -525,7 +693,18 @@ class BatchRunner:
             parent.manifest.experiment_id,
         )
         try:
+            parent.authorize_model_process(
+                item,
+                attempt,
+                resume=resume,
+                maximum=parent.manifest.execution_policy.max_model_processes,
+            )
             result = self.child_executor(item, config)
+            if (
+                parent.manifest.execution_policy.resume_model_process_policy
+                == "never_rerun_after_authorization"
+            ):
+                _validate_model_process_result(item, result)
             validate_plan_binding(result.manifest, result.scorecard, item)
             expected = (parent.root / "runs" / run_id).resolve(strict=True)
             if result.run_dir.resolve(strict=True) != expected:
@@ -747,6 +926,58 @@ class BatchRunner:
             }:
                 # A terminal invalid attempt is preserved but never reused or aggregated.
                 continue
+        if plan.config.execution.resume_model_process_policy == "never_rerun_after_authorization":
+            by_index = {item.plan_index: item for item in plan.items}
+            latest = _latest_records(parent.records)
+            for authorization in parent.process_ledger:
+                index = authorization.plan_index
+                if index in completed:
+                    continue
+                item = by_index[index]
+                record = latest.get(index)
+                if record is None:
+                    record = RunIndexRecord(
+                        plan_index=index,
+                        plan_item_id=item.plan_item_id,
+                        attempt=authorization.attempt,
+                        terminal_status="interrupted_after_model_authorization",
+                        resolved=False,
+                        evaluable=False,
+                        infrastructure_error=True,
+                        child_exit_category="model_process_authorization_consumed",
+                        artifact_validation_status="missing",
+                        message=(
+                            "strict resume preserved an authorization with no valid "
+                            "terminal child; the item was not rerun"
+                        ),
+                    )
+                    parent.terminal(item, record)
+                elif record.artifact_validation_status != "valid":
+                    preserved = record.model_copy(
+                        update={
+                            "terminal_status": "interrupted_after_model_authorization",
+                            "resolved": False,
+                            "evaluable": False,
+                            "infrastructure_error": True,
+                            "child_exit_category": ("model_process_authorization_consumed"),
+                            "message": (
+                                "strict resume preserved the prior attempt after a "
+                                "model-process authorization; the item was not rerun"
+                            ),
+                        }
+                    )
+                    parent.replace_record(record, preserved)
+                completed.add(index)
+                parent.event(
+                    "plan_item_reused_on_resume",
+                    item=item,
+                    attempt=authorization.attempt,
+                    detail={
+                        "runtime_calls": 0,
+                        "model_calls": 0,
+                        "reason": "model_process_authorization_already_consumed",
+                    },
+                )
         return completed
 
 
@@ -789,6 +1020,305 @@ def _record_from_result(
         scorecard_hash=hash_bytes((result.run_dir / "scorecard.json").read_bytes()),
         artifact_manifest_hash=hash_bytes((result.run_dir / "artifact_manifest.json").read_bytes()),
     )
+
+
+def _model_bearing_reason(
+    item: PlanItem,
+) -> Literal["configured_model_client", "external_coding_agent"] | None:
+    if item.system.model_id is not None:
+        return "configured_model_client"
+    if "external_coding_agent" in item.system.agent_descriptor.capabilities:
+        return "external_coding_agent"
+    return None
+
+
+def _validate_model_process_result(item: PlanItem, result: RunResult) -> None:
+    reason = _model_bearing_reason(item)
+    if reason is None:
+        return
+    if reason == "configured_model_client":
+        if len(result.manifest.model_observations) != 1:
+            raise ConfigurationError("model-bearing child did not record exactly one model call")
+        return
+    observations = result.manifest.external_agent_observations
+    if sum(identity.invocation_count for identity in observations) != 1:
+        raise ConfigurationError(
+            "external coding-agent child did not record exactly one model process"
+        )
+    identity = observations[-1]
+    options = item.system.agent_options
+    expected_values = {
+        "requested_model_id": options.get("model_id"),
+        "requested_reasoning_effort": options.get("reasoning_effort"),
+        "effective_reasoning_effort": options.get("reasoning_effort"),
+        "executable_version": options.get("expected_cli_version"),
+        "executable_sha256": options.get("expected_cli_executable_sha256"),
+        "capability_fingerprint": options.get("expected_capability_fingerprint"),
+        "requested_auth_mode": options.get("expected_requested_auth_mode"),
+        "resolved_auth_mode": options.get("expected_resolved_auth_mode"),
+        "auth_semantic_id": options.get("expected_auth_semantic_id"),
+    }
+    for field, expected in expected_values.items():
+        if expected is None:
+            continue
+        if getattr(identity, field) != expected:
+            raise ConfigurationError(f"external coding-agent identity mutation: {field}")
+    expected_track = (
+        "codex_cli_readonly_single_turn_agent"
+        if item.system.agent_id == "codex-cli-readonly-agent"
+        else "codex_cli_external_agent"
+        if item.system.agent_id == "codex-cli-agent"
+        else None
+    )
+    if expected_track is not None and identity.integration_track != expected_track:
+        raise ConfigurationError("external coding-agent identity mutation: integration_track")
+    if identity.observed_model_id != identity.requested_model_id:
+        raise ConfigurationError(
+            "external coding-agent observed model differs from the requested model"
+        )
+    if identity.identity_confidence != "observed":
+        raise ConfigurationError("external coding-agent model identity was not directly observed")
+    expected_backend = options.get("expected_execution_backend")
+    if expected_backend is not None:
+        runtime_path = result.run_dir / "artifacts" / "codex_cli" / "runtime_process.json"
+        if not runtime_path.is_file() or runtime_path.is_symlink():
+            raise ConfigurationError("external coding-agent runtime identity evidence is missing")
+        runtime_result = ExternalProcessResult.model_validate_json(
+            runtime_path.read_text(encoding="utf-8")
+        )
+        runtime_identity = runtime_result.runtime_identity
+        if runtime_identity.execution_backend != expected_backend:
+            raise ConfigurationError("external coding-agent identity mutation: execution_backend")
+        docker = item.docker_config
+        external = docker.external_agent if docker is not None else None
+        if docker is None or external is None:
+            raise ConfigurationError(
+                "runtime-delegated external coding agent has no frozen Docker identity"
+            )
+        frozen_values = {
+            "verifier_image_id": docker.expected_image_id,
+            "agent_image_id": external.expected_image_id,
+            "agent_executable_name": external.expected_executable_name,
+            "agent_executable_sha256": external.expected_executable_sha256,
+            "agent_executable_version": external.expected_executable_version,
+        }
+        for field, expected in frozen_values.items():
+            if expected is None or getattr(runtime_identity, field) != expected:
+                raise ConfigurationError(f"external coding-agent identity mutation: {field}")
+        if not runtime_result.cleanup_complete:
+            raise ConfigurationError(
+                "external coding-agent security breach: incomplete runtime cleanup"
+            )
+
+
+def _plan_audit(plan: ExperimentPlan, plan_path: Path) -> dict[str, object]:
+    task_ids = sorted({item.task_id for item in plan.items})
+    system_ids = sorted({item.system.system_id for item in plan.items})
+    base_seeds = sorted({item.base_seed for item in plan.items})
+    sample_indices = list(range(plan.config.runs.samples_per_task))
+    expected_cells = {
+        (task_id, system_id, base_seed, sample_index)
+        for task_id in task_ids
+        for system_id in system_ids
+        for base_seed in base_seeds
+        for sample_index in sample_indices
+    }
+    observed_cells = {
+        (
+            item.task_id,
+            item.system.system_id,
+            item.base_seed,
+            item.sample_index,
+        )
+        for item in plan.items
+    }
+    item_ids = [item.plan_item_id for item in plan.items]
+    child_seeds = [item.child_seed for item in plan.items]
+    model_bearing_item_count = sum(_model_bearing_reason(item) is not None for item in plan.items)
+    maximum = plan.config.execution.max_model_processes
+    strict_process_policy = (
+        plan.config.execution.resume_model_process_policy == "never_rerun_after_authorization"
+    )
+    process_budget_exact = (
+        maximum == model_bearing_item_count
+        if strict_process_policy
+        else maximum is None or maximum >= model_bearing_item_count
+    )
+    strict_resume_ready = (
+        plan.config.execution.resume_model_process_policy != "never_rerun_after_authorization"
+        or (
+            maximum is not None
+            and plan.config.execution.seal_plan_before_execution
+            and bool(plan.config.execution.frozen_campaign_identity)
+        )
+    )
+    return {
+        "schema_version": "1.0",
+        "experiment_id": plan.experiment_id,
+        "config_hash": plan.config_hash,
+        "evaluation_config_hash": plan.evaluation_config_hash,
+        "task_set_hash": plan.task_set_hash,
+        "source_identity_hash": plan.source_identity_hash,
+        "plan_hash": plan.plan_hash,
+        "plan_file_sha256": hash_bytes(plan_path.read_bytes()),
+        "planned_item_count": len(plan.items),
+        "unique_plan_item_id_count": len(set(item_ids)),
+        "unique_child_seed_count": len(set(child_seeds)),
+        "task_count": len(task_ids),
+        "system_count": len(system_ids),
+        "base_seed_count": len(base_seeds),
+        "samples_per_task_system": plan.config.runs.samples_per_task,
+        "task_system_seed_sample_cells_complete": observed_cells == expected_cells,
+        "model_bearing_item_count": model_bearing_item_count,
+        "max_model_processes": maximum,
+        "model_process_budget_exact": process_budget_exact,
+        "strict_resume_ready": strict_resume_ready,
+        "frozen_campaign_identity_hash": (
+            content_hash(plan.config.execution.frozen_campaign_identity)
+            if plan.config.execution.frozen_campaign_identity
+            else None
+        ),
+        "max_workers": plan.config.execution.max_workers,
+        "plan_sealed_before_execution": (plan.config.execution.seal_plan_before_execution),
+        "passed": bool(
+            len(plan.items) == len(set(item_ids)) == len(set(child_seeds))
+            and observed_cells == expected_cells
+            and process_budget_exact
+            and strict_resume_ready
+        ),
+    }
+
+
+def _validate_execution_plan(plan: ExperimentPlan) -> None:
+    execution = plan.config.execution
+    if execution.resume_model_process_policy != "never_rerun_after_authorization":
+        return
+    model_bearing = sum(_model_bearing_reason(item) is not None for item in plan.items)
+    if execution.max_model_processes != model_bearing:
+        raise ConfigurationError("strict model-process campaign requires an exact process budget")
+
+
+def _assert_persisted_plan(root: Path, plan: ExperimentPlan) -> None:
+    path = root / "plan.jsonl"
+    metadata = os.lstat(path)
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ConfigurationError("persisted experiment plan is not a regular file")
+    if plan.config.execution.seal_plan_before_execution and stat.S_IMODE(metadata.st_mode) & 0o222:
+        raise ConfigurationError("persisted experiment plan is no longer sealed")
+    items = load_jsonl_models(path, PlanItem)
+    if content_hash(plan_items_hash_payload(items)) != plan.plan_hash:
+        raise ConfigurationError("persisted experiment plan identity mutated")
+
+
+def _create_append_only_ledger(path: Path) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _append_jsonl_record(
+    path: Path,
+    record: ModelProcessLedgerRecord | dict[str, object],
+) -> None:
+    value = (
+        record.model_dump(mode="json") if isinstance(record, ModelProcessLedgerRecord) else record
+    )
+    payload = (
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+    try:
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _load_checkpoint_records(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, object]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            raise ConfigurationError(f"blank summary checkpoint at line {line_number}")
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(f"invalid summary checkpoint at line {line_number}") from exc
+        if not isinstance(value, dict) or value.get("sequence") != len(records):
+            raise ConfigurationError("summary checkpoint sequence is invalid")
+        records.append(value)
+    return records
+
+
+def _validate_process_ledger(
+    plan: ExperimentPlan,
+    records: list[ModelProcessLedgerRecord],
+) -> None:
+    by_index = {item.plan_index: item for item in plan.items}
+    if [record.ordinal for record in records] != list(range(1, len(records) + 1)):
+        raise ConfigurationError("model-process ledger ordinals are not contiguous")
+    if len({record.plan_index for record in records}) != len(records):
+        raise ConfigurationError("model-process ledger authorizes a plan item more than once")
+    maximum = plan.config.execution.max_model_processes
+    if maximum is not None and len(records) > maximum:
+        raise ConfigurationError("model-process ledger exceeds the configured budget")
+    for record in records:
+        item = by_index.get(record.plan_index)
+        if (
+            item is None
+            or item.plan_item_id != record.plan_item_id
+            or item.task_id != record.task_id
+            or item.system.system_id != record.system_id
+            or _model_bearing_reason(item) != record.model_bearing_reason
+            or record.retry is not False
+        ):
+            raise ConfigurationError("model-process ledger identity differs from the plan")
+
+
+_SHARED_INFRASTRUCTURE_CATEGORIES = {
+    "authentication",
+    "rate_limit",
+    "transport",
+    "process_boundary",
+    "sandbox_backend_unavailable",
+}
+
+
+def _circuit_breaker_reason(
+    records: list[RunIndexRecord],
+    plan: ExperimentPlan,
+) -> str | None:
+    latest = sorted(_latest_records(records).values(), key=lambda record: record.plan_index)
+    total_limit = plan.config.execution.max_total_infrastructure_failures
+    total = sum(record.infrastructure_error for record in latest)
+    if total_limit is not None and total >= total_limit:
+        return f"total_infrastructure_failures:{total}"
+    consecutive_limit = (
+        plan.config.execution.max_consecutive_identical_shared_infrastructure_failures
+    )
+    if consecutive_limit is None:
+        return None
+    category: str | None = None
+    count = 0
+    for record in latest:
+        if (
+            record.infrastructure_error
+            and record.child_exit_category in _SHARED_INFRASTRUCTURE_CATEGORIES
+        ):
+            if record.child_exit_category == category:
+                count += 1
+            else:
+                category = record.child_exit_category
+                count = 1
+        else:
+            category = None
+            count = 0
+    if category is not None and count >= consecutive_limit:
+        return f"consecutive_shared_infrastructure:{category}:{count}"
+    return None
 
 
 def _child_config(

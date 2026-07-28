@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import stat
 import threading
 import time
 from collections.abc import Callable
@@ -243,6 +244,26 @@ def test_batch_report_preserves_exact_n4_c2_pass_at_k(tmp_path: Path) -> None:
         [0.5, 5 / 6, 1.0]
     )
 
+    full_scale = ReportService().generate_full_scale(
+        result.experiment_dir,
+        bootstrap_resamples=100,
+        bootstrap_seed=17,
+    )
+    payload = json.loads(full_scale.paths["full-scale.json"].read_text(encoding="utf-8"))
+    assert payload["claims"] == {
+        "best_of_n_selection": False,
+        "direct_api_evaluation": False,
+        "official_upstream_model_score": False,
+    }
+    row = payload["pass_at_k"][0]
+    assert (row["pass_at_1"], row["pass_at_2"], row["pass_at_3"]) == pytest.approx(
+        (0.5, 5 / 6, 1.0)
+    )
+    statistics_payload = payload["statistical_analysis"]
+    assert statistics_payload["method"].startswith("deterministic_paired_task_level")
+    assert statistics_payload["resamples"] == 100
+    assert statistics_payload["systems"]["mixed"]["pass_at_1"]["task_count"] == 1
+
 
 def test_infrastructure_failure_invalidates_group_and_is_not_candidate_failure(
     tmp_path: Path,
@@ -384,6 +405,124 @@ def test_resume_reuses_valid_children_and_executes_only_missing(tmp_path: Path) 
     )
     with pytest.raises(ConfigurationError, match="configuration hash differs"):
         _runner().resume(config.output.root, supplied_config=changed)
+
+
+def test_strict_model_process_resume_never_launches_an_authorized_item_twice(
+    tmp_path: Path,
+) -> None:
+    config = experiment_config(
+        tmp_path / "strict-resume",
+        tasks=["and-gate-basic"],
+        mode="chat",
+        systems=[
+            {
+                "id": "chat",
+                "agent": {"id": "single-turn"},
+                "model": {"id": "static-and-gate-mixed"},
+            }
+        ],
+        seeds=[0],
+    )
+    config = config.model_copy(
+        update={
+            "execution": config.execution.model_copy(
+                update={
+                    "max_model_processes": 1,
+                    "resume_model_process_policy": "never_rerun_after_authorization",
+                    "seal_plan_before_execution": True,
+                    "frozen_campaign_identity": {"campaign": "strict_resume_zero_call_test"},
+                }
+            )
+        }
+    )
+    plan = _planner().build(config)
+    first_calls = 0
+
+    def interrupt_after_authorization(
+        _item: PlanItem,
+        _run_config: RunConfig,
+    ) -> RunResult:
+        nonlocal first_calls
+        first_calls += 1
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _runner(child_executor=interrupt_after_authorization).run(plan)
+    assert first_calls == 1
+    ledger = [
+        json.loads(line)
+        for line in (config.output.root / "process-ledger.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(ledger) == 1
+    assert ledger[0]["authorization_state"] == "launch_authorized"
+    assert ledger[0]["retry"] is False
+
+    def forbidden(_item: PlanItem, _run_config: RunConfig) -> RunResult:
+        raise AssertionError("strict resume must not relaunch an authorized item")
+
+    resumed = _runner(child_executor=forbidden).resume(config.output.root)
+    assert resumed.exit_code == 4
+    assert resumed.state.authorized_model_process_count == 1
+    records = [
+        json.loads(line)
+        for line in (resumed.experiment_dir / "run_index.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(records) == 1
+    assert records[0]["terminal_status"] == "interrupted_after_model_authorization"
+    assert records[0]["child_exit_category"] == "model_process_authorization_consumed"
+
+
+def test_prepare_seals_plan_and_generic_infrastructure_breaker_checkpoints(
+    tmp_path: Path,
+) -> None:
+    config = experiment_config(
+        tmp_path / "scale-controls",
+        tasks=["and-gate-basic", "counter-basic"],
+        systems=[{"id": "good", "agent": {"id": "scripted"}}],
+        seeds=[0, 1],
+    )
+    config = config.model_copy(
+        update={
+            "execution": config.execution.model_copy(
+                update={
+                    "max_total_infrastructure_failures": 2,
+                    "summary_checkpoint_interval": 1,
+                    "seal_plan_before_execution": True,
+                }
+            )
+        }
+    )
+    plan = _planner().build(config)
+    runner = _runner(
+        child_executor=lambda _item, _config: (_ for _ in ()).throw(
+            RuntimeExecutionError("shared synthetic outage")
+        )
+    )
+    root = runner.prepare(plan)
+    assert stat.S_IMODE((root / "plan.jsonl").stat().st_mode) & 0o222 == 0
+    assert not (root / "process-ledger.jsonl").read_text(encoding="utf-8")
+    audit = json.loads((root / "plan-audit.json").read_text(encoding="utf-8"))
+    assert audit["planned_item_count"] == 4
+    assert audit["plan_hash"] == plan.plan_hash
+
+    result = runner.resume(root)
+    assert result.exit_code == 4
+    assert result.state.terminal_count == 2
+    checkpoints = [
+        json.loads(line)
+        for line in (root / "summary-checkpoints.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [checkpoint["terminal_count"] for checkpoint in checkpoints] == [1, 2]
+    events = [
+        json.loads(line)
+        for line in (root / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    breaker = [event for event in events if event["event_type"] == "circuit_breaker_opened"]
+    assert breaker[-1]["detail"]["reason"] == "total_infrastructure_failures:2"
 
 
 def test_resume_recovers_complete_child_created_before_parent_index_write(

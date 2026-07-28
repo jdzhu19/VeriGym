@@ -24,9 +24,19 @@ _COMMON_OPTIONS = {
     "max_process_time_s",
     "max_output_bytes",
     "allow_proxy_environment",
+    "prompt_contract_id",
+    "expected_cli_version",
+    "expected_cli_executable_sha256",
+    "expected_capability_fingerprint",
+    "expected_requested_auth_mode",
+    "expected_resolved_auth_mode",
+    "expected_auth_semantic_id",
+    "expected_execution_backend",
 }
 _AGENT_OPTIONS = {*_COMMON_OPTIONS, "model_id"}
 _AUTHORIZED_REASONING_EFFORT = "xhigh"
+_READONLY_PROMPT_CONTRACT = "codex_cli_readonly_verilog_task_context_v1"
+_WORKSPACE_PROMPT_CONTRACT = "codex_cli_workspace_verilog_task_context_v1"
 ReasoningEffortSource = Literal["verigym_explicit_cli_override"]
 _REASONING_EFFORT_SOURCE: ReasoningEffortSource = "verigym_explicit_cli_override"
 
@@ -59,6 +69,8 @@ class CodexSettings:
     allow_proxy_environment: bool
     forwarded_proxy_environment_names: tuple[str, ...]
     runtime_forwarded_proxy_environment_names: tuple[str, ...]
+    prompt_contract_id: str
+    expected_execution_backend: str | None
     configuration_fingerprint: str
 
     @property
@@ -107,6 +119,8 @@ class CodexSettings:
                 ["NO_PROXY", "no_proxy"] if self.allow_proxy_environment else []
             ),
             "mandatory_loopback_bypass_present": True,
+            "prompt_contract_id": self.prompt_contract_id,
+            "expected_execution_backend": self.expected_execution_backend,
             "execution_surface": "codex_cli",
             "interaction_class": (
                 "cli_agent_single_turn_readonly"
@@ -143,6 +157,12 @@ def readonly_agent_settings(
     if approval not in {"non-interactive", "never"}:
         raise ValueError("read-only Codex CLI agent requires non-interactive approval")
     auth_resolution, credential_env = auth_identity_configuration()
+    _validate_identity_expectations(
+        options,
+        capabilities,
+        auth_resolution,
+        prompt_contract_id=_READONLY_PROMPT_CONTRACT,
+    )
     requested_timeout = _number(
         options,
         "max_process_time_s",
@@ -166,6 +186,11 @@ def readonly_agent_settings(
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
+        prompt_contract_id=_READONLY_PROMPT_CONTRACT,
+        expected_execution_backend=_optional_string(
+            options,
+            "expected_execution_backend",
+        ),
         capabilities=capabilities,
     )
 
@@ -188,6 +213,12 @@ def agent_settings(
     if approval not in {"non-interactive", "never"}:
         raise ValueError("Track B requires a non-interactive approval policy")
     auth_resolution, credential_env = auth_identity_configuration()
+    _validate_identity_expectations(
+        options,
+        capabilities,
+        auth_resolution,
+        prompt_contract_id=_WORKSPACE_PROMPT_CONTRACT,
+    )
     requested_timeout = _number(
         options,
         "max_process_time_s",
@@ -211,6 +242,11 @@ def agent_settings(
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
+        prompt_contract_id=_WORKSPACE_PROMPT_CONTRACT,
+        expected_execution_backend=_optional_string(
+            options,
+            "expected_execution_backend",
+        ),
         capabilities=capabilities,
     )
 
@@ -221,6 +257,11 @@ def settings_for_execution_backend(
 ) -> CodexSettings:
     """Bind Docker delegation without changing the owner-facing auth semantics."""
 
+    if (
+        settings.expected_execution_backend is not None
+        and settings.expected_execution_backend != execution_backend
+    ):
+        raise ValueError("external-agent execution backend differs from the frozen expectation")
     if execution_backend == "host_local_trusted":
         return settings
     if execution_backend != "docker_outer_runtime_delegated":
@@ -261,6 +302,8 @@ def _settings(
     auth_resolution: AuthModeResolution,
     credential_env: str | None,
     allow_proxy: bool,
+    prompt_contract_id: str,
+    expected_execution_backend: str | None,
     capabilities: CapabilityReport,
 ) -> CodexSettings:
     if requested_timeout <= 0 or requested_timeout > 1800:
@@ -302,6 +345,8 @@ def _settings(
             ["NO_PROXY", "no_proxy"] if allow_proxy else []
         ),
         "mandatory_loopback_bypass_present": True,
+        "prompt_contract_id": prompt_contract_id,
+        "expected_execution_backend": expected_execution_backend,
         "capability_fingerprint": capabilities.capability_fingerprint,
     }
     return CodexSettings(
@@ -331,6 +376,8 @@ def _settings(
         allow_proxy_environment=allow_proxy,
         forwarded_proxy_environment_names=forwarded_proxy_names,
         runtime_forwarded_proxy_environment_names=runtime_forwarded_proxy_names,
+        prompt_contract_id=prompt_contract_id,
+        expected_execution_backend=expected_execution_backend,
         configuration_fingerprint=stable_hash(safe),
     )
 
@@ -355,6 +402,28 @@ def _reasoning_effort(values: Mapping[str, JsonValue]) -> str:
     return effort
 
 
+def _validate_identity_expectations(
+    values: Mapping[str, JsonValue],
+    capabilities: CapabilityReport,
+    auth_resolution: AuthModeResolution,
+    *,
+    prompt_contract_id: str,
+) -> None:
+    expectations = {
+        "expected_cli_version": capabilities.version_output,
+        "expected_cli_executable_sha256": capabilities.executable_sha256,
+        "expected_capability_fingerprint": capabilities.capability_fingerprint,
+        "expected_requested_auth_mode": auth_resolution.requested_auth_mode,
+        "expected_resolved_auth_mode": auth_resolution.resolved_auth_mode,
+        "expected_auth_semantic_id": auth_resolution.auth_semantic_id,
+        "prompt_contract_id": prompt_contract_id,
+    }
+    for key, observed in expectations.items():
+        expected = _optional_string(values, key)
+        if expected is not None and expected != observed:
+            raise ValueError(f"Codex identity expectation differs for {key}")
+
+
 def _reject_unknown(
     values: Mapping[str, JsonValue],
     allowed: set[str],
@@ -368,6 +437,15 @@ def _reject_unknown(
 
 def _string(values: Mapping[str, JsonValue], key: str, default: str) -> str:
     value = values.get(key, default)
+    if not isinstance(value, str):
+        raise ValueError(f"Codex option {key!r} must be a string")
+    return clean_identifier(value, label=f"Codex option {key}", max_length=128)
+
+
+def _optional_string(values: Mapping[str, JsonValue], key: str) -> str | None:
+    value = values.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str):
         raise ValueError(f"Codex option {key!r} must be a string")
     return clean_identifier(value, label=f"Codex option {key}", max_length=128)

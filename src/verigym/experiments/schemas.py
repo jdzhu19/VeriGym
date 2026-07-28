@@ -159,6 +159,62 @@ class ExperimentExecutionConfig(StrictModel):
         ge=1,
         le=HARD_MAX_PLAN_ITEMS,
     )
+    max_model_processes: int | None = Field(
+        default=None,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS,
+    )
+    resume_model_process_policy: Literal[
+        "legacy_rerun_invalid",
+        "never_rerun_after_authorization",
+    ] = "legacy_rerun_invalid"
+    max_consecutive_identical_shared_infrastructure_failures: int | None = Field(
+        default=None,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS,
+    )
+    max_total_infrastructure_failures: int | None = Field(
+        default=None,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS,
+    )
+    summary_checkpoint_interval: int | None = Field(
+        default=None,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS,
+    )
+    seal_plan_before_execution: bool = False
+    frozen_campaign_identity: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("frozen_campaign_identity", mode="before")
+    @classmethod
+    def validate_frozen_campaign_identity(
+        cls,
+        value: object,
+    ) -> dict[str, JsonValue]:
+        return validate_plugin_options(value)
+
+    @model_validator(mode="after")
+    def validate_scale_controls(self) -> ExperimentExecutionConfig:
+        if (
+            self.resume_model_process_policy == "never_rerun_after_authorization"
+            and self.max_model_processes is None
+        ):
+            raise ValueError("strict model-process resume policy requires max_model_processes")
+        if self.resume_model_process_policy == "never_rerun_after_authorization" and (
+            not self.seal_plan_before_execution or not self.frozen_campaign_identity
+        ):
+            raise ValueError(
+                "strict model-process resume requires plan sealing and frozen campaign identity"
+            )
+        if self.max_model_processes is not None and self.max_model_processes > self.max_plan_items:
+            raise ValueError("max_model_processes cannot exceed max_plan_items")
+        if (
+            self.max_consecutive_identical_shared_infrastructure_failures is not None
+            or self.max_total_infrastructure_failures is not None
+        ) and self.max_workers != 1:
+            raise ValueError("infrastructure circuit breakers require max_workers=1")
+        return self
 
 
 class ExperimentOutputConfig(StrictModel):
@@ -213,6 +269,18 @@ class ExperimentConfig(StrictModel):
         # bound. Omitting the additive default here preserves those hashes.
         if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
             del payload["execution"]["max_plan_items"]
+        execution_defaults: dict[str, Any] = {
+            "max_model_processes": None,
+            "resume_model_process_policy": "legacy_rerun_invalid",
+            "max_consecutive_identical_shared_infrastructure_failures": None,
+            "max_total_infrastructure_failures": None,
+            "summary_checkpoint_interval": None,
+            "seal_plan_before_execution": False,
+            "frozen_campaign_identity": {},
+        }
+        for key, default in execution_defaults.items():
+            if payload["execution"].get(key) == default:
+                payload["execution"].pop(key, None)
         for system in payload["systems"]:
             if not system["agent"].get("options"):
                 system["agent"].pop("options", None)
@@ -377,11 +445,14 @@ class BatchEvent(StrictModel):
     timestamp_utc: datetime
     event_type: Literal[
         "experiment_started",
+        "model_process_authorized",
         "plan_item_scheduled",
         "plan_item_started",
         "plan_item_terminal",
         "plan_item_reused_on_resume",
         "plan_item_corrupt",
+        "execution_checkpoint",
+        "circuit_breaker_opened",
         "report_started",
         "report_completed",
         "experiment_interrupted",
@@ -432,6 +503,30 @@ class RunIndexRecord(StrictModel):
         return path.as_posix()
 
 
+class ModelProcessLedgerRecord(StrictModel):
+    """Append-only parent authorization for one model-bearing child process."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    ordinal: int = Field(ge=1)
+    timestamp_utc: datetime
+    experiment_id: str
+    plan_index: int = Field(ge=0)
+    plan_item_id: str
+    attempt: int = Field(ge=1)
+    task_id: str
+    system_id: str
+    base_seed: int = Field(ge=0, le=_MAX_SEED)
+    sample_index: int = Field(ge=0)
+    authorization_state: Literal["launch_authorized"] = "launch_authorized"
+    model_bearing_reason: Literal[
+        "configured_model_client",
+        "external_coding_agent",
+    ]
+    requested_model_id: str | None = None
+    retry: Literal[False] = False
+    resume: bool
+
+
 class ExperimentState(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     experiment_id: str
@@ -444,6 +539,7 @@ class ExperimentState(StrictModel):
     valid_terminal_count: int = Field(default=0, ge=0)
     infrastructure_error_count: int = Field(default=0, ge=0)
     corrupt_attempt_count: int = Field(default=0, ge=0)
+    authorized_model_process_count: int = Field(default=0, ge=0)
     active_count: int = Field(default=0, ge=0)
     observed_max_concurrency: int = Field(default=0, ge=0)
     last_event_sequence: int = Field(default=-1, ge=-1)
@@ -470,6 +566,7 @@ __all__ = [
     "ExperimentPlan",
     "ExperimentRunsConfig",
     "HARD_MAX_PLAN_ITEMS",
+    "ModelProcessLedgerRecord",
     "PlanItem",
     "PlannedSystemIdentity",
     "RunIndexRecord",

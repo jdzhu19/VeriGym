@@ -18,6 +18,7 @@ from verigym.experiments.identity import (
     runtime_identity_hash,
 )
 from verigym.experiments.planner import ExperimentPlanner
+from verigym.experiments.qualification import qualify_reference_candidates
 from verigym.experiments.runner import BatchRunner
 from verigym.experiments.schemas import ExperimentConfig
 from verigym.schemas.common import RuntimeImageIdentity, RuntimeResourceSummary
@@ -46,6 +47,23 @@ def test_experiment_schema_round_trip_is_strict_and_secret_free(tmp_path: Path) 
                 }
             ],
         )
+    identity_payload = config.model_dump(mode="json")
+    identity_payload["execution"]["frozen_campaign_identity"] = {
+        "source_commit": "a" * 40,
+        "core_wheel_sha256": "b" * 64,
+        "plugin_wheel_sha256": "c" * 64,
+    }
+    identity_payload["systems"][0]["agent"]["options"] = {
+        "expected_requested_auth_mode": "chatgpt_cli_session",
+        "expected_resolved_auth_mode": "inherited_codex_login",
+        "expected_auth_semantic_id": "codex.auth.inherited_chatgpt_session.v1",
+    }
+    assert ExperimentConfig.model_validate(identity_payload).execution.frozen_campaign_identity
+    identity_payload["execution"]["frozen_campaign_identity"] = {
+        "provider_token": "must-not-be-accepted"
+    }
+    with pytest.raises(ValidationError, match="secret-bearing"):
+        ExperimentConfig.model_validate(identity_payload)
 
 
 @pytest.mark.parametrize(
@@ -221,6 +239,33 @@ def test_plan_integrity_tampering_is_rejected_before_output_or_child_execution(
     with pytest.raises(ConfigurationError, match="ordered plan hash"):
         BatchRunner(planner=planner, service_factory=offline_service).run(changed_plan)
     assert not config.output.root.exists()
+
+
+def test_reference_qualification_uses_each_frozen_task_once_without_model(
+    tmp_path: Path,
+) -> None:
+    config = experiment_config(
+        tmp_path / "unused-experiment",
+        tasks=["and-gate-basic", "counter-basic"],
+        systems=[{"id": "good", "agent": {"id": "scripted"}}],
+        seeds=[0, 1],
+        samples=2,
+    )
+    planner = ExperimentPlanner(offline_service())
+    plan = planner.build(config)
+    output = tmp_path / "reference-qualification.json"
+    report = qualify_reference_candidates(
+        plan,
+        output,
+        planner=planner,
+        service_factory=offline_service,
+    )
+    assert report["task_count"] == 2
+    assert report["passed_count"] == 2
+    assert report["all_passed"] is True
+    assert report["model_process_count"] == 0
+    assert len(report["records"]) == 2
+    assert output.stat().st_mode & 0o222 == 0
 
 
 def test_task_selection_and_agent_model_pairing_fail_before_execution(tmp_path: Path) -> None:

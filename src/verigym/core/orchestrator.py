@@ -114,8 +114,14 @@ class VeriGym:
             )
         runtime_plugin: Runtime = self.registries.runtimes.get(config.runtime)
         run_id = config.run_id or self._new_run_id(task.id)
+        # Experiment children carry both the immutable planned descriptor and
+        # the role-specific Docker configuration. Reconstructing Docker from
+        # the verifier-only descriptor would silently discard the external
+        # agent image and its credential-isolation controls.
         runtime = (
-            runtime_plugin.configure_for_replay(config.expected_runtime)
+            runtime_plugin.configure(config.docker_config)
+            if config.expected_runtime is not None and config.docker_config is not None
+            else runtime_plugin.configure_for_replay(config.expected_runtime)
             if config.expected_runtime is not None
             else runtime_plugin.configure(config.docker_config)
         )

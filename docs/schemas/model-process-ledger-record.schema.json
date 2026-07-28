@@ -1,0 +1,112 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/model-process-ledger-record.schema.json",
+  "additionalProperties": false,
+  "description": "Append-only parent authorization for one model-bearing child process.",
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "authorization_state": {
+      "const": "launch_authorized",
+      "default": "launch_authorized",
+      "title": "Authorization State",
+      "type": "string"
+    },
+    "base_seed": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "title": "Base Seed",
+      "type": "integer"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "model_bearing_reason": {
+      "enum": [
+        "configured_model_client",
+        "external_coding_agent"
+      ],
+      "title": "Model Bearing Reason",
+      "type": "string"
+    },
+    "ordinal": {
+      "minimum": 1,
+      "title": "Ordinal",
+      "type": "integer"
+    },
+    "plan_index": {
+      "minimum": 0,
+      "title": "Plan Index",
+      "type": "integer"
+    },
+    "plan_item_id": {
+      "title": "Plan Item Id",
+      "type": "string"
+    },
+    "requested_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Model Id"
+    },
+    "resume": {
+      "title": "Resume",
+      "type": "boolean"
+    },
+    "retry": {
+      "const": false,
+      "default": false,
+      "title": "Retry",
+      "type": "boolean"
+    },
+    "sample_index": {
+      "minimum": 0,
+      "title": "Sample Index",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "system_id": {
+      "title": "System Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "timestamp_utc": {
+      "format": "date-time",
+      "title": "Timestamp Utc",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ordinal",
+    "timestamp_utc",
+    "experiment_id",
+    "plan_index",
+    "plan_item_id",
+    "attempt",
+    "task_id",
+    "system_id",
+    "base_seed",
+    "sample_index",
+    "model_bearing_reason",
+    "resume"
+  ],
+  "title": "ModelProcessLedgerRecord",
+  "type": "object"
+}

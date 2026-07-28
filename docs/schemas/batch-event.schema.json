@@ -23,11 +23,14 @@
     "event_type": {
       "enum": [
         "experiment_started",
+        "model_process_authorized",
         "plan_item_scheduled",
         "plan_item_started",
         "plan_item_terminal",
         "plan_item_reused_on_resume",
         "plan_item_corrupt",
+        "execution_checkpoint",
+        "circuit_breaker_opened",
         "report_started",
         "report_completed",
         "experiment_interrupted",

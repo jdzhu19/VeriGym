@@ -15,6 +15,7 @@ from verigym.experiments.schemas import (
     ExperimentManifest,
     ExperimentPlan,
     ExperimentState,
+    ModelProcessLedgerRecord,
     PlanItem,
     RunIndexRecord,
 )
@@ -87,6 +88,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "integrity-validation": _model(IntegrityValidation),
     "model-call-identity": _model(ModelCallIdentity),
     "model-descriptor": _model(ModelDescriptor),
+    "model-process-ledger-record": _model(ModelProcessLedgerRecord),
     "model-request": _model(ModelRequest),
     "model-response": _model(ModelResponse),
     "native-regression-result": _model(NativeRegressionResult),

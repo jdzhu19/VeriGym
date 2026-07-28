@@ -717,6 +717,41 @@
           "title": "Continue On Infrastructure Error",
           "type": "boolean"
         },
+        "frozen_campaign_identity": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Frozen Campaign Identity",
+          "type": "object"
+        },
+        "max_consecutive_identical_shared_infrastructure_failures": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Consecutive Identical Shared Infrastructure Failures"
+        },
+        "max_model_processes": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Model Processes"
+        },
         "max_plan_items": {
           "default": 10000,
           "maximum": 100000,
@@ -724,12 +759,54 @@
           "title": "Max Plan Items",
           "type": "integer"
         },
+        "max_total_infrastructure_failures": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Total Infrastructure Failures"
+        },
         "max_workers": {
           "default": 1,
           "maximum": 32,
           "minimum": 1,
           "title": "Max Workers",
           "type": "integer"
+        },
+        "resume_model_process_policy": {
+          "default": "legacy_rerun_invalid",
+          "enum": [
+            "legacy_rerun_invalid",
+            "never_rerun_after_authorization"
+          ],
+          "title": "Resume Model Process Policy",
+          "type": "string"
+        },
+        "seal_plan_before_execution": {
+          "default": false,
+          "title": "Seal Plan Before Execution",
+          "type": "boolean"
+        },
+        "summary_checkpoint_interval": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary Checkpoint Interval"
         }
       },
       "title": "ExperimentExecutionConfig",

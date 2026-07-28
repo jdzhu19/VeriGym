@@ -7,6 +7,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from verigym.core.hashing import hash_bytes
 from verigym.core.integrity import write_experiment_artifact_manifest
@@ -16,6 +17,9 @@ from verigym.reporting.csv_report import build_run_rows, render_csv
 from verigym.reporting.loader import load_report_inputs
 from verigym.reporting.markdown import render_markdown
 from verigym.reporting.schemas import AggregateReport
+
+if TYPE_CHECKING:
+    from verigym.reporting.full_scale import GeneratedFullScaleReports
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,25 @@ class ReportService:
         safe_output = _safe_output_file(output)
         atomic_write_text(safe_output, text)
         return safe_output
+
+    def generate_full_scale(
+        self,
+        root: Path,
+        *,
+        output_dir: Path | None = None,
+        bootstrap_resamples: int = 10_000,
+        bootstrap_seed: int = 548_219_773,
+    ) -> GeneratedFullScaleReports:
+        """Generate deterministic task-level full-scale analysis artifacts."""
+
+        from verigym.reporting.full_scale import FullScaleReportService
+
+        return FullScaleReportService(self.builder).generate(
+            root,
+            output_dir=output_dir,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
+        )
 
 
 def _reject_symlink_components(path: Path) -> None:

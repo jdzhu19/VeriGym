@@ -15,6 +15,11 @@ _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:[\\/]")
 _SECRET_KEY_PARTS = ("token", "secret", "password", "credential", "api_key", "auth")
+_NON_SECRET_AUTH_IDENTITY_KEYS = {
+    "expected_requested_auth_mode",
+    "expected_resolved_auth_mode",
+    "expected_auth_semantic_id",
+}
 _SECRET_VALUE_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
@@ -76,7 +81,10 @@ def _validate_value(
             if not isinstance(nested_key, str) or not _KEY.fullmatch(nested_key):
                 raise ValueError("plugin option keys must be 1-64 character safe ASCII identifiers")
             lowered = nested_key.lower()
-            secret_key = any(part in lowered for part in _SECRET_KEY_PARTS)
+            secret_key = (
+                any(part in lowered for part in _SECRET_KEY_PARTS)
+                and lowered not in _NON_SECRET_AUTH_IDENTITY_KEYS
+            )
             if secret_key and not lowered.endswith("_env"):
                 raise ValueError(
                     f"secret-bearing plugin option key {nested_key!r} is not permitted"

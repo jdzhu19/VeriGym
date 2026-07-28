@@ -8,6 +8,12 @@
       "title": "Active Count",
       "type": "integer"
     },
+    "authorized_model_process_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Authorized Model Process Count",
+      "type": "integer"
+    },
     "config_hash": {
       "title": "Config Hash",
       "type": "string"
