@@ -390,6 +390,30 @@ def test_agent_versions_and_run_assignments_are_immutable(tmp_path: Path) -> Non
     }
 
 
+def test_base_agent_version_hash_normalizes_omitted_optional_defaults() -> None:
+    version = build_agent_version(
+        agent_version_id="codex-cli-agent-v0",
+        update_type="none",
+        executable_in_m10b=True,
+        base_agent_id="codex-cli-agent",
+        agent_descriptor_hash="1" * 64,
+        model_id="gpt-5.4",
+        reasoning_effort="xhigh",
+        auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
+        runtime_identity_hash="2" * 64,
+        tool_policy_hash="3" * 64,
+        prompt_contract_hash="4" * 64,
+        source_commit="0f97fb4d8786d6714a09e2dd17532b3ab55e830a",
+        package_hashes={"verigym": "5" * 64, "verigym-codex-cli": "6" * 64},
+        image_hashes={"agent": "7" * 64, "verifier": "8" * 64},
+    )
+
+    assert version.parent_version_hash is None
+    assert version.training_dataset_hash is None
+    assert version.memory_pack_hash is None
+    assert validate_agent_version(version) == version
+
+
 def test_model_process_ledger_is_append_only_hash_chained_and_capped(tmp_path: Path) -> None:
     ledger = tmp_path / "model-process-ledger.jsonl"
     authorization = authorize_process(

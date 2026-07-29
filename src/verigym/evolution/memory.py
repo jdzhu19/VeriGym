@@ -128,14 +128,16 @@ def validate_memory_pack(
 
 
 def build_agent_version(**values: Any) -> AgentVersionManifest:
-    """Create a frozen version whose identity excludes only its self-hash field."""
+    """Create a frozen version whose identity covers every normalized schema field."""
 
     payload = dict(values)
     payload.setdefault("schema_version", "1.0")
     payload.setdefault("status", "frozen")
     payload.setdefault("model_weights_modified", False)
     payload.pop("version_hash", None)
-    return AgentVersionManifest(**payload, version_hash=content_hash(payload))
+    provisional = AgentVersionManifest(**payload, version_hash="0" * 64)
+    normalized = provisional.model_dump(mode="json", exclude={"version_hash"})
+    return provisional.model_copy(update={"version_hash": content_hash(normalized)})
 
 
 def validate_agent_version(version: AgentVersionManifest) -> AgentVersionManifest:
