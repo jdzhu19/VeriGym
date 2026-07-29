@@ -1,0 +1,17 @@
+--- a/rtl/rotating_arbiter.sv
++++ b/rtl/rotating_arbiter.sv
+@@ -31,11 +31,11 @@
+         if (!rst_n) begin
+             first_client <= 2'd0;
+         end else if (grant[0]) begin
+-            first_client <= 2'd0;
++            first_client <= 2'd1;
+         end else if (grant[1]) begin
+-            first_client <= 2'd1;
++            first_client <= 2'd2;
+         end else if (grant[2]) begin
+-            first_client <= 2'd2;
++            first_client <= 2'd0;
+         end
+     end
+ endmodule

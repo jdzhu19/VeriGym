@@ -1,0 +1,73 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/trajectory-dataset-statistics.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "agent_version_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Agent Version Counts",
+      "type": "object"
+    },
+    "eligible_count": {
+      "minimum": 0,
+      "title": "Eligible Count",
+      "type": "integer"
+    },
+    "outcome_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "propertyNames": {
+        "enum": [
+          "resolved_candidate",
+          "incorrect_policy_compliant_candidate",
+          "contained_workspace_policy_failure",
+          "strict_output_failure",
+          "infrastructure_invalid",
+          "cancelled_or_interrupted"
+        ]
+      },
+      "title": "Outcome Counts",
+      "type": "object"
+    },
+    "record_count": {
+      "minimum": 0,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "propertyNames": {
+        "enum": [
+          "training",
+          "validation",
+          "heldout"
+        ]
+      },
+      "title": "Split Counts",
+      "type": "object"
+    },
+    "statistics_hash": {
+      "title": "Statistics Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "record_count",
+    "eligible_count",
+    "outcome_counts",
+    "split_counts",
+    "agent_version_counts",
+    "statistics_hash"
+  ],
+  "title": "TrajectoryDatasetStatistics",
+  "type": "object"
+}

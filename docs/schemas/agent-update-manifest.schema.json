@@ -1,0 +1,78 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/agent-update-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "heldout_assets_loaded": {
+      "const": false,
+      "default": false,
+      "title": "Heldout Assets Loaded",
+      "type": "boolean"
+    },
+    "memory_builder_input_hash": {
+      "title": "Memory Builder Input Hash",
+      "type": "string"
+    },
+    "memory_builder_output_hash": {
+      "title": "Memory Builder Output Hash",
+      "type": "string"
+    },
+    "memory_pack_hash": {
+      "title": "Memory Pack Hash",
+      "type": "string"
+    },
+    "model_weights_modified": {
+      "const": false,
+      "default": false,
+      "title": "Model Weights Modified",
+      "type": "boolean"
+    },
+    "parent_version_hash": {
+      "title": "Parent Version Hash",
+      "type": "string"
+    },
+    "process_ledger_hash": {
+      "title": "Process Ledger Hash",
+      "type": "string"
+    },
+    "result_version_hash": {
+      "title": "Result Version Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "training_summary_hash": {
+      "title": "Training Summary Hash",
+      "type": "string"
+    },
+    "update_hash": {
+      "title": "Update Hash",
+      "type": "string"
+    },
+    "update_id": {
+      "title": "Update Id",
+      "type": "string"
+    },
+    "update_type": {
+      "const": "context_memory",
+      "title": "Update Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "update_id",
+    "update_type",
+    "parent_version_hash",
+    "result_version_hash",
+    "training_summary_hash",
+    "memory_builder_input_hash",
+    "memory_builder_output_hash",
+    "memory_pack_hash",
+    "process_ledger_hash",
+    "update_hash"
+  ],
+  "title": "AgentUpdateManifest",
+  "type": "object"
+}

@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "$id": "https://verigym.dev/schemas/1.0/external-agent-version-import-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_hash": {
+      "title": "Artifact Hash",
+      "type": "string"
+    },
+    "compatible_runtime_hash": {
+      "title": "Compatible Runtime Hash",
+      "type": "string"
+    },
+    "executable_in_m10b": {
+      "title": "Executable In M10B",
+      "type": "boolean"
+    },
+    "import_id": {
+      "title": "Import Id",
+      "type": "string"
+    },
+    "license": {
+      "title": "License",
+      "type": "string"
+    },
+    "loading_configuration": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Loading Configuration",
+      "type": "object"
+    },
+    "manifest_hash": {
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "parent_version_hash": {
+      "title": "Parent Version Hash",
+      "type": "string"
+    },
+    "provenance": {
+      "title": "Provenance",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trainer_identity_hash": {
+      "title": "Trainer Identity Hash",
+      "type": "string"
+    },
+    "training_dataset_hash": {
+      "title": "Training Dataset Hash",
+      "type": "string"
+    },
+    "update_type": {
+      "enum": [
+        "context_memory",
+        "external_checkpoint",
+        "external_adapter"
+      ],
+      "title": "Update Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "import_id",
+    "update_type",
+    "parent_version_hash",
+    "trainer_identity_hash",
+    "training_dataset_hash",
+    "artifact_hash",
+    "compatible_runtime_hash",
+    "license",
+    "provenance",
+    "loading_configuration",
+    "executable_in_m10b",
+    "manifest_hash"
+  ],
+  "title": "ExternalAgentVersionImportManifest",
+  "type": "object"
+}

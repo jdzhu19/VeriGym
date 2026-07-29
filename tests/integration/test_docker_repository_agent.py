@@ -16,6 +16,7 @@ from verigym_codex_cli.util import atomic_json
 from verigym.core.hashing import hash_bytes
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.evolution.memory import build_agent_version, build_memory_pack
 from verigym.registry.collections import build_registries
 from verigym.runtimes.docker.engine import DockerCliEngine
 from verigym.schemas.run import RunConfig
@@ -23,6 +24,8 @@ from verigym.schemas.runtime import (
     DockerExternalAgentRuntimeConfig,
     DockerRuntimeConfig,
 )
+from verigym.suites.verilog_eval.schemas import IcarusCompatibility
+from verigym.suites.verilog_eval.toolchain import classify_icarus_version
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker]
 
@@ -32,6 +35,11 @@ TASKS = [
     "repo-rtl/arbiter-reset-recovery",
     "repo-rtl/counter-wrap",
     "repo-rtl/pipeline-stall-backpressure",
+]
+HELDOUT_TASKS = [
+    "repo-rtl/arbiter-rotating-priority-heldout",
+    "repo-rtl/counter-load-wrap-heldout",
+    "repo-rtl/pipeline-flush-heldout",
 ]
 
 
@@ -86,6 +94,43 @@ def _docker_config() -> DockerRuntimeConfig:
             max_output_bytes=8 * 1024 * 1024,
         ),
     )
+
+
+def _heldout_grant(path: Path) -> None:
+    memory = build_memory_pack(
+        {
+            "principles": ["Confirm observable behavior before making a focused change."],
+            "public_test_strategy": ["Use bounded public feedback before finalizing."],
+            "workspace_policy_reminders": ["Keep edits inside the editable workspace."],
+            "debugging_checklist": ["Check reset, control priority, boundaries, and recovery."],
+            "patch_discipline": ["Review a minimal coherent diff before finishing."],
+        }
+    )
+    version = build_agent_version(
+        agent_version_id="codex-cli-agent-v1",
+        status="frozen",
+        parent_version_hash="1" * 64,
+        update_type="context_memory",
+        executable_in_m10b=True,
+        base_agent_id="codex-cli-agent",
+        agent_descriptor_hash="2" * 64,
+        model_id="gpt-5.4",
+        reasoning_effort="xhigh",
+        auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
+        runtime_identity_hash="3" * 64,
+        tool_policy_hash="4" * 64,
+        prompt_contract_hash="5" * 64,
+        source_commit="53b0755715a876432ddcdface143632278ccddd3",
+        package_hashes={"verigym": "6" * 64, "plugin": "7" * 64},
+        image_hashes={"agent": "8" * 64, "verifier": "9" * 64},
+        training_dataset_hash="a" * 64,
+        reward_schema_hash="b" * 64,
+        reward_profile_hash="c" * 64,
+        memory_builder_identity_hash="d" * 64,
+        memory_pack_hash=memory.content_hash,
+        model_weights_modified=False,
+    )
+    atomic_json(path, version.model_dump(mode="json"))
 
 
 def _sse(events: list[dict[str, Any]]) -> bytes:
@@ -208,6 +253,39 @@ def test_repository_agent_image_runs_all_reference_patches_with_role_separation(
         assert result.manifest.runtime.cleanup.complete
         replay = replay_run(result.run_dir, verify=True)
         assert replay.reverified_resolved is True
+
+
+@pytest.mark.conformance
+def test_all_six_m10b_references_pass_exact_icarus12_docker_verification(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if os.environ.get("VERIGYM_RUN_DOCKER_TESTS") != "1":
+        pytest.skip("set VERIGYM_RUN_DOCKER_TESTS=1 for Docker integration tests")
+    grant = tmp_path / "frozen-v1.json"
+    _heldout_grant(grant)
+    monkeypatch.setenv("VERIGYM_M10B_HELDOUT_AGENT_VERSION_MANIFEST", str(grant))
+    config = _docker_config()
+    for task_id in [*TASKS, *HELDOUT_TASKS]:
+        result = VeriGym().run(
+            RunConfig(
+                task_id=task_id,
+                agent="repo-scripted-good",
+                runtime="docker",
+                docker_config=config,
+                output=tmp_path / "six-reference-runs",
+            )
+        )
+        assert result.scorecard.resolved
+        assert result.manifest.repository_candidate is not None
+        assert result.manifest.repository_candidate.patch.reapply_exact
+        assert result.manifest.runtime.image is not None
+        assert (
+            classify_icarus_version(result.manifest.runtime.image.iverilog_version)
+            == IcarusCompatibility.REFERENCE_COMPATIBLE
+        )
+        assert result.manifest.runtime.cleanup is not None
+        assert result.manifest.runtime.cleanup.complete
 
 
 def test_fake_codex_repository_episode_uses_public_mount_and_ordinary_freeze(

@@ -340,9 +340,12 @@ excluded from manifests, traces, logs, and configuration fingerprints. Credentia
 URLs are rejected. See [Milestone 5 model and agent details](docs/milestone5-models-and-agents.md).
 
 Milestone 10A adds the bounded repository-level RTL repair environment on top
-of the preserved Milestones 0–9 contracts. The reference images and Docker
-profiles are Linux-first. Quality reporting remains only profile-relative
-educational synthesis area—not full PPA or signoff. External repository
-benchmarks, OpenROAD, timing, power, formal expansion, commercial execution,
-distributed scheduling, trajectory export, RL, and evolving releases remain
-out of scope.
+of the preserved Milestones 0–9 contracts. Milestone 10B adds deterministic
+export of bounded observable trajectories, decomposed offline rewards, and
+immutable context-memory agent versions for those runs. See
+[the evolving-agent bridge guide](docs/evolving_agent_bridge.md). The
+reference images and Docker profiles are Linux-first. Quality reporting
+remains only profile-relative educational synthesis area—not full PPA or
+signoff. External repository benchmarks, OpenROAD, timing, power, formal
+expansion, commercial execution, distributed scheduling, model-weight
+training, RL, and evolving task or model releases remain out of scope.

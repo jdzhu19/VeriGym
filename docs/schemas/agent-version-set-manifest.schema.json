@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "AgentVersionManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_descriptor_hash": {
+          "title": "Agent Descriptor Hash",
+          "type": "string"
+        },
+        "agent_version_id": {
+          "title": "Agent Version Id",
+          "type": "string"
+        },
+        "auth_semantic_id": {
+          "title": "Auth Semantic Id",
+          "type": "string"
+        },
+        "base_agent_id": {
+          "title": "Base Agent Id",
+          "type": "string"
+        },
+        "executable_in_m10b": {
+          "title": "Executable In M10B",
+          "type": "boolean"
+        },
+        "image_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Image Hashes",
+          "type": "object"
+        },
+        "memory_builder_identity_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Builder Identity Hash"
+        },
+        "memory_pack_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Pack Hash"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_weights_modified": {
+          "const": false,
+          "default": false,
+          "title": "Model Weights Modified",
+          "type": "boolean"
+        },
+        "package_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Package Hashes",
+          "type": "object"
+        },
+        "parent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Version Hash"
+        },
+        "prompt_contract_hash": {
+          "title": "Prompt Contract Hash",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "title": "Reasoning Effort",
+          "type": "string"
+        },
+        "reward_profile_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reward Profile Hash"
+        },
+        "reward_schema_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reward Schema Hash"
+        },
+        "runtime_identity_hash": {
+          "title": "Runtime Identity Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_commit": {
+          "title": "Source Commit",
+          "type": "string"
+        },
+        "status": {
+          "const": "frozen",
+          "title": "Status",
+          "type": "string"
+        },
+        "tool_policy_hash": {
+          "title": "Tool Policy Hash",
+          "type": "string"
+        },
+        "training_dataset_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Training Dataset Hash"
+        },
+        "update_type": {
+          "enum": [
+            "none",
+            "context_memory",
+            "external_checkpoint",
+            "external_adapter"
+          ],
+          "title": "Update Type",
+          "type": "string"
+        },
+        "version_hash": {
+          "title": "Version Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_version_id",
+        "status",
+        "update_type",
+        "executable_in_m10b",
+        "base_agent_id",
+        "agent_descriptor_hash",
+        "model_id",
+        "reasoning_effort",
+        "auth_semantic_id",
+        "runtime_identity_hash",
+        "tool_policy_hash",
+        "prompt_contract_hash",
+        "source_commit",
+        "package_hashes",
+        "image_hashes",
+        "version_hash"
+      ],
+      "title": "AgentVersionManifest",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/agent-version-set-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version_set_hash": {
+      "title": "Version Set Hash",
+      "type": "string"
+    },
+    "versions": {
+      "items": {
+        "$ref": "#/$defs/AgentVersionManifest"
+      },
+      "minItems": 1,
+      "title": "Versions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "versions",
+    "version_set_hash"
+  ],
+  "title": "AgentVersionSetManifest",
+  "type": "object"
+}

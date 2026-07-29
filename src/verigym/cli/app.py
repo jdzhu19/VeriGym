@@ -16,9 +16,36 @@ from verigym.core.errors import VeriGymError
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.evolution.comparison import build_evolving_evaluation
+from verigym.evolution.exporter import (
+    TrajectoryExporter,
+    inspect_trajectory_source,
+    replay_trajectory_dataset,
+    validate_trajectory_dataset,
+)
+from verigym.evolution.memory import (
+    prepare_training_summary,
+    validate_agent_version,
+    validate_memory_pack,
+)
+from verigym.evolution.splits import (
+    scan_contamination,
+    validate_contamination_scan,
+    validate_task_split,
+)
+from verigym.evolution.versions import (
+    freeze_context_update,
+    replay_context_update,
+    validate_run_version_assignments,
+)
 from verigym.experiments.config import load_experiment_config
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
+from verigym.experiments.state import (
+    atomic_dump_json,
+    load_json_model,
+    load_jsonl_models,
+)
 from verigym.profiles.comparison import compare_area
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
@@ -27,6 +54,16 @@ from verigym.registry.collections import build_registries
 from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.diagnostics import diagnose_docker
 from verigym.schemas.common import InteractionMode
+from verigym.schemas.evolution import (
+    AgentUpdateManifest,
+    AgentVersionManifest,
+    AgentVersionSetManifest,
+    EpisodeTrajectory,
+    MemoryPack,
+    RunAgentVersionAssignments,
+    SanitizedTrainingSummary,
+    TaskSplitManifest,
+)
 from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.run import RunConfig
@@ -49,6 +86,8 @@ agents_app = typer.Typer(help="List and inspect agent-harness plugins.")
 models_app = typer.Typer(help="List and inspect model-client plugins.")
 profiles_app = typer.Typer(help="List, validate, and resolve immutable toolchain profiles.")
 report_app = typer.Typer(help="Offline reports and strict compatible-metric comparisons.")
+trajectories_app = typer.Typer(help="Export and validate bounded observable trajectories.")
+evolve_app = typer.Typer(help="Prepare and compare immutable context-memory agent versions.")
 app.add_typer(suites_app, name="suites")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(tools_app, name="tools")
@@ -56,6 +95,8 @@ app.add_typer(agents_app, name="agents")
 app.add_typer(models_app, name="models")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(report_app, name="report")
+app.add_typer(trajectories_app, name="trajectories")
+app.add_typer(evolve_app, name="evolve")
 console = Console()
 
 
@@ -100,6 +141,48 @@ def _plugin_options(values: list[str] | None, *, flag: str) -> dict[str, JsonVal
         except json.JSONDecodeError as exc:
             raise ValueError(f"{flag} value for {key!r} is not valid JSON") from exc
     return validate_plugin_options(parsed)
+
+
+def _named_paths(values: list[str], *, flag: str) -> dict[str, Path]:
+    parsed: dict[str, Path] = {}
+    for assignment in values:
+        if "=" not in assignment:
+            raise ValueError(f"{flag} values must use NAME=PATH")
+        name, raw_path = assignment.split("=", 1)
+        if not name or name in parsed:
+            raise ValueError(f"{flag} contains an empty or repeated name")
+        parsed[name] = Path(raw_path)
+    return parsed
+
+
+def _named_hashes(values: list[str], *, flag: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for assignment in values:
+        if "=" not in assignment:
+            raise ValueError(f"{flag} values must use NAME=SHA256")
+        name, digest = assignment.split("=", 1)
+        if not name or name in parsed:
+            raise ValueError(f"{flag} contains an empty or repeated name")
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError(f"{flag} identities must be lowercase SHA-256 values")
+        parsed[name] = digest
+    return parsed
+
+
+def _load_version_set(path: Path) -> dict[str, AgentVersionManifest]:
+    version_set = load_json_model(path, AgentVersionSetManifest)
+    versions: dict[str, AgentVersionManifest] = {}
+    for version in version_set.versions:
+        validate_agent_version(version)
+        if version.agent_version_id in versions:
+            raise ValueError("agent version set repeats an identity")
+        versions[version.agent_version_id] = version
+    if (
+        content_hash([versions[key].model_dump(mode="json") for key in sorted(versions)])
+        != version_set.version_set_hash
+    ):
+        raise ValueError("agent version-set identity changed")
+    return versions
 
 
 def _print_sample_result(result: SampleSetResult) -> None:
@@ -863,6 +946,280 @@ def report_generate(
             group_by=tuple(group_by or ["system"]),
         )
         console.print(f"Report: {generated}")
+    except Exception as exc:
+        _fail(exc)
+
+
+@trajectories_app.command("inspect")
+def trajectories_inspect(
+    source: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Inspect frozen run inputs without invoking a model, runtime, or verifier."""
+
+    try:
+        console.print_json(json.dumps(inspect_trajectory_source(source), sort_keys=True))
+    except Exception as exc:
+        _fail(exc)
+
+
+@trajectories_app.command("export")
+def trajectories_export(
+    source: Path = typer.Argument(..., exists=True, file_okay=False),
+    output: Path = typer.Option(..., "--output"),
+    split_manifest_path: Path = typer.Option(
+        ...,
+        "--task-split",
+        exists=True,
+        dir_okay=False,
+    ),
+    agent_versions_path: Path = typer.Option(
+        ...,
+        "--agent-versions",
+        exists=True,
+        dir_okay=False,
+    ),
+    assignments_path: Path = typer.Option(
+        ...,
+        "--run-version-assignments",
+        exists=True,
+        dir_okay=False,
+    ),
+    source_commit: str = typer.Option(..., "--source-commit"),
+    package_hash: list[str] | None = typer.Option(None, "--package-hash"),
+) -> None:
+    """Export canonical observable JSONL after validating all frozen inputs."""
+
+    try:
+        split = load_json_model(split_manifest_path, TaskSplitManifest)
+        validate_task_split(split)
+        versions = _load_version_set(agent_versions_path)
+        assignments = load_json_model(assignments_path, RunAgentVersionAssignments)
+        validate_run_version_assignments(assignments)
+        run_versions: dict[str, str] = {}
+        for assignment in assignments.assignments:
+            version = versions.get(assignment.agent_version_id)
+            if version is None or version.version_hash != assignment.agent_version_hash:
+                raise ValueError("run/version assignment differs from the frozen version set")
+            run_versions[assignment.run_id] = assignment.agent_version_id
+        result = TrajectoryExporter().export(
+            source,
+            output,
+            split_manifest=split,
+            agent_versions=versions,
+            run_agent_versions=run_versions,
+            source_commit=source_commit,
+            package_identities=_named_hashes(
+                package_hash or [],
+                flag="--package-hash",
+            ),
+        )
+        console.print_json(result.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@trajectories_app.command("validate")
+def trajectories_validate(
+    dataset: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Validate a sealed trajectory dataset with zero external calls."""
+
+    try:
+        result = validate_trajectory_dataset(dataset)
+        console.print_json(result.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@trajectories_app.command("replay")
+def trajectories_replay(
+    dataset: Path = typer.Argument(..., exists=True, file_okay=False),
+    source: Path = typer.Option(..., "--source", exists=True, file_okay=False),
+) -> None:
+    """Recompute source, artifact, and reward bindings with zero external calls."""
+
+    try:
+        result = replay_trajectory_dataset(dataset, source)
+        console.print_json(result.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("prepare-training-data")
+def evolve_prepare_training_data(
+    dataset: Path = typer.Argument(..., exists=True, file_okay=False),
+    output: Path = typer.Option(..., "--output"),
+) -> None:
+    """Derive the task-free memory-builder input from eligible training runs."""
+
+    try:
+        dataset_manifest = validate_trajectory_dataset(dataset)
+        split = load_json_model(dataset / "task-split-manifest.json", TaskSplitManifest)
+        trajectories = load_jsonl_models(dataset / "trajectories.jsonl", EpisodeTrajectory)
+        summary = prepare_training_summary(
+            trajectories,
+            split_manifest_hash=split.manifest_hash,
+            trajectory_dataset_hash=dataset_manifest.dataset_hash,
+        )
+        atomic_dump_json(output, summary)
+        console.print_json(summary.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("validate-memory")
+def evolve_validate_memory(
+    memory_path: Path = typer.Argument(..., exists=True, dir_okay=False),
+) -> None:
+    """Validate the code-free, task-independent frozen memory pack."""
+
+    try:
+        memory = load_json_model(memory_path, MemoryPack)
+        validate_memory_pack(memory)
+        console.print_json(memory.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("inspect-agent-version")
+def evolve_inspect_agent_version(
+    version_path: Path = typer.Argument(..., exists=True, dir_okay=False),
+) -> None:
+    """Validate and display one immutable agent version."""
+
+    try:
+        version = load_json_model(version_path, AgentVersionManifest)
+        validate_agent_version(version)
+        console.print_json(version.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("build-context-version")
+def evolve_build_context_version(
+    parent_path: Path = typer.Option(..., "--parent", exists=True, dir_okay=False),
+    dataset: Path = typer.Option(..., "--dataset", exists=True, file_okay=False),
+    summary_path: Path = typer.Option(..., "--training-summary", exists=True, dir_okay=False),
+    memory_path: Path = typer.Option(..., "--memory-pack", exists=True, dir_okay=False),
+    memory_builder_identity_hash: str = typer.Option(..., "--memory-builder-identity-hash"),
+    memory_builder_input_hash: str = typer.Option(..., "--memory-builder-input-hash"),
+    memory_builder_output_hash: str = typer.Option(..., "--memory-builder-output-hash"),
+    process_ledger_hash: str = typer.Option(..., "--process-ledger-hash"),
+    output: Path = typer.Option(..., "--output"),
+) -> None:
+    """Freeze v1 and its update record after successful real memory synthesis."""
+
+    try:
+        parent = load_json_model(parent_path, AgentVersionManifest)
+        dataset_manifest = validate_trajectory_dataset(dataset)
+        summary = load_json_model(summary_path, SanitizedTrainingSummary)
+        memory = load_json_model(memory_path, MemoryPack)
+        version, update = freeze_context_update(
+            parent=parent,
+            dataset=dataset_manifest,
+            training_summary=summary,
+            memory_pack=memory,
+            memory_builder_identity_hash=memory_builder_identity_hash,
+            memory_builder_input_hash=memory_builder_input_hash,
+            memory_builder_output_hash=memory_builder_output_hash,
+            process_ledger_hash=process_ledger_hash,
+        )
+        if output.exists() and (
+            output.is_symlink() or not output.is_dir() or any(output.iterdir())
+        ):
+            raise ValueError("--output must be a new or empty real directory")
+        output.mkdir(parents=True, exist_ok=True)
+        atomic_dump_json(output / "agent-version-v1.json", version)
+        atomic_dump_json(output / "agent-update.json", update)
+        console.print_json(version.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("replay-context-update")
+def evolve_replay_context_update(
+    parent_path: Path = typer.Option(..., "--parent", exists=True, dir_okay=False),
+    result_path: Path = typer.Option(..., "--result", exists=True, dir_okay=False),
+    update_path: Path = typer.Option(..., "--update", exists=True, dir_okay=False),
+    dataset: Path = typer.Option(..., "--dataset", exists=True, file_okay=False),
+    summary_path: Path = typer.Option(..., "--training-summary", exists=True, dir_okay=False),
+    memory_path: Path = typer.Option(..., "--memory-pack", exists=True, dir_okay=False),
+) -> None:
+    """Replay version creation using frozen hashes and no memory-builder call."""
+
+    try:
+        replay_context_update(
+            parent=load_json_model(parent_path, AgentVersionManifest),
+            result=load_json_model(result_path, AgentVersionManifest),
+            update=load_json_model(update_path, AgentUpdateManifest),
+            dataset=validate_trajectory_dataset(dataset),
+            training_summary=load_json_model(summary_path, SanitizedTrainingSummary),
+            memory_pack=load_json_model(memory_path, MemoryPack),
+        )
+        console.print("Context update replay: VALID (zero external calls)")
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("scan-contamination")
+def evolve_scan_contamination(
+    split_manifest_path: Path = typer.Option(
+        ...,
+        "--task-split",
+        exists=True,
+        dir_okay=False,
+    ),
+    training_root: list[str] | None = typer.Option(None, "--training-root"),
+    heldout_root: list[str] | None = typer.Option(None, "--heldout-root"),
+    memory_path: Path | None = typer.Option(None, "--memory-pack", dir_okay=False),
+    output: Path = typer.Option(..., "--output"),
+) -> None:
+    """Scan a frozen split after v1 exists; output identities, never asset contents."""
+
+    try:
+        split = load_json_model(split_manifest_path, TaskSplitManifest)
+        memory = load_json_model(memory_path, MemoryPack) if memory_path is not None else None
+        scan = scan_contamination(
+            split_manifest=split,
+            training_roots=_named_paths(training_root or [], flag="--training-root"),
+            heldout_roots=_named_paths(heldout_root or [], flag="--heldout-root"),
+            memory_pack=memory,
+        )
+        validate_contamination_scan(scan)
+        atomic_dump_json(output, scan)
+        console.print_json(scan.model_dump_json(indent=2))
+        if not scan.passed:
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _fail(exc)
+
+
+@evolve_app.command("compare")
+def evolve_compare(
+    experiment: Path = typer.Argument(..., exists=True, file_okay=False),
+    split_manifest_path: Path = typer.Option(
+        ...,
+        "--task-split",
+        exists=True,
+        dir_okay=False,
+    ),
+    baseline_version_id: str = typer.Option(..., "--baseline-version"),
+    evolved_version_id: str = typer.Option(..., "--evolved-version"),
+    output: Path = typer.Option(..., "--output"),
+) -> None:
+    """Produce deterministic separate v0/v1 metrics and paired differences."""
+
+    try:
+        report = build_evolving_evaluation(
+            experiment,
+            split_manifest=load_json_model(split_manifest_path, TaskSplitManifest),
+            baseline_version_id=baseline_version_id,
+            evolved_version_id=evolved_version_id,
+        )
+        atomic_dump_json(output, report)
+        console.print_json(report.model_dump_json(indent=2))
     except Exception as exc:
         _fail(exc)
 

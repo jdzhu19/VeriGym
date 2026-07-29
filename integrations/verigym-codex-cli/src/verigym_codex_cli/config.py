@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from verigym.evolution.memory import validate_agent_version, validate_memory_pack
 from verigym.plugin_api import JsonValue
+from verigym.schemas.evolution import AgentVersionManifest, MemoryPack
 
 from .auth import AuthModeResolution
 from .capabilities import CapabilityReport
@@ -33,7 +37,15 @@ _COMMON_OPTIONS = {
     "expected_auth_semantic_id",
     "expected_execution_backend",
 }
-_AGENT_OPTIONS = {*_COMMON_OPTIONS, "model_id"}
+_READONLY_OPTIONS = {*_COMMON_OPTIONS, "model_id"}
+_AGENT_OPTIONS = {
+    *_COMMON_OPTIONS,
+    "model_id",
+    "agent_version_id",
+    "agent_version_hash",
+    "agent_version_manifest_json",
+    "memory_pack",
+}
 _AUTHORIZED_REASONING_EFFORT = "xhigh"
 _READONLY_PROMPT_CONTRACT = "codex_cli_readonly_verilog_task_context_v1"
 _WORKSPACE_PROMPT_CONTRACT = "codex_cli_workspace_verilog_task_context_v1"
@@ -71,6 +83,9 @@ class CodexSettings:
     runtime_forwarded_proxy_environment_names: tuple[str, ...]
     prompt_contract_id: str
     expected_execution_backend: str | None
+    agent_version_id: str | None
+    agent_version_hash: str | None
+    memory_pack_hash: str | None
     configuration_fingerprint: str
 
     @property
@@ -121,6 +136,9 @@ class CodexSettings:
             "mandatory_loopback_bypass_present": True,
             "prompt_contract_id": self.prompt_contract_id,
             "expected_execution_backend": self.expected_execution_backend,
+            "agent_version_id": self.agent_version_id,
+            "agent_version_hash": self.agent_version_hash,
+            "memory_pack_hash": self.memory_pack_hash,
             "execution_surface": "codex_cli",
             "interaction_class": (
                 "cli_agent_single_turn_readonly"
@@ -143,7 +161,7 @@ def readonly_agent_settings(
     *,
     task_wall_time_s: int,
 ) -> CodexSettings:
-    _reject_unknown(options, _AGENT_OPTIONS, kind="read-only agent")
+    _reject_unknown(options, _READONLY_OPTIONS, kind="read-only agent")
     model = options.get("model_id")
     if not isinstance(model, str):
         raise ValueError("codex-cli-readonly-agent requires string agent option model_id")
@@ -191,6 +209,9 @@ def readonly_agent_settings(
             options,
             "expected_execution_backend",
         ),
+        agent_version_id=None,
+        agent_version_hash=None,
+        memory_pack_hash=None,
         capabilities=capabilities,
     )
 
@@ -225,6 +246,12 @@ def agent_settings(
         float(task_wall_time_s),
     )
     task_wall_time = float(task_wall_time_s)
+    agent_version_id, agent_version_hash, memory_pack = _versioned_context(
+        options,
+        model_id=model_id,
+        reasoning_effort=_reasoning_effort(options),
+        auth_semantic_id=auth_resolution.auth_semantic_id,
+    )
     return _settings(
         integration_track="codex_cli_external_agent",
         model_id=model_id,
@@ -247,6 +274,9 @@ def agent_settings(
             options,
             "expected_execution_backend",
         ),
+        agent_version_id=agent_version_id,
+        agent_version_hash=agent_version_hash,
+        memory_pack_hash=memory_pack.content_hash if memory_pack is not None else None,
         capabilities=capabilities,
     )
 
@@ -304,6 +334,9 @@ def _settings(
     allow_proxy: bool,
     prompt_contract_id: str,
     expected_execution_backend: str | None,
+    agent_version_id: str | None,
+    agent_version_hash: str | None,
+    memory_pack_hash: str | None,
     capabilities: CapabilityReport,
 ) -> CodexSettings:
     if requested_timeout <= 0 or requested_timeout > 1800:
@@ -347,6 +380,9 @@ def _settings(
         "mandatory_loopback_bypass_present": True,
         "prompt_contract_id": prompt_contract_id,
         "expected_execution_backend": expected_execution_backend,
+        "agent_version_id": agent_version_id,
+        "agent_version_hash": agent_version_hash,
+        "memory_pack_hash": memory_pack_hash,
         "capability_fingerprint": capabilities.capability_fingerprint,
     }
     return CodexSettings(
@@ -378,8 +414,72 @@ def _settings(
         runtime_forwarded_proxy_environment_names=runtime_forwarded_proxy_names,
         prompt_contract_id=prompt_contract_id,
         expected_execution_backend=expected_execution_backend,
+        agent_version_id=agent_version_id,
+        agent_version_hash=agent_version_hash,
+        memory_pack_hash=memory_pack_hash,
         configuration_fingerprint=stable_hash(safe),
     )
+
+
+def _versioned_context(
+    options: Mapping[str, JsonValue],
+    *,
+    model_id: str,
+    reasoning_effort: str,
+    auth_semantic_id: str,
+) -> tuple[str | None, str | None, MemoryPack | None]:
+    version_id = _optional_string(options, "agent_version_id")
+    version_hash = _optional_string(options, "agent_version_hash")
+    raw_manifest = options.get("agent_version_manifest_json")
+    raw_memory = options.get("memory_pack")
+    if (version_id is None) != (version_hash is None):
+        raise ValueError("agent_version_id and agent_version_hash must be supplied together")
+    if version_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", version_hash):
+        raise ValueError("agent_version_hash must be lowercase SHA-256")
+    if version_id is None:
+        if raw_manifest is not None or raw_memory is not None:
+            raise ValueError("versioned context requires a frozen agent-version identity")
+        return None, None, None
+    if not isinstance(raw_manifest, str):
+        raise ValueError("versioned context requires agent_version_manifest_json")
+    try:
+        payload = json.loads(raw_manifest, object_pairs_hook=_unique_object)
+        manifest = validate_agent_version(AgentVersionManifest.model_validate(payload))
+    except Exception as exc:
+        raise ValueError(f"invalid agent-version manifest: {exc}") from exc
+    if (
+        manifest.agent_version_id != version_id
+        or manifest.version_hash != version_hash
+        or manifest.base_agent_id != "codex-cli-agent"
+        or manifest.model_id != model_id
+        or manifest.reasoning_effort != reasoning_effort
+        or manifest.auth_semantic_id != auth_semantic_id
+        or not manifest.executable_in_m10b
+        or manifest.model_weights_modified
+    ):
+        raise ValueError("agent-version manifest differs from effective Codex settings")
+    if manifest.update_type == "none":
+        if raw_memory is not None or manifest.memory_pack_hash is not None:
+            raise ValueError("base agent version must remain memory-free")
+        return version_id, version_hash, None
+    if manifest.update_type != "context_memory" or raw_memory is None:
+        raise ValueError("M10B evolved versions require a frozen context memory pack")
+    try:
+        memory = validate_memory_pack(MemoryPack.model_validate(raw_memory))
+    except Exception as exc:
+        raise ValueError(f"invalid versioned memory pack: {exc}") from exc
+    if memory.content_hash != manifest.memory_pack_hash:
+        raise ValueError("memory pack does not match the frozen agent-version manifest")
+    return version_id, version_hash, memory
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("agent-version manifest contains a duplicate JSON key")
+        result[key] = value
+    return result
 
 
 def _model_id(value: str | None) -> str:

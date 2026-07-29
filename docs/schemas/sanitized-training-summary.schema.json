@@ -1,0 +1,405 @@
+{
+  "$defs": {
+    "RewardVector": {
+      "additionalProperties": false,
+      "properties": {
+        "added_lines": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Added Lines"
+        },
+        "candidate_compile_passed": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Candidate Compile Passed"
+        },
+        "changed_file_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changed File Count"
+        },
+        "deleted_lines": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted Lines"
+        },
+        "hidden_regression_passed": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Hidden Regression Passed"
+        },
+        "infrastructure_valid": {
+          "enum": [
+            0,
+            1
+          ],
+          "title": "Infrastructure Valid",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "outcome_kind": {
+          "enum": [
+            "resolved_candidate",
+            "incorrect_policy_compliant_candidate",
+            "contained_workspace_policy_failure",
+            "strict_output_failure",
+            "infrastructure_invalid",
+            "cancelled_or_interrupted"
+          ],
+          "title": "Outcome Kind",
+          "type": "string"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "patch_reproducible": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Patch Reproducible"
+        },
+        "policy_compliance": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Policy Compliance"
+        },
+        "public_test_passed": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Public Test Passed"
+        },
+        "public_test_reached": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Public Test Reached"
+        },
+        "public_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Tool Calls"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_resolved": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                1
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Task Resolved"
+        },
+        "wall_time_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Time S"
+        }
+      },
+      "required": [
+        "outcome_kind",
+        "infrastructure_valid",
+        "policy_compliance",
+        "public_test_reached",
+        "public_test_passed",
+        "patch_reproducible",
+        "candidate_compile_passed",
+        "hidden_regression_passed",
+        "task_resolved"
+      ],
+      "title": "RewardVector",
+      "type": "object"
+    },
+    "SanitizedTrainingEpisode": {
+      "additionalProperties": false,
+      "properties": {
+        "compile_passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compile Passed"
+        },
+        "generalized_failure_labels": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Generalized Failure Labels",
+          "type": "array"
+        },
+        "hidden_regression_passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hidden Regression Passed"
+        },
+        "observable_action_summary": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Observable Action Summary",
+          "type": "array"
+        },
+        "outcome_kind": {
+          "enum": [
+            "resolved_candidate",
+            "incorrect_policy_compliant_candidate",
+            "contained_workspace_policy_failure",
+            "strict_output_failure",
+            "infrastructure_invalid",
+            "cancelled_or_interrupted"
+          ],
+          "title": "Outcome Kind",
+          "type": "string"
+        },
+        "patch_metrics": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Patch Metrics",
+          "type": "object"
+        },
+        "public_task_category": {
+          "title": "Public Task Category",
+          "type": "string"
+        },
+        "public_test_outcomes": {
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 64,
+          "title": "Public Test Outcomes",
+          "type": "array"
+        },
+        "reward": {
+          "$ref": "#/$defs/RewardVector"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "public_task_category",
+        "observable_action_summary",
+        "public_test_outcomes",
+        "patch_metrics",
+        "outcome_kind",
+        "reward",
+        "generalized_failure_labels"
+      ],
+      "title": "SanitizedTrainingEpisode",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/sanitized-training-summary.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "episodes": {
+      "items": {
+        "$ref": "#/$defs/SanitizedTrainingEpisode"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "title": "Episodes",
+      "type": "array"
+    },
+    "heldout_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Heldout Assets Included",
+      "type": "boolean"
+    },
+    "hidden_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Hidden Assets Included",
+      "type": "boolean"
+    },
+    "private_reasoning_included": {
+      "const": false,
+      "default": false,
+      "title": "Private Reasoning Included",
+      "type": "boolean"
+    },
+    "references_included": {
+      "const": false,
+      "default": false,
+      "title": "References Included",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_manifest_hash": {
+      "title": "Split Manifest Hash",
+      "type": "string"
+    },
+    "summary_hash": {
+      "title": "Summary Hash",
+      "type": "string"
+    },
+    "summary_id": {
+      "title": "Summary Id",
+      "type": "string"
+    },
+    "trajectory_dataset_hash": {
+      "title": "Trajectory Dataset Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary_id",
+    "split_manifest_hash",
+    "trajectory_dataset_hash",
+    "episodes",
+    "summary_hash"
+  ],
+  "title": "SanitizedTrainingSummary",
+  "type": "object"
+}

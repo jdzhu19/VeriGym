@@ -1,0 +1,80 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/reward-channel-statistics.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "available": {
+      "minimum": 0,
+      "title": "Available",
+      "type": "integer"
+    },
+    "channel": {
+      "title": "Channel",
+      "type": "string"
+    },
+    "maximum": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Maximum"
+    },
+    "mean": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mean"
+    },
+    "minimum": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Minimum"
+    },
+    "missing": {
+      "minimum": 0,
+      "title": "Missing",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "unit": {
+      "enum": [
+        "binary",
+        "count",
+        "lines",
+        "seconds",
+        "tokens"
+      ],
+      "title": "Unit",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "unit",
+    "available",
+    "missing"
+  ],
+  "title": "RewardChannelStatistics",
+  "type": "object"
+}

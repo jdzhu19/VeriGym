@@ -1,0 +1,65 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-trainer-export-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "bridge_id": {
+      "const": "observable_trajectory_external_trainer_v1",
+      "title": "Bridge Id",
+      "type": "string"
+    },
+    "executable_artifacts_included": {
+      "const": false,
+      "default": false,
+      "title": "Executable Artifacts Included",
+      "type": "boolean"
+    },
+    "manifest_hash": {
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "reward_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Profile Hash"
+    },
+    "reward_schema_hash": {
+      "title": "Reward Schema Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secrets_included": {
+      "const": false,
+      "default": false,
+      "title": "Secrets Included",
+      "type": "boolean"
+    },
+    "split_manifest_hash": {
+      "title": "Split Manifest Hash",
+      "type": "string"
+    },
+    "trajectory_dataset_hash": {
+      "title": "Trajectory Dataset Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "bridge_id",
+    "trajectory_dataset_hash",
+    "split_manifest_hash",
+    "reward_schema_hash",
+    "manifest_hash"
+  ],
+  "title": "ExternalTrainerExportManifest",
+  "type": "object"
+}

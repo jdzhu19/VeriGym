@@ -185,6 +185,10 @@ class ExperimentExecutionConfig(StrictModel):
         le=HARD_MAX_PLAN_ITEMS,
     )
     seal_plan_before_execution: bool = False
+    plan_order_policy: Literal[
+        "canonical",
+        "counterbalanced_systems_v1",
+    ] = "canonical"
     frozen_campaign_identity: dict[str, JsonValue] = Field(default_factory=dict)
 
     @field_validator("frozen_campaign_identity", mode="before")
@@ -277,6 +281,7 @@ class ExperimentConfig(StrictModel):
             "max_total_infrastructure_failures": None,
             "summary_checkpoint_interval": None,
             "seal_plan_before_execution": False,
+            "plan_order_policy": "canonical",
             "frozen_campaign_identity": {},
         }
         for key, default in execution_defaults.items():

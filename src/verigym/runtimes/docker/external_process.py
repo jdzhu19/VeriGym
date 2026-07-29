@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import unquote, urlsplit
@@ -106,6 +107,35 @@ _APP_SERVER_CONFIG_OVERRIDES = (
 )
 _APP_SERVER_EOF = object()
 _MAX_APP_SERVER_EVENTS = 10_000
+
+
+def external_process_configuration_fingerprint(
+    *,
+    agent_config: DockerExternalAgentRuntimeConfig,
+    agent_image_id: str,
+    verifier_image_id: str,
+    request: ExternalProcessRequest,
+    synthesized_environment_names: Sequence[str],
+    mandatory_loopback_bypass_present: bool,
+) -> str:
+    """Hash the complete observable external-process configuration."""
+
+    return content_hash(
+        {
+            "agent_config": agent_config,
+            "agent_image_id": agent_image_id,
+            "verifier_image_id": verifier_image_id,
+            "protocol": request.protocol,
+            "model": request.requested_model_id,
+            "reasoning_effort": request.requested_reasoning_effort,
+            "auth_semantic_id": request.auth_semantic_id,
+            "read_only_mounts": request.read_only_mounts,
+            "proxy_names": request.forwarded_proxy_environment_names,
+            "synthesized_control_plane_environment_names": synthesized_environment_names,
+            "mandatory_loopback_bypass_present": mandatory_loopback_bypass_present,
+            "overrides": list(_APP_SERVER_CONFIG_OVERRIDES),
+        }
+    )
 
 
 class DockerExternalProcessExecutor:
@@ -427,25 +457,13 @@ class DockerExternalProcessExecutor:
             host_executable_sha256=request.executable_sha256,
             host_executable_version=request.executable_version,
             capability_fingerprint=request.capability_fingerprint,
-            configuration_fingerprint=content_hash(
-                {
-                    "agent_config": self._agent_config,
-                    "agent_image_id": self._agent_image.resolved_image_id,
-                    "verifier_image_id": self._verifier_image.resolved_image_id,
-                    "protocol": request.protocol,
-                    "model": request.requested_model_id,
-                    "reasoning_effort": request.requested_reasoning_effort,
-                    "auth_semantic_id": request.auth_semantic_id,
-                    "read_only_mounts": request.read_only_mounts,
-                    "proxy_names": request.forwarded_proxy_environment_names,
-                    "synthesized_control_plane_environment_names": (
-                        control_plane_synthesized_environment_names
-                    ),
-                    "mandatory_loopback_bypass_present": (
-                        control_plane_mandatory_loopback_bypass_present
-                    ),
-                    "overrides": list(_APP_SERVER_CONFIG_OVERRIDES),
-                }
+            configuration_fingerprint=external_process_configuration_fingerprint(
+                agent_config=self._agent_config,
+                agent_image_id=self._agent_image.resolved_image_id,
+                verifier_image_id=self._verifier_image.resolved_image_id,
+                request=request,
+                synthesized_environment_names=control_plane_synthesized_environment_names,
+                mandatory_loopback_bypass_present=(control_plane_mandatory_loopback_bypass_present),
             ),
             logical_workspace_root="/workspace",
         )

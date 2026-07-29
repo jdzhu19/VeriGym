@@ -1,0 +1,47 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/reward-channel.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "unit": {
+      "enum": [
+        "binary",
+        "count",
+        "lines",
+        "seconds",
+        "tokens"
+      ],
+      "title": "Unit",
+      "type": "string"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Value"
+    }
+  },
+  "required": [
+    "name",
+    "value",
+    "unit"
+  ],
+  "title": "RewardChannel",
+  "type": "object"
+}

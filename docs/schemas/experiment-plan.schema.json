@@ -780,6 +780,15 @@
           "title": "Max Workers",
           "type": "integer"
         },
+        "plan_order_policy": {
+          "default": "canonical",
+          "enum": [
+            "canonical",
+            "counterbalanced_systems_v1"
+          ],
+          "title": "Plan Order Policy",
+          "type": "string"
+        },
         "resume_model_process_policy": {
           "default": "legacy_rerun_invalid",
           "enum": [

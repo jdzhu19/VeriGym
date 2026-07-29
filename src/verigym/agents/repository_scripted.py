@@ -86,6 +86,63 @@ _GOOD_PATCHES = {
              last_grant <= 1'b0;
          end else if (grant[1]) begin
 """,
+    "repo-rtl/counter-load-wrap-heldout": """--- a/repository/rtl/loadable_counter.sv
++++ b/repository/rtl/loadable_counter.sv
+@@ -9,10 +9,10 @@
+     always_ff @(posedge clk) begin
+         if (rst) begin
+             count <= 4'd0;
+-        end else if (enable) begin
+-            count <= count + 4'd1;
+         end else if (load) begin
+             count <= load_value;
++        end else if (enable) begin
++            count <= (count == 4'd9) ? 4'd0 : count + 4'd1;
+         end
+     end
+ endmodule
+""",
+    "repo-rtl/pipeline-flush-heldout": """--- a/repository/rtl/pipeline_stage.sv
++++ b/repository/rtl/pipeline_stage.sv
+@@ -8,7 +8,7 @@
+     output logic [7:0] out_data
+ );
+     always_ff @(posedge clk) begin
+-        if (rst) begin
++        if (rst || flush) begin
+             out_valid <= 1'b0;
+             out_data <= 8'h00;
+         end else begin
+--- a/repository/rtl/pipeline_top.sv
++++ b/repository/rtl/pipeline_top.sv
+@@ -23,7 +23,7 @@
+     pipeline_stage u_second (
+         .clk(clk),
+         .rst(rst),
+-        .flush(1'b0),
++        .flush(flush),
+         .in_valid(middle_valid),
+         .in_data(middle_data),
+         .out_valid(out_valid),
+""",
+    "repo-rtl/arbiter-rotating-priority-heldout": """--- a/repository/rtl/rotating_arbiter.sv
++++ b/repository/rtl/rotating_arbiter.sv
+@@ -31,11 +31,11 @@
+         if (!rst_n) begin
+             first_client <= 2'd0;
+         end else if (grant[0]) begin
+-            first_client <= 2'd0;
++            first_client <= 2'd1;
+         end else if (grant[1]) begin
+-            first_client <= 2'd1;
++            first_client <= 2'd2;
+         end else if (grant[2]) begin
+-            first_client <= 2'd2;
++            first_client <= 2'd0;
+         end
+     end
+ endmodule
+""",
 }
 _GOOD_PATCHES = {
     task_id: patch.replace("<CONTEXT-BLANK>", " ") for task_id, patch in _GOOD_PATCHES.items()
@@ -140,6 +197,46 @@ _BAD_PATCHES = {
 <CONTEXT-BLANK>
      always_ff @(posedge clk) begin
 """,
+    "repo-rtl/counter-load-wrap-heldout": """--- a/repository/rtl/loadable_counter.sv
++++ b/repository/rtl/loadable_counter.sv
+@@ -9,10 +9,10 @@
+     always_ff @(posedge clk) begin
+         if (rst) begin
+             count <= 4'd0;
+-        end else if (enable) begin
+-            count <= count + 4'd1;
+         end else if (load) begin
+             count <= load_value;
++        end else if (enable) begin
++            count <= count + 4'd1;
+         end
+     end
+ endmodule
+""",
+    "repo-rtl/pipeline-flush-heldout": """--- a/repository/rtl/pipeline_stage.sv
++++ b/repository/rtl/pipeline_stage.sv
+@@ -8,7 +8,7 @@
+     output logic [7:0] out_data
+ );
+     always_ff @(posedge clk) begin
+-        if (rst) begin
++        if (rst || flush) begin
+             out_valid <= 1'b0;
+             out_data <= 8'h00;
+         end else begin
+""",
+    "repo-rtl/arbiter-rotating-priority-heldout": """--- a/repository/rtl/rotating_arbiter.sv
++++ b/repository/rtl/rotating_arbiter.sv
+@@ -31,7 +31,7 @@
+         if (!rst_n) begin
+             first_client <= 2'd0;
+         end else if (grant[0]) begin
+-            first_client <= 2'd0;
++            first_client <= 2'd1;
+         end else if (grant[1]) begin
+             first_client <= 2'd1;
+         end else if (grant[2]) begin
+""",
 }
 _BAD_PATCHES = {
     task_id: patch.replace("<CONTEXT-BLANK>", " ") for task_id, patch in _BAD_PATCHES.items()
@@ -149,6 +246,9 @@ _PUBLIC_TEST_IDS = {
     "repo-rtl/counter-wrap": "counter-wrap-public",
     "repo-rtl/pipeline-stall-backpressure": "pipeline-backpressure-public",
     "repo-rtl/arbiter-reset-recovery": "arbiter-reset-public",
+    "repo-rtl/counter-load-wrap-heldout": "counter-load-wrap-public",
+    "repo-rtl/pipeline-flush-heldout": "pipeline-flush-public",
+    "repo-rtl/arbiter-rotating-priority-heldout": "arbiter-rotation-public",
 }
 
 

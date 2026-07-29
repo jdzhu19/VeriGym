@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "TaskSplitEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "title": "Attribution",
+          "type": "string"
+        },
+        "license": {
+          "title": "License",
+          "type": "string"
+        },
+        "source_hash": {
+          "title": "Source Hash",
+          "type": "string"
+        },
+        "task_hash": {
+          "title": "Task Hash",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "source_hash",
+        "task_hash",
+        "license",
+        "attribution"
+      ],
+      "title": "TaskSplitEntry",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/task-split-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "heldout": {
+      "items": {
+        "$ref": "#/$defs/TaskSplitEntry"
+      },
+      "title": "Heldout",
+      "type": "array"
+    },
+    "heldout_assets_loaded_after_version_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Heldout Assets Loaded After Version Hash"
+    },
+    "manifest_hash": {
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_id": {
+      "title": "Split Id",
+      "type": "string"
+    },
+    "training": {
+      "items": {
+        "$ref": "#/$defs/TaskSplitEntry"
+      },
+      "title": "Training",
+      "type": "array"
+    },
+    "validation": {
+      "items": {
+        "$ref": "#/$defs/TaskSplitEntry"
+      },
+      "title": "Validation",
+      "type": "array"
+    }
+  },
+  "required": [
+    "split_id",
+    "training",
+    "heldout",
+    "manifest_hash"
+  ],
+  "title": "TaskSplitManifest",
+  "type": "object"
+}

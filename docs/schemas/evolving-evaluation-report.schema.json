@@ -1,0 +1,540 @@
+{
+  "$defs": {
+    "PairedVersionDifference": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_version_id": {
+          "title": "Baseline Version Id",
+          "type": "string"
+        },
+        "evolved_version_id": {
+          "title": "Evolved Version Id",
+          "type": "string"
+        },
+        "macro_pass_at_1_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 1 Delta"
+        },
+        "macro_pass_at_2_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 2 Delta"
+        },
+        "macro_pass_at_3_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 3 Delta"
+        },
+        "mean_tokens_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Tokens Delta"
+        },
+        "mean_wall_time_s_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Wall Time S Delta"
+        },
+        "policy_failure_rate_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Failure Rate Delta"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "baseline_version_id",
+        "evolved_version_id"
+      ],
+      "title": "PairedVersionDifference",
+      "type": "object"
+    },
+    "TaskVersionMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_version_id": {
+          "title": "Agent Version Id",
+          "type": "string"
+        },
+        "contained_policy_failures": {
+          "minimum": 0,
+          "title": "Contained Policy Failures",
+          "type": "integer"
+        },
+        "evaluable": {
+          "minimum": 0,
+          "title": "Evaluable",
+          "type": "integer"
+        },
+        "infrastructure_failures": {
+          "minimum": 0,
+          "title": "Infrastructure Failures",
+          "type": "integer"
+        },
+        "pass_at_1": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pass At 1"
+        },
+        "pass_at_2": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pass At 2"
+        },
+        "pass_at_3": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pass At 3"
+        },
+        "planned": {
+          "minimum": 0,
+          "title": "Planned",
+          "type": "integer"
+        },
+        "resolved": {
+          "minimum": 0,
+          "title": "Resolved",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "terminal": {
+          "minimum": 0,
+          "title": "Terminal",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task_id",
+        "agent_version_id",
+        "planned",
+        "terminal",
+        "evaluable",
+        "resolved",
+        "contained_policy_failures",
+        "infrastructure_failures"
+      ],
+      "title": "TaskVersionMetric",
+      "type": "object"
+    },
+    "VersionMetricSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_version_id": {
+          "title": "Agent Version Id",
+          "type": "string"
+        },
+        "candidate_failures": {
+          "minimum": 0,
+          "title": "Candidate Failures",
+          "type": "integer"
+        },
+        "contained_policy_failures": {
+          "minimum": 0,
+          "title": "Contained Policy Failures",
+          "type": "integer"
+        },
+        "evaluable": {
+          "minimum": 0,
+          "title": "Evaluable",
+          "type": "integer"
+        },
+        "hidden_verifier_reached": {
+          "minimum": 0,
+          "title": "Hidden Verifier Reached",
+          "type": "integer"
+        },
+        "infrastructure_failures": {
+          "minimum": 0,
+          "title": "Infrastructure Failures",
+          "type": "integer"
+        },
+        "launched": {
+          "minimum": 0,
+          "title": "Launched",
+          "type": "integer"
+        },
+        "macro_pass_at_1": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 1"
+        },
+        "macro_pass_at_2": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 2"
+        },
+        "macro_pass_at_3": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 3"
+        },
+        "mean_changed_files": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Changed Files"
+        },
+        "mean_input_tokens": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Input Tokens"
+        },
+        "mean_output_tokens": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Output Tokens"
+        },
+        "mean_patch_lines": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Patch Lines"
+        },
+        "mean_public_tool_calls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Public Tool Calls"
+        },
+        "mean_tokens": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Tokens"
+        },
+        "mean_tokens_per_resolved": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Tokens Per Resolved"
+        },
+        "mean_wall_time_per_resolved_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Wall Time Per Resolved S"
+        },
+        "mean_wall_time_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Wall Time S"
+        },
+        "missing_usage_count": {
+          "minimum": 0,
+          "title": "Missing Usage Count",
+          "type": "integer"
+        },
+        "patch_reproducible": {
+          "minimum": 0,
+          "title": "Patch Reproducible",
+          "type": "integer"
+        },
+        "planned": {
+          "minimum": 0,
+          "title": "Planned",
+          "type": "integer"
+        },
+        "policy_failure_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Failure Rate"
+        },
+        "public_test_reached": {
+          "minimum": 0,
+          "title": "Public Test Reached",
+          "type": "integer"
+        },
+        "resolved": {
+          "minimum": 0,
+          "title": "Resolved",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "terminal": {
+          "minimum": 0,
+          "title": "Terminal",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_version_id",
+        "planned",
+        "launched",
+        "terminal",
+        "evaluable",
+        "resolved",
+        "candidate_failures",
+        "contained_policy_failures",
+        "infrastructure_failures",
+        "public_test_reached",
+        "hidden_verifier_reached",
+        "patch_reproducible",
+        "missing_usage_count"
+      ],
+      "title": "VersionMetricSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/evolving-evaluation-report.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "establishes_general_improvement": {
+      "const": false,
+      "default": false,
+      "title": "Establishes General Improvement",
+      "type": "boolean"
+    },
+    "heldout_plan_hash": {
+      "title": "Heldout Plan Hash",
+      "type": "string"
+    },
+    "heldout_task_count": {
+      "minimum": 0,
+      "title": "Heldout Task Count",
+      "type": "integer"
+    },
+    "no_weight_update": {
+      "const": true,
+      "default": true,
+      "title": "No Weight Update",
+      "type": "boolean"
+    },
+    "paired_difference": {
+      "$ref": "#/$defs/PairedVersionDifference"
+    },
+    "report_hash": {
+      "title": "Report Hash",
+      "type": "string"
+    },
+    "report_id": {
+      "title": "Report Id",
+      "type": "string"
+    },
+    "required_interpretation": {
+      "const": "The before/after result is a bounded first-party Evolve-Context pilot and does not establish general performance improvement.",
+      "default": "The before/after result is a bounded first-party Evolve-Context pilot and does not establish general performance improvement.",
+      "title": "Required Interpretation",
+      "type": "string"
+    },
+    "samples_per_task_version": {
+      "minimum": 1,
+      "title": "Samples Per Task Version",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_manifest_hash": {
+      "title": "Split Manifest Hash",
+      "type": "string"
+    },
+    "task_version_metrics": {
+      "items": {
+        "$ref": "#/$defs/TaskVersionMetric"
+      },
+      "title": "Task Version Metrics",
+      "type": "array"
+    },
+    "version_metrics": {
+      "items": {
+        "$ref": "#/$defs/VersionMetricSummary"
+      },
+      "title": "Version Metrics",
+      "type": "array"
+    }
+  },
+  "required": [
+    "report_id",
+    "split_manifest_hash",
+    "heldout_plan_hash",
+    "version_metrics",
+    "task_version_metrics",
+    "paired_difference",
+    "heldout_task_count",
+    "samples_per_task_version",
+    "report_hash"
+  ],
+  "title": "EvolvingEvaluationReport",
+  "type": "object"
+}

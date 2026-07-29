@@ -1,0 +1,164 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/trajectory-dataset-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "agent_version_manifest_hash": {
+      "title": "Agent Version Manifest Hash",
+      "type": "string"
+    },
+    "attributions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Attributions",
+      "type": "array"
+    },
+    "byte_count": {
+      "minimum": 0,
+      "title": "Byte Count",
+      "type": "integer"
+    },
+    "dataset_hash": {
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "dataset_id": {
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "eligible_record_count": {
+      "minimum": 0,
+      "title": "Eligible Record Count",
+      "type": "integer"
+    },
+    "excluded_runs": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Excluded Runs",
+      "type": "object"
+    },
+    "export_policy_hash": {
+      "title": "Export Policy Hash",
+      "type": "string"
+    },
+    "export_policy_id": {
+      "const": "observable_repo_trajectory_v1",
+      "default": "observable_repo_trajectory_v1",
+      "title": "Export Policy Id",
+      "type": "string"
+    },
+    "included_run_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Included Run Ids",
+      "type": "array"
+    },
+    "input_set_hash": {
+      "title": "Input Set Hash",
+      "type": "string"
+    },
+    "licenses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Licenses",
+      "type": "array"
+    },
+    "no_model_calls": {
+      "const": true,
+      "default": true,
+      "title": "No Model Calls",
+      "type": "boolean"
+    },
+    "no_network": {
+      "const": true,
+      "default": true,
+      "title": "No Network",
+      "type": "boolean"
+    },
+    "no_public_launcher_calls": {
+      "const": true,
+      "default": true,
+      "title": "No Public Launcher Calls",
+      "type": "boolean"
+    },
+    "no_runtime_calls": {
+      "const": true,
+      "default": true,
+      "title": "No Runtime Calls",
+      "type": "boolean"
+    },
+    "no_verifier_calls": {
+      "const": true,
+      "default": true,
+      "title": "No Verifier Calls",
+      "type": "boolean"
+    },
+    "package_identities": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Package Identities",
+      "type": "object"
+    },
+    "record_count": {
+      "minimum": 0,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "reward_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Profile Hash"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_commit": {
+      "title": "Source Commit",
+      "type": "string"
+    },
+    "source_experiment_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Experiment Ids",
+      "type": "array"
+    },
+    "split_manifest_hash": {
+      "title": "Split Manifest Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dataset_id",
+    "source_experiment_ids",
+    "input_set_hash",
+    "split_manifest_hash",
+    "agent_version_manifest_hash",
+    "export_policy_hash",
+    "included_run_ids",
+    "excluded_runs",
+    "record_count",
+    "eligible_record_count",
+    "byte_count",
+    "licenses",
+    "attributions",
+    "source_commit",
+    "package_identities",
+    "dataset_hash"
+  ],
+  "title": "TrajectoryDatasetManifest",
+  "type": "object"
+}

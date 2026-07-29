@@ -36,7 +36,7 @@ from verigym.provenance import get_build_provenance
 from verigym.runtimes.base import Runtime
 from verigym.schemas.common import ToolchainProfile, ToolchainProfileRef
 from verigym.schemas.model import GenerationParameters, ModelRunConfig
-from verigym.schemas.prompt import ToolPolicySnapshot
+from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import TaskRef, VeriTask
@@ -98,6 +98,7 @@ class ExperimentPlanner:
                 default_profiles=default_profiles,
                 resolved_profiles=resolved_profiles,
             )
+            items = self._order_items(items, config.execution.plan_order_policy)
             child_seeds = [item.child_seed for item in items]
             if len(child_seeds) != len(set(child_seeds)):
                 raise ConfigurationError(
@@ -465,10 +466,7 @@ class ExperimentPlanner:
             tool_policy = self._tool_policy(task, config.runs.mode)
             prompt = None
             for system in systems:
-                if system.agent_requires_model:
-                    prompt = PromptBuilder(config.runs.mode).descriptor
-                else:
-                    prompt = None
+                prompt = self._prompt_policy(system, config.runs.mode)
                 system_identity = normalized_system_identity_payload(system)
                 system_hash = content_hash(system_identity)
                 for base_seed in config.runs.seeds:
@@ -575,6 +573,49 @@ class ExperimentPlanner:
                         raw["plan_item_id"] = content_hash(plan_item_identity_payload(raw))
                         items.append(PlanItem.model_validate(raw))
         return items
+
+    @staticmethod
+    def _prompt_policy(system: PlannedSystemIdentity, mode: Any) -> PromptPolicyDescriptor | None:
+        if system.agent_requires_model:
+            return PromptBuilder(mode).descriptor
+        contract = system.agent_options.get("prompt_contract_id")
+        if (
+            isinstance(contract, str)
+            and "external_coding_agent" in system.agent_descriptor.capabilities
+        ):
+            payload = {
+                "agent": system.agent_descriptor,
+                "prompt_contract_id": contract,
+                "interaction_mode": mode,
+                "memory_artifact": "separately_versioned_when_present",
+            }
+            return PromptPolicyDescriptor(
+                id=contract,
+                version=system.agent_descriptor.version,
+                interaction_mode=mode,
+                configuration_fingerprint=content_hash(payload),
+            )
+        return None
+
+    @staticmethod
+    def _order_items(items: list[PlanItem], policy: str) -> list[PlanItem]:
+        if policy == "canonical":
+            return items
+        if policy != "counterbalanced_systems_v1":
+            raise ConfigurationError(f"unsupported experiment plan-order policy: {policy}")
+        system_order = {
+            system_id: index
+            for index, system_id in enumerate(sorted({item.system.system_id for item in items}))
+        }
+
+        def key(item: PlanItem) -> tuple[str, int, int, int]:
+            system_index = system_order[item.system.system_id]
+            if item.sample_index % 2:
+                system_index = len(system_order) - 1 - system_index
+            return item.task_id, item.base_seed, item.sample_index, system_index
+
+        ordered = sorted(items, key=key)
+        return [item.model_copy(update={"plan_index": index}) for index, item in enumerate(ordered)]
 
     @staticmethod
     def _tool_policy(task: VeriTask, mode: Any) -> ToolPolicySnapshot:

@@ -1,0 +1,98 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/memory-pack-audit.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "audit_hash": {
+      "title": "Audit Hash",
+      "type": "string"
+    },
+    "code_free": {
+      "const": true,
+      "default": true,
+      "title": "Code Free",
+      "type": "boolean"
+    },
+    "content_policy_passed": {
+      "const": true,
+      "default": true,
+      "title": "Content Policy Passed",
+      "type": "boolean"
+    },
+    "credentials_included": {
+      "const": false,
+      "default": false,
+      "title": "Credentials Included",
+      "type": "boolean"
+    },
+    "heldout_content_included": {
+      "const": false,
+      "default": false,
+      "title": "Heldout Content Included",
+      "type": "boolean"
+    },
+    "hidden_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Hidden Assets Included",
+      "type": "boolean"
+    },
+    "item_count": {
+      "maximum": 60,
+      "minimum": 5,
+      "title": "Item Count",
+      "type": "integer"
+    },
+    "memory_pack_hash": {
+      "title": "Memory Pack Hash",
+      "type": "string"
+    },
+    "memory_pack_id": {
+      "title": "Memory Pack Id",
+      "type": "string"
+    },
+    "policy_id": {
+      "const": "task_independent_code_free_memory_v1",
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "references_included": {
+      "const": false,
+      "default": false,
+      "title": "References Included",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "section_count": {
+      "const": 5,
+      "default": 5,
+      "title": "Section Count",
+      "type": "integer"
+    },
+    "task_independent": {
+      "const": true,
+      "default": true,
+      "title": "Task Independent",
+      "type": "boolean"
+    },
+    "total_utf8_bytes": {
+      "maximum": 16384,
+      "minimum": 1,
+      "title": "Total Utf8 Bytes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "memory_pack_id",
+    "memory_pack_hash",
+    "policy_id",
+    "item_count",
+    "total_utf8_bytes",
+    "audit_hash"
+  ],
+  "title": "MemoryPackAudit",
+  "type": "object"
+}

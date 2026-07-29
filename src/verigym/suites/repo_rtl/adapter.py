@@ -22,6 +22,7 @@ from verigym.core.repository_candidate import (
 from verigym.core.workspace import copy_tree_safely, glob_matches
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import SuiteDescriptor, ToolchainProfile
+from verigym.schemas.evolution import AgentVersionManifest
 from verigym.schemas.repository import RepositoryCandidateRecord, RepositoryTaskManifest
 from verigym.schemas.runtime import SessionReadOnlyMount
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
@@ -39,6 +40,7 @@ from verigym.suites.base import SuiteAdapter
 _MAX_BUNDLE_FILES = 2048
 _MAX_BUNDLE_FILE_BYTES = 8 * 1024 * 1024
 _MAX_BUNDLE_BYTES = 32 * 1024 * 1024
+_HELDOUT_GRANT_ENV = "VERIGYM_M10B_HELDOUT_AGENT_VERSION_MANIFEST"
 
 
 class RepositoryRtlSuite(SuiteAdapter):
@@ -66,12 +68,15 @@ class RepositoryRtlSuite(SuiteAdapter):
     def __init__(self, source_config: SuiteSourceConfig | None = None) -> None:
         self._source_config = source_config
         self._snapshot_cache: SuiteSourceSnapshot | None = None
+        self._heldout_agent_version: AgentVersionManifest | None = None
         assets = (
             Path(__file__).parent / "assets"
             if source_config is None
             else self._external_tasks_root(source_config.source_root)
         )
         self._task_roots = self._discover_roots(assets)
+        if source_config is None:
+            self._load_heldout_after_version_freeze()
         self._visible_temporaries: list[tempfile.TemporaryDirectory[str]] = []
 
     def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
@@ -114,6 +119,10 @@ class RepositoryRtlSuite(SuiteAdapter):
             "reference_patch_hash": manifest.verification.reference_patch_hash,
             "workspace_contract": manifest.workspace.model_dump(mode="json"),
         }
+        if self._heldout_agent_version is not None and "m10b_split" in task.metadata:
+            task.metadata["repository_repair"]["heldout_access_agent_version_hash"] = (
+                self._heldout_agent_version.version_hash
+            )
         return task
 
     def resolve_assets(self, task: VeriTask) -> ResolvedTaskAssets:
@@ -164,12 +173,23 @@ class RepositoryRtlSuite(SuiteAdapter):
             "repo-rtl/counter-wrap",
             "repo-rtl/pipeline-stall-backpressure",
         }
+        if self._heldout_agent_version is not None:
+            expected.update(
+                {
+                    "repo-rtl/arbiter-rotating-priority-heldout",
+                    "repo-rtl/counter-load-wrap-heldout",
+                    "repo-rtl/pipeline-flush-heldout",
+                }
+            )
         if self._source_config is None and set(self._task_roots) != expected:
             issues.append(
                 ValidationIssue(
                     level="error",
                     code="task_set",
-                    message="repo-rtl must contain exactly the three Milestone 10A fixtures",
+                    message=(
+                        "repo-rtl task set differs from the frozen training set plus any "
+                        "version-gated held-out set"
+                    ),
                 )
             )
         for task_id, root in sorted(self._task_roots.items()):
@@ -309,6 +329,41 @@ class RepositoryRtlSuite(SuiteAdapter):
             return self._task_roots[task_id]
         except KeyError as exc:
             raise KeyError(f"unknown repo-rtl task: {task_id}") from exc
+
+    def _load_heldout_after_version_freeze(self) -> None:
+        """Expose packaged held-out assets only after a frozen v1 grant is validated."""
+
+        raw = os.environ.get(_HELDOUT_GRANT_ENV)
+        if raw is None:
+            return
+        grant_path = Path(raw)
+        if not grant_path.is_absolute():
+            raise ConfigurationError(f"{_HELDOUT_GRANT_ENV} must be an absolute path")
+        self._reject_symlink_components(grant_path)
+        resolved = grant_path.resolve(strict=True)
+        mode = resolved.stat().st_mode
+        if not stat.S_ISREG(mode) or resolved.stat().st_size > 256 * 1024:
+            raise ConfigurationError("M10B held-out grant must be a bounded regular file")
+        version = load_model(resolved, AgentVersionManifest)
+        from verigym.evolution.memory import validate_agent_version
+
+        validate_agent_version(version)
+        if (
+            version.update_type != "context_memory"
+            or not version.executable_in_m10b
+            or version.memory_pack_hash is None
+            or version.parent_version_hash is None
+        ):
+            raise ConfigurationError(
+                "M10B held-out access requires a frozen executable context-memory version"
+            )
+        heldout = Path(__file__).parent / "heldout_assets"
+        roots = self._discover_roots(heldout)
+        overlap = set(roots).intersection(self._task_roots)
+        if overlap:
+            raise ConfigurationError(f"M10B held-out task identities overlap: {sorted(overlap)}")
+        self._task_roots.update(roots)
+        self._heldout_agent_version = version
 
     def _validate_task_root(
         self,

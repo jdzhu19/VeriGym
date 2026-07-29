@@ -1,0 +1,212 @@
+{
+  "$defs": {
+    "EvolutionProcessLedgerRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Hash"
+        },
+        "authorization_id": {
+          "title": "Authorization Id",
+          "type": "string"
+        },
+        "model_process_started": {
+          "title": "Model Process Started",
+          "type": "boolean"
+        },
+        "ordinal": {
+          "maximum": 24,
+          "minimum": 1,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "process_kind": {
+          "enum": [
+            "implementation_probe",
+            "training_episode",
+            "memory_synthesis",
+            "heldout"
+          ],
+          "title": "Process Kind",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "title": "Reasoning Effort",
+          "type": "string"
+        },
+        "record_hash": {
+          "title": "Record Hash",
+          "type": "string"
+        },
+        "record_phase": {
+          "enum": [
+            "authorized",
+            "terminal"
+          ],
+          "title": "Record Phase",
+          "type": "string"
+        },
+        "requested_model_id": {
+          "title": "Requested Model Id",
+          "type": "string"
+        },
+        "resume": {
+          "const": false,
+          "default": false,
+          "title": "Resume",
+          "type": "boolean"
+        },
+        "retry": {
+          "const": false,
+          "default": false,
+          "title": "Retry",
+          "type": "boolean"
+        },
+        "run_or_build_id": {
+          "title": "Run Or Build Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_ledger_record_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Ledger Record Hash"
+        },
+        "task_identity_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Identity Hash"
+        },
+        "terminal": {
+          "title": "Terminal",
+          "type": "boolean"
+        },
+        "terminal_outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Terminal Outcome"
+        }
+      },
+      "required": [
+        "ordinal",
+        "record_phase",
+        "process_kind",
+        "authorization_id",
+        "run_or_build_id",
+        "requested_model_id",
+        "reasoning_effort",
+        "model_process_started",
+        "terminal",
+        "record_hash"
+      ],
+      "title": "EvolutionProcessLedgerRecord",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/evolution-process-ledger-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "authorization_id": {
+      "title": "Authorization Id",
+      "type": "string"
+    },
+    "authorized_processes": {
+      "maximum": 24,
+      "minimum": 0,
+      "title": "Authorized Processes",
+      "type": "integer"
+    },
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "manifest_hash": {
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "maximum_processes": {
+      "const": 24,
+      "default": 24,
+      "title": "Maximum Processes",
+      "type": "integer"
+    },
+    "process_kind_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Process Kind Counts",
+      "type": "object"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/EvolutionProcessLedgerRecord"
+      },
+      "maxItems": 48,
+      "title": "Records",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_processes": {
+      "maximum": 24,
+      "minimum": 0,
+      "title": "Started Processes",
+      "type": "integer"
+    },
+    "terminal_processes": {
+      "maximum": 24,
+      "minimum": 0,
+      "title": "Terminal Processes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "authorization_id",
+    "records",
+    "authorized_processes",
+    "started_processes",
+    "terminal_processes",
+    "process_kind_counts",
+    "complete",
+    "manifest_hash"
+  ],
+  "title": "EvolutionProcessLedgerManifest",
+  "type": "object"
+}

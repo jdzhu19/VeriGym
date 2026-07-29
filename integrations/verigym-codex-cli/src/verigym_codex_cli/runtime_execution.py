@@ -22,7 +22,7 @@ class RuntimeExecutionOutcome:
     runtime_result: ExternalProcessResult
 
 
-def execute_runtime_process(
+def build_runtime_process_request(
     *,
     bridge: ExternalAgentBridge,
     executable: ExecutableIdentity,
@@ -30,8 +30,8 @@ def execute_runtime_process(
     settings: CodexSettings,
     prompt: str,
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
-) -> RuntimeExecutionOutcome:
-    """Ask the selected runtime to own exactly one model-bearing process."""
+) -> ExternalProcessRequest:
+    """Build the complete immutable runtime-owned process request."""
 
     if settings.integration_track not in {
         "codex_cli_readonly_single_turn_agent",
@@ -43,7 +43,7 @@ def execute_runtime_process(
     if settings.resolved_auth_mode != "inherited_codex_login":
         raise ValueError("Docker runtime execution requires inherited Codex login")
     read_only_mounts = list(getattr(bridge, "read_only_mounts", []))
-    request = ExternalProcessRequest(
+    return ExternalProcessRequest(
         protocol="codex_app_server_remote_environment_v1",
         runtime_role="agent",
         argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
@@ -86,6 +86,27 @@ def execute_runtime_process(
         editable_globs=list(bridge.editable_globs),
         readonly_globs=list(bridge.readonly_globs),
     )
+
+
+def execute_runtime_process(
+    *,
+    bridge: ExternalAgentBridge,
+    executable: ExecutableIdentity,
+    capabilities: CapabilityReport,
+    settings: CodexSettings,
+    prompt: str,
+    workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
+) -> RuntimeExecutionOutcome:
+    """Ask the selected runtime to own exactly one model-bearing process."""
+
+    request = build_runtime_process_request(
+        bridge=bridge,
+        executable=executable,
+        capabilities=capabilities,
+        settings=settings,
+        prompt=prompt,
+        workspace_mode=workspace_mode,
+    )
     runtime_result = bridge.execute_process(request)
     process = CodexProcessResult(
         arguments=("<runtime-owned-codex-app-server>",),
@@ -101,4 +122,8 @@ def execute_runtime_process(
     return RuntimeExecutionOutcome(process=process, runtime_result=runtime_result)
 
 
-__all__ = ["RuntimeExecutionOutcome", "execute_runtime_process"]
+__all__ = [
+    "RuntimeExecutionOutcome",
+    "build_runtime_process_request",
+    "execute_runtime_process",
+]

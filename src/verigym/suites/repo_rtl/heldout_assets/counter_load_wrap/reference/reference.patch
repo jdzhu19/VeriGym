@@ -1,0 +1,15 @@
+--- a/rtl/loadable_counter.sv
++++ b/rtl/loadable_counter.sv
+@@ -9,10 +9,10 @@
+     always_ff @(posedge clk) begin
+         if (rst) begin
+             count <= 4'd0;
+-        end else if (enable) begin
+-            count <= count + 4'd1;
+         end else if (load) begin
+             count <= load_value;
++        end else if (enable) begin
++            count <= (count == 4'd9) ? 4'd0 : count + 4'd1;
+         end
+     end
+ endmodule

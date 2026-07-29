@@ -1,0 +1,45 @@
+{
+  "asset_files": {
+    "assets/tb_counter_load_public.sv": "5ed7e7f75909a754cee1cdd443cd7a7cf229b25344979a366608a184fe49b2fa"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "028939c26051221e6d07c2f30932c3af5f88deb2b4201995d518d4692739a405",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_counter_load_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/counter_top.sv",
+            "{repository}/rtl/loadable_counter.sv",
+            "{public}/assets/tb_counter_load_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "counter-load-wrap-public",
+      "title": "Load priority, decimal wrap, and enable hold"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from verigym.evolution.memory import validate_memory_pack
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -25,6 +26,7 @@ from verigym.plugin_api import (
     Observation,
     TerminationReason,
 )
+from verigym.schemas.evolution import MemoryPack
 
 from ._version import __version__
 from .artifacts import CodexRunEvidence, update_summary
@@ -487,10 +489,31 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Finish after one repository candidate; VeriGym freezes the patch "
             "and runs hidden tests.",
         ]
-    return (
+    task_artifact = (
         '<verigym_external_agent_task schema_version="1.0">\n'
         + json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
         + "\n</verigym_external_agent_task>\n"
+    )
+    raw_memory = context.agent_options.get("memory_pack")
+    if raw_memory is None:
+        return task_artifact
+    memory = validate_memory_pack(MemoryPack.model_validate(raw_memory))
+    memory_artifact = {
+        "schema_version": "1.0",
+        "label": "frozen_task_independent_read_only_agent_memory",
+        "content_hash": memory.content_hash,
+        "read_only": True,
+        "must_not_write_to_candidate_repository": True,
+        "sections": [
+            {"section": section.section, "items": section.items} for section in memory.sections
+        ],
+    }
+    return (
+        task_artifact
+        + '<verigym_agent_memory schema_version="1.0" '
+        + f'content_hash="{memory.content_hash}">\n'
+        + json.dumps(memory_artifact, indent=2, sort_keys=True, ensure_ascii=False)
+        + "\n</verigym_agent_memory>\n"
     )
 
 

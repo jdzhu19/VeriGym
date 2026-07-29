@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "$id": "https://verigym.dev/schemas/1.0/trajectory-event.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "content_class": {
+      "enum": [
+        "public_task",
+        "public_tool_output",
+        "agent_generated",
+        "workspace_metadata",
+        "candidate_public",
+        "score_summary",
+        "sensitive_redacted"
+      ],
+      "title": "Content Class",
+      "type": "string"
+    },
+    "event_type": {
+      "enum": [
+        "task_observation",
+        "agent_message",
+        "tool_invocation",
+        "tool_result",
+        "workspace_delta",
+        "public_test",
+        "candidate_freeze",
+        "episode_outcome",
+        "usage",
+        "reward"
+      ],
+      "title": "Event Type",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Payload",
+      "type": "object"
+    },
+    "payload_sha256": {
+      "title": "Payload Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sequence",
+    "event_type",
+    "content_class",
+    "payload",
+    "payload_sha256"
+  ],
+  "title": "TrajectoryEvent",
+  "type": "object"
+}

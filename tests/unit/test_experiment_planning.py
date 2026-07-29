@@ -149,6 +149,50 @@ def test_planning_is_deterministic_and_host_output_order_independent(tmp_path: P
     assert first.evaluation_config_hash == second.evaluation_config_hash
 
 
+def test_counterbalanced_plan_interleaves_frozen_versions_by_sample(tmp_path: Path) -> None:
+    config = experiment_config(
+        tmp_path / "counterbalanced",
+        tasks=["and-gate-basic"],
+        systems=[
+            {
+                "id": "v1",
+                "agent": {
+                    "id": "scripted",
+                    "options": {
+                        "agent_version_id": "codex-cli-agent-v1",
+                        "agent_version_hash": "b" * 64,
+                    },
+                },
+            },
+            {
+                "id": "v0",
+                "agent": {
+                    "id": "scripted",
+                    "options": {
+                        "agent_version_id": "codex-cli-agent-v0",
+                        "agent_version_hash": "a" * 64,
+                    },
+                },
+            },
+        ],
+        seeds=[0],
+        samples=3,
+        pass_k=[1, 2, 3],
+    )
+    config.execution.plan_order_policy = "counterbalanced_systems_v1"
+    plan = ExperimentPlanner(offline_service()).build(config)
+    assert [(item.sample_index, item.system.system_id) for item in plan.items] == [
+        (0, "v0"),
+        (0, "v1"),
+        (1, "v1"),
+        (1, "v0"),
+        (2, "v0"),
+        (2, "v1"),
+    ]
+    assert [item.plan_index for item in plan.items] == list(range(6))
+    assert len({item.plan_item_id for item in plan.items}) == 6
+
+
 def test_plan_item_identity_tracks_every_frozen_field_but_not_order() -> None:
     item = (
         ExperimentPlanner(offline_service())

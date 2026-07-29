@@ -62,6 +62,7 @@ verigym = [
   "profiles/builtins/assets/*",
   "suites/toy_rtl/assets/**/*",
   "suites/repo_rtl/assets/**/*",
+  "suites/repo_rtl/heldout_assets/**/*",
   "suites/verilog_eval/assets/**/*",
 ]
 
