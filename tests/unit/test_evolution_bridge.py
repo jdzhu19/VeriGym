@@ -101,6 +101,54 @@ def test_campaign_binds_the_sealed_reference_checkpoint_manifest() -> None:
     )
 
 
+def test_campaign_accounts_for_the_immutable_failed_first_probe(tmp_path: Path) -> None:
+    script = Path("scripts/run_m10b_campaign.py").resolve(strict=True)
+    spec = importlib.util.spec_from_file_location("verigym_m10b_prior_probe_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    preflight = tmp_path / "preflight"
+    preflight.mkdir()
+    atomic_dump_json(
+        preflight / "source-identity.json",
+        {
+            "source_commit": module.PRIOR_PROBE_COMMIT,
+            "source_tree": module.PRIOR_PROBE_TREE,
+        },
+    )
+    ledger = tmp_path / "model-process-ledger.jsonl"
+    authorization = authorize_process(
+        ledger,
+        process_kind="implementation_probe",
+        authorization_id="m10b-owner-contract-v1",
+        run_or_build_id="probe-1",
+        requested_model_id="gpt-5.4",
+        reasoning_effort="xhigh",
+    )
+    terminal = finish_process(
+        ledger,
+        authorization_record=authorization,
+        terminal_outcome="infrastructure_invalid",
+    )
+    runtime = tmp_path / "real-probe-1/runs/run-1/artifacts/codex_cli/runtime_process.json"
+    runtime.parent.mkdir(parents=True)
+    atomic_dump_json(
+        runtime,
+        {
+            "failure_reason": "container_inspect_timeout",
+            "cleanup_complete": False,
+            "security": {"cleanup_verified": False},
+            "runtime_identity": {"model_process_count": 1},
+        },
+    )
+
+    identity = module._prior_probe_identity(tmp_path)
+    assert identity["started_processes"] == 1
+    assert identity["terminal_record_hash"] == terminal.record_hash
+    assert identity["retried"] is False
+
+
 def _reward() -> RewardVector:
     return RewardVector(
         outcome_kind="resolved_candidate",

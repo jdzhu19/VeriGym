@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -27,7 +28,7 @@ from verigym_codex_cli.runtime_execution import build_runtime_process_request
 from verigym_codex_cli.util import atomic_json
 
 from verigym.core.external_agent import RuntimeExternalAgentBridge
-from verigym.core.hashing import canonical_json, content_hash
+from verigym.core.hashing import canonical_json, content_hash, hash_directory
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
@@ -46,6 +47,7 @@ from verigym.evolution.ledger import (
     authorize_process,
     finish_process,
     seal_process_ledger,
+    validate_process_records,
 )
 from verigym.evolution.memory import (
     build_agent_version,
@@ -84,6 +86,7 @@ from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.evolution import (
     AgentVersionManifest,
     EpisodeTrajectory,
+    EvolutionProcessLedgerRecord,
     MemoryPack,
     RunAgentVersionAssignment,
     TaskSplitEntry,
@@ -116,6 +119,8 @@ M10A_BUNDLE = Path("/data/jzhu484/Agent/VeriGym_milestone10a_53b0755/evidence-bu
 REFERENCE_EXPERIMENT = Path("/data/jzhu484/Agent/VeriGym_reference_qualified_52318e1")
 REFERENCE_CHECKPOINT_MANIFEST = REFERENCE_EXPERIMENT / "checkpoint-bundle-114/BUNDLE-MANIFEST.json"
 REFERENCE_CHECKPOINT_HASH = "2d5cdb67bf60c1a26f3b20bfab4c50bbe3efc331db3bf7508ece2f1cbf3d1ce9"
+PRIOR_PROBE_COMMIT = "860c83642c405d6f7622f6c37596e4420e1d71ee"
+PRIOR_PROBE_TREE = "11f4c49948eab27f97d4cd4f22d8ce02a64cb6b2"
 TRAINING_TASKS = (
     "repo-rtl/arbiter-reset-recovery",
     "repo-rtl/counter-wrap",
@@ -201,6 +206,70 @@ def _preservation_identity() -> dict[str, Any]:
         "m10a_bundle_verified_file_count": m10a_count,
         "reference_experiment_checkpoint_manifest_sha256": _sha256(REFERENCE_CHECKPOINT_MANIFEST),
         "protected_assets_modified": False,
+    }
+
+
+def _prior_probe_identity(root: Path) -> dict[str, Any]:
+    """Validate the one immutable failed Probe 1 before authorizing Probe 2."""
+
+    if root.is_symlink():
+        raise RuntimeError("prior probe root must not be a symlink")
+    resolved = root.resolve(strict=True)
+    if not resolved.is_dir():
+        raise RuntimeError("prior probe root must be a regular directory")
+    source = json.loads((resolved / "preflight/source-identity.json").read_text("utf-8"))
+    if (
+        source.get("source_commit") != PRIOR_PROBE_COMMIT
+        or source.get("source_tree") != PRIOR_PROBE_TREE
+    ):
+        raise RuntimeError("prior probe source identity differs from the failed Probe 1")
+    ledger_path = resolved / "model-process-ledger.jsonl"
+    records = validate_process_records(
+        load_jsonl_models(ledger_path, EvolutionProcessLedgerRecord),
+        authorization_id=AUTHORIZATION_ID,
+    )
+    if (
+        len(records) != 2
+        or records[0].record_phase != "authorized"
+        or records[1].record_phase != "terminal"
+        or records[0].process_kind != "implementation_probe"
+        or records[1].process_kind != "implementation_probe"
+        or records[1].terminal_outcome != "infrastructure_invalid"
+        or not records[1].model_process_started
+        or records[0].requested_model_id != MODEL_ID
+        or records[0].reasoning_effort != REASONING_EFFORT
+    ):
+        raise RuntimeError("prior Probe 1 ledger does not describe one terminal failed process")
+    runtime_paths = sorted(
+        (resolved / "real-probe-1/runs").glob("*/artifacts/codex_cli/runtime_process.json")
+    )
+    if len(runtime_paths) != 1:
+        raise RuntimeError("prior Probe 1 runtime evidence is incomplete")
+    runtime = json.loads(runtime_paths[0].read_text("utf-8"))
+    security = runtime.get("security")
+    identity = runtime.get("runtime_identity")
+    if (
+        runtime.get("failure_reason") != "container_inspect_timeout"
+        or runtime.get("cleanup_complete") is not False
+        or not isinstance(security, dict)
+        or security.get("cleanup_verified") is not False
+        or not isinstance(identity, dict)
+        or identity.get("model_process_count") != 1
+    ):
+        raise RuntimeError("prior Probe 1 does not match the demonstrated cleanup defect")
+    return {
+        "schema_version": "1.0",
+        "source_commit": PRIOR_PROBE_COMMIT,
+        "source_tree": PRIOR_PROBE_TREE,
+        "campaign_root_hash": hash_directory(resolved),
+        "ledger_sha256": _sha256(ledger_path),
+        "authorization_record_hash": records[0].record_hash,
+        "terminal_record_hash": records[1].record_hash,
+        "started_processes": 1,
+        "terminal_outcome": records[1].terminal_outcome,
+        "failure_reason": runtime["failure_reason"],
+        "candidate_repaired": False,
+        "retried": False,
     }
 
 
@@ -874,6 +943,8 @@ def _seal_bundle(
     heldout_experiment: Path,
     heldout_dataset: Path,
     heldout_reports: Path,
+    prior_probe_root: Path,
+    prior_probe_identity: Mapping[str, Any],
     probe_experiment: Path,
     probe_dataset: Path,
     probe_replay: Sequence[Mapping[str, Any]],
@@ -935,8 +1006,16 @@ def _seal_bundle(
         bundle / "evolution/sanitized-training-summary.json",
         training_summary,
     )
-    _copy_tree(probe_experiment, bundle / "real-probes/probe-1/experiment")
-    _copy_tree(probe_dataset, bundle / "real-probes/probe-1/trajectory-dataset")
+    _copy_tree(prior_probe_root, bundle / "real-probes/probe-1-failed/campaign")
+    atomic_dump_json(
+        bundle / "real-probes/probe-1-failed/identity.json",
+        dict(prior_probe_identity),
+    )
+    _copy_tree(probe_experiment, bundle / "real-probes/probe-2-success/experiment")
+    _copy_tree(
+        probe_dataset,
+        bundle / "real-probes/probe-2-success/trajectory-dataset",
+    )
     _copy_tree(memory_root, bundle / "evolution/memory-builder")
     atomic_dump_json(bundle / "evolution/agent-version-v0.json", v0)
     atomic_dump_json(bundle / "evolution/agent-version-v1.json", v1)
@@ -973,6 +1052,22 @@ def _seal_bundle(
     atomic_dump_json(
         bundle / "security-and-integrity/process-ledger-manifest.json",
         process_manifest,
+    )
+    atomic_dump_json(
+        bundle / "security-and-integrity/global-process-accounting.json",
+        {
+            "schema_version": "1.0",
+            "authorization_id": AUTHORIZATION_ID,
+            "failed_probe_1_started_processes": prior_probe_identity["started_processes"],
+            "final_campaign_started_processes": process_manifest.started_processes,
+            "total_started_processes": (
+                prior_probe_identity["started_processes"] + process_manifest.started_processes
+            ),
+            "maximum_authorized_processes": 24,
+            "failed_probe_1_terminal_record_hash": prior_probe_identity["terminal_record_hash"],
+            "final_campaign_ledger_manifest_hash": process_manifest.manifest_hash,
+            "retry_or_resume": False,
+        },
     )
     shutil.copy2(
         campaign_root / "model-process-ledger.jsonl",
@@ -1026,8 +1121,13 @@ def _seal_bundle(
         "training_processes": 3,
         "memory_synthesis_processes": 1,
         "heldout_processes": 18,
-        "probe_processes": 1,
-        "total_processes": process_manifest.started_processes,
+        "probe_processes": 2,
+        "failed_probe_processes": 1,
+        "successful_probe_processes": 1,
+        "final_bundle_campaign_processes": process_manifest.started_processes,
+        "total_processes": (
+            prior_probe_identity["started_processes"] + process_manifest.started_processes
+        ),
         "model_weights_modified": False,
         "historical_evidence_combined": False,
         "preseal_file_set_hash": content_hash(preseal),
@@ -1059,6 +1159,7 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument("--plugin-wheel", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--quality-evidence", type=Path, required=True)
+    parser.add_argument("--prior-failed-probe-root", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -1076,6 +1177,8 @@ def main() -> int:
         raise RuntimeError("fully green quality/CI evidence is required before the probe")
     _assert_source_identity(args.source_commit, args.source_tree)
     preservation_before = _preservation_identity()
+    prior_probe_root = args.prior_failed_probe_root.resolve(strict=True)
+    prior_probe = _prior_probe_identity(prior_probe_root)
     output.mkdir(parents=True)
     (output / "preflight").mkdir()
     shutil.copy2(args.quality_evidence, output / "preflight/quality-and-ci.json")
@@ -1187,8 +1290,8 @@ def main() -> int:
     atomic_dump_json(output / "preflight/agent-version-v0.json", v0)
 
     probe_config = _experiment_config(
-        name="m10b implementation probe one",
-        output=output / "real-probe-1",
+        name="m10b implementation probe two",
+        output=output / "real-probe-2",
         tasks=[TRAINING_TASKS[1]],
         systems=[("v0", _versioned_options(capability, v0))],
         samples=1,
@@ -1204,12 +1307,12 @@ def main() -> int:
         ledger=ledger,
         process_kind="implementation_probe",
     )
-    probe_dataset = output / "probe-trajectory-dataset"
+    probe_dataset = output / "probe-2-trajectory-dataset"
     probe_manifest = TrajectoryExporter().export(
         probe_experiment,
         probe_dataset,
         split_manifest=build_task_split(
-            split_id="m10b-probe-v0",
+            split_id="m10b-probe-2-v0",
             training=[_task_entry(training_roots[TRAINING_TASKS[1]])],
             heldout=[],
         ),
@@ -1217,7 +1320,7 @@ def main() -> int:
         run_agent_versions=_run_assignments(probe_experiment, {"v0": v0.agent_version_id}),
         source_commit=args.source_commit,
         package_identities=package_hashes,
-        dataset_id="m10b-implementation-probe",
+        dataset_id="m10b-implementation-probe-2",
     )
     replay_trajectory_dataset(probe_dataset, probe_experiment)
     probe_replay = _replay_experiment(probe_experiment)
@@ -1363,7 +1466,7 @@ def main() -> int:
             raise RuntimeError("held-out plan is not counterbalanced as pre-registered")
     heldout_runner = BatchRunner(
         planner=ExperimentPlanner(),
-        child_executor=_CampaignChildExecutor(ledger, "heldout_evaluation"),
+        child_executor=_CampaignChildExecutor(ledger, "heldout"),
     )
     heldout_result = heldout_runner.run(heldout_plan)
     if heldout_result.exit_code != 0:
@@ -1425,13 +1528,15 @@ def main() -> int:
         or process_manifest.started_processes != 23
         or process_manifest.process_kind_counts
         != {
-            "heldout_evaluation": 18,
+            "heldout": 18,
             "implementation_probe": 1,
             "memory_synthesis": 1,
             "training_episode": 3,
         }
     ):
         raise RuntimeError("campaign-wide process accounting differs from 1+3+1+18")
+    if prior_probe["started_processes"] + process_manifest.started_processes != 24:
+        raise RuntimeError("global M10B accounting differs from the authorized 2+3+1+18")
     preservation_after = _preservation_identity()
     if preservation_after != preservation_before:
         raise RuntimeError("protected historical evidence changed during M10B")
@@ -1452,6 +1557,8 @@ def main() -> int:
         heldout_experiment=heldout_experiment,
         heldout_dataset=heldout_dataset,
         heldout_reports=heldout_reports,
+        prior_probe_root=prior_probe_root,
+        prior_probe_identity=prior_probe,
         probe_experiment=probe_experiment,
         probe_dataset=probe_dataset,
         probe_replay=probe_replay,
@@ -1478,7 +1585,7 @@ def main() -> int:
                 "gate": "MILESTONE 10B EVOLVING-AGENT EVALUATION BRIDGE: PASS",
                 "bundle": bundle.name,
                 "bundle_sha256sums_sha256": _sha256(bundle / "SHA256SUMS"),
-                "processes": process_manifest.started_processes,
+                "processes": prior_probe["started_processes"] + process_manifest.started_processes,
                 "v0_version_hash": v0.version_hash,
                 "v1_version_hash": v1.version_hash,
                 "evaluation_report_hash": evaluation.report_hash,

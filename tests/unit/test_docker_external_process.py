@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from verigym.runtimes.docker.control_plane_environment import (
     build_trusted_host_app_server_environment,
 )
-from verigym.runtimes.docker.engine import EngineResult
+from verigym.runtimes.docker.engine import DockerCliEngine, EngineResult
 from verigym.runtimes.docker.external_process import (
     _APP_SERVER_CONFIG_OVERRIDES,
     DockerExternalProcessExecutor,
@@ -158,6 +158,45 @@ def _success() -> EngineResult:
         stderr="",
         duration_s=0.01,
     )
+
+
+def test_container_cleanup_controls_tolerate_bounded_daemon_queueing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = DockerCliEngine(executable="/usr/bin/docker")
+    observed: list[tuple[list[str], int]] = []
+
+    def invoke(
+        arguments: list[str],
+        *,
+        timeout_s: int,
+        max_output_bytes: int = 1024 * 1024,
+    ) -> EngineResult:
+        del max_output_bytes
+        observed.append((arguments, timeout_s))
+        stdout = (
+            '[{"State":{"Running":false}}]'
+            if arguments[0] == "inspect"
+            else CONTAINER_ID
+            if arguments[0] == "create"
+            else ""
+        )
+        return EngineResult(
+            argv=["docker", *arguments],
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(engine, "_invoke", invoke)
+    assert engine.create_container(["image-id", "true"]) == CONTAINER_ID
+    engine.inspect_container(CONTAINER_ID)
+    engine.kill_container(CONTAINER_ID)
+    engine.remove_container(CONTAINER_ID)
+    assert engine.list_managed_containers() == []
+
+    assert [timeout for _, timeout in observed] == [60, 60, 60, 60, 60]
 
 
 def _value(arguments: list[str], name: str) -> str:

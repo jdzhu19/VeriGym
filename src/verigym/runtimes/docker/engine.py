@@ -20,6 +20,8 @@ from verigym.runtimes.docker.errors import (
     sanitize_diagnostic,
 )
 
+_CONTAINER_CONTROL_TIMEOUT_S = 60
+
 
 @dataclass(frozen=True)
 class EngineResult:
@@ -239,7 +241,10 @@ class DockerCliEngine:
             )
 
     def create_container(self, arguments: list[str]) -> str:
-        result = self._invoke(["create", *arguments], timeout_s=20)
+        result = self._invoke(
+            ["create", *arguments],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
         if result.timed_out:
             raise DockerDaemonError(
                 "Docker container creation timed out",
@@ -256,7 +261,10 @@ class DockerCliEngine:
         return container_id
 
     def inspect_container(self, container_id: str) -> dict[str, Any]:
-        result = self._invoke(["inspect", container_id], timeout_s=10)
+        result = self._invoke(
+            ["inspect", container_id],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
         if result.timed_out:
             raise DockerDaemonError(
                 "Docker container inspection timed out",
@@ -335,14 +343,17 @@ class DockerCliEngine:
             ) from exc
 
     def kill_container(self, container_id: str) -> EngineResult:
-        return self._invoke(["kill", container_id], timeout_s=10)
+        return self._invoke(
+            ["kill", container_id],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
 
     def remove_container(self, container_id: str, *, force: bool = True) -> EngineResult:
         arguments = ["rm"]
         if force:
             arguments.append("--force")
         arguments.append(container_id)
-        return self._invoke(arguments, timeout_s=15)
+        return self._invoke(arguments, timeout_s=_CONTAINER_CONTROL_TIMEOUT_S)
 
     def _list_values(self, noun: str, template: str) -> list[str]:
         result = self._invoke(
@@ -354,7 +365,7 @@ class DockerCliEngine:
                 "--format",
                 template,
             ],
-            timeout_s=10,
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
         )
         if result.exit_code != 0 or result.timed_out:
             self._raise_control_error(result, action=f"{noun}_list")
@@ -370,7 +381,7 @@ class DockerCliEngine:
                 "--format",
                 "{{.ID}}",
             ],
-            timeout_s=10,
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
         )
         if result.exit_code != 0 or result.timed_out:
             self._raise_control_error(result, action="container_list")
