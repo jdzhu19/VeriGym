@@ -18,6 +18,12 @@ LABEL org.verigym.iverilog.base_image_id="${IVERILOG_BASE_ID}"
 LABEL org.verigym.provider_credentials="absent"
 LABEL org.verigym.credential_material="absent"
 
+USER root
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --chown=10001:10001 codex /usr/local/bin/codex
 COPY --chown=10001:10001 verigym-public-test /usr/local/bin/verigym-public-test
 

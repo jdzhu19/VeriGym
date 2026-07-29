@@ -223,6 +223,13 @@ def test_repository_agent_image_build_context_honors_scoped_tmpdir() -> None:
     assert 'rm -rf -- "$build_context"' in script
 
 
+def test_repository_agent_image_provisions_public_launcher_standard_library() -> None:
+    dockerfile = Path("docker/codex-repository-agent/Dockerfile").read_text(encoding="utf-8")
+    assert "apt-get install --yes --no-install-recommends python3" in dockerfile
+    assert dockerfile.index("USER root") < dockerfile.index("apt-get install")
+    assert dockerfile.rindex("USER 10001:10001") > dockerfile.index("apt-get install")
+
+
 @pytest.mark.reproducible_build
 @pytest.mark.skipif(
     os.environ.get("VERIGYM_RUN_REPRODUCIBLE_BUILD_TESTS") != "1",
