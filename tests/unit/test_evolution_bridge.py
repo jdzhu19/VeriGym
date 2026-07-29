@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 from pathlib import Path
@@ -83,6 +84,21 @@ from verigym.schemas.score import EpisodeFailure, ScoreCard
 from verigym.suites.repo_rtl.adapter import RepositoryRtlSuite
 
 _HASH = "a" * 64
+
+
+def test_campaign_binds_the_sealed_reference_checkpoint_manifest() -> None:
+    script = Path("scripts/run_m10b_campaign.py").resolve(strict=True)
+    spec = importlib.util.spec_from_file_location("verigym_m10b_campaign_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    relative = module.REFERENCE_CHECKPOINT_MANIFEST.relative_to(module.REFERENCE_EXPERIMENT)
+    assert relative.as_posix() == "checkpoint-bundle-114/BUNDLE-MANIFEST.json"
+    assert (
+        module.REFERENCE_CHECKPOINT_HASH
+        == "2d5cdb67bf60c1a26f3b20bfab4c50bbe3efc331db3bf7508ece2f1cbf3d1ce9"
+    )
 
 
 def _reward() -> RewardVector:

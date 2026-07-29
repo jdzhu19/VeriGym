@@ -114,6 +114,7 @@ MEMORY_AGENT_IMAGE_ID = "sha256:b22da25b8db35190a2d1f4d80d02c60a952e7fb0006dc0a3
 PUBLIC_LAUNCHER_SHA256 = "e3276ee142e7de78fd60bf4078138152d1974c93f72f27fd2eb95a3f6493b407"
 M10A_BUNDLE = Path("/data/jzhu484/Agent/VeriGym_milestone10a_53b0755/evidence-bundle-final")
 REFERENCE_EXPERIMENT = Path("/data/jzhu484/Agent/VeriGym_reference_qualified_52318e1")
+REFERENCE_CHECKPOINT_MANIFEST = REFERENCE_EXPERIMENT / "checkpoint-bundle-114/BUNDLE-MANIFEST.json"
 REFERENCE_CHECKPOINT_HASH = "2d5cdb67bf60c1a26f3b20bfab4c50bbe3efc331db3bf7508ece2f1cbf3d1ce9"
 TRAINING_TASKS = (
     "repo-rtl/arbiter-reset-recovery",
@@ -192,14 +193,13 @@ def _assert_checksum_manifest(root: Path) -> int:
 
 def _preservation_identity() -> dict[str, Any]:
     m10a_count = _assert_checksum_manifest(M10A_BUNDLE)
-    checkpoint = REFERENCE_EXPERIMENT / "checkpoint-manifest.json"
-    if _sha256(checkpoint) != REFERENCE_CHECKPOINT_HASH:
+    if _sha256(REFERENCE_CHECKPOINT_MANIFEST) != REFERENCE_CHECKPOINT_HASH:
         raise RuntimeError("reference-qualified experiment checkpoint identity changed")
     return {
         "schema_version": "1.0",
         "m10a_bundle_checksum_manifest_sha256": _sha256(M10A_BUNDLE / "SHA256SUMS"),
         "m10a_bundle_verified_file_count": m10a_count,
-        "reference_experiment_checkpoint_manifest_sha256": _sha256(checkpoint),
+        "reference_experiment_checkpoint_manifest_sha256": _sha256(REFERENCE_CHECKPOINT_MANIFEST),
         "protected_assets_modified": False,
     }
 
