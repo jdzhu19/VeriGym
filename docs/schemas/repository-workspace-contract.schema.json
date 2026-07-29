@@ -1,0 +1,118 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/repository-workspace-contract.schema.json",
+  "additionalProperties": false,
+  "description": "Visible path classes and fail-closed repository patch limits.",
+  "properties": {
+    "allow_binary_files": {
+      "const": false,
+      "default": false,
+      "title": "Allow Binary Files",
+      "type": "boolean"
+    },
+    "allow_file_addition": {
+      "default": false,
+      "title": "Allow File Addition",
+      "type": "boolean"
+    },
+    "allow_file_deletion": {
+      "default": false,
+      "title": "Allow File Deletion",
+      "type": "boolean"
+    },
+    "allow_file_rename": {
+      "const": false,
+      "default": false,
+      "title": "Allow File Rename",
+      "type": "boolean"
+    },
+    "allow_mode_change": {
+      "const": false,
+      "default": false,
+      "title": "Allow Mode Change",
+      "type": "boolean"
+    },
+    "case_sensitive_paths": {
+      "const": true,
+      "default": true,
+      "title": "Case Sensitive Paths",
+      "type": "boolean"
+    },
+    "editable_globs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Editable Globs",
+      "type": "array"
+    },
+    "forbidden_globs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Forbidden Globs",
+      "type": "array"
+    },
+    "max_candidate_bytes": {
+      "maximum": 268435456,
+      "minimum": 1,
+      "title": "Max Candidate Bytes",
+      "type": "integer"
+    },
+    "max_changed_files": {
+      "maximum": 256,
+      "minimum": 1,
+      "title": "Max Changed Files",
+      "type": "integer"
+    },
+    "max_file_bytes": {
+      "maximum": 67108864,
+      "minimum": 1,
+      "title": "Max File Bytes",
+      "type": "integer"
+    },
+    "max_patch_lines": {
+      "maximum": 100000,
+      "minimum": 1,
+      "title": "Max Patch Lines",
+      "type": "integer"
+    },
+    "read_only_globs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Read Only Globs",
+      "type": "array"
+    },
+    "repository_root": {
+      "const": "repository",
+      "default": "repository",
+      "title": "Repository Root",
+      "type": "string"
+    },
+    "runtime_generated_globs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Runtime Generated Globs",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "editable_globs",
+    "read_only_globs",
+    "forbidden_globs",
+    "max_changed_files",
+    "max_patch_lines",
+    "max_candidate_bytes",
+    "max_file_bytes"
+  ],
+  "title": "RepositoryWorkspaceContract",
+  "type": "object"
+}

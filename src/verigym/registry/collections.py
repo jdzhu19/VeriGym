@@ -35,16 +35,23 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     """Create a fresh registry collection populated with first-party plugins."""
 
     from verigym.agents.react import ReferenceReActAgent
+    from verigym.agents.repository_scripted import (
+        ScriptedRepositoryBadAgent,
+        ScriptedRepositoryGoodAgent,
+        ScriptedRepositoryPolicyBadAgent,
+    )
     from verigym.agents.scripted import ScriptedAgent, ScriptedBadAgent
     from verigym.agents.single_turn import SingleTurnAgent
     from verigym.models.static import builtin_model_clients
     from verigym.runtimes.docker import DockerRuntime
     from verigym.runtimes.local import LocalRuntime
+    from verigym.suites.repo_rtl.adapter import RepositoryRtlSuite
     from verigym.suites.toy_rtl.adapter import ToyRtlSuite
     from verigym.suites.verilog_eval.adapter import VerilogEvalSuite
     from verigym.suites.verilog_eval.verifier import builtin_verilog_eval_tools
     from verigym.tools.file_tools import builtin_file_tools
     from verigym.tools.iverilog import builtin_iverilog_tools
+    from verigym.tools.repository import builtin_repository_tools
     from verigym.tools.yosys import builtin_yosys_tools
 
     registries = Registries(
@@ -62,10 +69,12 @@ def build_registries(*, discover_external: bool = True) -> Registries:
         registration="builtin",
     )
     registries.suites.register(ToyRtlSuite(), origin=builtin_origin)
+    registries.suites.register(RepositoryRtlSuite(), origin=builtin_origin)
     registries.suites.register(VerilogEvalSuite(), origin=builtin_origin)
     for tool in [
         *builtin_file_tools(),
         *builtin_iverilog_tools(),
+        *builtin_repository_tools(),
         *builtin_verilog_eval_tools(),
         *builtin_yosys_tools(),
     ]:
@@ -74,6 +83,9 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     registries.agents.register(ScriptedBadAgent(), origin=builtin_origin)
     registries.agents.register(SingleTurnAgent(), origin=builtin_origin)
     registries.agents.register(ReferenceReActAgent(), origin=builtin_origin)
+    registries.agents.register(ScriptedRepositoryGoodAgent(), origin=builtin_origin)
+    registries.agents.register(ScriptedRepositoryBadAgent(), origin=builtin_origin)
+    registries.agents.register(ScriptedRepositoryPolicyBadAgent(), origin=builtin_origin)
     for model in builtin_model_clients():
         registries.models.register(model, origin=builtin_origin)
     registries.runtimes.register(LocalRuntime(), origin=builtin_origin)

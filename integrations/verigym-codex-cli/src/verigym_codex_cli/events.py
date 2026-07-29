@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -66,6 +68,14 @@ class ParsedEventStream:
     @property
     def command_count(self) -> int:
         return sum(event.category == "command_started" for event in self.events)
+
+    @property
+    def public_test_command_count(self) -> int:
+        return sum(
+            event.category == "command_started"
+            and _is_public_test_command(str(event.payload.get("command", "")))
+            for event in self.events
+        )
 
     @property
     def file_read_count(self) -> int:
@@ -397,6 +407,32 @@ def _direct_payload(category: str, safe: dict[str, Any]) -> dict[str, Any]:
             "usage",
         }
     }
+
+
+def _is_public_test_command(command: str) -> bool:
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if tokens and Path(tokens[0]).name in {"bash", "sh", "zsh"}:
+        if len(tokens) != 3 or tokens[1] not in {"-c", "-lc"}:
+            return False
+        try:
+            tokens = shlex.split(tokens[2], posix=True)
+        except ValueError:
+            return False
+    if not tokens or Path(tokens[0]).name != "verigym-public-test":
+        return False
+    return tokens[1:] == ["list"] or (
+        len(tokens) == 3
+        and tokens[1] == "run"
+        and bool(
+            re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+                tokens[2],
+            )
+        )
+    )
 
 
 def _item_text(value: dict[str, Any]) -> str:

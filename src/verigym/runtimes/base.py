@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from verigym.schemas.common import RuntimeDescriptor
-from verigym.schemas.external_agent import ExternalProcessRequest, ExternalProcessResult
+from verigym.schemas.external_agent import (
+    ExternalProcessRequest,
+    ExternalProcessResult,
+    ExternalReadOnlyMountIdentity,
+)
 from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec, WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
 
@@ -51,11 +55,29 @@ class RuntimeSession(ABC):
 
         return str(self.root)
 
+    @property
+    def external_read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]:
+        """Runtime-staged public mounts exposed to an external agent process."""
+
+        return []
+
     def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
         """Execute through the runtime when the backend supports external agents."""
 
         del request
         raise ValueError("this runtime does not execute external-agent processes")
+
+    def execute_public_test(self, test_id: str) -> CompletedCommand:
+        """Execute one hash-bound public test through the selected runtime."""
+
+        del test_id
+        raise ValueError("this runtime does not expose repository public tests")
+
+    @property
+    def public_test_invocation_count(self) -> int:
+        """Count runtime-dispatched public tests, including final validation."""
+
+        return 0
 
     @abstractmethod
     def close(self) -> None:

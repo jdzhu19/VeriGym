@@ -1,0 +1,9 @@
+codex_cli_version=0.144.6
+codex_cli_source_tag=rust-v0.144.6
+codex_cli_source_commit=5d1fbf26c43abc65a203928b2e31561cb039e06d
+codex_native_sha256=a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15
+iverilog_source_tag=v12_0
+iverilog_profile=verigym/rtl-iverilog:12.0
+container_user=10001:10001
+provider_credentials=absent
+public_test_protocol=verigym_public_test_v1

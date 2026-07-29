@@ -1,0 +1,29 @@
+--- a/rtl/rr_arbiter.sv
++++ b/rtl/rr_arbiter.sv
+@@ -9,17 +9,19 @@
+ 
+     always_comb begin
+         grant = 2'b00;
+-        case (request)
+-            2'b01: grant = 2'b01;
+-            2'b10: grant = 2'b10;
+-            2'b11: grant = last_grant ? 2'b01 : 2'b10;
+-            default: grant = 2'b00;
+-        endcase
++        if (!rst) begin
++            case (request)
++                2'b01: grant = 2'b01;
++                2'b10: grant = 2'b10;
++                2'b11: grant = last_grant ? 2'b01 : 2'b10;
++                default: grant = 2'b00;
++            endcase
++        end
+     end
+ 
+     always_ff @(posedge clk) begin
+         if (rst) begin
+-            last_grant <= 1'b0;
++            last_grant <= 1'b1;
+         end else if (grant[0]) begin
+             last_grant <= 1'b0;
+         end else if (grant[1]) begin

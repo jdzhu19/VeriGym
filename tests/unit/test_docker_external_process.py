@@ -508,7 +508,7 @@ def test_app_server_eof_is_observable_without_waiting_for_timeout(
     assert result["failure_reason"] == "app_server_protocol_error"
     assert result["failure_origin"] == "host_control_plane"
     assert result["timed_out"] is False
-    assert "stdout closed" in result["stdout"]
+    assert any(marker in result["stdout"] for marker in ("stdout closed", "stdin closed"))
 
 
 def test_loopback_proxy_attempt_has_stable_host_control_plane_taxonomy(

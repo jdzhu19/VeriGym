@@ -196,11 +196,28 @@ class DockerRuntimeConfig(StrictModel):
         return self
 
 
+class SessionReadOnlyMount(StrictModel):
+    """One hash-bound asset tree copied into private runtime staging."""
+
+    source_dir: str
+    destination: Literal["/verigym-public"]
+    content_hash: str
+    label: Literal["public_tests"] = "public_tests"
+
+    @field_validator("content_hash")
+    @classmethod
+    def validate_content_hash(cls, value: str) -> str:
+        if not _SHA256_PATTERN.fullmatch(value):
+            raise ValueError("read-only session mount hash must be lowercase SHA-256")
+        return value
+
+
 class SessionSpec(StrictModel):
     source_dir: str
     label: str
     max_output_bytes: int = Field(default=1_000_000, ge=1)
     environment: dict[str, str] = Field(default_factory=dict)
+    read_only_mounts: list[SessionReadOnlyMount] = Field(default_factory=list)
 
 
 class WorkspaceDiff(StrictModel):

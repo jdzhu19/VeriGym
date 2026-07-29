@@ -22,6 +22,11 @@ from verigym.schemas.model import GenerationParameters, ModelCallIdentity, Model
 from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.provenance import BuildProvenance
+from verigym.schemas.repository import (
+    RepositoryCandidateRecord,
+    RepositoryPlanIdentity,
+    RepositoryPublicTestOutcome,
+)
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
@@ -128,6 +133,10 @@ class RunManifest(StrictModel):
     task_hash: str
     source_hash: str
     candidate_hash: str | None = None
+    repository_candidate: RepositoryCandidateRecord | None = None
+    repository_task_identity: RepositoryPlanIdentity | None = None
+    repository_public_tests: list[RepositoryPublicTestOutcome] = Field(default_factory=list)
+    repository_public_tool_invocation_count: int = Field(default=0, ge=0)
     verifier_hash: str
     run_config_hash: str
     suite: str

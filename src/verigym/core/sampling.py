@@ -375,6 +375,15 @@ def classify_sample_outcome(scorecard: ScoreCard) -> tuple[SampleOutcome, bool]:
         or bool(scorecard.failure and scorecard.failure.infrastructure)
     ):
         return SampleOutcome.INFRASTRUCTURE_ERROR, False
+    if (
+        scorecard.failure is not None
+        and scorecard.failure.kind == "policy"
+        and not scorecard.failure.infrastructure
+    ):
+        # A safely contained model/agent policy violation is an unsuccessful
+        # evaluable candidate outcome. It is neither an escape nor a shared
+        # experiment-execution failure.
+        return SampleOutcome.CANDIDATE_FAILURE, True
     if scorecard.termination_reason in _MODEL_OUTPUT_REASONS:
         return SampleOutcome.MODEL_OUTPUT_FAILURE, True
     if scorecard.termination_reason in _CANCELLED_REASONS or scorecard.status == "cancelled":

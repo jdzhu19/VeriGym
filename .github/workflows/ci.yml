@@ -122,6 +122,40 @@ jobs:
           )
           print("installed Codex CLI entry points discovered")
           PY
+      - name: Installed repository RTL repair conformance
+        run: |
+          cd /tmp
+          /tmp/verigym-codex-plugin-venv/bin/verigym run \
+            --suite repo-rtl \
+            --task counter-wrap \
+            --mode agent \
+            --agent repo-scripted-good \
+            --runtime local \
+            --output /tmp/verigym-installed-repo-rtl
+          /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifests = sorted(
+              Path("/tmp/verigym-installed-repo-rtl").glob("*/run_manifest.json")
+          )
+          scorecards = sorted(
+              Path("/tmp/verigym-installed-repo-rtl").glob("*/scorecard.json")
+          )
+          assert len(manifests) == len(scorecards) == 1
+          manifest = json.loads(manifests[0].read_text())
+          scorecard = json.loads(scorecards[0].read_text())
+          assert scorecard["resolved"] is True
+          assert scorecard["efficiency"]["model_calls"] == 0
+          assert manifest["repository_candidate"]["patch"]["reapply_exact"] is True
+          assert len(manifest["repository_public_tests"]) == 1
+          assert manifest["repository_public_tests"][0]["passed"] is True
+          assert (
+              manifest["repository_public_tests"][0]["network_policy"]
+              == "host_local_trusted"
+          )
+          print("installed repository RTL repair conformance passed")
+          PY
       - name: Installed Codex CLI fake four-run flow
         env:
           VERIGYM_RUN_CODEX_CLI_TESTS: "1"
@@ -222,6 +256,12 @@ jobs:
           scripts/build_codex_agent_image.sh
           "$CODEX_NATIVE"
           verigym/codex-exec-server:0.144.6
+      - name: Build credential-free repository-agent image
+        run: >-
+          scripts/build_codex_repository_agent_image.sh
+          "$CODEX_NATIVE"
+          verigym/rtl-iverilog:12.0
+          verigym/codex-repository-agent:0.144.6
       - name: Run runtime-owned fake-provider security path
         env:
           VERIGYM_RUN_DOCKER_TESTS: "1"
@@ -229,6 +269,13 @@ jobs:
           VERIGYM_CODEX_AGENT_IMAGE: verigym/codex-exec-server:0.144.6
           VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
         run: pytest -q tests/integration/test_docker_codex_external_agent.py
+      - name: Run repository-agent public, freeze, and fake-provider paths
+        env:
+          VERIGYM_RUN_DOCKER_TESTS: "1"
+          VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
+          VERIGYM_CODEX_REPOSITORY_AGENT_IMAGE: verigym/codex-repository-agent:0.144.6
+          VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
+        run: pytest -q tests/integration/test_docker_repository_agent.py
       - name: Verify historical Track B candidate dispositions with Icarus 12
         run: |
           git clone https://github.com/NVlabs/verilog-eval.git /tmp/verilog-eval

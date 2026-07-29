@@ -9,6 +9,7 @@ from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalProcessRequest,
     ExternalProcessResult,
+    ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.options import JsonValue
 
@@ -34,6 +35,9 @@ class ExternalAgentBridge(Protocol):
 
     @property
     def logical_workspace_root(self) -> str: ...
+
+    @property
+    def read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]: ...
 
     def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult: ...
 

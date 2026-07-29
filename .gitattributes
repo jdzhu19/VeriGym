@@ -1,0 +1,3 @@
+src/verigym/suites/repo_rtl/assets/arbiter_reset_recovery/reference/reference.patch -whitespace
+src/verigym/suites/repo_rtl/assets/counter_wrap/reference/reference.patch -whitespace
+src/verigym/suites/repo_rtl/assets/pipeline_stall_backpressure/reference/reference.patch -whitespace

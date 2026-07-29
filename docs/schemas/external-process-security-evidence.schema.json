@@ -143,7 +143,10 @@
     },
     "mount_destinations": {
       "items": {
-        "const": "/workspace",
+        "enum": [
+          "/verigym-public",
+          "/workspace"
+        ],
         "type": "string"
       },
       "title": "Mount Destinations",
@@ -198,6 +201,19 @@
         "type": "string"
       },
       "title": "Proxy Environment Names In Container",
+      "type": "array"
+    },
+    "public_test_assets_mounted_read_only": {
+      "default": false,
+      "title": "Public Test Assets Mounted Read Only",
+      "type": "boolean"
+    },
+    "read_only_destinations": {
+      "items": {
+        "const": "/verigym-public",
+        "type": "string"
+      },
+      "title": "Read Only Destinations",
       "type": "array"
     },
     "read_only_rootfs": {

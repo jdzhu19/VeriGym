@@ -130,6 +130,8 @@ def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
     system = raw.get("system")
     if isinstance(system, dict) or hasattr(system, "model_dump"):
         raw["system"] = normalized_system_identity_payload(system)
+    if raw.get("repository_task_identity") is None:
+        raw.pop("repository_task_identity", None)
     return cast(dict[str, Any], raw)
 
 

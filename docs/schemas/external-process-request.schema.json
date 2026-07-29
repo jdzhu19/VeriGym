@@ -1,4 +1,33 @@
 {
+  "$defs": {
+    "ExternalReadOnlyMountIdentity": {
+      "additionalProperties": false,
+      "description": "Content identity for a runtime-staged agent-container read-only mount.",
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "destination": {
+          "const": "/verigym-public",
+          "title": "Destination",
+          "type": "string"
+        },
+        "label": {
+          "const": "public_tests",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination",
+        "content_hash",
+        "label"
+      ],
+      "title": "ExternalReadOnlyMountIdentity",
+      "type": "object"
+    }
+  },
   "$id": "https://verigym.dev/schemas/1.0/external-process-request.schema.json",
   "additionalProperties": false,
   "description": "In-memory, runtime-owned request for one external agent process.",
@@ -93,8 +122,11 @@
       "type": "integer"
     },
     "mount_policy": {
-      "const": "task_workspace_only",
       "default": "task_workspace_only",
+      "enum": [
+        "task_workspace_only",
+        "task_workspace_and_public_tests"
+      ],
       "title": "Mount Policy",
       "type": "string"
     },
@@ -108,6 +140,13 @@
       "pattern": "^[A-Za-z0-9._-]{1,128}$",
       "title": "Protocol",
       "type": "string"
+    },
+    "read_only_mounts": {
+      "items": {
+        "$ref": "#/$defs/ExternalReadOnlyMountIdentity"
+      },
+      "title": "Read Only Mounts",
+      "type": "array"
     },
     "readonly_globs": {
       "items": {

@@ -1,0 +1,1152 @@
+{
+  "$defs": {
+    "AssetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "kind": {
+          "enum": [
+            "directory",
+            "file",
+            "inline"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mount_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mount Path"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AssetRef",
+      "type": "object"
+    },
+    "BudgetSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "max_cpu_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cpu Seconds"
+        },
+        "max_input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Input Tokens"
+        },
+        "max_model_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Model Calls"
+        },
+        "max_output_bytes_per_tool": {
+          "default": 1000000,
+          "minimum": 1,
+          "title": "Max Output Bytes Per Tool",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
+        },
+        "max_tool_calls": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_tool_time_s": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tool Time S"
+        },
+        "max_total_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Total Tokens"
+        },
+        "max_turns": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Turns",
+          "type": "integer"
+        },
+        "max_wall_time_s": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Max Wall Time S",
+          "type": "integer"
+        },
+        "max_workspace_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Workspace Bytes"
+        }
+      },
+      "title": "BudgetSpec",
+      "type": "object"
+    },
+    "ConditionSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "dependency_passed",
+          "enum": [
+            "always",
+            "dependency_passed",
+            "dependency_failed"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node"
+        }
+      },
+      "title": "ConditionSpec",
+      "type": "object"
+    },
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    },
+    "InteractionSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_general_shell": {
+          "default": false,
+          "title": "Allow General Shell",
+          "type": "boolean"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "default_mode": {
+          "$ref": "#/$defs/InteractionMode"
+        },
+        "denied_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Denied Tools",
+          "type": "array"
+        },
+        "final_submission": {
+          "$ref": "#/$defs/SubmissionPolicy"
+        },
+        "initial_observation": {
+          "$ref": "#/$defs/ObservationPolicy"
+        },
+        "network_policy": {
+          "default": "none",
+          "enum": [
+            "none",
+            "allowlist",
+            "open"
+          ],
+          "title": "Network Policy",
+          "type": "string"
+        },
+        "supported_modes": {
+          "items": {
+            "$ref": "#/$defs/InteractionMode"
+          },
+          "title": "Supported Modes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "supported_modes",
+        "default_mode",
+        "allowed_tools"
+      ],
+      "title": "InteractionSpec",
+      "type": "object"
+    },
+    "ObservationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "include_entrypoints": {
+          "default": false,
+          "title": "Include Entrypoints",
+          "type": "boolean"
+        },
+        "include_readme": {
+          "default": true,
+          "title": "Include Readme",
+          "type": "boolean"
+        },
+        "include_tree": {
+          "default": true,
+          "title": "Include Tree",
+          "type": "boolean"
+        }
+      },
+      "title": "ObservationPolicy",
+      "type": "object"
+    },
+    "PublicTestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "$ref": "#/$defs/PublicTestCommand"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Commands",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "commands"
+      ],
+      "title": "PublicTestCase",
+      "type": "object"
+    },
+    "PublicTestCommand": {
+      "additionalProperties": false,
+      "description": "One shell-free, hash-bound public-test subprocess.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "cwd": {
+          "default": "repository",
+          "enum": [
+            "repository",
+            "build"
+          ],
+          "title": "Cwd",
+          "type": "string"
+        },
+        "expected_exit_code": {
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Expected Exit Code",
+          "type": "integer"
+        },
+        "timeout_s": {
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Timeout S",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "timeout_s"
+      ],
+      "title": "PublicTestCommand",
+      "type": "object"
+    },
+    "RepositoryPublicTestContract": {
+      "additionalProperties": false,
+      "description": "Trusted launcher contract mounted read-only at a fixed path.",
+      "properties": {
+        "asset_files": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 256,
+          "minProperties": 1,
+          "title": "Asset Files",
+          "type": "object"
+        },
+        "contract_file": {
+          "const": "test-contract.json",
+          "default": "test-contract.json",
+          "title": "Contract File",
+          "type": "string"
+        },
+        "max_build_bytes": {
+          "default": 33554432,
+          "maximum": 536870912,
+          "minimum": 1024,
+          "title": "Max Build Bytes",
+          "type": "integer"
+        },
+        "max_feedback_bytes": {
+          "default": 65536,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Max Feedback Bytes",
+          "type": "integer"
+        },
+        "mount_destination": {
+          "const": "/verigym-public",
+          "default": "/verigym-public",
+          "title": "Mount Destination",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "verigym_public_test_v1",
+          "default": "verigym_public_test_v1",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "public_assets_hash": {
+          "title": "Public Assets Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/PublicTestCase"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Tests",
+          "type": "array"
+        }
+      },
+      "required": [
+        "public_assets_hash",
+        "asset_files",
+        "tests"
+      ],
+      "title": "RepositoryPublicTestContract",
+      "type": "object"
+    },
+    "RepositorySourceIdentity": {
+      "additionalProperties": false,
+      "description": "Frozen visible base-repository provenance.",
+      "properties": {
+        "attribution": {
+          "title": "Attribution",
+          "type": "string"
+        },
+        "license": {
+          "title": "License",
+          "type": "string"
+        },
+        "license_file": {
+          "title": "License File",
+          "type": "string"
+        },
+        "license_file_hash": {
+          "title": "License File Hash",
+          "type": "string"
+        },
+        "redistributable": {
+          "title": "Redistributable",
+          "type": "boolean"
+        },
+        "repository_hash": {
+          "title": "Repository Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "package_resource",
+            "user_path"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "task_bundle_hash": {
+          "title": "Task Bundle Hash",
+          "type": "string"
+        },
+        "upstream_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upstream Revision"
+        },
+        "upstream_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upstream Url"
+        }
+      },
+      "required": [
+        "source_kind",
+        "repository_hash",
+        "task_bundle_hash",
+        "license",
+        "license_file",
+        "license_file_hash",
+        "attribution",
+        "redistributable"
+      ],
+      "title": "RepositorySourceIdentity",
+      "type": "object"
+    },
+    "RepositoryVerificationContract": {
+      "additionalProperties": false,
+      "properties": {
+        "hidden_verifier_hash": {
+          "title": "Hidden Verifier Hash",
+          "type": "string"
+        },
+        "reference_candidate_hash": {
+          "title": "Reference Candidate Hash",
+          "type": "string"
+        },
+        "reference_patch_hash": {
+          "title": "Reference Patch Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "verifier_image_profile": {
+          "const": "iverilog12_network_none",
+          "title": "Verifier Image Profile",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hidden_verifier_hash",
+        "verifier_image_profile",
+        "reference_candidate_hash",
+        "reference_patch_hash"
+      ],
+      "title": "RepositoryVerificationContract",
+      "type": "object"
+    },
+    "RepositoryWorkspaceContract": {
+      "additionalProperties": false,
+      "description": "Visible path classes and fail-closed repository patch limits.",
+      "properties": {
+        "allow_binary_files": {
+          "const": false,
+          "default": false,
+          "title": "Allow Binary Files",
+          "type": "boolean"
+        },
+        "allow_file_addition": {
+          "default": false,
+          "title": "Allow File Addition",
+          "type": "boolean"
+        },
+        "allow_file_deletion": {
+          "default": false,
+          "title": "Allow File Deletion",
+          "type": "boolean"
+        },
+        "allow_file_rename": {
+          "const": false,
+          "default": false,
+          "title": "Allow File Rename",
+          "type": "boolean"
+        },
+        "allow_mode_change": {
+          "const": false,
+          "default": false,
+          "title": "Allow Mode Change",
+          "type": "boolean"
+        },
+        "case_sensitive_paths": {
+          "const": true,
+          "default": true,
+          "title": "Case Sensitive Paths",
+          "type": "boolean"
+        },
+        "editable_globs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Editable Globs",
+          "type": "array"
+        },
+        "forbidden_globs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Forbidden Globs",
+          "type": "array"
+        },
+        "max_candidate_bytes": {
+          "maximum": 268435456,
+          "minimum": 1,
+          "title": "Max Candidate Bytes",
+          "type": "integer"
+        },
+        "max_changed_files": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Max Changed Files",
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "maximum": 67108864,
+          "minimum": 1,
+          "title": "Max File Bytes",
+          "type": "integer"
+        },
+        "max_patch_lines": {
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Patch Lines",
+          "type": "integer"
+        },
+        "read_only_globs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Read Only Globs",
+          "type": "array"
+        },
+        "repository_root": {
+          "const": "repository",
+          "default": "repository",
+          "title": "Repository Root",
+          "type": "string"
+        },
+        "runtime_generated_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Runtime Generated Globs",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "editable_globs",
+        "read_only_globs",
+        "forbidden_globs",
+        "max_changed_files",
+        "max_patch_lines",
+        "max_candidate_bytes",
+        "max_file_bytes"
+      ],
+      "title": "RepositoryWorkspaceContract",
+      "type": "object"
+    },
+    "ScoringSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "correctness_required_nodes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Correctness Required Nodes",
+          "type": "array"
+        },
+        "ppa_enabled": {
+          "default": false,
+          "title": "Ppa Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "correctness_required_nodes"
+      ],
+      "title": "ScoringSpec",
+      "type": "object"
+    },
+    "SourceSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribution"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commit"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "kind": {
+          "enum": [
+            "benchmark",
+            "repository",
+            "synthetic",
+            "manual"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uri"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "SourceSpec",
+      "type": "object"
+    },
+    "SubmissionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "workspace",
+          "enum": [
+            "workspace",
+            "patch",
+            "file"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "title": "SubmissionPolicy",
+      "type": "object"
+    },
+    "TaskType": {
+      "enum": [
+        "generation",
+        "completion",
+        "repair",
+        "repo_repair",
+        "verification",
+        "testbench_generation",
+        "assertion_generation",
+        "optimization",
+        "mixed"
+      ],
+      "title": "TaskType",
+      "type": "string"
+    },
+    "ToolVisibility": {
+      "enum": [
+        "agent_visible",
+        "verifier_only",
+        "both"
+      ],
+      "title": "ToolVisibility",
+      "type": "string"
+    },
+    "VeriTask": {
+      "additionalProperties": false,
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/BudgetSpec"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "interaction": {
+          "$ref": "#/$defs/InteractionSpec"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scoring": {
+          "$ref": "#/$defs/ScoringSpec"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceSpec"
+        },
+        "suite": {
+          "title": "Suite",
+          "type": "string"
+        },
+        "suite_version": {
+          "title": "Suite Version",
+          "type": "string"
+        },
+        "task_type": {
+          "$ref": "#/$defs/TaskType"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "verifier": {
+          "$ref": "#/$defs/VerifierGraph"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceSpec"
+        }
+      },
+      "required": [
+        "id",
+        "suite",
+        "suite_version",
+        "task_type",
+        "title",
+        "description",
+        "source",
+        "workspace",
+        "interaction",
+        "budget",
+        "verifier",
+        "scoring"
+      ],
+      "title": "VeriTask",
+      "type": "object"
+    },
+    "VerifierGraph": {
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/VerifierNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nodes"
+      ],
+      "title": "VerifierGraph",
+      "type": "object"
+    },
+    "VerifierNode": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Globs",
+          "type": "array"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "gate": {
+          "default": false,
+          "title": "Gate",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "plugin": {
+          "title": "Plugin",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "title": "Request",
+          "type": "object"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "run_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timeout_s": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout S"
+        },
+        "visibility": {
+          "$ref": "#/$defs/ToolVisibility"
+        }
+      },
+      "required": [
+        "id",
+        "plugin",
+        "visibility",
+        "request"
+      ],
+      "title": "VerifierNode",
+      "type": "object"
+    },
+    "WorkspaceSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/AssetRef"
+        },
+        "editable_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Editable Globs",
+          "type": "array"
+        },
+        "entrypoints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Entrypoints",
+          "type": "array"
+        },
+        "excluded_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Globs",
+          "type": "array"
+        },
+        "hidden_assets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Hidden Assets",
+          "type": "array"
+        },
+        "max_changed_files": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Changed Files"
+        },
+        "max_patch_lines": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Patch Lines"
+        },
+        "readonly_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Readonly Globs",
+          "type": "array"
+        },
+        "visible_assets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Visible Assets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "base",
+        "editable_globs"
+      ],
+      "title": "WorkspaceSpec",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/repository-task-manifest.schema.json",
+  "additionalProperties": false,
+  "description": "Complete repository-task binding used by the generic suite adapter.",
+  "properties": {
+    "issue_file": {
+      "const": "issue.md",
+      "default": "issue.md",
+      "title": "Issue File",
+      "type": "string"
+    },
+    "issue_hash": {
+      "title": "Issue Hash",
+      "type": "string"
+    },
+    "public_tests": {
+      "$ref": "#/$defs/RepositoryPublicTestContract"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/RepositorySourceIdentity"
+    },
+    "task": {
+      "$ref": "#/$defs/VeriTask"
+    },
+    "verification": {
+      "$ref": "#/$defs/RepositoryVerificationContract"
+    },
+    "workspace": {
+      "$ref": "#/$defs/RepositoryWorkspaceContract"
+    }
+  },
+  "required": [
+    "task",
+    "issue_hash",
+    "source",
+    "workspace",
+    "public_tests",
+    "verification"
+  ],
+  "title": "RepositoryTaskManifest",
+  "type": "object"
+}

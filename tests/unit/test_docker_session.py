@@ -1,20 +1,31 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from verigym.core.errors import ConfigurationError, MissingDependencyError, PathPolicyError
+from verigym.core.hashing import hash_directory
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.registry.collections import build_registries
 from verigym.runtimes.docker.engine import EngineResult
 from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import RuntimeDescriptor, ToolchainProfile
-from verigym.schemas.runtime import DockerRuntimeConfig, SessionSpec
+from verigym.schemas.runtime import (
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+    SessionReadOnlyMount,
+    SessionSpec,
+)
 from verigym.schemas.tool import CommandSpec
 
 IMAGE_ID = "sha256:" + "d" * 64
+AGENT_IMAGE_ID = "sha256:" + "e" * 64
+CODEX_SHA256 = "a" * 64
+LAUNCHER_SHA256 = "b" * 64
 
 
 class RecordingDockerEngine:
@@ -29,7 +40,9 @@ class RecordingDockerEngine:
         self.killed: list[str] = []
         self.closed = False
         self.fail_removal = False
+        self.oom_public_tests = False
         self.missing_commands: set[str] = set()
+        self.image_labels: dict[str, str] = {}
 
     def version(self) -> dict[str, Any]:
         return {
@@ -55,12 +68,16 @@ class RecordingDockerEngine:
     def inspect_image(self, reference: str) -> dict[str, Any] | None:
         self.inspect_image_calls.append(reference)
         return {
-            "Id": IMAGE_ID,
+            "Id": AGENT_IMAGE_ID if "repository-agent" in reference else IMAGE_ID,
             "RepoDigests": None,
             "Created": "2026-01-01T00:00:00Z",
             "Os": "linux",
             "Architecture": "amd64",
-            "Config": {"User": "10001:10001", "Env": ["PATH=/usr/bin"]},
+            "Config": {
+                "User": "10001:10001",
+                "Env": ["PATH=/usr/bin"],
+                "Labels": self.image_labels,
+            },
         }
 
     def pull_image(self, reference: str) -> None:
@@ -69,7 +86,9 @@ class RecordingDockerEngine:
     def create_container(self, arguments: list[str]) -> str:
         self.create_arguments.append(list(arguments))
         container_id = f"container-{len(self.create_arguments):04d}"
-        image_index = arguments.index(IMAGE_ID)
+        image_index = next(
+            index for index, value in enumerate(arguments) if value in {IMAGE_ID, AGENT_IMAGE_ID}
+        )
         command = arguments[image_index + 1 :]
         environments = _all_option_values(arguments[:image_index], "--env")
         labels = _all_option_values(arguments[:image_index], "--label")
@@ -82,6 +101,7 @@ class RecordingDockerEngine:
                     "Type": values["type"],
                     "Source": values["src"],
                     "Target": values["dst"],
+                    "ReadOnly": "readonly" in raw_mount.split(","),
                 }
             )
         tmpfs = _option_value(arguments, "--tmpfs")
@@ -144,6 +164,30 @@ class RecordingDockerEngine:
         elif command == ["vvp", "-V"]:
             stdout = "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
             state.update({"Status": "exited", "ExitCode": 0})
+        elif command == ["codex", "--version"]:
+            stdout = "codex-cli 0.144.6\n"
+            state.update({"Status": "exited", "ExitCode": 0})
+        elif command == ["sha256sum", "../usr/local/bin/codex"]:
+            stdout = f"{CODEX_SHA256}  ../usr/local/bin/codex\n"
+            state.update({"Status": "exited", "ExitCode": 0})
+        elif command == ["sha256sum", "../usr/local/bin/verigym-public-test"]:
+            stdout = f"{LAUNCHER_SHA256}  ../usr/local/bin/verigym-public-test\n"
+            state.update({"Status": "exited", "ExitCode": 0})
+        elif command[:2] == ["/usr/local/bin/verigym-public-test", "run"]:
+            if self.oom_public_tests:
+                exit_code = 137
+                state.update({"Status": "exited", "OOMKilled": True, "ExitCode": 137})
+            else:
+                stdout = json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "protocol": "verigym_public_test_v1",
+                        "test_id": command[2],
+                        "passed": True,
+                        "category": "passed",
+                    }
+                )
+                state.update({"Status": "exited", "ExitCode": 0})
         elif command == ["yosys", "-V"]:
             stdout = (
                 "Yosys 0.67+post (git sha1 b8e7da6f40ae8f552c116bf6c359b07c6533e159, gcc 14.2.0)\n"
@@ -335,6 +379,82 @@ def test_freeze_prevents_toc_tou_mutation_and_close_is_idempotent(tmp_path: Path
     record = next(record for record in runtime.descriptor.sessions if record.role == "agent")
     assert record.frozen
     assert record.cleanup_complete
+
+
+def test_repository_public_test_uses_separate_read_only_mount_and_agent_image(
+    tmp_path: Path,
+) -> None:
+    engine = RecordingDockerEngine()
+    engine.image_labels = {
+        "org.verigym.runtime.role": "repository-agent",
+        "org.verigym.codex.version": "0.144.6",
+        "org.verigym.codex.binary.sha256": CODEX_SHA256,
+        "org.verigym.public_test_launcher.sha256": LAUNCHER_SHA256,
+        "org.verigym.credential_material": "absent",
+    }
+    runtime = _prepared_runtime(
+        engine,
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image="example:repository-agent",
+            expected_image_id=AGENT_IMAGE_ID,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version="codex-cli 0.144.6",
+            expected_executable_sha256=CODEX_SHA256,
+            process_argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
+            protocol="codex_app_server_remote_environment_v1",
+            required_image_labels=engine.image_labels,
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+            max_process_time_s=300,
+            max_output_bytes=1024 * 1024,
+        ),
+    )
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "TASK.md").write_text("visible\n", encoding="utf-8")
+    public = tmp_path / "public"
+    public.mkdir()
+    (public / "test-contract.json").write_text("{}\n", encoding="utf-8")
+    session = runtime.create_session(
+        SessionSpec(
+            source_dir=str(source),
+            label="agent",
+            read_only_mounts=[
+                SessionReadOnlyMount(
+                    source_dir=str(public),
+                    destination="/verigym-public",
+                    content_hash=hash_directory(public),
+                    label="public_tests",
+                )
+            ],
+        )
+    )
+    try:
+        assert session.external_read_only_mounts[0].destination == "/verigym-public"
+        result = session.execute_public_test("counter-wrap-public")
+        assert result.exit_code == 0
+        assert result.metadata["public_assets_read_only"] is True
+        arguments = engine.create_arguments[-1]
+        mount_values = _all_option_values(arguments, "--mount")
+        assert any(
+            "dst=/verigym-public" in value and value.endswith(",readonly") for value in mount_values
+        )
+        assert any("dst=/workspace" in value and "readonly" not in value for value in mount_values)
+        assert _option_value(arguments, "--network") == "none"
+        assert "--read-only" in arguments
+        assert _option_value(arguments, "--cap-drop") == "ALL"
+        assert _option_value(arguments, "--security-opt") == "no-new-privileges:true"
+        engine.oom_public_tests = True
+        oom = session.execute_public_test("counter-wrap-public")
+        assert oom.oom_killed
+        assert oom.failure_reason == "out_of_memory"
+        assert oom.failure_origin == "candidate_process"
+    finally:
+        session.close()
+        runtime.close()
+    assert engine.list_managed_containers() == []
+    assert runtime.descriptor.cleanup is not None
+    assert runtime.descriptor.cleanup.complete
 
 
 def test_cleanup_failure_preserves_primary_timeout_and_is_reported(tmp_path: Path) -> None:

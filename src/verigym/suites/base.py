@@ -22,6 +22,7 @@ from verigym.schemas.task import (
 
 if TYPE_CHECKING:
     from verigym.runtimes.base import Runtime
+    from verigym.schemas.repository import RepositoryCandidateRecord
 
 
 class SuiteAdapter(ABC):
@@ -63,3 +64,29 @@ class SuiteAdapter(ABC):
         tools: PluginRegistry[Any],
     ) -> ToolchainProfile | None:
         return None
+
+    def freeze_repository_candidate(
+        self,
+        *,
+        task: VeriTask,
+        candidate_dir: Path,
+        run_root: Path,
+        artifact_root: Path,
+    ) -> RepositoryCandidateRecord | None:
+        """Freeze suite-specific repository artifacts after the ordinary candidate handoff."""
+
+        del task, candidate_dir, run_root, artifact_root
+        return None
+
+    def replay_repository_candidate(
+        self,
+        *,
+        task: VeriTask,
+        candidate_dir: Path,
+        run_root: Path,
+        record: RepositoryCandidateRecord,
+    ) -> None:
+        """Validate suite-specific repository artifacts without agent or verifier access."""
+
+        del task, candidate_dir, run_root, record
+        raise ConfigurationError("suite does not implement repository candidate replay")

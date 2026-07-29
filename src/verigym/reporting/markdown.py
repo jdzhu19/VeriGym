@@ -114,6 +114,37 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"{markdown_escape(partition.get('sandbox_policy', ''))} | "
                 f"{markdown_escape(partition.get('approval_policy', ''))} |"
             )
+    repository = aggregate.metadata.get("repository_repair")
+    if isinstance(repository, dict):
+        public = repository.get("public_tests")
+        public = public if isinstance(public, dict) else {}
+        denominators = repository.get("denominators")
+        denominators = denominators if isinstance(denominators, dict) else {}
+        lines.extend(
+            [
+                "",
+                "## Repository repair",
+                "",
+                "| Outcome | Count |",
+                "| --- | ---: |",
+                f"| Planned | {denominators.get('planned', 0)} |",
+                f"| Launched | {denominators.get('launched', 0)} |",
+                f"| Terminal | {denominators.get('terminal', 0)} |",
+                f"| Evaluable | {denominators.get('evaluable', 0)} |",
+                f"| Resolved | {denominators.get('resolved', 0)} |",
+                f"| Candidate failure | {denominators.get('candidate_failure', 0)} |",
+                f"| Contained policy failure | {denominators.get('policy_failure', 0)} |",
+                f"| Infrastructure failure | {denominators.get('infrastructure_failure', 0)} |",
+                "",
+                f"- Frozen repository candidates: "
+                f"{repository.get('frozen_repository_candidates', 0)}",
+                f"- Exact patch reapplications: {repository.get('exact_patch_reapplications', 0)}",
+                f"- Multi-file candidates: {repository.get('multi_file_candidates', 0)}",
+                f"- Public tests passed: {public.get('passed', 0)}/{public.get('total', 0)}",
+                "- Candidate and safely contained policy failures are benchmark outcomes, "
+                "not integration failures.",
+            ]
+        )
     lines.extend(
         [
             "",

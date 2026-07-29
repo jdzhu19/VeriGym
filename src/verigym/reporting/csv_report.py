@@ -114,6 +114,34 @@ CODEX_CLI_CSV_COLUMNS = [
     "external_cost_currency",
 ]
 
+REPOSITORY_CSV_COLUMNS = [
+    "repository_manifest_hash",
+    "repository_task_bundle_hash",
+    "repository_source_identity_hash",
+    "repository_license_file_hash",
+    "base_repository_hash",
+    "repository_public_assets_hash",
+    "repository_hidden_verifier_hash",
+    "candidate_repository_hash",
+    "repository_patch_hash",
+    "patch_reapply_exact",
+    "repository_changed_file_count",
+    "repository_created_file_count",
+    "repository_deleted_file_count",
+    "repository_added_lines",
+    "repository_deleted_lines",
+    "public_test_ids",
+    "public_test_passed_ids",
+    "public_test_failed_ids",
+    "public_tests_passed",
+    "public_tests_total",
+    "public_test_failure_count",
+    "public_tool_invocation_count",
+    "hidden_verifier_reached",
+    "workspace_policy_status",
+    "policy_failure_category",
+]
+
 
 def build_run_rows(inputs: LoadedReportInputs) -> list[dict[str, Any]]:
     valid = {(run.plan_index, run.attempt): run for run in inputs.valid_runs}
@@ -185,9 +213,10 @@ def render_csv(rows: list[dict[str, Any]]) -> str:
 
 
 def _columns_for_rows(rows: list[dict[str, Any]]) -> list[str]:
+    repository = any(row.get("repository_manifest_hash") for row in rows)
     if any(row.get("integration_track") for row in rows):
-        return CODEX_CLI_CSV_COLUMNS
-    return CSV_COLUMNS
+        return [*CODEX_CLI_CSV_COLUMNS, *(REPOSITORY_CSV_COLUMNS if repository else [])]
+    return [*CSV_COLUMNS, *(REPOSITORY_CSV_COLUMNS if repository else [])]
 
 
 def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
@@ -214,6 +243,9 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         )
     )
     codex = _codex_dimensions(manifest)
+    repository = manifest.repository_candidate
+    repository_identity = manifest.repository_task_identity
+    public_tests = manifest.repository_public_tests
     cli_accounting = run.codex_cli_accounting
     return {
         "experiment_id": experiment_id,
@@ -310,6 +342,71 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "diff_lines": score.patch.total_diff_lines,
         "warning_count": len(score.warnings),
         "artifact_validation_status": "valid",
+        "repository_manifest_hash": (
+            repository_identity.manifest_hash if repository_identity is not None else None
+        ),
+        "repository_task_bundle_hash": (
+            repository_identity.task_bundle_hash if repository_identity is not None else None
+        ),
+        "repository_source_identity_hash": (
+            repository_identity.source_identity_hash if repository_identity is not None else None
+        ),
+        "repository_license_file_hash": (
+            repository_identity.license_file_hash if repository_identity is not None else None
+        ),
+        "base_repository_hash": (
+            repository.patch.base_repository_hash if repository is not None else None
+        ),
+        "repository_public_assets_hash": (
+            repository_identity.public_assets_hash if repository_identity is not None else None
+        ),
+        "repository_hidden_verifier_hash": (
+            repository_identity.hidden_verifier_hash if repository_identity is not None else None
+        ),
+        "candidate_repository_hash": (
+            repository.patch.candidate_repository_hash if repository is not None else None
+        ),
+        "repository_patch_hash": repository.patch.patch_hash if repository is not None else None,
+        "patch_reapply_exact": repository.patch.reapply_exact if repository is not None else None,
+        "repository_changed_file_count": (
+            len(repository.patch.changed_files) if repository is not None else None
+        ),
+        "repository_created_file_count": (
+            repository.patch.created_file_count if repository is not None else None
+        ),
+        "repository_deleted_file_count": (
+            repository.patch.deleted_file_count if repository is not None else None
+        ),
+        "repository_added_lines": (
+            repository.patch.added_lines if repository is not None else None
+        ),
+        "repository_deleted_lines": (
+            repository.patch.deleted_lines if repository is not None else None
+        ),
+        "public_test_ids": ";".join(sorted(result.test_id for result in public_tests)),
+        "public_test_passed_ids": ";".join(
+            sorted(result.test_id for result in public_tests if result.passed)
+        ),
+        "public_test_failed_ids": ";".join(
+            sorted(result.test_id for result in public_tests if not result.passed)
+        ),
+        "public_tests_passed": sum(result.passed for result in public_tests),
+        "public_tests_total": len(public_tests),
+        "public_test_failure_count": sum(not result.passed for result in public_tests),
+        "public_tool_invocation_count": manifest.repository_public_tool_invocation_count,
+        "hidden_verifier_reached": any(
+            result.status.value != "skipped" for result in score.verifier_results
+        ),
+        "workspace_policy_status": (
+            "failed_contained"
+            if score.failure is not None and score.failure.kind == "policy"
+            else "passed"
+        ),
+        "policy_failure_category": (
+            score.failure.category
+            if score.failure is not None and score.failure.kind == "policy"
+            else None
+        ),
     }
 
 
@@ -408,6 +505,41 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
         "declared_profile_id": plan.requested_profile_id,
         "declared_profile_hash": plan.declared_profile_hash,
         "resolved_profile_hash": plan.resolved_profile_hash,
+        "repository_manifest_hash": (
+            plan.repository_task_identity.manifest_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "repository_task_bundle_hash": (
+            plan.repository_task_identity.task_bundle_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "repository_source_identity_hash": (
+            plan.repository_task_identity.source_identity_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "repository_license_file_hash": (
+            plan.repository_task_identity.license_file_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "base_repository_hash": (
+            plan.repository_task_identity.base_repository_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "repository_public_assets_hash": (
+            plan.repository_task_identity.public_assets_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
+        "repository_hidden_verifier_hash": (
+            plan.repository_task_identity.hidden_verifier_hash
+            if plan.repository_task_identity is not None
+            else None
+        ),
     }
 
 
@@ -522,6 +654,7 @@ def _csv_value(value: Any) -> str:
 __all__ = [
     "CODEX_CLI_CSV_COLUMNS",
     "CSV_COLUMNS",
+    "REPOSITORY_CSV_COLUMNS",
     "build_run_rows",
     "render_csv",
 ]

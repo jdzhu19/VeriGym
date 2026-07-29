@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import AssetRef, InteractionMode, SuiteDescriptor, TaskType
+from verigym.schemas.runtime import SessionReadOnlyMount
 
 
 class SourceSpec(StrictModel):
@@ -118,6 +119,7 @@ class ResolvedTaskAssets(StrictModel):
     visible_root: str
     hidden_roots: list[str] = Field(default_factory=list)
     hidden_assets: list[AssetRef] = Field(default_factory=list)
+    read_only_mounts: list[SessionReadOnlyMount] = Field(default_factory=list)
 
 
 # Imported after the supporting classes to avoid an import cycle in type checkers.

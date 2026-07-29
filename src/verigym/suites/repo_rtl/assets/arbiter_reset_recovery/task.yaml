@@ -1,0 +1,181 @@
+schema_version: '1.0'
+task:
+  schema_version: '1.0'
+  id: repo-rtl/arbiter-reset-recovery
+  suite: repo-rtl
+  suite_version: 0.1.0
+  task_type: repo_repair
+  title: Repair arbiter reset and recovery
+  description: Repair the visible RTL repository according to TASK.md.
+  source:
+    kind: synthetic
+    revision: 1.0.0
+    license: Apache-2.0
+    attribution: VeriGym contributors
+    content_hash: 0444f37535b21c22b1568ad3f235192d0eee59ad3c0f1abe7159375b20adc903
+  workspace:
+    base:
+      kind: directory
+      path: repository
+    editable_globs:
+    - repository/rtl/**/*.sv
+    readonly_globs:
+    - PUBLIC_TESTS.md
+    - TASK.md
+    - repository/LICENSE
+    - repository/README.md
+    excluded_globs:
+    - .git
+    - .git/**
+    - .verigym_internal
+    - .verigym_internal/**
+    - hidden
+    - hidden/**
+    entrypoints:
+    - repository/rtl/arbiter_top.sv
+    - repository/rtl/request_filter.sv
+    - repository/rtl/rr_arbiter.sv
+    max_changed_files: 1
+    max_patch_lines: 100
+  interaction:
+    supported_modes:
+    - agent
+    default_mode: agent
+    allowed_tools:
+    - file.list
+    - file.read
+    - file.write
+    - file.apply_patch
+    - file.diff
+    - repository.public_test
+    denied_tools: []
+    allow_general_shell: false
+    network_policy: none
+    initial_observation:
+      include_tree: true
+      include_readme: true
+      include_entrypoints: true
+    final_submission:
+      kind: patch
+  budget:
+    max_turns: 20
+    max_tool_calls: 40
+    max_model_calls: 1
+    max_wall_time_s: 300
+    max_tool_time_s: 60
+    max_output_bytes_per_tool: 200000
+    max_workspace_bytes: 2000000
+  verifier:
+    nodes:
+    - id: compile_hidden
+      plugin: iverilog.compile
+      depends_on: []
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        sources:
+        - repository/rtl/arbiter_top.sv
+        - repository/rtl/request_filter.sv
+        - repository/rtl/rr_arbiter.sv
+        - hidden/tb_arbiter_hidden.sv
+        top: tb_arbiter_hidden
+        output: .verigym_internal/compile_hidden/simv
+    - id: run_hidden
+      plugin: iverilog.run
+      depends_on:
+      - compile_hidden
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        executable_from: compile_hidden
+        pass_marker: VERIGYM_PASS
+        fail_marker: VERIGYM_FAIL
+  scoring:
+    correctness_required_nodes:
+    - compile_hidden
+    - run_hidden
+    ppa_enabled: false
+  metadata:
+    category: repository_arbiter
+    difficulty: medium
+issue_file: issue.md
+issue_hash: 50a1d111d7cb53a0277aaf73e2f88d513c9b514d937f5fc8e81e9f951033db51
+source:
+  schema_version: '1.0'
+  source_kind: package_resource
+  repository_hash: 0444f37535b21c22b1568ad3f235192d0eee59ad3c0f1abe7159375b20adc903
+  license: Apache-2.0
+  license_file: LICENSE
+  attribution: VeriGym contributors
+  redistributable: true
+  task_bundle_hash: 274410f5a09041cef952ca3058f66a2c2cd63e8fea0bccff1a060b4a37cdac6d
+  license_file_hash: 264135b14d84ec2211affdce022bafa50b17d8e83b32fb2e5da1ed9dcec62758
+workspace:
+  schema_version: '1.0'
+  repository_root: repository
+  editable_globs:
+  - repository/rtl/**/*.sv
+  read_only_globs:
+  - PUBLIC_TESTS.md
+  - TASK.md
+  - repository/LICENSE
+  - repository/README.md
+  runtime_generated_globs:
+  - .verigym_internal/**
+  forbidden_globs:
+  - .git
+  - .git/**
+  max_changed_files: 1
+  max_patch_lines: 100
+  max_candidate_bytes: 2000000
+  max_file_bytes: 1000000
+  allow_file_addition: false
+  allow_file_deletion: false
+  allow_file_rename: false
+  allow_mode_change: false
+  allow_binary_files: false
+  case_sensitive_paths: true
+public_tests:
+  schema_version: '1.0'
+  protocol: verigym_public_test_v1
+  contract_file: test-contract.json
+  mount_destination: /verigym-public
+  public_assets_hash: 1399eb4be075f88e3aeea72897daf5c3ac96abddfac7fc6df8e5e0e9661a4eef
+  asset_files:
+    assets/tb_arbiter_public.sv: 7388125c2c84ac76ea96d6d4cfaf46ba87a7033e792067e46d2b142ce68d354a
+  max_feedback_bytes: 65536
+  max_build_bytes: 33554432
+  tests:
+  - id: arbiter-reset-public
+    title: Reset masking, recovery priority, and alternation
+    commands:
+    - argv:
+      - iverilog
+      - -g2012
+      - -s
+      - tb_arbiter_public
+      - -o
+      - '{build}/simv'
+      - '{repository}/rtl/arbiter_top.sv'
+      - '{repository}/rtl/request_filter.sv'
+      - '{repository}/rtl/rr_arbiter.sv'
+      - '{public}/assets/tb_arbiter_public.sv'
+      cwd: repository
+      timeout_s: 30
+      expected_exit_code: 0
+    - argv:
+      - vvp
+      - '{build}/simv'
+      cwd: build
+      timeout_s: 30
+      expected_exit_code: 0
+verification:
+  schema_version: '1.0'
+  hidden_verifier_hash: a4df5fc7dfa8fc7566667b29b774e6581afe8c8bccaeacc49bfd773369f356dd
+  verifier_image_profile: iverilog12_network_none
+  reference_candidate_hash: 6981b8424cb2b1aba73e243e27ac277df11f94a503d04e74b6b454195a89a0b4
+  reference_patch_hash: ba8e20859e118bde25d8363e412203dc9ba6475e38f168990c2f944565bb93e1

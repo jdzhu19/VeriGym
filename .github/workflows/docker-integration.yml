@@ -59,12 +59,17 @@ jobs:
           scripts/build_codex_agent_image.sh \
             "$codex_native" \
             verigym/codex-exec-server:0.144.6
+          scripts/build_codex_repository_agent_image.sh \
+            "$codex_native" \
+            verigym/rtl-iverilog:12.0 \
+            verigym/codex-repository-agent:0.144.6
 
       - name: Run opt-in Docker integration tests
         env:
           VERIGYM_RUN_DOCKER_TESTS: "1"
           VERIGYM_DOCKER_IMAGE: verigym/rtl-iverilog:12.0
           VERIGYM_CODEX_AGENT_IMAGE: verigym/codex-exec-server:0.144.6
+          VERIGYM_CODEX_REPOSITORY_AGENT_IMAGE: verigym/codex-repository-agent:0.144.6
           VERIGYM_CODEX_BINARY: /tmp/verigym-codex-01446/node_modules/.bin/codex
         run: pytest -m docker
 

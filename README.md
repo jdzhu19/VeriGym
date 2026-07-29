@@ -70,6 +70,24 @@ candidates. See [experiment configuration](docs/experiments.md), the
 Planning is capped by `execution.max_plan_items` (default 10,000; hard maximum 100,000) and fails
 before creating an experiment directory or invoking a model when expansion exceeds the cap.
 
+## Repository-level RTL repair
+
+The first-party `repo-rtl` suite exercises frozen multi-file repository repair with three
+Apache-2.0 synthetic tasks. Public feedback is available only through the hash-bound
+`verigym-public-test` launcher; hidden tests remain in a separate verifier session. Candidate
+repositories are frozen as deterministic unified patches and independently reapplied before
+hidden verification.
+
+Run the zero-model scripted acceptance matrix through the ordinary planner and batch runner:
+
+```bash
+verigym batch --config examples/experiments/repo-rtl-scripted.yaml --dry-run
+verigym batch --config examples/experiments/repo-rtl-scripted.yaml
+```
+
+See [repository-level RTL repair](docs/repository_rtl_repair.md) for task bundles, path policy,
+Docker role separation, candidate artifacts, and replay semantics.
+
 ## Run the toy RTL task
 
 The original deterministic scripted AgentEval remains available:
@@ -321,9 +339,10 @@ Only the environment-variable name is configured; its value and authorization he
 excluded from manifests, traces, logs, and configuration fingerprints. Credential-bearing
 URLs are rejected. See [Milestone 5 model and agent details](docs/milestone5-models-and-agents.md).
 
-This repository implements Milestone 9 on top of the preserved Milestones 0–8 behavior. The
-reference images and Docker profiles are Linux-first. Quality reporting remains only
-profile-relative educational synthesis area—not full PPA or signoff. Broader benchmark adapters,
-OpenROAD, timing, power, formal expansion, commercial execution, distributed scheduling, remote
-runtimes, external agent frameworks, trajectory export, RL, and evolving releases remain out of
-scope.
+Milestone 10A adds the bounded repository-level RTL repair environment on top
+of the preserved Milestones 0–9 contracts. The reference images and Docker
+profiles are Linux-first. Quality reporting remains only profile-relative
+educational synthesis area—not full PPA or signoff. External repository
+benchmarks, OpenROAD, timing, power, formal expansion, commercial execution,
+distributed scheduling, trajectory export, RL, and evolving releases remain
+out of scope.

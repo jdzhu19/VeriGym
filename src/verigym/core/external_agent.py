@@ -19,6 +19,7 @@ from verigym.schemas.external_agent import (
     ExternalAgentCallIdentity,
     ExternalProcessRequest,
     ExternalProcessResult,
+    ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.options import JsonValue
 
@@ -80,6 +81,10 @@ class RuntimeExternalAgentBridge:
     @property
     def logical_workspace_root(self) -> str:
         return self._session.logical_workspace_root
+
+    @property
+    def read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]:
+        return [item.model_copy(deep=True) for item in self._session.external_read_only_mounts]
 
     def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
         return self._session.execute_external_process(request)

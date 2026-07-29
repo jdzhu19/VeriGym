@@ -1,0 +1,22 @@
+--- a/rtl/pipeline_stage.sv
++++ b/rtl/pipeline_stage.sv
+@@ -12,7 +12,7 @@
+     logic       valid_q;
+     logic [7:0] data_q;
+ 
+-    assign in_ready = ~valid_q;
++    assign in_ready = ~valid_q | out_ready;
+     assign out_valid = valid_q;
+     assign out_data = data_q;
+ 
+--- a/rtl/pipeline_top.sv
++++ b/rtl/pipeline_top.sv
+@@ -20,7 +20,7 @@
+         .in_ready(in_ready),
+         .in_data(in_data),
+         .out_valid(middle_valid),
+-        .out_ready(out_ready),
++        .out_ready(middle_ready),
+         .out_data(middle_data)
+     );
+ 

@@ -43,6 +43,7 @@ _VISIBLE_COMMANDS = {
     "tail",
     "true",
     "vvp",
+    "verigym-public-test",
     "wc",
     "zsh",
 }
@@ -477,11 +478,15 @@ def _validate_executable(token: str) -> str:
     if any(part == ".." for part in normalized.parts):
         raise CodexPolicyError("external executable contains parent-path traversal")
     name = normalized.name
-    if "/" in token and normalized not in {
-        PurePosixPath("/bin") / name,
-        PurePosixPath("/usr/bin") / name,
-    }:
-        raise CodexPolicyError("external executable path is outside the system allowlist")
+    if "/" in token:
+        allowed = {
+            PurePosixPath("/bin") / name,
+            PurePosixPath("/usr/bin") / name,
+        }
+        if name == "verigym-public-test":
+            allowed.add(PurePosixPath("/usr/local/bin/verigym-public-test"))
+        if normalized not in allowed:
+            raise CodexPolicyError("external executable path is outside the system allowlist")
     return name
 
 
@@ -494,6 +499,16 @@ def _validate_command_operands(
 ) -> None:
     if name == "printf":
         return
+    if name == "verigym-public-test":
+        if operands == ["list"]:
+            return
+        if (
+            len(operands) == 2
+            and operands[0] == "run"
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", operands[1])
+        ):
+            return
+        raise CodexPolicyError("public-test command must be exactly list or run <safe-test-id>")
     if any(_OPAQUE_LINE_BREAK in operand for operand in operands):
         raise CodexPolicyError("external command contains a non-printf multiline operand")
     if name == "sed":

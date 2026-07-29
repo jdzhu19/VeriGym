@@ -1374,6 +1374,17 @@
           "default": null,
           "title": "Release Id"
         },
+        "repository_task_identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RepositoryPlanIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "requested_profile_id": {
           "anyOf": [
             {
@@ -1636,6 +1647,81 @@
         "configuration_fingerprint"
       ],
       "title": "PromptPolicyDescriptor",
+      "type": "object"
+    },
+    "RepositoryPlanIdentity": {
+      "additionalProperties": false,
+      "description": "Credential-free repository task identity persisted in plans and runs.",
+      "properties": {
+        "base_repository_hash": {
+          "title": "Base Repository Hash",
+          "type": "string"
+        },
+        "hidden_verifier_hash": {
+          "title": "Hidden Verifier Hash",
+          "type": "string"
+        },
+        "issue_hash": {
+          "title": "Issue Hash",
+          "type": "string"
+        },
+        "license_file_hash": {
+          "title": "License File Hash",
+          "type": "string"
+        },
+        "manifest_hash": {
+          "title": "Manifest Hash",
+          "type": "string"
+        },
+        "public_assets_hash": {
+          "title": "Public Assets Hash",
+          "type": "string"
+        },
+        "public_mount_hash": {
+          "title": "Public Mount Hash",
+          "type": "string"
+        },
+        "reference_candidate_hash": {
+          "title": "Reference Candidate Hash",
+          "type": "string"
+        },
+        "reference_patch_hash": {
+          "title": "Reference Patch Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_identity_hash": {
+          "title": "Source Identity Hash",
+          "type": "string"
+        },
+        "task_bundle_hash": {
+          "title": "Task Bundle Hash",
+          "type": "string"
+        },
+        "workspace_contract_hash": {
+          "title": "Workspace Contract Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "manifest_hash",
+        "task_bundle_hash",
+        "source_identity_hash",
+        "license_file_hash",
+        "base_repository_hash",
+        "issue_hash",
+        "workspace_contract_hash",
+        "public_assets_hash",
+        "public_mount_hash",
+        "hidden_verifier_hash",
+        "reference_candidate_hash",
+        "reference_patch_hash"
+      ],
+      "title": "RepositoryPlanIdentity",
       "type": "object"
     },
     "ResolvedArtifactIdentity": {

@@ -10,6 +10,7 @@ from typing import Any
 from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
+from verigym.core.repository_candidate import repository_plan_identity
 from verigym.experiments.identity import (
     correctness_definition_hash,
     derive_child_seed,
@@ -460,6 +461,7 @@ class ExperimentPlanner:
             )
             verifier_hash = content_hash(task.verifier)
             correctness_hash = correctness_definition_hash(task)
+            repository_identity = repository_plan_identity(task)
             tool_policy = self._tool_policy(task, config.runs.mode)
             prompt = None
             for system in systems:
@@ -545,28 +547,30 @@ class ExperimentPlanner:
                             "reference_candidate_hash": (
                                 resolved.reference_candidate_hash if resolved is not None else None
                             ),
+                            "repository_task_identity": repository_identity,
                             "evaluation_contract_hash": "0" * 64,
                         }
-                        contract = content_hash(
-                            {
-                                "task_hash": task_hash,
-                                "source_identity_hash": task_source_identity,
-                                "system": system_identity,
-                                "prompt_policy": prompt,
-                                "tool_policy": tool_policy,
-                                "base_seed": base_seed,
-                                "sample_index": sample_index,
-                                "child_seed": child_seed,
-                                "runtime_identity_hash": runtime_hash,
-                                "verifier_hash": verifier_hash,
-                                "correctness_definition_hash": correctness_hash,
-                                "budget": task.budget,
-                                "generation": generation,
-                                "toolchain_profiles": [profile_ref],
-                                "declared_profile_hash": raw["declared_profile_hash"],
-                                "resolved_profile_hash": raw["resolved_profile_hash"],
-                            }
-                        )
+                        contract_payload: dict[str, Any] = {
+                            "task_hash": task_hash,
+                            "source_identity_hash": task_source_identity,
+                            "system": system_identity,
+                            "prompt_policy": prompt,
+                            "tool_policy": tool_policy,
+                            "base_seed": base_seed,
+                            "sample_index": sample_index,
+                            "child_seed": child_seed,
+                            "runtime_identity_hash": runtime_hash,
+                            "verifier_hash": verifier_hash,
+                            "correctness_definition_hash": correctness_hash,
+                            "budget": task.budget,
+                            "generation": generation,
+                            "toolchain_profiles": [profile_ref],
+                            "declared_profile_hash": raw["declared_profile_hash"],
+                            "resolved_profile_hash": raw["resolved_profile_hash"],
+                        }
+                        if repository_identity is not None:
+                            contract_payload["repository_task_identity"] = repository_identity
+                        contract = content_hash(contract_payload)
                         raw["evaluation_contract_hash"] = contract
                         raw["plan_item_id"] = content_hash(plan_item_identity_payload(raw))
                         items.append(PlanItem.model_validate(raw))

@@ -42,6 +42,7 @@ def execute_runtime_process(
         raise ValueError("runtime-owned execution requires reasoning effort xhigh")
     if settings.resolved_auth_mode != "inherited_codex_login":
         raise ValueError("Docker runtime execution requires inherited Codex login")
+    read_only_mounts = list(getattr(bridge, "read_only_mounts", []))
     request = ExternalProcessRequest(
         protocol="codex_app_server_remote_environment_v1",
         runtime_role="agent",
@@ -50,8 +51,11 @@ def execute_runtime_process(
         stdin_text=prompt,
         stdin_transport="runtime_protocol_adapter",
         network_policy="none",
-        mount_policy="task_workspace_only",
+        mount_policy=(
+            "task_workspace_and_public_tests" if read_only_mounts else "task_workspace_only"
+        ),
         writable_destinations=["/workspace", "/tmp"],
+        read_only_mounts=read_only_mounts,
         container_environment_names=[],
         integration_track=cast(
             Literal[

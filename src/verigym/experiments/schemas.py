@@ -22,6 +22,7 @@ from verigym.schemas.model import GenerationParameters, ModelRunConfig
 from verigym.schemas.options import JsonValue, validate_plugin_options
 from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.provenance import BuildProvenance
+from verigym.schemas.repository import RepositoryPlanIdentity
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import BudgetSpec
@@ -342,6 +343,7 @@ class PlanItem(StrictModel):
     resolved_profile_hash: str | None = None
     resolved_profile: ResolvedToolchainProfile | None = None
     reference_candidate_hash: str | None = None
+    repository_task_identity: RepositoryPlanIdentity | None = None
     evaluation_contract_hash: str
 
     @field_validator(

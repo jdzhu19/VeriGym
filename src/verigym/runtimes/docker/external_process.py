@@ -17,14 +17,14 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
-from verigym.core.hashing import content_hash
+from verigym.core.hashing import content_hash, hash_directory
 from verigym.runtimes.docker.control_plane_environment import (
     ControlPlaneEnvironmentError,
     build_trusted_host_app_server_environment,
 )
 from verigym.runtimes.docker.engine import DockerEngine
 from verigym.runtimes.docker.errors import DockerContainerError, DockerRuntimeError
-from verigym.runtimes.docker.mounts import mount_arguments, workspace_mount
+from verigym.runtimes.docker.mounts import MountSpec, mount_arguments
 from verigym.runtimes.docker.resources import resource_arguments
 from verigym.runtimes.docker.security import security_arguments, verify_effective_container
 from verigym.runtimes.docker.stdio_broker import LoopbackWebSocketStdioBroker
@@ -34,6 +34,7 @@ from verigym.schemas.external_agent import (
     ExternalProcessResult,
     ExternalProcessRuntimeIdentity,
     ExternalProcessSecurityEvidence,
+    ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.runtime import (
     DockerExternalAgentRuntimeConfig,
@@ -41,7 +42,7 @@ from verigym.schemas.runtime import (
 )
 
 _CONTAINER_ENVIRONMENT = {
-    "PATH": "/usr/local/bin:/usr/bin:/bin",
+    "PATH": "/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
     "HOME": "/tmp/verigym-home",
     "CODEX_HOME": "/tmp/verigym-codex-home",
     "LANG": "C.UTF-8",
@@ -135,9 +136,17 @@ class DockerExternalProcessExecutor:
         self,
         request: ExternalProcessRequest,
         visible_workspace: Path,
+        mounts: list[MountSpec] | None = None,
     ) -> ExternalProcessResult:
         started = time.monotonic()
-        self._validate_request(request)
+        mounts = mounts or [
+            MountSpec(
+                source=visible_workspace.resolve(strict=True),
+                destination="/workspace",
+                read_only=False,
+            )
+        ]
+        self._validate_request(request, mounts)
         if request.workspace_mode == "fresh_empty":
             temporary = tempfile.TemporaryDirectory(prefix="verigym-docker-agent-empty-")
             workspace = Path(temporary.name).resolve()
@@ -188,8 +197,18 @@ class DockerExternalProcessExecutor:
             float(self._agent_config.max_process_time_s),
         )
         try:
-            mounts = [workspace_mount(workspace)]
-            effective_config = _as_runtime_config(self._agent_config)
+            if request.workspace_mode == "fresh_empty":
+                mounts = [
+                    MountSpec(
+                        source=workspace,
+                        destination=mount.destination,
+                        read_only=mount.read_only,
+                    )
+                    if mount.destination == "/workspace"
+                    else mount
+                    for mount in mounts
+                ]
+            effective_config = external_agent_runtime_config(self._agent_config)
             user = self._agent_image.effective_user
             if user is None:
                 raise DockerContainerError(
@@ -417,6 +436,7 @@ class DockerExternalProcessExecutor:
                     "model": request.requested_model_id,
                     "reasoning_effort": request.requested_reasoning_effort,
                     "auth_semantic_id": request.auth_semantic_id,
+                    "read_only_mounts": request.read_only_mounts,
                     "proxy_names": request.forwarded_proxy_environment_names,
                     "synthesized_control_plane_environment_names": (
                         control_plane_synthesized_environment_names
@@ -439,8 +459,19 @@ class DockerExternalProcessExecutor:
             init=True,
             private_pid_namespace=True,
             private_ipc_namespace=True,
-            mount_destinations=["/workspace"],
+            mount_destinations=cast(
+                list[Literal["/verigym-public", "/workspace"]],
+                [mount.destination for mount in mounts],
+            ),
             writable_destinations=["/workspace", "/tmp"],
+            read_only_destinations=[
+                cast(Literal["/verigym-public"], mount.destination)
+                for mount in mounts
+                if mount.read_only
+            ],
+            public_test_assets_mounted_read_only=any(
+                mount.destination == "/verigym-public" and mount.read_only for mount in mounts
+            ),
             environment_names=sorted(_CONTAINER_ENVIRONMENT),
             credential_environment_names_in_container=[],
             proxy_environment_names_in_container=[],
@@ -516,7 +547,11 @@ class DockerExternalProcessExecutor:
             security=security,
         )
 
-    def _validate_request(self, request: ExternalProcessRequest) -> None:
+    def _validate_request(
+        self,
+        request: ExternalProcessRequest,
+        mounts: list[MountSpec],
+    ) -> None:
         if request.protocol != self._agent_config.protocol:
             raise ValueError("external process protocol differs from the runtime configuration")
         if request.argv != self._agent_config.process_argv:
@@ -525,8 +560,27 @@ class DockerExternalProcessExecutor:
             raise ValueError("external process logical workspace root differs from the runtime")
         if request.logical_cwd != self._agent_config.logical_workspace_root:
             raise ValueError("external process logical cwd differs from the runtime")
-        if request.network_policy != "none" or request.mount_policy != "task_workspace_only":
+        expected_mount_policy = (
+            "task_workspace_and_public_tests" if request.read_only_mounts else "task_workspace_only"
+        )
+        if request.network_policy != "none" or request.mount_policy != expected_mount_policy:
             raise ValueError("external process weakened the Docker network or mount policy")
+        observed_read_only = [
+            ExternalReadOnlyMountIdentity(
+                destination=cast(Literal["/verigym-public"], mount.destination),
+                content_hash=hash_directory(mount.source),
+                label="public_tests",
+            )
+            for mount in mounts
+            if mount.read_only
+        ]
+        if observed_read_only != request.read_only_mounts:
+            raise ValueError("external process read-only mount identity changed")
+        workspace_mounts = [
+            mount for mount in mounts if mount.destination == "/workspace" and not mount.read_only
+        ]
+        if len(workspace_mounts) != 1 or len(mounts) != 1 + len(observed_read_only):
+            raise ValueError("external process mount plan contains an undeclared destination")
         if request.container_environment_names:
             raise ValueError("external process cannot select agent-container environment names")
         if request.timeout_s > float(self._agent_config.max_process_time_s):
@@ -1061,7 +1115,9 @@ def _verify_agent_inspection(payload: dict[str, Any]) -> None:
         )
 
 
-def _as_runtime_config(config: DockerExternalAgentRuntimeConfig) -> DockerRuntimeConfig:
+def external_agent_runtime_config(
+    config: DockerExternalAgentRuntimeConfig,
+) -> DockerRuntimeConfig:
     return DockerRuntimeConfig(
         image=config.image,
         expected_image_id=config.expected_image_id,

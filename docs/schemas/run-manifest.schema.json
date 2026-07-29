@@ -1081,6 +1081,386 @@
       "title": "PromptPolicyDescriptor",
       "type": "object"
     },
+    "RepositoryCandidateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/RepositorySnapshot"
+        },
+        "candidate": {
+          "$ref": "#/$defs/RepositorySnapshot"
+        },
+        "hidden_assets_present": {
+          "const": false,
+          "title": "Hidden Assets Present",
+          "type": "boolean"
+        },
+        "patch": {
+          "$ref": "#/$defs/RepositoryPatchSummary"
+        },
+        "public_test_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Public Test Ids",
+          "type": "array"
+        },
+        "reference_patch_used": {
+          "const": false,
+          "title": "Reference Patch Used",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "base",
+        "candidate",
+        "patch",
+        "public_test_ids",
+        "hidden_assets_present",
+        "reference_patch_used"
+      ],
+      "title": "RepositoryCandidateRecord",
+      "type": "object"
+    },
+    "RepositoryFileIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "RepositoryFileIdentity",
+      "type": "object"
+    },
+    "RepositoryPatchSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "added_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Added Files",
+          "type": "array"
+        },
+        "added_lines": {
+          "minimum": 0,
+          "title": "Added Lines",
+          "type": "integer"
+        },
+        "base_repository_hash": {
+          "title": "Base Repository Hash",
+          "type": "string"
+        },
+        "binary_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Binary Files",
+          "type": "array"
+        },
+        "candidate_repository_hash": {
+          "title": "Candidate Repository Hash",
+          "type": "string"
+        },
+        "changed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changed Files",
+          "type": "array"
+        },
+        "created_file_count": {
+          "minimum": 0,
+          "title": "Created File Count",
+          "type": "integer"
+        },
+        "deleted_file_count": {
+          "minimum": 0,
+          "title": "Deleted File Count",
+          "type": "integer"
+        },
+        "deleted_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deleted Files",
+          "type": "array"
+        },
+        "deleted_lines": {
+          "minimum": 0,
+          "title": "Deleted Lines",
+          "type": "integer"
+        },
+        "mode_changed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mode Changed Files",
+          "type": "array"
+        },
+        "patch_hash": {
+          "title": "Patch Hash",
+          "type": "string"
+        },
+        "policy_status": {
+          "const": "passed",
+          "title": "Policy Status",
+          "type": "string"
+        },
+        "reapplied_repository_hash": {
+          "title": "Reapplied Repository Hash",
+          "type": "string"
+        },
+        "reapply_exact": {
+          "const": true,
+          "title": "Reapply Exact",
+          "type": "boolean"
+        },
+        "renamed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Renamed Files",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "patch_hash",
+        "base_repository_hash",
+        "candidate_repository_hash",
+        "reapplied_repository_hash",
+        "reapply_exact",
+        "changed_files",
+        "created_file_count",
+        "deleted_file_count",
+        "added_lines",
+        "deleted_lines",
+        "policy_status"
+      ],
+      "title": "RepositoryPatchSummary",
+      "type": "object"
+    },
+    "RepositoryPlanIdentity": {
+      "additionalProperties": false,
+      "description": "Credential-free repository task identity persisted in plans and runs.",
+      "properties": {
+        "base_repository_hash": {
+          "title": "Base Repository Hash",
+          "type": "string"
+        },
+        "hidden_verifier_hash": {
+          "title": "Hidden Verifier Hash",
+          "type": "string"
+        },
+        "issue_hash": {
+          "title": "Issue Hash",
+          "type": "string"
+        },
+        "license_file_hash": {
+          "title": "License File Hash",
+          "type": "string"
+        },
+        "manifest_hash": {
+          "title": "Manifest Hash",
+          "type": "string"
+        },
+        "public_assets_hash": {
+          "title": "Public Assets Hash",
+          "type": "string"
+        },
+        "public_mount_hash": {
+          "title": "Public Mount Hash",
+          "type": "string"
+        },
+        "reference_candidate_hash": {
+          "title": "Reference Candidate Hash",
+          "type": "string"
+        },
+        "reference_patch_hash": {
+          "title": "Reference Patch Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_identity_hash": {
+          "title": "Source Identity Hash",
+          "type": "string"
+        },
+        "task_bundle_hash": {
+          "title": "Task Bundle Hash",
+          "type": "string"
+        },
+        "workspace_contract_hash": {
+          "title": "Workspace Contract Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "manifest_hash",
+        "task_bundle_hash",
+        "source_identity_hash",
+        "license_file_hash",
+        "base_repository_hash",
+        "issue_hash",
+        "workspace_contract_hash",
+        "public_assets_hash",
+        "public_mount_hash",
+        "hidden_verifier_hash",
+        "reference_candidate_hash",
+        "reference_patch_hash"
+      ],
+      "title": "RepositoryPlanIdentity",
+      "type": "object"
+    },
+    "RepositoryPublicTestOutcome": {
+      "additionalProperties": false,
+      "description": "Bounded result from the trusted public-test launcher.",
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "duration_s": {
+          "minimum": 0.0,
+          "title": "Duration S",
+          "type": "number"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "launcher_protocol": {
+          "const": "verigym_public_test_v1",
+          "title": "Launcher Protocol",
+          "type": "string"
+        },
+        "network_policy": {
+          "enum": [
+            "none",
+            "host_local_trusted"
+          ],
+          "title": "Network Policy",
+          "type": "string"
+        },
+        "output_truncated": {
+          "title": "Output Truncated",
+          "type": "boolean"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "public_assets_read_only": {
+          "title": "Public Assets Read Only",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "stderr_sha256": {
+          "title": "Stderr Sha256",
+          "type": "string"
+        },
+        "stdout_sha256": {
+          "title": "Stdout Sha256",
+          "type": "string"
+        },
+        "test_id": {
+          "title": "Test Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "test_id",
+        "passed",
+        "category",
+        "duration_s",
+        "output_truncated",
+        "stdout_sha256",
+        "stderr_sha256",
+        "launcher_protocol",
+        "public_assets_read_only",
+        "network_policy"
+      ],
+      "title": "RepositoryPublicTestOutcome",
+      "type": "object"
+    },
+    "RepositorySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/RepositoryFileIdentity"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "repository_hash": {
+          "title": "Repository Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "total_bytes": {
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "repository_hash",
+        "total_bytes",
+        "files"
+      ],
+      "title": "RepositorySnapshot",
+      "type": "object"
+    },
     "ResolvedArtifactIdentity": {
       "additionalProperties": false,
       "properties": {
@@ -2617,6 +2997,41 @@
       ],
       "default": null,
       "title": "Release Id"
+    },
+    "repository_candidate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepositoryCandidateRecord"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "repository_public_tests": {
+      "items": {
+        "$ref": "#/$defs/RepositoryPublicTestOutcome"
+      },
+      "title": "Repository Public Tests",
+      "type": "array"
+    },
+    "repository_public_tool_invocation_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Repository Public Tool Invocation Count",
+      "type": "integer"
+    },
+    "repository_task_identity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepositoryPlanIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "requested_toolchain_profile_id": {
       "anyOf": [

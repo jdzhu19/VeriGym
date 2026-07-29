@@ -71,6 +71,7 @@ class VeriGymEnv:
                 source_dir=self.assets.visible_root,
                 label="agent",
                 max_output_bytes=self.task.budget.max_output_bytes_per_tool,
+                read_only_mounts=self.assets.read_only_mounts,
             )
         )
         self.tracker = BudgetTracker(self.task.budget)

@@ -369,8 +369,9 @@ class DockerRuntime(Runtime):
             raise RuntimeError("Docker image identity is unavailable")
         if self._run_id is None:
             raise RuntimeError("Docker run identity is unavailable")
+        health_timeout_s = min(60, max(10, self._require_config().max_command_time_s))
         probe_config = self._require_config().model_copy(
-            update={"max_command_time_s": max(10, self._require_config().max_command_time_s)}
+            update={"max_command_time_s": health_timeout_s}
         )
         with tempfile.TemporaryDirectory(prefix="verigym-docker-probe-") as temporary:
             session = DockerRuntimeSession(
@@ -387,10 +388,18 @@ class DockerRuntime(Runtime):
             )
             self._sessions.append(session)
             try:
-                uid_result = session.execute(CommandSpec(argv=["id", "-u"], timeout_s=10))
-                gid_result = session.execute(CommandSpec(argv=["id", "-g"], timeout_s=10))
-                compiler = session.execute(CommandSpec(argv=["iverilog", "-V"], timeout_s=10))
-                runner = session.execute(CommandSpec(argv=["vvp", "-V"], timeout_s=10))
+                uid_result = session.execute(
+                    CommandSpec(argv=["id", "-u"], timeout_s=health_timeout_s)
+                )
+                gid_result = session.execute(
+                    CommandSpec(argv=["id", "-g"], timeout_s=health_timeout_s)
+                )
+                compiler = session.execute(
+                    CommandSpec(argv=["iverilog", "-V"], timeout_s=health_timeout_s)
+                )
+                runner = session.execute(
+                    CommandSpec(argv=["vvp", "-V"], timeout_s=health_timeout_s)
+                )
                 for name, result in (
                     ("id -u", uid_result),
                     ("id -g", gid_result),
@@ -452,8 +461,9 @@ class DockerRuntime(Runtime):
         external = self._require_config().external_agent
         if external is None:
             raise RuntimeError("Docker external-agent configuration is unavailable")
+        health_timeout_s = min(60, max(10, external.max_process_time_s))
         probe_config = _external_agent_as_runtime_config(external).model_copy(
-            update={"max_command_time_s": 10}
+            update={"max_command_time_s": health_timeout_s}
         )
         with tempfile.TemporaryDirectory(prefix="verigym-docker-agent-probe-") as temporary:
             session = DockerRuntimeSession(
@@ -470,12 +480,16 @@ class DockerRuntime(Runtime):
             )
             self._sessions.append(session)
             try:
-                uid_result = session.execute(CommandSpec(argv=["id", "-u"], timeout_s=10))
-                gid_result = session.execute(CommandSpec(argv=["id", "-g"], timeout_s=10))
+                uid_result = session.execute(
+                    CommandSpec(argv=["id", "-u"], timeout_s=health_timeout_s)
+                )
+                gid_result = session.execute(
+                    CommandSpec(argv=["id", "-g"], timeout_s=health_timeout_s)
+                )
                 version = session.execute(
                     CommandSpec(
                         argv=[external.expected_executable_name, "--version"],
-                        timeout_s=10,
+                        timeout_s=health_timeout_s,
                     )
                 )
                 binary_hash = session.execute(
@@ -484,15 +498,58 @@ class DockerRuntime(Runtime):
                             "sha256sum",
                             f"../{external.expected_executable_path.lstrip('/')}",
                         ],
-                        timeout_s=10,
+                        timeout_s=health_timeout_s,
                     )
                 )
-                for name, result in (
+                repository_agent = (
+                    external.required_image_labels.get("org.verigym.runtime.role")
+                    == "repository-agent"
+                )
+                iverilog_result = (
+                    session.execute(
+                        CommandSpec(argv=["iverilog", "-V"], timeout_s=health_timeout_s)
+                    )
+                    if repository_agent
+                    else None
+                )
+                vvp_result = (
+                    session.execute(CommandSpec(argv=["vvp", "-V"], timeout_s=health_timeout_s))
+                    if repository_agent
+                    else None
+                )
+                launcher_hash = (
+                    session.execute(
+                        CommandSpec(
+                            argv=[
+                                "sha256sum",
+                                "../usr/local/bin/verigym-public-test",
+                            ],
+                            timeout_s=health_timeout_s,
+                        )
+                    )
+                    if repository_agent
+                    else None
+                )
+                health_results = [
                     ("id -u", uid_result),
                     ("id -g", gid_result),
                     (f"{external.expected_executable_name} --version", version),
                     ("external-agent executable SHA-256", binary_hash),
-                ):
+                ]
+                if repository_agent:
+                    assert (
+                        iverilog_result is not None
+                        and vvp_result is not None
+                        and launcher_hash is not None
+                    )
+                    health_results.extend(
+                        [
+                            ("repository-agent iverilog -V", iverilog_result),
+                            ("repository-agent vvp -V", vvp_result),
+                            ("public-test launcher SHA-256", launcher_hash),
+                        ]
+                    )
+                for name, result in health_results:
                     if (
                         result.error
                         or result.timed_out
@@ -503,6 +560,15 @@ class DockerRuntime(Runtime):
                         raise DockerImageError(
                             f"Docker external-agent image health command failed: {name}",
                             subreason="agent_image_health_failed",
+                            details={
+                                "command": name,
+                                "failure_reason": result.failure_reason,
+                                "failure_origin": result.failure_origin,
+                                "timed_out": result.timed_out,
+                                "oom_killed": result.oom_killed,
+                                "output_truncated": result.output_truncated,
+                                "exit_code": result.exit_code,
+                            },
                         )
                 uid = int(uid_result.stdout.strip())
                 gid = int(gid_result.stdout.strip())
@@ -529,11 +595,45 @@ class DockerRuntime(Runtime):
                         "Docker external-agent image lacks required immutable identity labels",
                         subreason="agent_image_labels_invalid",
                     )
+                iverilog_output = (
+                    _extract_version(iverilog_result.stdout + "\n" + iverilog_result.stderr)
+                    if iverilog_result is not None
+                    else None
+                )
+                vvp_output = (
+                    _extract_version(vvp_result.stdout + "\n" + vvp_result.stderr)
+                    if vvp_result is not None
+                    else None
+                )
+                if repository_agent:
+                    assert launcher_hash is not None
+                    expected_launcher_hash = external.required_image_labels.get(
+                        "org.verigym.public_test_launcher.sha256"
+                    )
+                    observed_launcher_hash = launcher_hash.stdout.partition(" ")[0].strip()
+                    if (
+                        expected_launcher_hash is None
+                        or observed_launcher_hash != expected_launcher_hash
+                        or iverilog_output is None
+                        or "version 12." not in iverilog_output
+                        or vvp_output is None
+                        or "version 12." not in vvp_output
+                    ):
+                        raise DockerImageError(
+                            "Docker repository-agent tool identity is invalid",
+                            subreason="repository_agent_tool_identity_invalid",
+                        )
                 self._agent_image = self._agent_image.model_copy(
                     update={
                         "observed_uid": uid,
                         "observed_gid": gid,
-                        "compatibility_status": version_output,
+                        "iverilog_version": iverilog_output,
+                        "vvp_version": vvp_output,
+                        "compatibility_status": (
+                            "codex_cli_0.144.6_iverilog12_repository_agent"
+                            if repository_agent
+                            else version_output
+                        ),
                     }
                 )
             finally:

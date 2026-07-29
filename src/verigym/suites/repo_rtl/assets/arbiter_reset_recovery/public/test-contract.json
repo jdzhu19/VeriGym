@@ -1,0 +1,46 @@
+{
+  "asset_files": {
+    "assets/tb_arbiter_public.sv": "7388125c2c84ac76ea96d6d4cfaf46ba87a7033e792067e46d2b142ce68d354a"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "1399eb4be075f88e3aeea72897daf5c3ac96abddfac7fc6df8e5e0e9661a4eef",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_arbiter_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/arbiter_top.sv",
+            "{repository}/rtl/request_filter.sv",
+            "{repository}/rtl/rr_arbiter.sv",
+            "{public}/assets/tb_arbiter_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "arbiter-reset-public",
+      "title": "Reset masking, recovery priority, and alternation"
+    }
+  ]
+}

@@ -24,6 +24,21 @@ _CONTAINER_PROXY_ENVIRONMENT_NAMES = {
 }
 
 
+class ExternalReadOnlyMountIdentity(StrictModel):
+    """Content identity for a runtime-staged agent-container read-only mount."""
+
+    destination: Literal["/verigym-public"]
+    content_hash: str
+    label: Literal["public_tests"]
+
+    @field_validator("content_hash")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("external read-only mount hash must be lowercase SHA-256")
+        return value
+
+
 class ExternalProcessRequest(StrictModel):
     """In-memory, runtime-owned request for one external agent process."""
 
@@ -35,8 +50,12 @@ class ExternalProcessRequest(StrictModel):
     stdin_text: str = Field(min_length=1, max_length=2 * 1024 * 1024)
     stdin_transport: Literal["runtime_protocol_adapter"] = "runtime_protocol_adapter"
     network_policy: Literal["none"] = "none"
-    mount_policy: Literal["task_workspace_only"] = "task_workspace_only"
+    mount_policy: Literal[
+        "task_workspace_only",
+        "task_workspace_and_public_tests",
+    ] = "task_workspace_only"
     writable_destinations: list[Literal["/workspace", "/tmp"]]
+    read_only_mounts: list[ExternalReadOnlyMountIdentity] = Field(default_factory=list)
     container_environment_names: list[str] = Field(default_factory=list)
     integration_track: str = Field(min_length=1, max_length=128)
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"]
@@ -113,6 +132,15 @@ class ExternalProcessRequest(StrictModel):
             )
         if self.writable_destinations != ["/workspace", "/tmp"]:
             raise ValueError("Docker external processes have exactly two writable destinations")
+        expected_mount_policy = (
+            "task_workspace_and_public_tests" if self.read_only_mounts else "task_workspace_only"
+        )
+        if self.mount_policy != expected_mount_policy:
+            raise ValueError(
+                "external process mount policy disagrees with read-only mount identity"
+            )
+        if len(self.read_only_mounts) > 1:
+            raise ValueError("external process supports at most one public-test mount")
         return self
 
 
@@ -171,8 +199,10 @@ class ExternalProcessSecurityEvidence(StrictModel):
     init: Literal[True]
     private_pid_namespace: Literal[True]
     private_ipc_namespace: Literal[True]
-    mount_destinations: list[Literal["/workspace"]]
+    mount_destinations: list[Literal["/verigym-public", "/workspace"]]
     writable_destinations: list[Literal["/workspace", "/tmp"]]
+    read_only_destinations: list[Literal["/verigym-public"]] = Field(default_factory=list)
+    public_test_assets_mounted_read_only: bool = False
     environment_names: list[str]
     credential_environment_names_in_container: list[str]
     proxy_environment_names_in_container: list[str]
@@ -240,8 +270,13 @@ class ExternalProcessSecurityEvidence(StrictModel):
             raise ValueError("disabled trusted host proxy forwarding has inconsistent evidence")
         if self.cap_drop != ["ALL"]:
             raise ValueError("agent container must drop all capabilities")
-        if self.mount_destinations != ["/workspace"]:
+        expected_mounts = [*self.read_only_destinations, "/workspace"]
+        if self.mount_destinations != expected_mounts:
             raise ValueError("agent container has an undeclared mount destination")
+        if self.read_only_destinations not in ([], ["/verigym-public"]):
+            raise ValueError("agent container has an undeclared read-only destination")
+        if self.public_test_assets_mounted_read_only != bool(self.read_only_destinations):
+            raise ValueError("public-test mount evidence is inconsistent")
         if self.writable_destinations != ["/workspace", "/tmp"]:
             raise ValueError("agent container has an undeclared writable destination")
         return self
@@ -460,6 +495,7 @@ class ExternalAgentAccounting(StrictModel):
     cli_event_count: int = Field(ge=0)
     external_tool_call_count: int | None = Field(default=None, ge=0)
     external_command_count: int | None = Field(default=None, ge=0)
+    public_test_invocation_count: int | None = Field(default=None, ge=0)
     external_file_read_count: int | None = Field(default=None, ge=0)
     external_file_write_count: int | None = Field(default=None, ge=0)
     external_patch_count: int | None = Field(default=None, ge=0)

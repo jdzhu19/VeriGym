@@ -1,0 +1,36 @@
+schema_version: "1.0"
+name: "repo-rtl scripted conformance"
+description: "Zero-model generic repository repair acceptance matrix."
+
+suite:
+  id: "repo-rtl"
+  tasks:
+    include: ["*"]
+    exclude: []
+
+runs:
+  mode: "agent"
+  seeds: [0]
+  samples_per_task: 1
+  pass_k: [1]
+
+systems:
+  - id: "scripted-good"
+    agent:
+      id: "repo-scripted-good"
+  - id: "scripted-bad"
+    agent:
+      id: "repo-scripted-bad"
+  - id: "scripted-policy-bad"
+    agent:
+      id: "repo-scripted-policy-bad"
+
+runtime:
+  id: "local"
+
+execution:
+  max_workers: 1
+  continue_on_infrastructure_error: true
+
+output:
+  root: "runs/repo-rtl-scripted"

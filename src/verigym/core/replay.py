@@ -13,6 +13,10 @@ from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.loaders import dump_json, load_model
 from verigym.core.orchestrator import VeriGym
+from verigym.core.repository_candidate import (
+    repository_plan_identity,
+    verify_frozen_repository_candidate_offline,
+)
 from verigym.core.synthesis import execute_synthesis_quality
 from verigym.core.trace import read_trace
 from verigym.core.verifier_dag import has_infrastructure_error
@@ -90,6 +94,8 @@ def replay_run(
         raise ReplayError("scorecard identity does not match the run manifest")
     if content_hash(task_payload) != manifest.task_hash:
         raise ReplayError("task_snapshot.json does not match the manifest task hash")
+    if repository_plan_identity(task) != manifest.repository_task_identity:
+        raise ReplayError("repository task identity does not match the run manifest")
     candidate_hash = hash_directory(run_dir / "candidate")
     if manifest.candidate_hash is None or candidate_hash != manifest.candidate_hash:
         raise ReplayError("candidate snapshot does not match the manifest candidate hash")
@@ -103,6 +109,27 @@ def replay_run(
         raise ReplayError("verifier graph does not match the manifest verifier hash")
     if scorecard.reproducibility.verifier_hash != manifest.verifier_hash:
         raise ReplayError("scorecard verifier hash does not match the run manifest")
+    if manifest.repository_candidate is not None:
+        try:
+            raw_repository = task.metadata.get("repository_repair")
+            if not isinstance(raw_repository, dict) or not isinstance(
+                raw_repository.get("workspace_contract"),
+                dict,
+            ):
+                raise ValueError("repository task snapshot lacks its workspace contract")
+            from verigym.schemas.repository import RepositoryWorkspaceContract
+
+            contract = RepositoryWorkspaceContract.model_validate(
+                raw_repository["workspace_contract"]
+            )
+            verify_frozen_repository_candidate_offline(
+                candidate_repository=run_dir / "candidate" / contract.repository_root,
+                patch_file=run_dir / "repository.patch",
+                record=manifest.repository_candidate,
+                contract=contract,
+            )
+        except Exception as exc:
+            raise ReplayError(f"repository candidate replay failed: {exc}") from exc
     profile_path = run_dir / "artifacts" / "toolchain_profile.json"
     stored_profile: ToolchainProfile | None = None
     stored_resolved_profile: ResolvedToolchainProfile | None = None

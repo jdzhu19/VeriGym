@@ -79,8 +79,32 @@ def _write_test_archives(
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("verigym/__init__.py", "")
         archive.writestr("verigym/_build_provenance.json", "{}")
+        archive.writestr("verigym/public_test_launcher.py", "")
         archive.writestr("verigym/profiles/builtins/assets/NOTICE", "first-party")
         archive.writestr("verigym/profiles/builtins/assets/toy_cells.lib", "library(test) {}")
+        archive.writestr(
+            "verigym/suites/repo_rtl/assets/arbiter_reset_recovery/LICENSE",
+            "Apache-2.0",
+        )
+        archive.writestr(
+            "verigym/suites/repo_rtl/assets/counter_wrap/task.yaml",
+            "schema_version: '1.0'\n",
+        )
+        archive.writestr(
+            "verigym/suites/repo_rtl/assets/counter_wrap/public/test-contract.json",
+            "{}",
+        )
+        archive.writestr(
+            "verigym/suites/repo_rtl/assets/counter_wrap/hidden/tb_counter_hidden.sv",
+            "module tb_counter_hidden; endmodule\n",
+        )
+        archive.writestr(
+            (
+                "verigym/suites/repo_rtl/assets/"
+                "pipeline_stall_backpressure/reference/reference.patch"
+            ),
+            "",
+        )
         archive.writestr(
             "verigym/suites/toy_rtl/assets/and_gate_basic/task.yaml",
             "schema_version: '1.0'\n",
@@ -96,8 +120,10 @@ def _write_test_archives(
             "verigym-0.1.0/.github/workflows/ci.yml": b"name: test\n",
             "verigym-0.1.0/build_backend/verigym_build_backend.py": b"",
             "verigym-0.1.0/docker/codex-exec-server/SOURCE_IDENTITIES": b"",
+            "verigym-0.1.0/docker/codex-repository-agent/SOURCE_IDENTITIES": b"",
             "verigym-0.1.0/examples/plugins/conformance/pyproject.toml": b"",
             "verigym-0.1.0/scripts/build_codex_agent_image.sh": b"",
+            "verigym-0.1.0/scripts/build_codex_repository_agent_image.sh": b"",
             "verigym-0.1.0/scripts/run_release_audit.py": b"",
             (
                 "verigym-0.1.0/tests/fixtures/verilog_eval_v2_synthetic/VERIGYM_SYNTHETIC_FIXTURE"
@@ -170,11 +196,13 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "docs/experiments.md",
         "docs/batch_runner.md",
         "docs/reporting.md",
+        "docs/repository_rtl_repair.md",
         "docs/benchmark_governance.md",
         "docs/build_provenance.md",
         "docs/packaging_policy.md",
     ]
     required.extend(f"docs/adr/{number:04d}-" for number in range(1, 11))
+    required.append("docs/adr/0013-repository-level-rtl-repair.md")
     files = [path.as_posix() for path in Path(".").rglob("*") if path.is_file()]
     for expected in required:
         assert any(item == expected or item.startswith(expected) for item in files), expected
@@ -185,6 +213,14 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
             # This is an exported nested configuration object, not a persistent top-level record.
             continue
         assert "schema_version" in json.dumps(json.loads(schema.read_text(encoding="utf-8")))
+
+
+def test_repository_agent_image_build_context_honors_scoped_tmpdir() -> None:
+    script = Path("scripts/build_codex_repository_agent_image.sh").read_text(encoding="utf-8")
+    assert 'build_context_parent=$(realpath "${TMPDIR:-/tmp}")' in script
+    assert 'mktemp -d "$build_context_parent/verigym-codex-repository-image.XXXXXXXX"' in script
+    assert '"$build_context_parent"/verigym-codex-repository-image.*)' in script
+    assert 'rm -rf -- "$build_context"' in script
 
 
 @pytest.mark.reproducible_build

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 import stat
 import tempfile
 import time
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Protocol
 
 from verigym.core.errors import PathPolicyError
+from verigym.core.hashing import hash_directory
 from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.runtimes.base import RuntimeSession
 from verigym.runtimes.docker.artifacts import collect_declared_artifacts
@@ -21,20 +23,33 @@ from verigym.runtimes.docker.errors import (
     DockerRuntimeError,
     sanitize_diagnostic,
 )
-from verigym.runtimes.docker.external_process import DockerExternalProcessExecutor
-from verigym.runtimes.docker.mounts import mount_arguments, workspace_mount
+from verigym.runtimes.docker.external_process import (
+    DockerExternalProcessExecutor,
+    external_agent_runtime_config,
+)
+from verigym.runtimes.docker.mounts import (
+    MountSpec,
+    mount_arguments,
+    validate_mount_plan,
+    workspace_mount,
+)
 from verigym.runtimes.docker.resources import (
     effective_timeout,
     resource_arguments,
     resource_summary,
 )
 from verigym.runtimes.docker.security import (
+    BASELINE_ENVIRONMENT,
     build_environment,
     security_arguments,
     verify_effective_container,
 )
 from verigym.schemas.common import RuntimeImageIdentity
-from verigym.schemas.external_agent import ExternalProcessRequest, ExternalProcessResult
+from verigym.schemas.external_agent import (
+    ExternalProcessRequest,
+    ExternalProcessResult,
+    ExternalReadOnlyMountIdentity,
+)
 from verigym.schemas.runtime import (
     DockerExternalAgentRuntimeConfig,
     DockerRuntimeConfig,
@@ -88,12 +103,46 @@ class DockerRuntimeSession(RuntimeSession):
         self._session_environment = dict(spec.environment)
         self._closed = False
         self._frozen = False
+        self._public_test_invocation_count = 0
         self._active_containers: set[str] = set()
         self._cleanup_warnings: list[str] = []
         copy_tree_safely(Path(spec.source_dir), self._root)
+        self._read_only_temporaries: list[tempfile.TemporaryDirectory[str]] = []
+        self._read_only_identities: list[ExternalReadOnlyMountIdentity] = []
+        staged_read_only: list[MountSpec] = []
+        for mount in spec.read_only_mounts:
+            temporary = tempfile.TemporaryDirectory(prefix="verigym-docker-readonly-")
+            staged = Path(temporary.name).resolve()
+            copy_tree_safely(Path(mount.source_dir), staged)
+            if hash_directory(staged) != mount.content_hash:
+                temporary.cleanup()
+                raise PathPolicyError("read-only session asset identity changed while staging")
+            self._make_tree_read_only(staged)
+            self._read_only_temporaries.append(temporary)
+            self._read_only_identities.append(
+                ExternalReadOnlyMountIdentity(
+                    destination=mount.destination,
+                    content_hash=mount.content_hash,
+                    label=mount.label,
+                )
+            )
+            staged_read_only.append(
+                MountSpec(
+                    source=staged,
+                    destination=mount.destination,
+                    read_only=True,
+                )
+            )
         (self._root / ".verigym_internal").mkdir(exist_ok=True)
         self._prepare_permissions()
         self._mounts = [workspace_mount(self._root)]
+        self._external_mounts = validate_mount_plan(
+            [*staged_read_only, MountSpec(self._root, "/workspace", False)],
+            approved_roots=(
+                *(Path(item.name).resolve() for item in self._read_only_temporaries),
+                self._root,
+            ),
+        )
         self._baseline = self._snapshot()
         owner.session_registered(self.session_id, self.role, self._image.resolved_image_id)
 
@@ -110,6 +159,10 @@ class DockerRuntimeSession(RuntimeSession):
     @property
     def logical_workspace_root(self) -> str:
         return "/workspace"
+
+    @property
+    def external_read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]:
+        return [item.model_copy(deep=True) for item in self._read_only_identities]
 
     def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
         if self._closed:
@@ -135,7 +188,7 @@ class DockerRuntimeSession(RuntimeSession):
             register_container=register,
             remove_container=self._remove_container,
         )
-        return executor.execute(request, self._root)
+        return executor.execute(request, self._root, self._external_mounts)
 
     def _resolve(self, raw_path: str, *, allow_root: bool = False) -> Path:
         relative = normalize_relative_path(raw_path, allow_root=allow_root)
@@ -338,6 +391,125 @@ class DockerRuntimeSession(RuntimeSession):
             resolved.parent.chmod(0o777)
             resolved.chmod(0o666)
 
+    def execute_public_test(self, test_id: str) -> CompletedCommand:
+        self._public_test_invocation_count += 1
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", test_id):
+            raise PathPolicyError("repository public-test ID is invalid")
+        if self._closed or self._frozen or self.role != "agent":
+            raise PathPolicyError("repository public tests require an active agent session")
+        if self._agent_config is None or self._agent_image is None:
+            raise PathPolicyError("repository public tests require the separate agent image")
+        if [item.destination for item in self._read_only_identities] != ["/verigym-public"]:
+            raise PathPolicyError("repository public-test assets are not mounted")
+        config = external_agent_runtime_config(self._agent_config)
+        user = self._agent_image.effective_user
+        if user is None:
+            raise PathPolicyError("repository-agent image has no effective non-root user")
+        labels = {
+            "org.verigym.managed": "true",
+            "org.verigym.run_id": self._run_id,
+            "org.verigym.session_id": self.session_id,
+            "org.verigym.role": "public-test",
+            "org.verigym.public_protocol": "verigym_public_test_v1",
+        }
+        arguments = [
+            *security_arguments(
+                config,
+                user=user,
+                cwd="/workspace",
+                environment=BASELINE_ENVIRONMENT,
+                labels=labels,
+            ),
+            *resource_arguments(config),
+            *mount_arguments(self._external_mounts),
+            self._agent_image.resolved_image_id,
+            "/usr/local/bin/verigym-public-test",
+            "run",
+            test_id,
+        ]
+        container_id: str | None = None
+        started = time.monotonic()
+        completed: CompletedCommand | None = None
+        try:
+            container_id = self._engine.create_container(arguments)
+            self._active_containers.add(container_id)
+            self._owner.container_registered(self.session_id, container_id)
+            inspection = self._engine.inspect_container(container_id)
+            verify_effective_container(
+                inspection,
+                config=config,
+                expected_user=user,
+                expected_mounts=self._external_mounts,
+                expected_environment=BASELINE_ENVIRONMENT,
+                expected_labels=labels,
+            )
+            execution = self._engine.start_attach(
+                container_id,
+                timeout_s=min(60, config.max_command_time_s),
+                max_output_bytes=self._max_output_bytes,
+            )
+            if execution.timed_out:
+                self._engine.kill_container(container_id)
+            state_payload = self._engine.inspect_container(container_id)
+            state = state_payload.get("State")
+            state = state if isinstance(state, dict) else {}
+            oom_killed = state.get("OOMKilled") is True
+            exit_code = state.get("ExitCode") if isinstance(state.get("ExitCode"), int) else None
+            completed = CompletedCommand(
+                argv=["verigym-public-test", "run", test_id],
+                cwd=".",
+                exit_code=exit_code,
+                stdout=execution.stdout,
+                stderr=execution.stderr,
+                duration_s=time.monotonic() - started,
+                timed_out=execution.timed_out,
+                oom_killed=oom_killed,
+                output_truncated=execution.output_truncated,
+                failure_reason=(
+                    "timeout" if execution.timed_out else "out_of_memory" if oom_killed else None
+                ),
+                failure_origin=("candidate_process" if execution.timed_out or oom_killed else None),
+                container_id=container_id,
+                runtime_role="agent",
+                metadata={
+                    "public_test_protocol": "verigym_public_test_v1",
+                    "network_policy": "none",
+                    "public_assets_read_only": True,
+                    "agent_image_id": self._agent_image.resolved_image_id,
+                },
+            )
+        except DockerRuntimeError as exc:
+            completed = CompletedCommand(
+                argv=["verigym-public-test", "run", test_id],
+                cwd=".",
+                exit_code=None,
+                stderr=sanitize_diagnostic(str(exc), sensitive_paths=(str(self._root),)),
+                duration_s=time.monotonic() - started,
+                error=sanitize_diagnostic(str(exc), sensitive_paths=(str(self._root),)),
+                failure_reason=exc.subreason,
+                failure_origin="control_plane",
+                container_id=container_id,
+                runtime_role="agent",
+                metadata={
+                    "public_test_protocol": "verigym_public_test_v1",
+                    "network_policy": "none",
+                    "public_assets_read_only": True,
+                    "agent_image_id": self._agent_image.resolved_image_id,
+                },
+            )
+        finally:
+            cleanup_warning = self._remove_container(container_id) if container_id else None
+        assert completed is not None
+        if cleanup_warning is not None:
+            completed.error = completed.error or cleanup_warning
+            completed.failure_reason = completed.failure_reason or "container_cleanup_failed"
+            completed.failure_origin = completed.failure_origin or "control_plane"
+        return completed
+
+    @property
+    def public_test_invocation_count(self) -> int:
+        return self._public_test_invocation_count
+
     def _snapshot(self) -> dict[str, bytes]:
         snapshot: dict[str, bytes] = {}
         for path in sorted(self._root.rglob("*")):
@@ -399,6 +571,8 @@ class DockerRuntimeSession(RuntimeSession):
             return
         for container_id in sorted(self._active_containers):
             self._remove_container(container_id)
+        for temporary in self._read_only_temporaries:
+            temporary.cleanup()
         self._temporary.cleanup()
         self._closed = True
         self._owner.session_closed(self.session_id, list(self._cleanup_warnings))
@@ -440,6 +614,17 @@ class DockerRuntimeSession(RuntimeSession):
         for path in internal.rglob("*"):
             if path.is_dir():
                 path.chmod(0o777)
+
+    @staticmethod
+    def _make_tree_read_only(root: Path) -> None:
+        for path in sorted(root.rglob("*"), reverse=True):
+            if path.is_symlink():
+                raise PathPolicyError("symlinks are forbidden in read-only session assets")
+            if path.is_dir():
+                path.chmod(0o555)
+            elif path.is_file():
+                path.chmod(0o444)
+        root.chmod(0o555)
 
     def _tool_versions(self) -> dict[str, dict[str, str | None]]:
         return {

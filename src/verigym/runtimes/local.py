@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import signal
 import subprocess
@@ -11,10 +12,13 @@ import time
 from pathlib import Path
 
 from verigym.core.errors import PathPolicyError
+from verigym.core.hashing import hash_directory
 from verigym.core.workspace import copy_tree_safely, normalize_relative_path
+from verigym.public_test_launcher import PublicTestError, execute_public_test
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import RuntimeDescriptor
+from verigym.schemas.external_agent import ExternalReadOnlyMountIdentity
 from verigym.schemas.runtime import SessionSpec, WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
 
@@ -27,13 +31,37 @@ class LocalRuntimeSession(RuntimeSession):
         self._root = Path(self._temporary.name).resolve()
         self._max_output_bytes = spec.max_output_bytes
         self._closed = False
+        self._public_test_invocation_count = 0
         copy_tree_safely(Path(spec.source_dir), self._root)
+        self._read_only_temporaries: list[tempfile.TemporaryDirectory[str]] = []
+        self._read_only_roots: dict[str, Path] = {}
+        self._read_only_identities: list[ExternalReadOnlyMountIdentity] = []
+        for mount in spec.read_only_mounts:
+            temporary = tempfile.TemporaryDirectory(prefix="verigym-local-readonly-")
+            staged = Path(temporary.name).resolve()
+            copy_tree_safely(Path(mount.source_dir), staged)
+            if hash_directory(staged) != mount.content_hash:
+                temporary.cleanup()
+                raise PathPolicyError("read-only session asset identity changed while staging")
+            self._read_only_temporaries.append(temporary)
+            self._read_only_roots[mount.destination] = staged
+            self._read_only_identities.append(
+                ExternalReadOnlyMountIdentity(
+                    destination=mount.destination,
+                    content_hash=mount.content_hash,
+                    label=mount.label,
+                )
+            )
         (self._root / ".verigym_internal").mkdir(exist_ok=True)
         self._baseline = self._snapshot()
 
     @property
     def root(self) -> Path:
         return self._root
+
+    @property
+    def external_read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]:
+        return [item.model_copy(deep=True) for item in self._read_only_identities]
 
     def _resolve(self, raw_path: str, *, allow_root: bool = False) -> Path:
         relative = normalize_relative_path(raw_path, allow_root=allow_root)
@@ -131,6 +159,58 @@ class LocalRuntimeSession(RuntimeSession):
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_bytes(data)
 
+    def execute_public_test(self, test_id: str) -> CompletedCommand:
+        self._public_test_invocation_count += 1
+        public_root = self._read_only_roots.get("/verigym-public")
+        if public_root is None:
+            raise PathPolicyError("repository public-test assets are not mounted")
+        started = time.monotonic()
+        try:
+            exit_code, payload, limit = execute_public_test(
+                test_id,
+                public_root=public_root,
+                workspace_root=self._root,
+            )
+            encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            output_limit = min(limit, self._max_output_bytes)
+            truncated = len(encoded) > output_limit
+            stdout = encoded[:output_limit].decode("utf-8", errors="replace")
+            return CompletedCommand(
+                argv=["verigym-public-test", "run", test_id],
+                cwd=".",
+                exit_code=exit_code,
+                stdout=stdout,
+                duration_s=time.monotonic() - started,
+                output_truncated=truncated,
+                runtime_role="agent",
+                metadata={
+                    "public_test_protocol": "verigym_public_test_v1",
+                    "network_policy": "host_local_trusted",
+                    "public_assets_read_only": False,
+                },
+            )
+        except PublicTestError as exc:
+            return CompletedCommand(
+                argv=["verigym-public-test", "run", test_id],
+                cwd=".",
+                exit_code=None,
+                stderr=str(exc),
+                duration_s=time.monotonic() - started,
+                error=str(exc),
+                failure_reason="public_test_contract",
+                failure_origin="control_plane",
+                runtime_role="agent",
+                metadata={
+                    "public_test_protocol": "verigym_public_test_v1",
+                    "network_policy": "host_local_trusted",
+                    "public_assets_read_only": False,
+                },
+            )
+
+    @property
+    def public_test_invocation_count(self) -> int:
+        return self._public_test_invocation_count
+
     def _snapshot(self) -> dict[str, bytes]:
         snapshot: dict[str, bytes] = {}
         for path in sorted(self._root.rglob("*")):
@@ -181,6 +261,8 @@ class LocalRuntimeSession(RuntimeSession):
 
     def close(self) -> None:
         if not self._closed:
+            for temporary in self._read_only_temporaries:
+                temporary.cleanup()
             self._temporary.cleanup()
             self._closed = True
 

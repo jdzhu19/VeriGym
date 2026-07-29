@@ -1,0 +1,147 @@
+{
+  "$defs": {
+    "PublicTestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "$ref": "#/$defs/PublicTestCommand"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Commands",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "commands"
+      ],
+      "title": "PublicTestCase",
+      "type": "object"
+    },
+    "PublicTestCommand": {
+      "additionalProperties": false,
+      "description": "One shell-free, hash-bound public-test subprocess.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "cwd": {
+          "default": "repository",
+          "enum": [
+            "repository",
+            "build"
+          ],
+          "title": "Cwd",
+          "type": "string"
+        },
+        "expected_exit_code": {
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Expected Exit Code",
+          "type": "integer"
+        },
+        "timeout_s": {
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Timeout S",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "timeout_s"
+      ],
+      "title": "PublicTestCommand",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/repository-public-test-contract.schema.json",
+  "additionalProperties": false,
+  "description": "Trusted launcher contract mounted read-only at a fixed path.",
+  "properties": {
+    "asset_files": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 256,
+      "minProperties": 1,
+      "title": "Asset Files",
+      "type": "object"
+    },
+    "contract_file": {
+      "const": "test-contract.json",
+      "default": "test-contract.json",
+      "title": "Contract File",
+      "type": "string"
+    },
+    "max_build_bytes": {
+      "default": 33554432,
+      "maximum": 536870912,
+      "minimum": 1024,
+      "title": "Max Build Bytes",
+      "type": "integer"
+    },
+    "max_feedback_bytes": {
+      "default": 65536,
+      "maximum": 1048576,
+      "minimum": 1024,
+      "title": "Max Feedback Bytes",
+      "type": "integer"
+    },
+    "mount_destination": {
+      "const": "/verigym-public",
+      "default": "/verigym-public",
+      "title": "Mount Destination",
+      "type": "string"
+    },
+    "protocol": {
+      "const": "verigym_public_test_v1",
+      "default": "verigym_public_test_v1",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "public_assets_hash": {
+      "title": "Public Assets Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tests": {
+      "items": {
+        "$ref": "#/$defs/PublicTestCase"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Tests",
+      "type": "array"
+    }
+  },
+  "required": [
+    "public_assets_hash",
+    "asset_files",
+    "tests"
+  ],
+  "title": "RepositoryPublicTestContract",
+  "type": "object"
+}

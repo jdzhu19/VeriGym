@@ -740,6 +740,9 @@ def _external_accounting(
         cli_event_count=len(parsed.events) if parsed is not None else 0,
         external_tool_call_count=(canonical.external_tool_count if canonical is not None else None),
         external_command_count=canonical.command_count if canonical is not None else None,
+        public_test_invocation_count=(
+            canonical.public_test_command_count if canonical is not None else None
+        ),
         external_file_read_count=(canonical.file_read_count if canonical is not None else None),
         external_file_write_count=(canonical.file_write_count if canonical is not None else None),
         external_patch_count=canonical.patch_count if canonical is not None else None,

@@ -49,6 +49,7 @@ dev = [
 
 [project.scripts]
 verigym = "verigym.cli.app:main"
+verigym-public-test = "verigym.public_test_launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -60,6 +61,7 @@ verigym = [
   "profiles/builtins/*.yaml",
   "profiles/builtins/assets/*",
   "suites/toy_rtl/assets/**/*",
+  "suites/repo_rtl/assets/**/*",
   "suites/verilog_eval/assets/**/*",
 ]
 

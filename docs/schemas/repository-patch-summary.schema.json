@@ -1,0 +1,114 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/repository-patch-summary.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "added_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Added Files",
+      "type": "array"
+    },
+    "added_lines": {
+      "minimum": 0,
+      "title": "Added Lines",
+      "type": "integer"
+    },
+    "base_repository_hash": {
+      "title": "Base Repository Hash",
+      "type": "string"
+    },
+    "binary_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Binary Files",
+      "type": "array"
+    },
+    "candidate_repository_hash": {
+      "title": "Candidate Repository Hash",
+      "type": "string"
+    },
+    "changed_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Changed Files",
+      "type": "array"
+    },
+    "created_file_count": {
+      "minimum": 0,
+      "title": "Created File Count",
+      "type": "integer"
+    },
+    "deleted_file_count": {
+      "minimum": 0,
+      "title": "Deleted File Count",
+      "type": "integer"
+    },
+    "deleted_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Deleted Files",
+      "type": "array"
+    },
+    "deleted_lines": {
+      "minimum": 0,
+      "title": "Deleted Lines",
+      "type": "integer"
+    },
+    "mode_changed_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mode Changed Files",
+      "type": "array"
+    },
+    "patch_hash": {
+      "title": "Patch Hash",
+      "type": "string"
+    },
+    "policy_status": {
+      "const": "passed",
+      "title": "Policy Status",
+      "type": "string"
+    },
+    "reapplied_repository_hash": {
+      "title": "Reapplied Repository Hash",
+      "type": "string"
+    },
+    "reapply_exact": {
+      "const": true,
+      "title": "Reapply Exact",
+      "type": "boolean"
+    },
+    "renamed_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Renamed Files",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "patch_hash",
+    "base_repository_hash",
+    "candidate_repository_hash",
+    "reapplied_repository_hash",
+    "reapply_exact",
+    "changed_files",
+    "created_file_count",
+    "deleted_file_count",
+    "added_lines",
+    "deleted_lines",
+    "policy_status"
+  ],
+  "title": "RepositoryPatchSummary",
+  "type": "object"
+}

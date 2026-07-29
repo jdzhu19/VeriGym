@@ -45,6 +45,16 @@ from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.replay import ReplayEvidence
+from verigym.schemas.repository import (
+    RepositoryCandidateRecord,
+    RepositoryPatchSummary,
+    RepositoryPlanIdentity,
+    RepositoryPublicTestContract,
+    RepositoryPublicTestOutcome,
+    RepositorySnapshot,
+    RepositoryTaskManifest,
+    RepositoryWorkspaceContract,
+)
 from verigym.schemas.run import RunConfig, RunManifest
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import PassAtKReport, SampleRunRef, SampleSetManifest
@@ -98,6 +108,14 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "prompt-policy-descriptor": _model(PromptPolicyDescriptor),
     "release-manifest": _model(ReleaseManifest),
     "replay-evidence": _model(ReplayEvidence),
+    "repository-candidate-record": _model(RepositoryCandidateRecord),
+    "repository-patch-summary": _model(RepositoryPatchSummary),
+    "repository-plan-identity": _model(RepositoryPlanIdentity),
+    "repository-public-test-contract": _model(RepositoryPublicTestContract),
+    "repository-public-test-outcome": _model(RepositoryPublicTestOutcome),
+    "repository-snapshot": _model(RepositorySnapshot),
+    "repository-task-manifest": _model(RepositoryTaskManifest),
+    "repository-workspace-contract": _model(RepositoryWorkspaceContract),
     "resolved-toolchain-profile": _model(ResolvedToolchainProfile),
     "run-config": _model(RunConfig),
     "run-index-record": _model(RunIndexRecord),

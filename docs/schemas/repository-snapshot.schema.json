@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "RepositoryFileIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "RepositoryFileIdentity",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/repository-snapshot.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "items": {
+        "$ref": "#/$defs/RepositoryFileIdentity"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "repository_hash": {
+      "title": "Repository Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "total_bytes": {
+      "minimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "repository_hash",
+    "total_bytes",
+    "files"
+  ],
+  "title": "RepositorySnapshot",
+  "type": "object"
+}

@@ -1,0 +1,181 @@
+schema_version: '1.0'
+task:
+  schema_version: '1.0'
+  id: repo-rtl/counter-wrap
+  suite: repo-rtl
+  suite_version: 0.1.0
+  task_type: repo_repair
+  title: Repair counter wrap behavior
+  description: Repair the visible RTL repository according to TASK.md.
+  source:
+    kind: synthetic
+    revision: 1.0.0
+    license: Apache-2.0
+    attribution: VeriGym contributors
+    content_hash: 7c63201bab4f312d0396d0a6b4a501fb66e643633efaa791bfbe14d466ed54ba
+  workspace:
+    base:
+      kind: directory
+      path: repository
+    editable_globs:
+    - repository/rtl/**/*.sv
+    readonly_globs:
+    - PUBLIC_TESTS.md
+    - TASK.md
+    - repository/LICENSE
+    - repository/README.md
+    excluded_globs:
+    - .git
+    - .git/**
+    - .verigym_internal
+    - .verigym_internal/**
+    - hidden
+    - hidden/**
+    entrypoints:
+    - repository/rtl/counter_top.sv
+    - repository/rtl/enable_gate.sv
+    - repository/rtl/wrap_counter.sv
+    max_changed_files: 1
+    max_patch_lines: 80
+  interaction:
+    supported_modes:
+    - agent
+    default_mode: agent
+    allowed_tools:
+    - file.list
+    - file.read
+    - file.write
+    - file.apply_patch
+    - file.diff
+    - repository.public_test
+    denied_tools: []
+    allow_general_shell: false
+    network_policy: none
+    initial_observation:
+      include_tree: true
+      include_readme: true
+      include_entrypoints: true
+    final_submission:
+      kind: patch
+  budget:
+    max_turns: 20
+    max_tool_calls: 40
+    max_model_calls: 1
+    max_wall_time_s: 300
+    max_tool_time_s: 60
+    max_output_bytes_per_tool: 200000
+    max_workspace_bytes: 2000000
+  verifier:
+    nodes:
+    - id: compile_hidden
+      plugin: iverilog.compile
+      depends_on: []
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        sources:
+        - repository/rtl/counter_top.sv
+        - repository/rtl/enable_gate.sv
+        - repository/rtl/wrap_counter.sv
+        - hidden/tb_counter_hidden.sv
+        top: tb_counter_hidden
+        output: .verigym_internal/compile_hidden/simv
+    - id: run_hidden
+      plugin: iverilog.run
+      depends_on:
+      - compile_hidden
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        executable_from: compile_hidden
+        pass_marker: VERIGYM_PASS
+        fail_marker: VERIGYM_FAIL
+  scoring:
+    correctness_required_nodes:
+    - compile_hidden
+    - run_hidden
+    ppa_enabled: false
+  metadata:
+    category: repository_counter
+    difficulty: easy
+issue_file: issue.md
+issue_hash: fedfc7af1c08a42f142f00fff4b2a9fb0c9e43b62fcf27a58a625e940c765ee5
+source:
+  schema_version: '1.0'
+  source_kind: package_resource
+  repository_hash: 7c63201bab4f312d0396d0a6b4a501fb66e643633efaa791bfbe14d466ed54ba
+  license: Apache-2.0
+  license_file: LICENSE
+  attribution: VeriGym contributors
+  redistributable: true
+  task_bundle_hash: a917c343bd366094dac577c885695bbab08b95e91b097a8342ddc76b2e1620e5
+  license_file_hash: 264135b14d84ec2211affdce022bafa50b17d8e83b32fb2e5da1ed9dcec62758
+workspace:
+  schema_version: '1.0'
+  repository_root: repository
+  editable_globs:
+  - repository/rtl/**/*.sv
+  read_only_globs:
+  - PUBLIC_TESTS.md
+  - TASK.md
+  - repository/LICENSE
+  - repository/README.md
+  runtime_generated_globs:
+  - .verigym_internal/**
+  forbidden_globs:
+  - .git
+  - .git/**
+  max_changed_files: 1
+  max_patch_lines: 80
+  max_candidate_bytes: 2000000
+  max_file_bytes: 1000000
+  allow_file_addition: false
+  allow_file_deletion: false
+  allow_file_rename: false
+  allow_mode_change: false
+  allow_binary_files: false
+  case_sensitive_paths: true
+public_tests:
+  schema_version: '1.0'
+  protocol: verigym_public_test_v1
+  contract_file: test-contract.json
+  mount_destination: /verigym-public
+  public_assets_hash: 7c2cbe9bd65a205f06c3f1d89605f8a54cbb88065ff6717a1efeae05c0bc7e15
+  asset_files:
+    assets/tb_counter_public.sv: 61b9180dd4f327dd6e3d9743dbc6b159d8f793c026b913f0da04072c7d9cfcc9
+  max_feedback_bytes: 65536
+  max_build_bytes: 33554432
+  tests:
+  - id: counter-wrap-public
+    title: Reset, wrap, and hold behavior
+    commands:
+    - argv:
+      - iverilog
+      - -g2012
+      - -s
+      - tb_counter_public
+      - -o
+      - '{build}/simv'
+      - '{repository}/rtl/counter_top.sv'
+      - '{repository}/rtl/enable_gate.sv'
+      - '{repository}/rtl/wrap_counter.sv'
+      - '{public}/assets/tb_counter_public.sv'
+      cwd: repository
+      timeout_s: 30
+      expected_exit_code: 0
+    - argv:
+      - vvp
+      - '{build}/simv'
+      cwd: build
+      timeout_s: 30
+      expected_exit_code: 0
+verification:
+  schema_version: '1.0'
+  hidden_verifier_hash: a0f6f3e7600c421bfe8015363dc1b368048a22bb3153846d51626debe6dffb78
+  verifier_image_profile: iverilog12_network_none
+  reference_candidate_hash: 36aedcde5a5e2aa43abca0238fd6b55acbe2ca0c09c091aa1df41886aec7de0f
+  reference_patch_hash: 5df910314809c6df58e7b4e9c3e21de246951ac5aac0864107014ffd64ac6b16

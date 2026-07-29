@@ -8,7 +8,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.core.artifact_policy import bound_value
@@ -22,6 +22,7 @@ from verigym.core.integrity import write_run_artifact_manifest
 from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
+from verigym.core.repository_candidate import repository_plan_identity
 from verigym.core.scoring import build_scorecard
 from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
 from verigym.core.trace import TraceWriter
@@ -45,6 +46,7 @@ from verigym.schemas.common import (
 )
 from verigym.schemas.model import GenerationParameters
 from verigym.schemas.prompt import ToolPolicySnapshot
+from verigym.schemas.repository import RepositoryPublicTestOutcome
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
 from verigym.schemas.runtime import SessionSpec, WorkspaceDiff
 from verigym.schemas.sampling import SampleSetResult
@@ -52,6 +54,7 @@ from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.tools.base import ToolContext
 from verigym.version import __version__
 
 
@@ -191,6 +194,16 @@ class VeriGym:
                 else set()
             )
         )
+        external_agent_selected = "external_coding_agent" in agent.descriptor.capabilities
+        if (
+            repository_plan_identity(task) is not None
+            and (agent.requires_model or external_agent_selected)
+            and runtime.descriptor.isolation_level != "docker_standard"
+        ):
+            runtime.close()
+            raise ConfigurationError(
+                "model-bearing repository repair requires the Docker security boundary"
+            )
         tool_policy = ToolPolicySnapshot(
             allowed_tools=allowed_tools,
             denied_tools=denied_tools,
@@ -205,7 +218,6 @@ class VeriGym:
         trace = TraceWriter(layout.trace, run_id)
         verifier_hash = content_hash(task.verifier)
         run_config_hash = content_hash(config.identity_payload())
-        external_agent_selected = "external_coding_agent" in agent.descriptor.capabilities
         profile = synthesis_profile or suite.toolchain_profile(runtime, self.registries.tools)
         if profile is None:
             profile = self._toolchain_profile(runtime)
@@ -231,6 +243,7 @@ class VeriGym:
             task_id=task.id,
             task_hash=task_hash,
             source_hash=source_hash,
+            repository_task_identity=repository_plan_identity(task),
             verifier_hash=verifier_hash,
             run_config_hash=run_config_hash,
             suite=task.suite,
@@ -480,6 +493,39 @@ class VeriGym:
                     )
             if model_client is not None:
                 model_client.export_run_artifacts(layout.artifacts / "codex_cli")
+            if not external_workspace_rejected:
+                manifest.repository_public_tests = self._run_repository_public_tests(
+                    task=task,
+                    session=env.session,
+                    trace=trace,
+                    max_output_bytes=task.budget.max_output_bytes_per_tool,
+                )
+                public_infrastructure = next(
+                    (
+                        outcome
+                        for outcome in manifest.repository_public_tests
+                        if outcome.category
+                        in {
+                            ErrorCategory.INTERNAL_ERROR.value,
+                            ErrorCategory.LICENSE_UNAVAILABLE.value,
+                            ErrorCategory.PARSER_ERROR.value,
+                            ErrorCategory.SANDBOX_ERROR.value,
+                            ErrorCategory.TOOL_NOT_FOUND.value,
+                            ErrorCategory.UNSUPPORTED_VERSION.value,
+                        }
+                    ),
+                    None,
+                )
+                if public_infrastructure is not None and episode_failure is None:
+                    episode_failure = EpisodeFailure(
+                        kind="runtime",
+                        category=f"repository_public_test_{public_infrastructure.category}",
+                        message=(
+                            "trusted repository public-test infrastructure failed for "
+                            f"{public_infrastructure.test_id}"
+                        ),
+                        infrastructure=True,
+                    )
             if env.termination_reason is None:
                 env.termination_reason = TerminationReason.RUNTIME_ERROR
             assert env.session is not None and env.tracker is not None
@@ -499,6 +545,28 @@ class VeriGym:
                 diff = env.session.snapshot_diff()
                 layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
                 layout.export_candidate(env.session.root)
+                repository_candidate = suite.freeze_repository_candidate(
+                    task=task,
+                    candidate_dir=layout.candidate,
+                    run_root=layout.root,
+                    artifact_root=layout.artifacts,
+                )
+                if repository_candidate is not None:
+                    manifest.repository_candidate = repository_candidate
+                    trace.emit(
+                        "repository_candidate_frozen",
+                        {
+                            "base_repository_hash": (
+                                repository_candidate.patch.base_repository_hash
+                            ),
+                            "candidate_repository_hash": (
+                                repository_candidate.patch.candidate_repository_hash
+                            ),
+                            "patch_hash": repository_candidate.patch.patch_hash,
+                            "changed_files": repository_candidate.patch.changed_files,
+                            "reapply_exact": repository_candidate.patch.reapply_exact,
+                        },
+                    )
             candidate_hash = hash_directory(layout.candidate)
             manifest.candidate_hash = candidate_hash
             dump_json(layout.manifest, manifest)
@@ -580,6 +648,7 @@ class VeriGym:
                     error_category=result.error_category.value,
                     message=result.message,
                 )
+            runtime_public_test_invocation_count = env.session.public_test_invocation_count
             env.close()
             runtime.close()
             manifest.runtime = runtime.descriptor
@@ -591,6 +660,19 @@ class VeriGym:
             manifest.external_agent_observations = (
                 external_bridge.observations if external_bridge is not None else []
             )
+            external_accounting = (
+                external_bridge.accounting if external_bridge is not None else None
+            )
+            if manifest.repository_task_identity is not None:
+                manifest.repository_public_tool_invocation_count = (
+                    runtime_public_test_invocation_count
+                    + (
+                        external_accounting.public_test_invocation_count
+                        if external_accounting is not None
+                        and external_accounting.public_test_invocation_count is not None
+                        else 0
+                    )
+                )
             if (
                 external_bridge is not None
                 and external_bridge.configuration_fingerprint is not None
@@ -788,6 +870,65 @@ class VeriGym:
             deterministic=True,
             reproducibility_scope="public",
         )
+
+    def _run_repository_public_tests(
+        self,
+        *,
+        task: VeriTask,
+        session: RuntimeSession,
+        trace: TraceWriter,
+        max_output_bytes: int,
+    ) -> list[RepositoryPublicTestOutcome]:
+        repository = task.metadata.get("repository_repair")
+        if repository is None:
+            return []
+        if not isinstance(repository, dict):
+            raise ConfigurationError("repository task metadata is malformed")
+        identifiers = repository.get("public_test_ids")
+        if not isinstance(identifiers, list) or not all(
+            isinstance(value, str) for value in identifiers
+        ):
+            raise ConfigurationError("repository public-test identity is malformed")
+        plugin = self.registries.tools.get("repository.public_test")
+        outcomes: list[RepositoryPublicTestOutcome] = []
+        for test_id in sorted(identifiers):
+            request = plugin.validate_request({"test_id": test_id})
+            completed = session.execute_public_test(test_id)
+            result = plugin.parse_result(
+                request,
+                completed,
+                ToolContext(
+                    session=session,
+                    max_output_bytes=max_output_bytes,
+                ),
+            )
+            network_policy = result.metadata.get("network_policy")
+            if network_policy not in {"none", "host_local_trusted"}:
+                raise ConfigurationError(
+                    "repository public-test result omitted its runtime network identity"
+                )
+            outcome = RepositoryPublicTestOutcome(
+                test_id=test_id,
+                passed=result.success,
+                category=result.category.value,
+                exit_code=result.exit_code,
+                duration_s=result.duration_s,
+                output_truncated=result.output_truncated,
+                stdout_sha256=hash_bytes(completed.stdout.encode("utf-8")),
+                stderr_sha256=hash_bytes(completed.stderr.encode("utf-8")),
+                launcher_protocol="verigym_public_test_v1",
+                public_assets_read_only=bool(result.metadata.get("public_assets_read_only")),
+                network_policy=cast(
+                    Literal["none", "host_local_trusted"],
+                    network_policy,
+                ),
+            )
+            outcomes.append(outcome)
+            trace.emit(
+                "repository_public_test_result",
+                outcome.model_dump(mode="json"),
+            )
+        return outcomes
 
     @staticmethod
     def _new_run_id(task_id: str) -> str:

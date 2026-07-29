@@ -221,6 +221,7 @@ class ReportBuilder:
                     )
                 ),
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
+                "repository_repair": _repository_repair_summary(inputs, runs),
                 "codex_cli_comparison_policy": (
                     "execution surface, interaction class, harness, tool policy, tracks, "
                     "executable versions, capability fingerprints, and authentication semantic "
@@ -242,6 +243,128 @@ class ReportBuilder:
             },
         )
         return AggregateReport.model_validate(aggregate.model_dump(mode="json"))
+
+
+def _repository_repair_summary(
+    inputs: LoadedReportInputs,
+    runs: list[ValidatedRun],
+) -> dict[str, Any] | None:
+    planned = [item for item in inputs.plan_items if item.repository_task_identity is not None]
+    repository_runs = [run for run in runs if run.manifest.repository_task_identity is not None]
+    if not planned and not repository_runs:
+        return None
+    public_total = sum(len(run.manifest.repository_public_tests) for run in repository_runs)
+    public_passed = sum(
+        outcome.passed
+        for run in repository_runs
+        for outcome in run.manifest.repository_public_tests
+    )
+    frozen = [
+        run.manifest.repository_candidate
+        for run in repository_runs
+        if run.manifest.repository_candidate is not None
+    ]
+    planned_indices = {item.plan_index for item in planned}
+    launched = (
+        len(
+            {
+                record.plan_index
+                for record in inputs.index_records
+                if record.plan_index in planned_indices
+            }
+        )
+        if inputs.source_kind == "experiment"
+        else len(repository_runs)
+    )
+    terminal = (
+        len(
+            {
+                record.plan_index
+                for record in inputs.index_records
+                if record.plan_index in planned_indices
+                and record.terminal_status not in {"started", "scheduled"}
+            }
+        )
+        if inputs.source_kind == "experiment"
+        else len(repository_runs)
+    )
+    classifications = [classify_sample_outcome(run.scorecard)[0] for run in repository_runs]
+    evaluable = sum(classify_sample_outcome(run.scorecard)[1] for run in repository_runs)
+    policy_failures = sum(
+        run.scorecard.failure is not None
+        and run.scorecard.failure.kind == "policy"
+        and not run.scorecard.failure.infrastructure
+        for run in repository_runs
+    )
+    return {
+        "schema_version": "1.0",
+        "denominators": {
+            "planned": len(planned) if inputs.source_kind == "experiment" else len(repository_runs),
+            "launched": launched,
+            "terminal": terminal,
+            "valid_artifact": len(repository_runs),
+            "evaluable": evaluable,
+            "resolved": sum(outcome == SampleOutcome.RESOLVED for outcome in classifications),
+            "candidate_failure": sum(
+                outcome
+                in {
+                    SampleOutcome.CANDIDATE_FAILURE,
+                    SampleOutcome.MODEL_OUTPUT_FAILURE,
+                }
+                for outcome in classifications
+            ),
+            "policy_failure": policy_failures,
+            "infrastructure_failure": sum(
+                outcome == SampleOutcome.INFRASTRUCTURE_ERROR for outcome in classifications
+            ),
+            "replayed": None,
+        },
+        "replay_count_source": "separate immutable replay-summary evidence",
+        "frozen_repository_candidates": len(frozen),
+        "exact_patch_reapplications": sum(item.patch.reapply_exact for item in frozen),
+        "multi_file_candidates": sum(len(item.patch.changed_files) > 1 for item in frozen),
+        "patch_totals": {
+            "changed_files": sum(len(item.patch.changed_files) for item in frozen),
+            "created_files": sum(item.patch.created_file_count for item in frozen),
+            "deleted_files": sum(item.patch.deleted_file_count for item in frozen),
+            "added_lines": sum(item.patch.added_lines for item in frozen),
+            "deleted_lines": sum(item.patch.deleted_lines for item in frozen),
+        },
+        "public_tests": {
+            "passed": public_passed,
+            "total": public_total,
+            "rate": public_passed / public_total if public_total else None,
+            "tool_invocation_count": sum(
+                run.manifest.repository_public_tool_invocation_count for run in repository_runs
+            ),
+            "docker_network_none": sum(
+                outcome.network_policy == "none" and outcome.public_assets_read_only
+                for run in repository_runs
+                for outcome in run.manifest.repository_public_tests
+            ),
+            "host_local_trusted": sum(
+                outcome.network_policy == "host_local_trusted"
+                for run in repository_runs
+                for outcome in run.manifest.repository_public_tests
+            ),
+        },
+        "hidden_verifier_reached": sum(
+            any(result.status.value != "skipped" for result in run.scorecard.verifier_results)
+            for run in repository_runs
+        ),
+        "workspace_policy": {
+            "passed": len(repository_runs) - policy_failures,
+            "failed_contained": policy_failures,
+        },
+        "repository_identity_partitions": sorted(
+            {
+                item.manifest_hash
+                for item in (run.manifest.repository_task_identity for run in repository_runs)
+                if item is not None
+            }
+        ),
+        "candidate_outcomes_are_not_infrastructure_failures": True,
+    }
 
 
 def _current_runs(inputs: LoadedReportInputs) -> list[ValidatedRun]:

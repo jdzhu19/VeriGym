@@ -1,0 +1,46 @@
+{
+  "asset_files": {
+    "assets/tb_pipeline_public.sv": "48a8eb96e7d01514c98c02d2fd713dee4f5c7d00888f53d699f53ff1a168b0f3"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "a761edabb6fb522880036b8a96ae833ace65fcc884c8d2a3f7779331627825db",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_pipeline_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/pipeline_register.sv",
+            "{repository}/rtl/pipeline_stage.sv",
+            "{repository}/rtl/pipeline_top.sv",
+            "{public}/assets/tb_pipeline_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "pipeline-backpressure-public",
+      "title": "Two-deep stall, ordering, and drain behavior"
+    }
+  ]
+}

@@ -122,8 +122,14 @@ def _wheel(path: Path) -> tuple[dict[str, Any], list[str]]:
         issues.append("wheel contains benchmark-shaped test fixture content")
     required_wheel_suffixes = [
         "verigym/_build_provenance.json",
+        "verigym/public_test_launcher.py",
         "verigym/profiles/builtins/assets/NOTICE",
         "verigym/profiles/builtins/assets/toy_cells.lib",
+        "verigym/suites/repo_rtl/assets/arbiter_reset_recovery/LICENSE",
+        "verigym/suites/repo_rtl/assets/counter_wrap/task.yaml",
+        "verigym/suites/repo_rtl/assets/counter_wrap/public/test-contract.json",
+        "verigym/suites/repo_rtl/assets/counter_wrap/hidden/tb_counter_hidden.sv",
+        "verigym/suites/repo_rtl/assets/pipeline_stall_backpressure/reference/reference.patch",
         "verigym/suites/toy_rtl/assets/and_gate_basic/task.yaml",
     ]
     for suffix in required_wheel_suffixes:
@@ -160,7 +166,9 @@ def _sdist(path: Path) -> tuple[dict[str, Any], list[str]]:
         "/build_backend/verigym_build_backend.py",
         "/examples/plugins/conformance/pyproject.toml",
         "/docker/codex-exec-server/SOURCE_IDENTITIES",
+        "/docker/codex-repository-agent/SOURCE_IDENTITIES",
         "/scripts/build_codex_agent_image.sh",
+        "/scripts/build_codex_repository_agent_image.sh",
         "/scripts/run_release_audit.py",
         "/tests/fixtures/verilog_eval_v2_synthetic/LICENSE",
     ]
@@ -191,7 +199,8 @@ def inspect_distributions(wheel: Path, sdist: Path) -> dict[str, Any]:
         "issues": issues,
         "policy": {
             "external_verilog_eval": "user-supplied and absent from distributions",
-            "synthetic_fixture": "first-party MIT test fixture; sdist only",
+            "synthetic_fixture": "first-party synthetic fixtures retain their declared licenses",
+            "repo_rtl": "first-party Apache-2.0 task bundles; wheel and sdist",
             "toy_liberty": "first-party Apache-2.0 educational non-signoff asset",
         },
     }

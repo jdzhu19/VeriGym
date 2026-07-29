@@ -231,6 +231,75 @@ def test_external_command_event_allows_bounded_visible_rtl_check(tmp_path: Path)
     validate_external_events(parsed, tmp_path)
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "verigym-public-test list",
+        "verigym-public-test run counter-wrap-public",
+        "/usr/local/bin/verigym-public-test run pipeline-backpressure-public",
+    ],
+)
+def test_repository_public_launcher_has_narrow_semantic_operands(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": command,
+                            "status": "completed",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    validate_external_events(parsed, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "verigym-public-test",
+        "verigym-public-test run",
+        "verigym-public-test list extra",
+        "verigym-public-test run ../hidden",
+        "verigym-public-test run $(cat TASK.md)",
+        "/tmp/verigym-public-test list",
+        "/usr/local/bin/cat TASK.md",
+    ],
+)
+def test_repository_public_launcher_rejects_argv_and_path_injection(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": command,
+                            "status": "failed",
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn.completed"}),
+            ]
+        )
+    )
+    with pytest.raises(CodexPolicyError):
+        validate_external_events(parsed, tmp_path)
+
+
 def test_runtime_logical_workspace_validation_does_not_require_a_host_mount() -> None:
     parsed = parse_event_stream(
         "\n".join(

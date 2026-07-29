@@ -125,6 +125,46 @@ def test_zero_tools_policy_accepts_only_a_stream_with_no_tool_availability_event
     assert plan.tool_event_count == 1
 
 
+def test_public_test_command_accounting_counts_only_exact_started_invocations() -> None:
+    parsed = parse_event_stream(
+        _stream(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": "verigym-public-test list",
+                },
+            },
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": "verigym-public-test list",
+                    "status": "completed",
+                },
+            },
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": (
+                        "/bin/bash -lc '/usr/local/bin/verigym-public-test run counter-wrap-public'"
+                    ),
+                },
+            },
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": "echo verigym-public-test list",
+                },
+            },
+        )
+    )
+    assert parsed.command_count == 3
+    assert parsed.public_test_command_count == 2
+
+
 def test_sanitized_historical_six_events_have_exact_readonly_classification(
     tmp_path: Path,
 ) -> None:

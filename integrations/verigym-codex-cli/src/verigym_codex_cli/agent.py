@@ -453,6 +453,40 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Finish after one candidate; hidden verification happens only after submission.",
         ],
     }
+    repository_contract = context.task.metadata.get("repository_repair")
+    if isinstance(repository_contract, dict):
+        public_test_ids = repository_contract.get("public_test_ids")
+        if not isinstance(public_test_ids, list) or not all(
+            isinstance(value, str) for value in public_test_ids
+        ):
+            raise ValueError("repository task public-test identity is malformed")
+        payload["repository_repair"] = {
+            "repository_root": "repository",
+            "issue_file": "TASK.md",
+            "public_test_launcher": {
+                "list": ["verigym-public-test", "list"],
+                "run": ["verigym-public-test", "run", "<test-id>"],
+                "test_ids": sorted(public_test_ids),
+                "assets": "trusted read-only mount; direct asset access is forbidden",
+            },
+            "candidate_contract": {
+                "kind": "unified_repository_patch",
+                "freeze_owner": "verigym",
+                "candidate_repair": "forbidden",
+            },
+        }
+        payload["instructions"] = [
+            "Work only inside the current visible task workspace.",
+            "Read TASK.md and the visible repository before editing.",
+            "Edit only paths allowed by workspace_policy.editable_globs.",
+            "Use only `verigym-public-test list` and `verigym-public-test run <test-id>` "
+            "for public verification; do not inspect /verigym-public directly.",
+            "Do not access parent, home, source repository, credential, or hidden-verifier paths.",
+            "Do not use network, MCP, plugins, external repositories, or web search.",
+            "Do not ask the user questions.",
+            "Finish after one repository candidate; VeriGym freezes the patch "
+            "and runs hidden tests.",
+        ]
     return (
         '<verigym_external_agent_task schema_version="1.0">\n'
         + json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
@@ -631,6 +665,9 @@ def _external_accounting(
         cli_event_count=len(parsed.events) if parsed is not None else 0,
         external_tool_call_count=(canonical.external_tool_count if canonical is not None else None),
         external_command_count=canonical.command_count if canonical is not None else None,
+        public_test_invocation_count=(
+            canonical.public_test_command_count if canonical is not None else None
+        ),
         external_file_read_count=(canonical.file_read_count if canonical is not None else None),
         external_file_write_count=(canonical.file_write_count if canonical is not None else None),
         external_patch_count=canonical.patch_count if canonical is not None else None,
