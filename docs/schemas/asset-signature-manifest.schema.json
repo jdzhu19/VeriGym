@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "AssetSignatureBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "match_class": {
+          "enum": [
+            "task_identity_overlap",
+            "source_identity_overlap",
+            "exact_file_content",
+            "issue_text_duplication",
+            "source_code_sequence",
+            "hidden_test_fragment",
+            "reference_patch_fragment",
+            "exact_task_id",
+            "repository_path",
+            "distinctive_identifier",
+            "heldout_issue_phrase",
+            "allowed_synthesis_vocabulary",
+            "generic_vocabulary"
+          ],
+          "title": "Match Class",
+          "type": "string"
+        },
+        "raw_private_content_exported": {
+          "const": false,
+          "default": false,
+          "title": "Raw Private Content Exported",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature_count": {
+          "minimum": 0,
+          "title": "Signature Count",
+          "type": "integer"
+        },
+        "signature_set_hash": {
+          "title": "Signature Set Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "match_class",
+        "signature_count",
+        "signature_set_hash"
+      ],
+      "title": "AssetSignatureBucket",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/asset-signature-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "allowed_synthesis_corpus_hash": {
+      "title": "Allowed Synthesis Corpus Hash",
+      "type": "string"
+    },
+    "buckets": {
+      "items": {
+        "$ref": "#/$defs/AssetSignatureBucket"
+      },
+      "title": "Buckets",
+      "type": "array"
+    },
+    "heldout_file_count": {
+      "minimum": 0,
+      "title": "Heldout File Count",
+      "type": "integer"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "default": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "manifest_hash": {
+      "title": "Manifest Hash",
+      "type": "string"
+    },
+    "manifest_id": {
+      "title": "Manifest Id",
+      "type": "string"
+    },
+    "policy_hash": {
+      "title": "Policy Hash",
+      "type": "string"
+    },
+    "reference_assets_exported": {
+      "const": false,
+      "default": false,
+      "title": "Reference Assets Exported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_manifest_hash": {
+      "title": "Split Manifest Hash",
+      "type": "string"
+    },
+    "training_file_count": {
+      "minimum": 0,
+      "title": "Training File Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "manifest_id",
+    "split_manifest_hash",
+    "policy_hash",
+    "allowed_synthesis_corpus_hash",
+    "buckets",
+    "training_file_count",
+    "heldout_file_count",
+    "manifest_hash"
+  ],
+  "title": "AssetSignatureManifest",
+  "type": "object"
+}

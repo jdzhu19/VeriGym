@@ -74,6 +74,18 @@ _PROMPT_TEMPLATES_BY_HASH = {
 MEMORY_BUILDER_PROMPT_TEMPLATE_HASH = hash_bytes(_PROMPT_TEMPLATE.encode("utf-8"))
 
 
+def memory_builder_allowed_synthesis_sources() -> dict[str, str]:
+    """Return the exact task-free prompt/schema material available before v1 freeze."""
+
+    return {
+        "memory-builder-output-schema": canonical_json(
+            MemoryPack.model_json_schema(mode="serialization")
+        ),
+        "memory-builder-prompt-policy": canonical_json(MEMORY_BUILDER_PROMPT_POLICY),
+        "memory-builder-prompt-template": _PROMPT_TEMPLATE,
+    }
+
+
 def build_memory_builder_input(
     *,
     training_summary: SanitizedTrainingSummary,

@@ -25,7 +25,15 @@ from verigym.evolution.rewards import (
     derive_reward,
     recompute_reward,
 )
-from verigym.evolution.splits import scan_contamination
+from verigym.evolution.splits import (
+    build_allowed_synthesis_corpus,
+    build_asset_signature_manifest,
+    build_contamination_scan_policy,
+    scan_contamination,
+    scan_contamination_report,
+    scan_frozen_memory_to_heldout,
+    scan_split_assets,
+)
 from verigym.evolution.training_import import (
     build_historical_training_import_manifest,
     build_training_episode_import_eligibility,
@@ -36,7 +44,10 @@ __all__ = [
     "REPO_RTL_SPARSE_V1",
     "TrajectoryExporter",
     "authorize_process",
+    "build_allowed_synthesis_corpus",
     "build_agent_version",
+    "build_asset_signature_manifest",
+    "build_contamination_scan_policy",
     "build_memory_pack",
     "build_memory_synthesis_plan",
     "build_historical_training_import_manifest",
@@ -47,6 +58,9 @@ __all__ = [
     "replay_trajectory_dataset",
     "reconstruct_memory_synthesis_launch",
     "scan_contamination",
+    "scan_contamination_report",
+    "scan_frozen_memory_to_heldout",
+    "scan_split_assets",
     "seal_process_ledger",
     "validate_memory_pack",
     "validate_memory_synthesis_plan",

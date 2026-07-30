@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import Field, field_validator, model_validator
 
@@ -423,6 +423,321 @@ class ContaminationScan(StrictModel):
     def result_matches_findings(self) -> ContaminationScan:
         if self.passed != (not self.findings):
             raise ValueError("contamination result disagrees with findings")
+        return self
+
+
+ContaminationMatchClass = Literal[
+    "task_identity_overlap",
+    "source_identity_overlap",
+    "exact_file_content",
+    "issue_text_duplication",
+    "source_code_sequence",
+    "hidden_test_fragment",
+    "reference_patch_fragment",
+    "exact_task_id",
+    "repository_path",
+    "distinctive_identifier",
+    "heldout_issue_phrase",
+    "allowed_synthesis_vocabulary",
+    "generic_vocabulary",
+]
+ContaminationSeverity = Literal["hard_contamination", "diagnostic_overlap"]
+
+
+class ContaminationScanPolicy(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    policy_id: Literal["provenance_aware_contamination_v1"] = "provenance_aware_contamination_v1"
+    tokenizer_id: Literal["ascii_casefold_lexical_v1"] = "ascii_casefold_lexical_v1"
+    natural_language_min_tokens: int = Field(default=5, ge=3)
+    natural_language_min_characters: int = Field(default=20, ge=20)
+    code_sequence_min_tokens: int = Field(default=5, ge=3)
+    source_fragment_min_lines: int = Field(default=5, ge=3)
+    distinctive_identifier_min_characters: int = Field(default=5, ge=3)
+    known_match_classes: list[ContaminationMatchClass]
+    hidden_reference_output: Literal["hash_only"] = "hash_only"
+    unknown_match_policy: Literal["fail_closed"] = "fail_closed"
+    policy_hash: str
+
+    @field_validator("policy_hash")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def match_classes_are_complete(self) -> ContaminationScanPolicy:
+        expected = set(get_args(ContaminationMatchClass))
+        if set(self.known_match_classes) != expected or len(self.known_match_classes) != len(
+            expected
+        ):
+            raise ValueError("contamination policy must bind every known match class exactly once")
+        return self
+
+
+class AllowedSynthesisSource(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    source_id: str
+    source_class: Literal[
+        "memory_builder_prompt_schema",
+        "sanitized_training_summary",
+        "training_public_assets",
+        "reward_channel_names",
+        "generic_policy_instructions",
+    ]
+    content_hash: str
+    token_count: int = Field(ge=0)
+
+    @field_validator("source_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("content_hash")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        return _hash(value)
+
+
+class AllowedSynthesisCorpus(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    corpus_id: str
+    policy_hash: str
+    sources: list[AllowedSynthesisSource] = Field(min_length=1)
+    normalized_tokens: list[str]
+    normalized_phrase_hashes: list[str]
+    heldout_assets_included: Literal[False] = False
+    hidden_assets_included: Literal[False] = False
+    reference_assets_included: Literal[False] = False
+    corpus_hash: str
+
+    @field_validator("corpus_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("policy_hash", "corpus_hash")
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @field_validator("normalized_phrase_hashes")
+    @classmethod
+    def validate_phrase_hashes(cls, values: list[str]) -> list[str]:
+        return [_hash(value) for value in values]
+
+    @model_validator(mode="after")
+    def vocabulary_is_canonical(self) -> AllowedSynthesisCorpus:
+        if self.normalized_tokens != sorted(set(self.normalized_tokens)):
+            raise ValueError("allowed synthesis tokens must be sorted and unique")
+        if self.normalized_phrase_hashes != sorted(set(self.normalized_phrase_hashes)):
+            raise ValueError("allowed synthesis phrase hashes must be sorted and unique")
+        source_ids = [source.source_id for source in self.sources]
+        if source_ids != sorted(source_ids) or len(source_ids) != len(set(source_ids)):
+            raise ValueError("allowed synthesis sources must be sorted and unique")
+        return self
+
+
+class AssetSignatureBucket(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    match_class: ContaminationMatchClass
+    signature_count: int = Field(ge=0)
+    signature_set_hash: str
+    raw_private_content_exported: Literal[False] = False
+
+    @field_validator("signature_set_hash")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        return _hash(value)
+
+
+class AssetSignatureManifest(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    manifest_id: str
+    split_manifest_hash: str
+    policy_hash: str
+    allowed_synthesis_corpus_hash: str
+    buckets: list[AssetSignatureBucket]
+    training_file_count: int = Field(ge=0)
+    heldout_file_count: int = Field(ge=0)
+    hidden_assets_exported: Literal[False] = False
+    reference_assets_exported: Literal[False] = False
+    manifest_hash: str
+
+    @field_validator("manifest_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator(
+        "split_manifest_hash",
+        "policy_hash",
+        "allowed_synthesis_corpus_hash",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def buckets_are_canonical(self) -> AssetSignatureManifest:
+        classes = [bucket.match_class for bucket in self.buckets]
+        if classes != sorted(classes) or len(classes) != len(set(classes)):
+            raise ValueError("asset signature buckets must be sorted and unique")
+        return self
+
+
+class ContaminationMatch(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    stage: Literal["split_asset", "frozen_memory_to_heldout"]
+    match_class: ContaminationMatchClass
+    severity: ContaminationSeverity
+    evidence_hash: str
+    training_identity: str | None = None
+    heldout_identity: str
+    task_hash: str | None = None
+    source_artifact_hash: str | None = None
+    normalized_token_count: int = Field(ge=1)
+    match_location_class: str
+    public_excerpt: str | None = Field(default=None, max_length=160)
+    raw_private_content_exported: Literal[False] = False
+
+    @field_validator("evidence_hash", "task_hash", "source_artifact_hash")
+    @classmethod
+    def validate_hashes(cls, value: str | None) -> str | None:
+        return _hash(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def severity_and_privacy_match_class(self) -> ContaminationMatch:
+        diagnostic = {"allowed_synthesis_vocabulary", "generic_vocabulary"}
+        if (self.match_class in diagnostic) != (self.severity == "diagnostic_overlap"):
+            raise ValueError("contamination severity disagrees with the typed match class")
+        if self.match_class in {"hidden_test_fragment", "reference_patch_fragment"}:
+            if self.public_excerpt is not None:
+                raise ValueError("hidden and reference matches must remain hash-only")
+        return self
+
+
+class SplitAssetContaminationScan(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    scan_id: str
+    split_manifest_hash: str
+    policy_hash: str
+    signature_manifest_hash: str
+    matches: list[ContaminationMatch]
+    hard_contamination_count: int = Field(ge=0)
+    diagnostic_overlap_count: Literal[0] = 0
+    passed: bool
+    implementation_error: bool = False
+    hidden_assets_exported: Literal[False] = False
+    reference_assets_exported: Literal[False] = False
+    scan_hash: str
+
+    @field_validator("scan_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("split_manifest_hash", "policy_hash", "signature_manifest_hash", "scan_hash")
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def result_matches_findings(self) -> SplitAssetContaminationScan:
+        hard_count = sum(match.severity == "hard_contamination" for match in self.matches)
+        if hard_count != self.hard_contamination_count:
+            raise ValueError("split contamination count disagrees with matches")
+        if self.passed != (hard_count == 0 and not self.implementation_error):
+            raise ValueError("split contamination result disagrees with matches")
+        if any(match.stage != "split_asset" for match in self.matches):
+            raise ValueError("split scan contains a match from another stage")
+        return self
+
+
+class FrozenMemoryContaminationScan(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    scan_id: str
+    split_manifest_hash: str
+    policy_hash: str
+    allowed_synthesis_corpus_hash: str
+    signature_manifest_hash: str
+    memory_pack_hash: str
+    matches: list[ContaminationMatch]
+    hard_contamination_count: int = Field(ge=0)
+    diagnostic_overlap_count: int = Field(ge=0)
+    passed: bool
+    implementation_error: bool = False
+    hidden_assets_exported: Literal[False] = False
+    reference_assets_exported: Literal[False] = False
+    scan_hash: str
+
+    @field_validator("scan_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator(
+        "split_manifest_hash",
+        "policy_hash",
+        "allowed_synthesis_corpus_hash",
+        "signature_manifest_hash",
+        "memory_pack_hash",
+        "scan_hash",
+    )
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def result_matches_findings(self) -> FrozenMemoryContaminationScan:
+        hard_count = sum(match.severity == "hard_contamination" for match in self.matches)
+        diagnostic_count = sum(match.severity == "diagnostic_overlap" for match in self.matches)
+        if (
+            hard_count != self.hard_contamination_count
+            or diagnostic_count != self.diagnostic_overlap_count
+        ):
+            raise ValueError("memory contamination counts disagree with matches")
+        if self.passed != (hard_count == 0 and not self.implementation_error):
+            raise ValueError("memory contamination result disagrees with matches")
+        if any(match.stage != "frozen_memory_to_heldout" for match in self.matches):
+            raise ValueError("memory scan contains a match from another stage")
+        return self
+
+
+class ContaminationScanReport(StrictModel):
+    schema_version: str = SCHEMA_VERSION
+    report_id: str
+    split_asset_scan: SplitAssetContaminationScan
+    frozen_memory_scan: FrozenMemoryContaminationScan | None = None
+    passed: bool
+    hard_contamination_count: int = Field(ge=0)
+    diagnostic_overlap_count: int = Field(ge=0)
+    report_hash: str
+
+    @field_validator("report_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("report_hash")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def aggregate_matches_stages(self) -> ContaminationScanReport:
+        hard_count = self.split_asset_scan.hard_contamination_count
+        diagnostic_count = 0
+        stage_passed = self.split_asset_scan.passed
+        if self.frozen_memory_scan is not None:
+            hard_count += self.frozen_memory_scan.hard_contamination_count
+            diagnostic_count = self.frozen_memory_scan.diagnostic_overlap_count
+            stage_passed = stage_passed and self.frozen_memory_scan.passed
+        if (
+            hard_count != self.hard_contamination_count
+            or diagnostic_count != self.diagnostic_overlap_count
+            or self.passed != stage_passed
+        ):
+            raise ValueError("contamination report disagrees with stage results")
         return self
 
 
@@ -1400,7 +1715,7 @@ class EvolutionProcessLedgerManifest(StrictModel):
     started_processes: int = Field(ge=0, le=24)
     terminal_processes: int = Field(ge=0, le=24)
     process_kind_counts: dict[str, int]
-    maximum_processes: Literal[24] = 24
+    maximum_processes: int = Field(default=24, ge=1, le=24)
     complete: bool
     manifest_hash: str
 
@@ -1588,8 +1903,15 @@ __all__ = [
     "AgentVersionSetManifest",
     "BoundedObservableText",
     "CandidateFreezeObservation",
+    "AllowedSynthesisCorpus",
+    "AllowedSynthesisSource",
+    "AssetSignatureBucket",
+    "AssetSignatureManifest",
     "ContaminationFinding",
+    "ContaminationMatch",
     "ContaminationScan",
+    "ContaminationScanPolicy",
+    "ContaminationScanReport",
     "EvolvingEvaluationReport",
     "EvolutionProcessLedgerManifest",
     "EvolutionProcessLedgerRecord",
@@ -1597,6 +1919,7 @@ __all__ = [
     "EpisodeTrajectory",
     "ExternalAgentVersionImportManifest",
     "ExternalTrainerExportManifest",
+    "FrozenMemoryContaminationScan",
     "HistoricalTrainingEpisodeImportEligibility",
     "HistoricalTrainingImportManifest",
     "MemoryBuilderInput",
@@ -1620,6 +1943,7 @@ __all__ = [
     "RunAgentVersionAssignments",
     "SanitizedTrainingEpisode",
     "SanitizedTrainingSummary",
+    "SplitAssetContaminationScan",
     "TaskSplitEntry",
     "TaskSplitManifest",
     "TaskVersionMetric",

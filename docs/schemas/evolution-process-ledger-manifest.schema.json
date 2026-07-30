@@ -195,8 +195,9 @@
       "type": "string"
     },
     "maximum_processes": {
-      "const": 24,
       "default": 24,
+      "maximum": 24,
+      "minimum": 1,
       "title": "Maximum Processes",
       "type": "integer"
     },

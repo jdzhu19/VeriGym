@@ -69,6 +69,7 @@ def validate_process_records(
     records: Sequence[EvolutionProcessLedgerRecord],
     *,
     authorization_id: str | None = None,
+    maximum_processes: int = MAX_M10B_PROCESSES,
 ) -> list[EvolutionProcessLedgerRecord]:
     """Validate ordering, hash chains, unique process ordinals, and the global cap."""
 
@@ -109,8 +110,10 @@ def validate_process_records(
         if any(getattr(record, field) != getattr(source, field) for field in stable_fields):
             raise ValueError("terminal process identity differs from its authorization")
         terminal[record.ordinal] = record
-    if len(authorized) > MAX_M10B_PROCESSES:
-        raise ValueError("M10B process authorization exceeds the 24-process ceiling")
+    if not 1 <= maximum_processes <= MAX_M10B_PROCESSES:
+        raise ValueError("M10B process ceiling must be between 1 and 24")
+    if len(authorized) > maximum_processes:
+        raise ValueError("M10B process authorization exceeds the campaign ceiling")
     return validated
 
 
@@ -140,12 +143,14 @@ def authorize_process(
     invocation_spec_hash: str | None = None,
     payload_binding_hash: str | None = None,
     memory_synthesis_plan_hash: str | None = None,
+    maximum_processes: int = MAX_M10B_PROCESSES,
 ) -> EvolutionProcessLedgerRecord:
     """Durably append an authorization before a single process is launched."""
 
     records = validate_process_records(
         _read_records(path),
         authorization_id=authorization_id,
+        maximum_processes=maximum_processes,
     )
     unfinished = {record.ordinal for record in records if record.record_phase == "authorized"} - {
         record.ordinal for record in records if record.record_phase == "terminal"
@@ -153,8 +158,8 @@ def authorize_process(
     if unfinished:
         raise ValueError("a prior authorized process lacks a terminal ledger record")
     ordinal = sum(record.record_phase == "authorized" for record in records) + 1
-    if ordinal > MAX_M10B_PROCESSES:
-        raise ValueError("M10B process authorization exceeds the 24-process ceiling")
+    if ordinal > maximum_processes:
+        raise ValueError("M10B process authorization exceeds the campaign ceiling")
     record = _record(
         ordinal=ordinal,
         record_phase="authorized",
@@ -226,12 +231,14 @@ def seal_process_ledger(
     *,
     authorization_id: str,
     complete: bool,
+    maximum_processes: int = MAX_M10B_PROCESSES,
 ) -> EvolutionProcessLedgerManifest:
     """Create an immutable summary while retaining the append-only JSONL evidence."""
 
     records = validate_process_records(
         _read_records(path),
         authorization_id=authorization_id,
+        maximum_processes=maximum_processes,
     )
     authorizations = [record for record in records if record.record_phase == "authorized"]
     terminals = [record for record in records if record.record_phase == "terminal"]
@@ -246,7 +253,7 @@ def seal_process_ledger(
         "started_processes": len(terminals),
         "terminal_processes": len(terminals),
         "process_kind_counts": dict(sorted(counts.items())),
-        "maximum_processes": MAX_M10B_PROCESSES,
+        "maximum_processes": maximum_processes,
         "complete": complete,
     }
     return EvolutionProcessLedgerManifest.model_validate(
@@ -264,6 +271,7 @@ def validate_process_ledger_manifest(
     records = validate_process_records(
         manifest.records,
         authorization_id=manifest.authorization_id,
+        maximum_processes=manifest.maximum_processes,
     )
     rebuilt_counts = Counter(
         record.process_kind for record in records if record.record_phase == "authorized"

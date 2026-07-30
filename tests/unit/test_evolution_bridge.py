@@ -747,6 +747,14 @@ def test_model_process_ledger_is_append_only_hash_chained_and_capped(tmp_path: P
     )
     assert validate_process_ledger_manifest(manifest) == manifest
     assert manifest.authorized_processes == manifest.started_processes == 1
+    campaign_manifest = seal_process_ledger(
+        ledger,
+        authorization_id="m10b-owner-contract-v1",
+        complete=True,
+        maximum_processes=20,
+    )
+    assert campaign_manifest.maximum_processes == 20
+    assert validate_process_ledger_manifest(campaign_manifest) == campaign_manifest
 
     text = ledger.read_text(encoding="utf-8")
     ledger.write_text(text.replace('"ordinal":1', '"ordinal":2', 1), encoding="utf-8")

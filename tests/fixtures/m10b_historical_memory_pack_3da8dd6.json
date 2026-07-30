@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "memory_pack_id": "evolve-context-v1-memory",
+  "policy_id": "task_independent_code_free_memory_v1",
+  "sections": [
+    {
+      "schema_version": "1.0",
+      "section": "principles",
+      "items": [
+        "Prefer the smallest change that fully addresses the observed behavior.",
+        "Preserve existing interfaces and data flow whenever possible.",
+        "Verify the likely root cause before editing related code."
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "section": "public_test_strategy",
+      "items": [
+        "Run the most relevant public test first to confirm the failure.",
+        "Re-run focused tests after each targeted change.",
+        "Finish with the available compile and public validation checks."
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "section": "workspace_policy_reminders",
+      "items": [
+        "Keep all work inside the active workspace boundaries.",
+        "Touch only files that are necessary for the fix.",
+        "Leave the workspace clean except for intentional repair changes."
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "section": "debugging_checklist",
+      "items": [
+        "Inspect the failing path and its immediate dependencies.",
+        "Compare expected and actual behavior at the smallest reproducible point.",
+        "Confirm the fix resolves the issue without changing unrelated behavior."
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "section": "patch_discipline",
+      "items": [
+        "Use concise edits that are easy to review and explain.",
+        "Remove or simplify code only when it clearly improves correctness.",
+        "Stop after the targeted fix is validated."
+      ]
+    }
+  ],
+  "total_utf8_bytes": 1392,
+  "content_hash": "88ff2d9fb62a297430e74431df3ae4fec0a8f746a6e12a978b17e02a90489274",
+  "task_independent": true,
+  "code_free": true
+}

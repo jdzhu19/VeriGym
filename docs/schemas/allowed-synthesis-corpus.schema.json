@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "AllowedSynthesisSource": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_class": {
+          "enum": [
+            "memory_builder_prompt_schema",
+            "sanitized_training_summary",
+            "training_public_assets",
+            "reward_channel_names",
+            "generic_policy_instructions"
+          ],
+          "title": "Source Class",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "token_count": {
+          "minimum": 0,
+          "title": "Token Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_class",
+        "content_hash",
+        "token_count"
+      ],
+      "title": "AllowedSynthesisSource",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/allowed-synthesis-corpus.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "corpus_hash": {
+      "title": "Corpus Hash",
+      "type": "string"
+    },
+    "corpus_id": {
+      "title": "Corpus Id",
+      "type": "string"
+    },
+    "heldout_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Heldout Assets Included",
+      "type": "boolean"
+    },
+    "hidden_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Hidden Assets Included",
+      "type": "boolean"
+    },
+    "normalized_phrase_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Normalized Phrase Hashes",
+      "type": "array"
+    },
+    "normalized_tokens": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Normalized Tokens",
+      "type": "array"
+    },
+    "policy_hash": {
+      "title": "Policy Hash",
+      "type": "string"
+    },
+    "reference_assets_included": {
+      "const": false,
+      "default": false,
+      "title": "Reference Assets Included",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/AllowedSynthesisSource"
+      },
+      "minItems": 1,
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "corpus_id",
+    "policy_hash",
+    "sources",
+    "normalized_tokens",
+    "normalized_phrase_hashes",
+    "corpus_hash"
+  ],
+  "title": "AllowedSynthesisCorpus",
+  "type": "object"
+}
