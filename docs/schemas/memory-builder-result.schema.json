@@ -109,6 +109,39 @@
       "title": "Credentials Exported",
       "type": "boolean"
     },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "process_timeout",
+            "process_output_limit",
+            "process_nonzero_exit",
+            "runtime_security_incomplete",
+            "event_stream_parse_error",
+            "terminal_stream_incomplete",
+            "event_policy_rejected",
+            "workspace_not_empty_before",
+            "workspace_not_empty_after",
+            "workspace_changed",
+            "memory_policy_code_fence",
+            "memory_policy_rtl_code",
+            "memory_policy_task_id",
+            "memory_policy_repository_path",
+            "memory_policy_hash",
+            "memory_policy_hidden_or_reference",
+            "memory_policy_credential",
+            "memory_policy_heldout_only",
+            "memory_output_invalid"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
     "heldout_assets_available": {
       "const": false,
       "default": false,

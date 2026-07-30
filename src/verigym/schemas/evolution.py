@@ -50,6 +50,27 @@ EpisodeOutcomeKind = Literal[
     "cancelled_or_interrupted",
 ]
 RewardValue = int | float | None
+MemoryBuilderFailureReason = Literal[
+    "process_timeout",
+    "process_output_limit",
+    "process_nonzero_exit",
+    "runtime_security_incomplete",
+    "event_stream_parse_error",
+    "terminal_stream_incomplete",
+    "event_policy_rejected",
+    "workspace_not_empty_before",
+    "workspace_not_empty_after",
+    "workspace_changed",
+    "memory_policy_code_fence",
+    "memory_policy_rtl_code",
+    "memory_policy_task_id",
+    "memory_policy_repository_path",
+    "memory_policy_hash",
+    "memory_policy_hidden_or_reference",
+    "memory_policy_credential",
+    "memory_policy_heldout_only",
+    "memory_output_invalid",
+]
 
 
 def _hash(value: str) -> str:
@@ -1138,6 +1159,7 @@ class MemoryBuilderResult(StrictModel):
     process_ledger_record_hash: str
     redacted_output_hash: str
     memory_pack: MemoryPack | None = None
+    failure_reason: MemoryBuilderFailureReason | None = None
     wall_time_s: float = Field(ge=0)
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
@@ -1173,6 +1195,29 @@ class MemoryBuilderResult(StrictModel):
     def result_matches_status(self) -> MemoryBuilderResult:
         if (self.memory_pack is not None) != (self.status == "success"):
             raise ValueError("only successful memory synthesis may contain a memory pack")
+        if self.status == "success" and self.failure_reason is not None:
+            raise ValueError("successful memory synthesis cannot have a failure reason")
+        process_reasons = {
+            "process_timeout",
+            "process_output_limit",
+            "process_nonzero_exit",
+            "runtime_security_incomplete",
+        }
+        parser_reasons = {
+            "event_stream_parse_error",
+            "terminal_stream_incomplete",
+            "memory_output_invalid",
+        }
+        if self.failure_reason is not None:
+            expected_status = (
+                "process_failure"
+                if self.failure_reason in process_reasons
+                else "parser_error"
+                if self.failure_reason in parser_reasons
+                else "content_policy_rejected"
+            )
+            if self.status != expected_status:
+                raise ValueError("memory-builder failure reason disagrees with status")
         lifecycle = (
             self.memory_synthesis_plan_hash,
             self.invocation_spec_hash,
@@ -1555,6 +1600,7 @@ __all__ = [
     "HistoricalTrainingEpisodeImportEligibility",
     "HistoricalTrainingImportManifest",
     "MemoryBuilderInput",
+    "MemoryBuilderFailureReason",
     "MemoryBuilderResult",
     "MemorySynthesisPlan",
     "MemoryPack",

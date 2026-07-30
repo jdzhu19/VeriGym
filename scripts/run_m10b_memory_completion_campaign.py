@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import stat
@@ -28,7 +29,7 @@ from verigym.evolution.exporter import (
     TrajectoryExporter,
     replay_trajectory_dataset,
 )
-from verigym.evolution.ledger import seal_process_ledger
+from verigym.evolution.ledger import seal_process_ledger, validate_process_records
 from verigym.evolution.memory import (
     build_agent_version,
     prepare_training_summary,
@@ -72,6 +73,7 @@ from verigym.schemas.evolution import (
     AgentVersionManifest,
     AgentVersionSetManifest,
     EpisodeTrajectory,
+    EvolutionProcessLedgerRecord,
     MemoryBuilderInput,
     MemoryBuilderResult,
     MemorySynthesisPlan,
@@ -94,6 +96,9 @@ FAILED_9811_SHA256SUMS = "2abd8f8f90f8333e68cfd9e19a793e98c5688cdaa5860379463498
 FAILED_9811_AUDIT = "cdfaed245db8f3ffe9ec2965c2044368b6b7edef773a245016358e9829176519"
 FAILED_DE9_BUNDLE = Path("/data/jzhu484/Agent/VeriGym_milestone10b_de9dc9d/evidence-bundle-final")
 FAILED_DE9_SHA256SUMS = "fd549b7e064aabdad1c2e07630de62f8e424a9a4c368d7df71813c048def8188"
+PROBE_1_SOURCE_COMMIT = "2a7591f3ca4e0faec44003ed8c247e21973155c2"
+PROBE_1_SOURCE_TREE = "fa1794f08f473589172f62b94a836dda10e76e7f"
+PROBE_1_LEDGER_SHA256 = "f60cdb2ba0ab0b1df091aca9821052c5cafe0aed468b75eef32c7a9e163dee25"
 
 
 def _sha256(path: Path) -> str:
@@ -149,6 +154,94 @@ def _make_writable_copy(root: Path) -> None:
             os.chmod(path, mode | 0o700)
         elif path.is_file():
             os.chmod(path, mode | 0o600)
+
+
+def _load_bounded_json_object(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or not stat.S_ISREG(os.lstat(path).st_mode):
+        raise RuntimeError("prior probe metadata must be a bounded regular file")
+    resolved = path.resolve(strict=True)
+    if resolved.stat().st_size > 1024 * 1024:
+        raise RuntimeError("prior probe metadata must be a bounded regular file")
+    value = json.loads(resolved.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("prior probe metadata must be one JSON object")
+    return value
+
+
+def _import_prior_probe(
+    *,
+    prior_campaign: Path,
+    output: Path,
+    ledger: Path,
+) -> tuple[Path, dict[str, Any]]:
+    """Import one immutable terminal Probe 1 and its accounting without rerunning it."""
+
+    prior = prior_campaign.resolve(strict=True)
+    source_identity = _load_bounded_json_object(prior / "preflight/source-identity.json")
+    if (
+        source_identity.get("source_commit") != PROBE_1_SOURCE_COMMIT
+        or source_identity.get("source_tree") != PROBE_1_SOURCE_TREE
+    ):
+        raise RuntimeError("prior Probe 1 source identity differs from the authorized campaign")
+    prior_ledger = prior / "model-process-ledger.jsonl"
+    if _sha256(prior_ledger) != PROBE_1_LEDGER_SHA256:
+        raise RuntimeError("prior Probe 1 process ledger identity changed")
+    records = validate_process_records(
+        load_jsonl_models(prior_ledger, EvolutionProcessLedgerRecord),
+        authorization_id=AUTHORIZATION_ID,
+    )
+    if len(records) != 2:
+        raise RuntimeError("prior Probe 1 must contain exactly one authorization and terminal")
+    authorization, terminal = records
+    if (
+        authorization.ordinal != 1
+        or authorization.record_phase != "authorized"
+        or authorization.process_kind != "implementation_probe"
+        or authorization.run_or_build_id != "m10b-memory-builder-conformance-probe-1"
+        or authorization.model_process_started
+        or authorization.retry
+        or authorization.resume
+        or terminal.ordinal != 1
+        or terminal.record_phase != "terminal"
+        or not terminal.model_process_started
+        or not terminal.terminal
+        or terminal.terminal_outcome != "memory_builder:content_policy_rejected"
+        or terminal.retry
+        or terminal.resume
+    ):
+        raise RuntimeError("prior Probe 1 accounting is not the frozen terminal failure")
+    prior_probe = prior / "memory-builder-probe-1"
+    result = load_model(
+        prior_probe / "process-evidence/memory-builder-result.json",
+        MemoryBuilderResult,
+    )
+    validate_memory_builder_result(result)
+    if (
+        result.status != "content_policy_rejected"
+        or result.failure_reason is not None
+        or result.model_processes_started != 1
+    ):
+        raise RuntimeError("prior Probe 1 result differs from the historical generic rejection")
+    shutil.copy2(prior_ledger, ledger)
+    imported_probe = output / "memory-builder-probe-1"
+    base._copy_tree(prior_probe, imported_probe)
+    manifest = {
+        "schema_version": "1.0",
+        "prior_probe_source_commit": PROBE_1_SOURCE_COMMIT,
+        "prior_probe_source_tree": PROBE_1_SOURCE_TREE,
+        "prior_probe_ledger_sha256": PROBE_1_LEDGER_SHA256,
+        "authorization_record_hash": authorization.record_hash,
+        "terminal_record_hash": terminal.record_hash,
+        "result_output_hash": result.output_hash,
+        "terminal_outcome": terminal.terminal_outcome,
+        "model_processes_imported": 1,
+        "model_processes_relaunched": 0,
+        "retry": False,
+        "resume": False,
+        "historical_evidence_modified": False,
+    }
+    atomic_dump_json(output / "preflight/prior-probe-import.json", manifest)
+    return imported_probe, manifest
 
 
 def _synthetic_summary() -> SanitizedTrainingSummary:
@@ -277,9 +370,8 @@ def _replay_memory_builder(
         executable_path=codex_executable,
     )
     validate_external_process_request_identity(executable)
-    if result.memory_pack is None:
-        raise RuntimeError("successful memory-builder evidence omitted its memory pack")
-    validate_memory_pack(result.memory_pack)
+    if result.memory_pack is not None:
+        validate_memory_pack(result.memory_pack)
     if (
         result.memory_synthesis_plan_hash != plan.plan_hash
         or result.invocation_spec_hash != plan.invocation_spec.invocation_spec_hash
@@ -293,7 +385,11 @@ def _replay_memory_builder(
         "payload_binding_hash": binding.payload_binding_hash,
         "rendered_prompt_hash": binding.rendered_prompt_hash,
         "rendered_prompt_utf8_bytes": len(prompt.encode("utf-8")),
-        "memory_pack_hash": result.memory_pack.content_hash,
+        "status": result.status,
+        "failure_reason": result.failure_reason,
+        "memory_pack_hash": (
+            result.memory_pack.content_hash if result.memory_pack is not None else None
+        ),
         "model_calls": 0,
         "codex_calls": 0,
         "broker_calls": 0,
@@ -573,7 +669,8 @@ def _seal_bundle(
     quality_evidence: Path,
     forensic_evidence: Path,
     lifecycle_evidence: Path,
-    probe_root: Path,
+    probe_roots: Sequence[Path],
+    probe_1_forensic_evidence: Path,
     import_root: Path,
     rerun_root: Path | None,
     final_training_dataset: Path,
@@ -616,6 +713,10 @@ def _seal_bundle(
         bundle / "root-cause/memory-builder-preview-forensic.json",
     )
     shutil.copy2(
+        probe_1_forensic_evidence,
+        bundle / "root-cause/probe-1-content-policy-forensic.json",
+    )
+    shutil.copy2(
         repository_root / "tests/fixtures/m10b_memory_builder_empty_stdin_preview.json",
         bundle / "root-cause/historical-empty-stdin-regression.json",
     )
@@ -636,7 +737,8 @@ def _seal_bundle(
         quality_evidence,
         bundle / "implementation/CI-and-package-identities.json",
     )
-    base._copy_tree(probe_root, bundle / "memory-builder-probes/probe-1")
+    for index, probe_root in enumerate(probe_roots, 1):
+        base._copy_tree(probe_root, bundle / f"memory-builder-probes/probe-{index}")
     base._copy_tree(import_root, bundle / "training-import/evidence")
     if rerun_root is not None:
         base._copy_tree(rerun_root, bundle / "training-rerun/evidence")
@@ -731,7 +833,7 @@ def _seal_bundle(
         "6. Historical executable requests remain readable; empty stdin remains rejected.\n"
         "7. Zero-model tests and GitHub CI passed before the first real process.\n"
         "8. Packages, images, Codex, auth, and source identities were resealed.\n"
-        "9. One real memory-builder conformance probe passed.\n"
+        "9. Probe 1 exposed a local observability defect; the authorized Probe 2 passed.\n"
         f"10. Historical training import-all eligibility: {import_manifest.import_all}.\n"
         f"11. Final training outcomes: {len(training_outcomes)} terminal/evaluable runs.\n"
         "12. One frozen final observable trajectory/reward dataset was used.\n"
@@ -765,7 +867,7 @@ def _seal_bundle(
         "source_commit": source_identity["source_commit"],
         "source_tree": source_identity["source_tree"],
         "training_imported": bool(import_manifest.import_all),
-        "probe_processes": 1,
+        "probe_processes": len(probe_roots),
         "conditional_training_processes": 0 if import_manifest.import_all else 3,
         "final_memory_synthesis_processes": 1,
         "heldout_processes": 18,
@@ -805,7 +907,9 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--quality-evidence", type=Path, required=True)
     parser.add_argument("--forensic-evidence", type=Path, required=True)
+    parser.add_argument("--probe-1-forensic-evidence", type=Path, required=True)
     parser.add_argument("--lifecycle-evidence", type=Path, required=True)
+    parser.add_argument("--prior-probe-campaign", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -826,8 +930,12 @@ def main() -> int:
         raise RuntimeError("Codex wrapper differs from exact 0.144.6")
     quality_path = args.quality_evidence.resolve(strict=True)
     forensic_path = args.forensic_evidence.resolve(strict=True)
+    probe_1_forensic_path = args.probe_1_forensic_evidence.resolve(strict=True)
     lifecycle_path = args.lifecycle_evidence.resolve(strict=True)
-    if not all(path.is_file() for path in (quality_path, forensic_path, lifecycle_path)):
+    if not all(
+        path.is_file()
+        for path in (quality_path, forensic_path, probe_1_forensic_path, lifecycle_path)
+    ):
         raise RuntimeError("zero-model forensic, lifecycle, and CI evidence is required")
     preservation_before = _preservation_identity()
     output.mkdir(parents=True)
@@ -892,10 +1000,14 @@ def main() -> int:
     )
     atomic_dump_json(output / "preflight/agent-version-v0.json", final_v0)
     ledger = output / "model-process-ledger.jsonl"
-    ledger.touch(mode=0o600)
+    probe_1_root, prior_probe_manifest = _import_prior_probe(
+        prior_campaign=args.prior_probe_campaign,
+        output=output,
+        ledger=ledger,
+    )
 
-    # Exactly one real memory-builder conformance probe.
-    probe_root = output / "memory-builder-probe-1"
+    # Exactly one additional real memory-builder conformance probe after the focused patch.
+    probe_root = output / "memory-builder-probe-2"
     probe_root.mkdir()
     probe_summary = _synthetic_summary()
     probe_request, probe_result, _, probe_plan = base._execute_memory_builder(
@@ -911,12 +1023,32 @@ def main() -> int:
         ),
         authorization_id=AUTHORIZATION_ID,
         process_kind="implementation_probe",
-        build_id="m10b-memory-builder-conformance-probe-1",
+        build_id="m10b-memory-builder-conformance-probe-2",
+        require_success=False,
     )
     if probe_result.status != "success" or probe_result.memory_pack is None:
-        raise RuntimeError("real memory-builder conformance probe did not succeed")
+        atomic_dump_json(
+            output / "campaign-terminal.json",
+            {
+                "schema_version": "1.0",
+                "gate": "FAIL",
+                "label": "MILESTONE 10B MEMORY-BUILDER REPAIR AND COMPLETION: FAIL",
+                "reason": "authorized Probe 2 did not produce an accepted memory pack",
+                "probe_2_status": probe_result.status,
+                "probe_2_failure_reason": probe_result.failure_reason,
+                "model_processes_started": 2,
+                "additional_patches_authorized": 0,
+                "additional_probes_authorized": 0,
+            },
+        )
+        raise RuntimeError("real memory-builder conformance Probe 2 did not succeed")
     if probe_result.memory_synthesis_plan_hash != probe_plan.plan_hash:
         raise RuntimeError("real memory-builder probe omitted its synthesis plan")
+    probe_1_replay = _replay_memory_builder(
+        probe_1_root,
+        codex_executable=args.codex_binary.resolve(strict=True),
+    )
+    atomic_dump_json(probe_1_root / "zero-call-replay.json", probe_1_replay)
     probe_replay = _replay_memory_builder(
         probe_root,
         codex_executable=args.codex_binary.resolve(strict=True),
@@ -1153,7 +1285,8 @@ def main() -> int:
     EvolutionReportService().generate_evaluation(evaluation, heldout_reports)
     replay_summary = {
         "schema_version": "1.0",
-        "memory_probe": probe_replay,
+        "memory_probes": [probe_1_replay, probe_replay],
+        "prior_probe_import": prior_probe_manifest,
         "final_memory_synthesis": final_memory_replay,
         "training_runs": 3,
         "heldout": heldout_replay,
@@ -1174,7 +1307,7 @@ def main() -> int:
         authorization_id=AUTHORIZATION_ID,
         complete=True,
     )
-    expected_processes = 20 if imported else 23
+    expected_processes = 21 if imported else 24
     if (
         process_manifest.authorized_processes != expected_processes
         or process_manifest.started_processes != expected_processes
@@ -1194,7 +1327,8 @@ def main() -> int:
         quality_evidence=quality_path,
         forensic_evidence=forensic_path,
         lifecycle_evidence=lifecycle_path,
-        probe_root=probe_root,
+        probe_roots=[probe_1_root, probe_root],
+        probe_1_forensic_evidence=probe_1_forensic_path,
         import_root=output / "training-import",
         rerun_root=rerun_root,
         final_training_dataset=final_training_dataset,

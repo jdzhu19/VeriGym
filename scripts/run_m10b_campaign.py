@@ -726,6 +726,7 @@ def _execute_memory_builder(
     authorization_id: str = AUTHORIZATION_ID,
     process_kind: str = "memory_synthesis",
     build_id: str = "m10b-memory-synthesis",
+    require_success: bool = True,
 ) -> Any:
     frozen_summary_path = output / "frozen-training-summary.json"
     atomic_dump_json(frozen_summary_path, summary)
@@ -921,11 +922,14 @@ def _execute_memory_builder(
             authorization_record=authorization,
             terminal_outcome=f"memory_builder:{outcome.result.status}",
         )
-        if outcome.result.status != "success" or outcome.result.memory_pack is None:
+        if require_success and (
+            outcome.result.status != "success" or outcome.result.memory_pack is None
+        ):
             raise RuntimeError(
                 f"memory synthesis did not produce an accepted pack: {outcome.result.status}"
             )
-        validate_memory_pack(outcome.result.memory_pack)
+        if outcome.result.memory_pack is not None:
+            validate_memory_pack(outcome.result.memory_pack)
         return request, outcome.result, terminal, synthesis_plan
     finally:
         session.close()

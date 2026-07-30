@@ -13,6 +13,7 @@ from verigym.core.external_process_identity import (
 )
 from verigym.core.hashing import canonical_json, content_hash, hash_bytes
 from verigym.schemas.evolution import (
+    MemoryBuilderFailureReason,
     MemoryBuilderInput,
     MemoryBuilderResult,
     MemoryPack,
@@ -47,7 +48,7 @@ _SECTION_NAMES = (
     "debugging_checklist",
     "patch_discipline",
 )
-_PROMPT_TEMPLATE = (
+_PROMPT_TEMPLATE_V1 = (
     "You are preparing a small, task-independent memory pack for a repository repair "
     "agent. Generalize only from the sanitized observable summaries below. Do not emit "
     "source code, patches, task IDs, repository paths, hashes, hidden or reference details, "
@@ -56,6 +57,20 @@ _PROMPT_TEMPLATE = (
     "{section_names}. Do not use Markdown fences or additional text.\n\n"
     "SANITIZED_SUMMARIES={sanitized_summaries}"
 )
+_PROMPT_TEMPLATE = (
+    "You are preparing a small, task-independent memory pack for a repository repair "
+    "agent. Generalize only from the sanitized observable summaries below. Do not emit "
+    "source code, patches, task IDs, repository paths, hashes, hidden or reference details, "
+    "credentials, or private reasoning. State only positive, generally applicable guidance; "
+    "do not restate, name, or discuss any excluded content category. Return exactly one JSON "
+    "object with exactly these five keys, each mapped to a non-empty array of short general "
+    "guidance strings: {section_names}. Do not use Markdown fences or additional text.\n\n"
+    "SANITIZED_SUMMARIES={sanitized_summaries}"
+)
+_PROMPT_TEMPLATES_BY_HASH = {
+    hash_bytes(_PROMPT_TEMPLATE_V1.encode("utf-8")): _PROMPT_TEMPLATE_V1,
+    hash_bytes(_PROMPT_TEMPLATE.encode("utf-8")): _PROMPT_TEMPLATE,
+}
 MEMORY_BUILDER_PROMPT_TEMPLATE_HASH = hash_bytes(_PROMPT_TEMPLATE.encode("utf-8"))
 
 
@@ -109,12 +124,18 @@ def validate_memory_builder_input(value: MemoryBuilderInput) -> MemoryBuilderInp
     return value
 
 
-def render_memory_builder_prompt(request: MemoryBuilderInput) -> str:
+def _render_memory_builder_prompt_with_template(
+    request: MemoryBuilderInput,
+    template_hash: str,
+) -> str:
     """Render only task-free observable episode summaries; identity hashes stay outside."""
 
     validate_memory_builder_input(request)
+    template = _PROMPT_TEMPLATES_BY_HASH.get(template_hash)
+    if template is None:
+        raise ValueError("memory-builder prompt template identity is unsupported")
     episodes = [episode.model_dump(mode="json") for episode in request.training_summary.episodes]
-    prompt = _PROMPT_TEMPLATE.format(
+    prompt = template.format(
         section_names=", ".join(_SECTION_NAMES),
         sanitized_summaries=canonical_json(episodes),
     )
@@ -122,6 +143,15 @@ def render_memory_builder_prompt(request: MemoryBuilderInput) -> str:
     if not prompt.strip() or len(encoded) > 2 * 1024 * 1024:
         raise ValueError("memory-builder rendered prompt is empty or oversized")
     return prompt
+
+
+def render_memory_builder_prompt(request: MemoryBuilderInput) -> str:
+    """Render the current task-free observable memory-builder prompt."""
+
+    return _render_memory_builder_prompt_with_template(
+        request,
+        MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+    )
 
 
 def build_memory_synthesis_plan(
@@ -199,7 +229,7 @@ def validate_memory_synthesis_plan(plan: MemorySynthesisPlan) -> MemorySynthesis
     if (
         plan.prompt_contract_id != MEMORY_BUILDER_PROMPT_CONTRACT_ID
         or plan.prompt_contract_hash != MEMORY_BUILDER_PROMPT_HASH
-        or plan.prompt_template_hash != MEMORY_BUILDER_PROMPT_TEMPLATE_HASH
+        or plan.prompt_template_hash not in _PROMPT_TEMPLATES_BY_HASH
     ):
         raise ValueError("memory synthesis prompt contract changed")
     return plan
@@ -224,11 +254,14 @@ def reconstruct_memory_synthesis_launch(
         or request.training_summary.trajectory_dataset_hash != plan.training_dataset_hash
     ):
         raise ValueError("memory synthesis frozen training input changed")
-    prompt = render_memory_builder_prompt(request)
+    prompt = _render_memory_builder_prompt_with_template(
+        request,
+        plan.prompt_template_hash,
+    )
     binding = bind_external_process_payload(
         plan.invocation_spec,
         prompt,
-        template_hash=MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+        template_hash=plan.prompt_template_hash,
         input_dataset_hash=plan.training_dataset_hash,
     )
     if binding != plan.payload_binding:
@@ -280,6 +313,29 @@ def parse_memory_builder_output(
     return build_memory_pack(values, heldout_only_tokens=heldout_only_tokens)
 
 
+def classify_memory_builder_output_failure(exc: ValueError) -> MemoryBuilderFailureReason:
+    """Map trusted validation errors to a closed, secret-free durable taxonomy."""
+
+    message = str(exc)
+    policy_categories: tuple[tuple[str, MemoryBuilderFailureReason], ...] = (
+        ("memory content policy rejected code_fence", "memory_policy_code_fence"),
+        ("memory content policy rejected rtl_code", "memory_policy_rtl_code"),
+        ("memory content policy rejected task_id", "memory_policy_task_id"),
+        ("memory content policy rejected repository_path", "memory_policy_repository_path"),
+        ("memory content policy rejected hash", "memory_policy_hash"),
+        (
+            "memory content policy rejected hidden_or_reference",
+            "memory_policy_hidden_or_reference",
+        ),
+        ("memory content policy rejected credential", "memory_policy_credential"),
+        ("memory contains held-out-only content", "memory_policy_heldout_only"),
+    )
+    for stable_message, reason in policy_categories:
+        if message == stable_message:
+            return reason
+    return "memory_output_invalid"
+
+
 def build_memory_builder_result(
     *,
     request: MemoryBuilderInput,
@@ -291,6 +347,7 @@ def build_memory_builder_result(
     wall_time_s: float,
     input_tokens: int | None,
     output_tokens: int | None,
+    failure_reason: MemoryBuilderFailureReason | None = None,
     memory_synthesis_plan_hash: str | None = None,
     invocation_spec_hash: str | None = None,
     payload_binding_hash: str | None = None,
@@ -307,6 +364,7 @@ def build_memory_builder_result(
         "process_ledger_record_hash": process_ledger_record_hash,
         "redacted_output_hash": hash_bytes(redacted_output.encode("utf-8")),
         "memory_pack": memory_pack.model_dump(mode="json") if memory_pack is not None else None,
+        "failure_reason": failure_reason,
         "wall_time_s": wall_time_s,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -347,6 +405,11 @@ def validate_memory_builder_result(result: MemoryBuilderResult) -> MemoryBuilder
         candidates.append(
             {key: value for key, value in payload.items() if key not in lifecycle_fields}
         )
+    if payload["failure_reason"] is None:
+        candidates.extend(
+            {key: value for key, value in candidate.items() if key != "failure_reason"}
+            for candidate in list(candidates)
+        )
     if all(content_hash(candidate) != expected for candidate in candidates):
         raise ValueError("memory-builder output identity changed")
     return result
@@ -360,6 +423,7 @@ __all__ = [
     "build_memory_builder_input",
     "build_memory_builder_result",
     "build_memory_synthesis_plan",
+    "classify_memory_builder_output_failure",
     "parse_memory_builder_output",
     "reconstruct_memory_synthesis_launch",
     "render_memory_builder_prompt",

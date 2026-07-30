@@ -45,11 +45,14 @@ from verigym.evolution.memory_builder import (
     MEMORY_BUILDER_PROMPT_HASH,
     MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
     build_memory_builder_input,
+    build_memory_builder_result,
     build_memory_synthesis_plan,
+    classify_memory_builder_output_failure,
     parse_memory_builder_output,
     reconstruct_memory_synthesis_launch,
     render_memory_builder_prompt,
     validate_memory_builder_input,
+    validate_memory_builder_result,
     validate_memory_synthesis_plan,
 )
 from verigym.evolution.reporting import EvolutionReportService
@@ -87,6 +90,7 @@ from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.evolution import (
     AgentUpdateManifest,
     EpisodeTrajectory,
+    MemoryBuilderResult,
     RewardVector,
     RunAgentVersionAssignment,
     SanitizedTrainingEpisode,
@@ -301,6 +305,7 @@ def test_memory_builder_prompt_excludes_identity_hashes_and_parser_fails_closed(
     assert summary.summary_hash not in prompt
     assert summary.trajectory_dataset_hash not in prompt
     assert "hidden_regression_passed" in prompt
+    assert "State only positive, generally applicable guidance" in prompt
 
     values = {section.section: section.items for section in _memory().sections}
     parsed = parse_memory_builder_output(json.dumps(values, sort_keys=True))
@@ -315,6 +320,36 @@ def test_memory_builder_prompt_excludes_identity_hashes_and_parser_fails_closed(
             '"public_test_strategy":["x"],"workspace_policy_reminders":["x"],'
             '"debugging_checklist":["x"],"patch_discipline":["x"]}'
         )
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "memory content policy rejected code_fence",
+            "memory_policy_code_fence",
+        ),
+        (
+            "memory content policy rejected rtl_code",
+            "memory_policy_rtl_code",
+        ),
+        (
+            "memory content policy rejected hidden_or_reference",
+            "memory_policy_hidden_or_reference",
+        ),
+        (
+            "memory content policy rejected credential",
+            "memory_policy_credential",
+        ),
+        ("memory contains held-out-only content", "memory_policy_heldout_only"),
+        ("model emitted a secret-shaped untrusted detail", "memory_output_invalid"),
+    ],
+)
+def test_memory_builder_failure_taxonomy_is_closed_and_secret_free(
+    message: str,
+    expected: str,
+) -> None:
+    assert classify_memory_builder_output_failure(ValueError(message)) == expected
 
 
 def _memory_lifecycle(summary: SanitizedTrainingSummary | None = None):
@@ -409,6 +444,33 @@ def test_memory_synthesis_plan_reconstructs_exact_request_before_authorization()
     empty["stdin_text"] = ""
     with pytest.raises(ValidationError):
         ExternalProcessRequest.model_validate(empty)
+
+
+def test_memory_builder_result_reads_historical_artifact_without_failure_taxonomy() -> None:
+    request, spec, _preview, _prompt, binding, plan = _memory_lifecycle()
+    current = build_memory_builder_result(
+        request=request,
+        status="content_policy_rejected",
+        failure_reason="memory_policy_credential",
+        redacted_output="withheld:content_policy_rejected",
+        process_identity_hash="b" * 64,
+        process_ledger_record_hash="c" * 64,
+        memory_pack=None,
+        wall_time_s=1.0,
+        input_tokens=1,
+        output_tokens=1,
+        memory_synthesis_plan_hash=plan.plan_hash,
+        invocation_spec_hash=spec.invocation_spec_hash,
+        payload_binding_hash=binding.payload_binding_hash,
+    )
+    historical = current.model_dump(mode="json")
+    historical.pop("failure_reason")
+    historical.pop("output_hash")
+    historical["output_hash"] = content_hash(historical)
+    loaded = MemoryBuilderResult.model_validate(historical)
+
+    assert loaded.failure_reason is None
+    assert validate_memory_builder_result(loaded) == loaded
 
 
 def test_memory_synthesis_identity_changes_with_dataset_reward_or_template() -> None:

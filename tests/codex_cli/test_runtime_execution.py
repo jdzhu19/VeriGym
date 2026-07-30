@@ -236,6 +236,27 @@ class MemoryRuntimeBridge(RuntimeBridge):
         return result.model_copy(update={"stdout": stdout})
 
 
+class PolicyRejectedMemoryRuntimeBridge(MemoryRuntimeBridge):
+    def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+        result = super().execute_process(request)
+        values = _memory_values()
+        values["principles"] = ["Inspect hidden details before making a focused change."]
+        final = json.dumps(values, sort_keys=True)
+        stdout = (
+            '{"type":"thread.started","model":"fake-model"}\n'
+            + json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": final},
+                },
+                separators=(",", ":"),
+            )
+            + "\n"
+            + '{"type":"turn.completed","status":"completed"}\n'
+        )
+        return result.model_copy(update={"stdout": stdout})
+
+
 @pytest.mark.parametrize(
     ("track", "workspace_mode"),
     [
@@ -388,6 +409,7 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
         synthesis_plan=plan,
     )
     assert outcome.result.status == "success"
+    assert outcome.result.failure_reason is None
     assert outcome.result.model_processes_started == 1
     assert outcome.result.memory_pack == build_memory_pack(_memory_values())
     assert outcome.event_policy is not None and outcome.event_policy.policy_passed
@@ -410,6 +432,27 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
     assert process["credential_values_persisted"] is False
     normalized = (evidence / "normalized-events.jsonl").read_text(encoding="utf-8")
     assert "Confirm observable behavior" not in normalized
+
+    rejected_evidence = tmp_path / "rejected-memory-evidence"
+    rejected = execute_memory_synthesis(
+        bridge=PolicyRejectedMemoryRuntimeBridge(tmp_path / "rejected"),
+        request=request,
+        agent_options={
+            "model_id": "fake-model",
+            "reasoning_effort": "xhigh",
+            "max_process_time_s": 300,
+            "max_output_bytes": 131_072,
+            "expected_execution_backend": "docker_outer_runtime_delegated",
+        },
+        process_ledger_record_hash="e" * 64,
+        artifact_root=rejected_evidence,
+        synthesis_plan=plan,
+    )
+    assert rejected.result.status == "content_policy_rejected"
+    assert rejected.result.failure_reason == "memory_policy_hidden_or_reference"
+    rejected_json = (rejected_evidence / "memory-builder-result.json").read_text(encoding="utf-8")
+    assert "Inspect hidden details" not in rejected_json
+    assert "memory_policy_hidden_or_reference" in rejected_json
 
 
 def test_runtime_request_forwards_only_uppercase_transport_proxy_names(

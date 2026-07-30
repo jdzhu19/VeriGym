@@ -9,6 +9,7 @@ from typing import Any
 from verigym.core.hashing import canonical_json, content_hash
 from verigym.evolution.memory_builder import (
     build_memory_builder_result,
+    classify_memory_builder_output_failure,
     parse_memory_builder_output,
     reconstruct_memory_synthesis_launch,
     render_memory_builder_prompt,
@@ -16,7 +17,12 @@ from verigym.evolution.memory_builder import (
     validate_memory_synthesis_plan,
 )
 from verigym.plugin_api import ExternalAgentBridge, JsonValue
-from verigym.schemas.evolution import MemoryBuilderInput, MemoryBuilderResult, MemorySynthesisPlan
+from verigym.schemas.evolution import (
+    MemoryBuilderFailureReason,
+    MemoryBuilderInput,
+    MemoryBuilderResult,
+    MemorySynthesisPlan,
+)
 from verigym.schemas.external_agent import ExternalProcessResult
 
 from .capabilities import CapabilityReport, runtime_capabilities
@@ -201,6 +207,7 @@ def execute_memory_synthesis(
     parsed: ParsedEventStream | None = None
     policy: EventPolicyResult | None = None
     memory = None
+    failure_reason: MemoryBuilderFailureReason | None = None
     if (
         process.timed_out
         or process.stdout_truncated
@@ -209,11 +216,20 @@ def execute_memory_synthesis(
         or not _runtime_security_complete(runtime_result)
     ):
         status = "process_failure"
+        if process.timed_out:
+            failure_reason = "process_timeout"
+        elif process.stdout_truncated or process.stderr_truncated:
+            failure_reason = "process_output_limit"
+        elif process.exit_code != 0:
+            failure_reason = "process_nonzero_exit"
+        else:
+            failure_reason = "runtime_security_incomplete"
     else:
         try:
             parsed = parse_event_stream(process.stdout, roots=(Path("/workspace"),))
         except EventParseError:
             status = "parser_error"
+            failure_reason = "event_stream_parse_error"
         else:
             policy = evaluate_event_policy(
                 parsed,
@@ -228,13 +244,19 @@ def execute_memory_synthesis(
             )
             if not parsed.terminal_event_seen or not parsed.final_messages or parsed.error_messages:
                 status = "parser_error"
-            elif (
-                not policy.policy_passed
-                or runtime_result.security.workspace_empty_before is not True
-                or runtime_result.security.workspace_empty_after is not True
-                or runtime_result.security.workspace_changed_paths
-            ):
+                failure_reason = "terminal_stream_incomplete"
+            elif not policy.policy_passed:
                 status = "content_policy_rejected"
+                failure_reason = "event_policy_rejected"
+            elif runtime_result.security.workspace_empty_before is not True:
+                status = "content_policy_rejected"
+                failure_reason = "workspace_not_empty_before"
+            elif runtime_result.security.workspace_empty_after is not True:
+                status = "content_policy_rejected"
+                failure_reason = "workspace_not_empty_after"
+            elif runtime_result.security.workspace_changed_paths:
+                status = "content_policy_rejected"
+                failure_reason = "workspace_changed"
             else:
                 try:
                     memory = parse_memory_builder_output(
@@ -242,9 +264,10 @@ def execute_memory_synthesis(
                         heldout_only_tokens=heldout_only_tokens,
                     )
                 except ValueError as exc:
+                    failure_reason = classify_memory_builder_output_failure(exc)
                     status = (
                         "content_policy_rejected"
-                        if "policy rejected" in str(exc) or "held-out-only" in str(exc)
+                        if failure_reason != "memory_output_invalid"
                         else "parser_error"
                     )
                 else:
@@ -287,6 +310,7 @@ def execute_memory_synthesis(
         wall_time_s=process.duration_s,
         input_tokens=parsed.input_tokens if parsed is not None else None,
         output_tokens=parsed.output_tokens if parsed is not None else None,
+        failure_reason=failure_reason,
         memory_synthesis_plan_hash=(
             synthesis_plan.plan_hash if synthesis_plan is not None else None
         ),
