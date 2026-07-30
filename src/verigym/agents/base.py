@@ -12,6 +12,7 @@ from verigym.core.episode import TerminationReason
 from verigym.schemas.agent import AgentAction, EpisodeResult, Observation
 from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.options import JsonValue
+from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.task import VeriTask
 
@@ -30,6 +31,7 @@ class AgentContext:
     max_invalid_actions: int = 3
     agent_options: Mapping[str, JsonValue] = field(default_factory=dict)
     external_bridge: ExternalAgentBridge | None = None
+    prompt_policy: PromptPolicyDescriptor | None = None
 
 
 class AgentTerminationError(Exception):
@@ -48,6 +50,7 @@ class AgentTerminationError(Exception):
 class AgentAdapter(ABC):
     descriptor: AgentDescriptor
     requires_model: ClassVar[bool] = False
+    prompt_policy_spec: ClassVar[AgentPromptPolicySpec | None] = None
     supported_modes: ClassVar[frozenset[InteractionMode]] = frozenset({InteractionMode.AGENT})
 
     @abstractmethod

@@ -50,6 +50,11 @@ from verigym.experiments.state import (
     load_json_model,
     load_jsonl_models,
 )
+from verigym.prompts.policy import (
+    agent_configuration_hash,
+    resolve_prompt_policy,
+    validate_prompt_policy_binding,
+)
 from verigym.reporting.loader import load_report_inputs, validate_plan_binding
 from verigym.reporting.service import ReportService
 from verigym.schemas.external_agent import ExternalProcessResult
@@ -693,6 +698,7 @@ class BatchRunner:
             parent.manifest.experiment_id,
         )
         try:
+            config = self._resolve_child_execution_contract(item, config)
             parent.authorize_model_process(
                 item,
                 attempt,
@@ -756,6 +762,45 @@ class BatchRunner:
             parent.log(f"plan[{item.plan_index}] attempt {attempt}: {type(exc).__name__}: {exc}")
             parent.terminal(item, record)
             return record, internal
+
+    def _resolve_child_execution_contract(
+        self,
+        item: PlanItem,
+        config: RunConfig,
+    ) -> RunConfig:
+        """Resolve execution-owned bindings before model-process authorization."""
+
+        service = self.planner.service
+        _, task, _ = service.load_task(item.task_id, item.suite_source)
+        agent = service.registries.agents.get(item.system.agent_id)
+        actual_agent_hash = agent_configuration_hash(agent.descriptor, config.agent_options)
+        if actual_agent_hash != item.system.agent_configuration_hash:
+            raise ConfigurationError("agent execution configuration differs from frozen plan")
+        try:
+            resolved_prompt = resolve_prompt_policy(
+                interaction_mode=config.mode,
+                agent=agent,
+                agent_options=config.agent_options,
+                task=task,
+            )
+            resolved_prompt_hash = (
+                resolved_prompt.configuration_fingerprint if resolved_prompt is not None else None
+            )
+            validate_prompt_policy_binding(
+                expected=item.prompt_policy,
+                expected_hash=item.prompt_policy_hash,
+                resolved=resolved_prompt,
+                resolved_hash=resolved_prompt_hash,
+            )
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        return config.model_copy(
+            update={
+                "resolved_prompt_policy": resolved_prompt,
+                "resolved_prompt_policy_hash": resolved_prompt_hash,
+                "resolved_agent_configuration_hash": actual_agent_hash,
+            }
+        )
 
     def _ordinary_child(self, item: PlanItem, config: RunConfig) -> RunResult:
         del item
@@ -1354,6 +1399,9 @@ def _child_config(
         expected_suite_source_snapshot=item.suite_source_snapshot,
         expected_runtime=item.runtime_descriptor,
         expected_resolved_profile=item.resolved_profile,
+        expected_prompt_policy=item.prompt_policy,
+        expected_prompt_policy_hash=item.prompt_policy_hash,
+        expected_agent_configuration_hash=item.system.agent_configuration_hash,
     )
 
 

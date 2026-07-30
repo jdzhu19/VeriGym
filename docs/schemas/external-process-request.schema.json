@@ -26,6 +26,185 @@
       ],
       "title": "ExternalReadOnlyMountIdentity",
       "type": "object"
+    },
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    },
+    "PromptPolicyDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_descriptor_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Descriptor Hash"
+        },
+        "agent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Hash"
+        },
+        "agent_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Id"
+        },
+        "base_instruction_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Instruction Policy"
+        },
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "content_visibility_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Visibility Policy"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "interaction_mode": {
+          "$ref": "#/$defs/InteractionMode"
+        },
+        "max_prompt_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Prompt Bytes"
+        },
+        "max_task_context_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Task Context Bytes"
+        },
+        "memory_pack_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Pack Hash"
+        },
+        "resolver_id": {
+          "anyOf": [
+            {
+              "const": "agent_execution_prompt_policy_v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolver Id"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_context_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Hash"
+        },
+        "task_context_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Policy"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "interaction_mode",
+        "configuration_fingerprint"
+      ],
+      "title": "PromptPolicyDescriptor",
+      "type": "object"
     }
   },
   "$id": "https://verigym.dev/schemas/1.0/external-process-request.schema.json",
@@ -135,6 +314,41 @@
       "default": "none",
       "title": "Network Policy",
       "type": "string"
+    },
+    "prompt_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptPolicyDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "prompt_policy_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Policy Hash"
+    },
+    "prompt_text_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Text Sha256"
     },
     "protocol": {
       "pattern": "^[A-Za-z0-9._-]{1,128}$",

@@ -24,6 +24,7 @@ from verigym.experiments.state import (
     load_json_model,
     load_jsonl_models,
 )
+from verigym.prompts.policy import prompt_contract_identity_hash
 from verigym.reporting.loader import ValidatedRun, load_report_inputs
 from verigym.schemas.evolution import (
     AgentVersionManifest,
@@ -417,6 +418,18 @@ def _trajectory(
             or raw_memory.get("content_hash") != version.memory_pack_hash
         ):
             raise ConfigurationError("v1 run memory pack differs from its frozen version")
+        if run.plan_item.prompt_policy is not None:
+            policy = run.manifest.prompt_policy
+            if (
+                policy is None
+                or policy.agent_version_id != version.agent_version_id
+                or policy.agent_version_hash != version.version_hash
+                or policy.memory_pack_hash != version.memory_pack_hash
+                or prompt_contract_identity_hash(policy) != version.prompt_contract_hash
+            ):
+                raise ConfigurationError(
+                    "run prompt policy differs from its assigned frozen agent version"
+                )
     manifest_bytes = (run_dir / "run_manifest.json").read_bytes()
     scorecard_bytes = (run_dir / "scorecard.json").read_bytes()
     artifact_bytes = (run_dir / "artifact_manifest.json").read_bytes()

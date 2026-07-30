@@ -8,8 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from verigym.agents.repository_scripted import ScriptedRepositoryGoodAgent
 from verigym.core.errors import ConfigurationError
-from verigym.core.hashing import content_hash, hash_directory
+from verigym.core.hashing import canonical_json, content_hash, hash_directory
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
@@ -68,7 +69,11 @@ from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
 from verigym.experiments.schemas import ExperimentConfig
 from verigym.experiments.state import atomic_dump_json, load_jsonl_models
+from verigym.prompts.policy import prompt_contract_identity_hash, resolve_prompt_policy
+from verigym.registry.collections import build_registries
 from verigym.reporting.loader import load_report_inputs
+from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
+from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.evolution import (
     AgentUpdateManifest,
     EpisodeTrajectory,
@@ -78,12 +83,34 @@ from verigym.schemas.evolution import (
     SanitizedTrainingSummary,
     TaskSplitEntry,
 )
+from verigym.schemas.prompt import AgentPromptPolicySpec
 from verigym.schemas.repository import RepositoryTaskManifest
 from verigym.schemas.run import RunConfig
 from verigym.schemas.score import EpisodeFailure, ScoreCard
 from verigym.suites.repo_rtl.adapter import RepositoryRtlSuite
 
 _HASH = "a" * 64
+
+
+class _PromptedRepositoryAgent(ScriptedRepositoryGoodAgent):
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="prompted-repository-agent",
+        version="1.0.0",
+        api_version=PLUGIN_API_VERSION,
+        provider="verigym-tests",
+        capabilities=["deterministic", "repository_repair", "prompt_binding_fixture"],
+    )
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id="test_repository_agent_prompt_v1",
+        prompt_contract_version="1.0.0",
+        task_context_policy="public_repository_context_v1",
+        base_instruction_policy="scripted_repository_instructions_v1",
+        content_visibility_policy="public_repository_no_hidden_reference_v1",
+        max_prompt_bytes=128 * 1024,
+        max_task_context_bytes=64 * 1024,
+        versioned_context_allowed=True,
+    )
 
 
 def test_campaign_binds_the_sealed_reference_checkpoint_manifest() -> None:
@@ -101,52 +128,21 @@ def test_campaign_binds_the_sealed_reference_checkpoint_manifest() -> None:
     )
 
 
-def test_campaign_accounts_for_the_immutable_failed_first_probe(tmp_path: Path) -> None:
+def test_campaign_binds_the_immutable_failed_m10b_bundle() -> None:
     script = Path("scripts/run_m10b_campaign.py").resolve(strict=True)
     spec = importlib.util.spec_from_file_location("verigym_m10b_prior_probe_test", script)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    preflight = tmp_path / "preflight"
-    preflight.mkdir()
-    atomic_dump_json(
-        preflight / "source-identity.json",
-        {
-            "source_commit": module.PRIOR_PROBE_COMMIT,
-            "source_tree": module.PRIOR_PROBE_TREE,
-        },
+    assert module.FAILED_M10B_BUNDLE == Path(
+        "/data/jzhu484/Agent/VeriGym_milestone10b_de9dc9d/evidence-bundle-final"
     )
-    ledger = tmp_path / "model-process-ledger.jsonl"
-    authorization = authorize_process(
-        ledger,
-        process_kind="implementation_probe",
-        authorization_id="m10b-owner-contract-v1",
-        run_or_build_id="probe-1",
-        requested_model_id="gpt-5.4",
-        reasoning_effort="xhigh",
+    assert (
+        module.FAILED_M10B_CHECKSUM_HASH
+        == "fd549b7e064aabdad1c2e07630de62f8e424a9a4c368d7df71813c048def8188"
     )
-    terminal = finish_process(
-        ledger,
-        authorization_record=authorization,
-        terminal_outcome="infrastructure_invalid",
-    )
-    runtime = tmp_path / "real-probe-1/runs/run-1/artifacts/codex_cli/runtime_process.json"
-    runtime.parent.mkdir(parents=True)
-    atomic_dump_json(
-        runtime,
-        {
-            "failure_reason": "container_inspect_timeout",
-            "cleanup_complete": False,
-            "security": {"cleanup_verified": False},
-            "runtime_identity": {"model_process_count": 1},
-        },
-    )
-
-    identity = module._prior_probe_identity(tmp_path)
-    assert identity["started_processes"] == 1
-    assert identity["terminal_record_hash"] == terminal.record_hash
-    assert identity["retried"] is False
+    assert module.START_COMMIT == "de9dc9ddf723173cf085c7870dfa6857ed109064"
 
 
 def _reward() -> RewardVector:
@@ -928,3 +924,269 @@ def test_generic_batch_and_paired_evolving_report_cover_all_heldout_groups(
         tmp_path / "evaluation-reports",
     )
     assert all(path.is_file() for path in generated.paths)
+
+
+@pytest.mark.requires_iverilog
+def test_complete_fake_m10b_flow_partitions_v0_v1_prompt_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("VERIGYM_M10B_HELDOUT_AGENT_VERSION_MANIFEST", raising=False)
+    training_agent = _PromptedRepositoryAgent()
+    training_registries = build_registries(discover_external=False)
+    training_registries.agents.register(training_agent)
+    training_service = VeriGym(training_registries)
+    _suite, preview_task, _assets = training_service.load_task("repo-rtl/counter-wrap")
+    neutral_prompt = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=training_agent,
+        agent_options={},
+        task=preview_task,
+    )
+    assert neutral_prompt is not None
+    v0 = build_agent_version(
+        agent_version_id="prompted-repository-agent-v0",
+        status="frozen",
+        parent_version_hash=None,
+        update_type="none",
+        executable_in_m10b=True,
+        base_agent_id=training_agent.descriptor.name,
+        agent_descriptor_hash=content_hash(training_agent.descriptor),
+        model_id="fake-zero-call",
+        reasoning_effort="xhigh",
+        auth_semantic_id="fake.auth.none.v1",
+        runtime_identity_hash="1" * 64,
+        tool_policy_hash="2" * 64,
+        prompt_contract_hash=prompt_contract_identity_hash(neutral_prompt),
+        source_commit="de9dc9ddf723173cf085c7870dfa6857ed109064",
+        package_hashes={"verigym": "3" * 64},
+        image_hashes={},
+        model_weights_modified=False,
+    )
+
+    def options(version, memory=None):
+        values = {
+            "agent_version_id": version.agent_version_id,
+            "agent_version_hash": version.version_hash,
+            "agent_version_manifest_json": canonical_json(version),
+        }
+        if memory is not None:
+            values["memory_pack"] = memory.model_dump(mode="json")
+        return values
+
+    training_tasks = [
+        "repo-rtl/arbiter-reset-recovery",
+        "repo-rtl/counter-wrap",
+        "repo-rtl/pipeline-stall-backpressure",
+    ]
+    training_config = ExperimentConfig.model_validate(
+        {
+            "name": "fake prompt-bound m10b training",
+            "suite": {
+                "id": "repo-rtl",
+                "tasks": {"include": training_tasks, "exclude": []},
+            },
+            "runs": {
+                "mode": "agent",
+                "seeds": [0],
+                "samples_per_task": 1,
+                "pass_k": [1],
+            },
+            "systems": [
+                {
+                    "id": "v0",
+                    "agent": {
+                        "id": training_agent.descriptor.name,
+                        "options": options(v0),
+                    },
+                }
+            ],
+            "runtime": {"id": "local"},
+            "execution": {"max_workers": 1, "max_plan_items": 3},
+            "output": {"root": tmp_path / "training-experiment"},
+        }
+    )
+    training_planner = ExperimentPlanner(training_service)
+    training_result = BatchRunner(
+        planner=training_planner,
+        service_factory=lambda: training_service,
+    ).run(training_planner.build(training_config))
+    assert training_result.exit_code == 0
+    training_inputs = load_report_inputs(training_result.experiment_dir)
+    assert len(training_inputs.valid_runs) == 3
+    assert all(run.manifest.prompt_policy is not None for run in training_inputs.valid_runs)
+
+    training_roots = Path("src/verigym/suites/repo_rtl/assets")
+    training_split = build_task_split(
+        split_id="fake-prompt-bound-training-v1",
+        training=[
+            _split_entry(root)
+            for root in sorted(training_roots.iterdir())
+            if (root / "task.yaml").is_file()
+        ],
+        heldout=[],
+    )
+    training_dataset = tmp_path / "training-dataset"
+    training_manifest = TrajectoryExporter().export(
+        training_result.experiment_dir,
+        training_dataset,
+        split_manifest=training_split,
+        agent_versions={v0.agent_version_id: v0},
+        run_agent_versions={
+            run.manifest.run_id: v0.agent_version_id for run in training_inputs.valid_runs
+        },
+        source_commit=v0.source_commit,
+        package_identities=v0.package_hashes,
+    )
+    trajectories = load_jsonl_models(
+        training_dataset / "trajectories.jsonl",
+        EpisodeTrajectory,
+    )
+    summary = prepare_training_summary(
+        trajectories,
+        split_manifest_hash=training_split.manifest_hash,
+        trajectory_dataset_hash=training_manifest.dataset_hash,
+    )
+    memory = _memory()
+    v1, update = freeze_context_update(
+        parent=v0,
+        dataset=training_manifest,
+        training_summary=summary,
+        memory_pack=memory,
+        memory_builder_identity_hash="4" * 64,
+        memory_builder_input_hash="5" * 64,
+        memory_builder_output_hash="6" * 64,
+        process_ledger_hash="7" * 64,
+    )
+    replay_context_update(
+        parent=v0,
+        result=v1,
+        update=update,
+        dataset=training_manifest,
+        training_summary=summary,
+        memory_pack=memory,
+    )
+
+    grant = tmp_path / "v1.json"
+    atomic_dump_json(grant, v1)
+    monkeypatch.setenv("VERIGYM_M10B_HELDOUT_AGENT_VERSION_MANIFEST", str(grant))
+    heldout_agent = _PromptedRepositoryAgent()
+    heldout_registries = build_registries(discover_external=False)
+    heldout_registries.agents.register(heldout_agent)
+    heldout_service = VeriGym(heldout_registries)
+    heldout_tasks = [
+        reference.id
+        for reference in heldout_service.registries.suites.get("repo-rtl").discover()
+        if "heldout" in reference.id
+    ]
+    heldout_config = ExperimentConfig.model_validate(
+        {
+            "name": "fake prompt-bound m10b heldout",
+            "suite": {
+                "id": "repo-rtl",
+                "tasks": {"include": heldout_tasks, "exclude": []},
+            },
+            "runs": {
+                "mode": "agent",
+                "seeds": [0],
+                "samples_per_task": 3,
+                "pass_k": [1, 2, 3],
+            },
+            "systems": [
+                {
+                    "id": "v0",
+                    "agent": {
+                        "id": heldout_agent.descriptor.name,
+                        "options": options(v0),
+                    },
+                },
+                {
+                    "id": "v1",
+                    "agent": {
+                        "id": heldout_agent.descriptor.name,
+                        "options": options(v1, memory),
+                    },
+                },
+            ],
+            "runtime": {"id": "local"},
+            "execution": {
+                "max_workers": 1,
+                "max_plan_items": 18,
+                "plan_order_policy": "counterbalanced_systems_v1",
+            },
+            "output": {"root": tmp_path / "heldout-experiment"},
+        }
+    )
+    heldout_planner = ExperimentPlanner(heldout_service)
+    heldout_plan = heldout_planner.build(heldout_config)
+    assert len(heldout_plan.items) == 18
+    for task_id in heldout_tasks:
+        task_items = [item for item in heldout_plan.items if item.task_id == task_id]
+        v0_hashes = {
+            item.prompt_policy_hash for item in task_items if item.system.system_id == "v0"
+        }
+        v1_hashes = {
+            item.prompt_policy_hash for item in task_items if item.system.system_id == "v1"
+        }
+        assert len(v0_hashes) == len(v1_hashes) == 1
+        assert v0_hashes != v1_hashes
+        assert all(
+            item.prompt_policy is not None and item.prompt_policy.memory_pack_hash is None
+            for item in task_items
+            if item.system.system_id == "v0"
+        )
+        assert all(
+            item.prompt_policy is not None
+            and item.prompt_policy.memory_pack_hash == memory.content_hash
+            for item in task_items
+            if item.system.system_id == "v1"
+        )
+    heldout_result = BatchRunner(
+        planner=heldout_planner,
+        service_factory=lambda: heldout_service,
+    ).run(heldout_plan)
+    assert heldout_result.exit_code == 0
+    heldout_inputs = load_report_inputs(heldout_result.experiment_dir)
+    assert len(heldout_inputs.valid_runs) == 18
+    for run in heldout_inputs.valid_runs:
+        replay_run(heldout_result.experiment_dir / run.relative_path, verify=True)
+
+    heldout_roots = Path("src/verigym/suites/repo_rtl/heldout_assets")
+    full_split = build_task_split(
+        split_id="fake-prompt-bound-full-v1",
+        training=training_split.training,
+        heldout=[
+            _split_entry(root)
+            for root in sorted(heldout_roots.iterdir())
+            if (root / "task.yaml").is_file()
+        ],
+        heldout_assets_loaded_after_version_hash=v1.version_hash,
+    )
+    heldout_dataset = tmp_path / "heldout-dataset"
+    heldout_manifest = TrajectoryExporter().export(
+        heldout_result.experiment_dir,
+        heldout_dataset,
+        split_manifest=full_split,
+        agent_versions={v0.agent_version_id: v0, v1.agent_version_id: v1},
+        run_agent_versions={
+            run.manifest.run_id: (
+                v0.agent_version_id
+                if run.plan_item.system.system_id == "v0"
+                else v1.agent_version_id
+            )
+            for run in heldout_inputs.valid_runs
+            if run.plan_item is not None
+        },
+        source_commit=v0.source_commit,
+        package_identities=v0.package_hashes,
+    )
+    assert heldout_manifest.eligible_record_count == 18
+    replay_trajectory_dataset(heldout_dataset, heldout_result.experiment_dir)
+    comparison = build_evolving_evaluation(
+        heldout_result.experiment_dir,
+        split_manifest=full_split,
+        baseline_version_id=v0.agent_version_id,
+        evolved_version_id=v1.agent_version_id,
+    )
+    assert all(metric.planned == metric.evaluable == 9 for metric in comparison.version_metrics)
+    assert comparison.establishes_general_improvement is False

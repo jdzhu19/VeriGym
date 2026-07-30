@@ -84,6 +84,19 @@ def replay_run(
             ) from exc
         raise
     manifest = load_model(run_dir / "run_manifest.json", RunManifest)
+    if (manifest.prompt_policy is None) != (manifest.prompt_policy_hash is None):
+        raise ReplayError("run manifest prompt descriptor and hash are inconsistent")
+    if (
+        manifest.prompt_policy is not None
+        and manifest.prompt_policy_hash != manifest.prompt_policy.configuration_fingerprint
+    ):
+        raise ReplayError("run manifest prompt policy hash is inconsistent")
+    if (
+        manifest.prompt_policy is not None
+        and manifest.prompt_policy.resolver_id == "agent_execution_prompt_policy_v1"
+        and manifest.agent_configuration_hash is None
+    ):
+        raise ReplayError("resolved agent prompt lacks its execution configuration identity")
     task = load_model(run_dir / "task_snapshot.json", VeriTask)
     try:
         task_payload = json.loads((run_dir / "task_snapshot.json").read_text(encoding="utf-8"))

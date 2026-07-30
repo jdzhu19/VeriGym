@@ -4,6 +4,7 @@ from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationErro
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
 from verigym.models.base import ModelClient, ModelClientError
+from verigym.prompts.policy import validate_prompt_text
 from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAction, Observation
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
@@ -33,6 +34,7 @@ from verigym.schemas.model import (
     NormalizedModelUsage,
 )
 from verigym.schemas.options import JsonScalar, JsonValue, validate_plugin_options
+from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.task import (
     ResolvedTaskAssets,
@@ -49,6 +51,7 @@ __all__ = [
     "AgentAdapter",
     "AgentContext",
     "AgentDescriptor",
+    "AgentPromptPolicySpec",
     "AgentTerminationError",
     "CommandSpec",
     "CompletedCommand",
@@ -79,6 +82,7 @@ __all__ = [
     "ModelRunConfig",
     "NormalizedModelUsage",
     "PLUGIN_API_VERSION",
+    "PromptPolicyDescriptor",
     "ResolvedTaskAssets",
     "SCHEMA_VERSION",
     "StrictModel",
@@ -94,4 +98,5 @@ __all__ = [
     "ValidationReport",
     "VeriTask",
     "validate_plugin_options",
+    "validate_prompt_text",
 ]

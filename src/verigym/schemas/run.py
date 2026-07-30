@@ -59,6 +59,12 @@ class RunConfig(StrictModel):
     expected_suite_source_snapshot: SuiteSourceSnapshot | None = None
     expected_runtime: RuntimeDescriptor | None = None
     expected_resolved_profile: ResolvedToolchainProfile | None = None
+    expected_prompt_policy: PromptPolicyDescriptor | None = None
+    expected_prompt_policy_hash: str | None = None
+    resolved_prompt_policy: PromptPolicyDescriptor | None = None
+    resolved_prompt_policy_hash: str | None = None
+    expected_agent_configuration_hash: str | None = None
+    resolved_agent_configuration_hash: str | None = None
 
     def identity_payload(self) -> dict[str, Any]:
         """Preserve pre-extension hashes while binding every nonempty option."""
@@ -66,6 +72,17 @@ class RunConfig(StrictModel):
         payload = self.model_dump(mode="json")
         if not payload.get("agent_options"):
             payload.pop("agent_options", None)
+        prompt_binding_fields = (
+            "expected_prompt_policy",
+            "expected_prompt_policy_hash",
+            "resolved_prompt_policy",
+            "resolved_prompt_policy_hash",
+            "expected_agent_configuration_hash",
+            "resolved_agent_configuration_hash",
+        )
+        if all(payload.get(field) is None for field in prompt_binding_fields):
+            for field in prompt_binding_fields:
+                payload.pop(field, None)
         model_options = payload.get("model_options")
         if isinstance(model_options, dict) and not model_options.get("client_options"):
             model_options.pop("client_options", None)
@@ -119,6 +136,15 @@ class RunConfig(StrictModel):
             value is not None for value in frozen_input_fields
         ):
             raise ValueError("expected task and source hashes must be supplied together")
+        if (self.expected_prompt_policy is None) != (self.expected_prompt_policy_hash is None):
+            raise ValueError("expected prompt descriptor and hash must be supplied together")
+        if (self.resolved_prompt_policy is None) != (self.resolved_prompt_policy_hash is None):
+            raise ValueError("resolved prompt descriptor and hash must be supplied together")
+        if (
+            self.resolved_agent_configuration_hash is not None
+            and self.expected_agent_configuration_hash is None
+        ):
+            raise ValueError("a resolved agent configuration requires a frozen expected hash")
         return self
 
 
@@ -154,6 +180,7 @@ class RunManifest(StrictModel):
     model_observations: list[ModelCallIdentity] = Field(default_factory=list)
     external_agent_observations: list[ExternalAgentCallIdentity] = Field(default_factory=list)
     agent_configuration_fingerprint: str | None = None
+    agent_configuration_hash: str | None = None
     suite_source: SuiteSourceSnapshot | None = None
     runtime: RuntimeDescriptor
     toolchain_profiles: list[ToolchainProfileRef] = Field(default_factory=list)

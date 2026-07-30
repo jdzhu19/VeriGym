@@ -14,6 +14,7 @@ from verigym.plugin_api import (
     AgentAdapter,
     AgentContext,
     AgentDescriptor,
+    AgentPromptPolicySpec,
     AgentTerminationError,
     EpisodeFailure,
     EpisodeResult,
@@ -25,6 +26,7 @@ from verigym.plugin_api import (
     InteractionMode,
     Observation,
     TerminationReason,
+    validate_prompt_text,
 )
 from verigym.schemas.evolution import MemoryPack
 
@@ -49,6 +51,7 @@ from .process import (
     CodexProcessResult,
     ExecutableIdentity,
 )
+from .prompt_policy import bind_prompt_policy
 from .runtime_execution import execute_runtime_process
 from .security import (
     CodexPolicyError,
@@ -67,6 +70,16 @@ class CodexCliAgentAdapter(AgentAdapter):
     """Run exactly one external coding-agent episode in the visible workspace."""
 
     requires_model = False
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id="codex_cli_workspace_verilog_task_context_v1",
+        prompt_contract_version="1.0.0",
+        task_context_policy="repository_visible_task_context_v1",
+        base_instruction_policy="codex_cli_repository_agent_instructions_v1",
+        content_visibility_policy="public_task_workspace_no_hidden_reference_v1",
+        max_prompt_bytes=2 * 1024 * 1024,
+        max_task_context_bytes=1024 * 1024,
+        versioned_context_allowed=True,
+    )
     supported_modes = frozenset({InteractionMode.AGENT})
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
@@ -113,15 +126,32 @@ class CodexCliAgentAdapter(AgentAdapter):
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
         settings = settings_for_execution_backend(settings, bridge.execution_backend)
+        prompt_policy = bind_prompt_policy(
+            context,
+            settings,
+            versioned_context_allowed=True,
+        )
+        prompt = validate_prompt_text(_agent_prompt(context, bridge), prompt_policy)
         self._context = context
         self._bridge = bridge
         self._executable = executable
         self._capabilities = capabilities
         self._settings = settings
-        self._prompt = _agent_prompt(context, bridge)
+        self._prompt = prompt
         self._launched = False
         self._artifact_root = bridge.artifact_root
         self._workspace_before = workspace_before
+        bridge.emit_event(
+            "codex_cli_prompt_policy_bound",
+            {
+                "prompt_policy_hash": prompt_policy.configuration_fingerprint,
+                "task_context_hash": prompt_policy.task_context_hash,
+                "agent_version_id": prompt_policy.agent_version_id,
+                "agent_version_hash": prompt_policy.agent_version_hash,
+                "memory_pack_hash": prompt_policy.memory_pack_hash,
+                "model_call_count": 0,
+            },
+        )
         bridge.emit_event(
             "codex_cli_capabilities_resolved",
             {
@@ -195,6 +225,7 @@ class CodexCliAgentAdapter(AgentAdapter):
                     capabilities=capabilities,
                     settings=settings,
                     prompt=prompt,
+                    prompt_policy=context.prompt_policy,
                     workspace_mode="visible_task_workspace",
                 )
                 process = outcome.process
@@ -428,6 +459,9 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
     )
     payload = {
         "schema_version": "1.0",
+        "prompt_policy": context.prompt_policy.model_dump(mode="json")
+        if context.prompt_policy is not None
+        else None,
         "task": {
             "title": context.task.title,
             "description": context.task.description,

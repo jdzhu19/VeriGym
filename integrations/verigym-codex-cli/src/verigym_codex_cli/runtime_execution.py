@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Literal, cast
 
@@ -9,6 +10,7 @@ from verigym.plugin_api import (
     ExternalAgentBridge,
     ExternalProcessRequest,
     ExternalProcessResult,
+    PromptPolicyDescriptor,
 )
 
 from .capabilities import CapabilityReport
@@ -30,6 +32,7 @@ def build_runtime_process_request(
     settings: CodexSettings,
     prompt: str,
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
+    prompt_policy: PromptPolicyDescriptor | None = None,
 ) -> ExternalProcessRequest:
     """Build the complete immutable runtime-owned process request."""
 
@@ -85,6 +88,15 @@ def build_runtime_process_request(
         max_output_bytes=settings.max_output_bytes,
         editable_globs=list(bridge.editable_globs),
         readonly_globs=list(bridge.readonly_globs),
+        prompt_policy=prompt_policy,
+        prompt_policy_hash=(
+            prompt_policy.configuration_fingerprint if prompt_policy is not None else None
+        ),
+        prompt_text_sha256=(
+            hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            if prompt_policy is not None
+            else None
+        ),
     )
 
 
@@ -96,6 +108,7 @@ def execute_runtime_process(
     settings: CodexSettings,
     prompt: str,
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
+    prompt_policy: PromptPolicyDescriptor | None = None,
 ) -> RuntimeExecutionOutcome:
     """Ask the selected runtime to own exactly one model-bearing process."""
 
@@ -105,6 +118,7 @@ def execute_runtime_process(
         capabilities=capabilities,
         settings=settings,
         prompt=prompt,
+        prompt_policy=prompt_policy,
         workspace_mode=workspace_mode,
     )
     runtime_result = bridge.execute_process(request)

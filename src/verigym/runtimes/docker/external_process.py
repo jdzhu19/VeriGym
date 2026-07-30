@@ -129,6 +129,8 @@ def external_process_configuration_fingerprint(
             "model": request.requested_model_id,
             "reasoning_effort": request.requested_reasoning_effort,
             "auth_semantic_id": request.auth_semantic_id,
+            "prompt_policy_hash": request.prompt_policy_hash,
+            "prompt_text_sha256": request.prompt_text_sha256,
             "read_only_mounts": request.read_only_mounts,
             "proxy_names": request.forwarded_proxy_environment_names,
             "synthesized_control_plane_environment_names": synthesized_environment_names,
@@ -465,6 +467,8 @@ class DockerExternalProcessExecutor:
                 synthesized_environment_names=control_plane_synthesized_environment_names,
                 mandatory_loopback_bypass_present=(control_plane_mandatory_loopback_bypass_present),
             ),
+            prompt_policy_hash=request.prompt_policy_hash,
+            prompt_text_sha256=request.prompt_text_sha256,
             logical_workspace_root="/workspace",
         )
         security = ExternalProcessSecurityEvidence(

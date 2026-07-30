@@ -96,6 +96,30 @@
           "title": "Model Process Count",
           "type": "integer"
         },
+        "prompt_policy_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Policy Hash"
+        },
+        "prompt_text_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Text Sha256"
+        },
         "protocol": {
           "pattern": "^[A-Za-z0-9._-]{1,128}$",
           "title": "Protocol",

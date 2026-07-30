@@ -423,7 +423,6 @@ def _validate_cross_references(
         "system": manifest.system_id == plan.system.system_id,
         "agent": manifest.agent == plan.system.agent_descriptor,
         "model": manifest.model == plan.system.model_descriptor,
-        "prompt": manifest.prompt_policy == plan.prompt_policy,
         "tool_policy": manifest.tool_policy == plan.tool_policy,
         "budget": manifest.budget == plan.budget,
         "verifier": manifest.verifier_hash == plan.verifier_hash,
@@ -433,8 +432,32 @@ def _validate_cross_references(
         "resolved_profile": manifest.resolved_profile_hash == plan.resolved_profile_hash,
     }
     mismatches.extend(name for name, matches in checks.items() if not matches)
+    mismatches.extend(_prompt_binding_mismatches(manifest, plan))
     if mismatches:
         raise ConfigurationError("child does not match plan fields: " + ", ".join(mismatches))
+
+
+def _prompt_binding_mismatches(manifest: RunManifest, plan: PlanItem) -> list[str]:
+    mismatches: list[str] = []
+    if manifest.prompt_policy is None or plan.prompt_policy is None:
+        if manifest.prompt_policy != plan.prompt_policy:
+            mismatches.append("prompt.descriptor")
+    else:
+        child = manifest.prompt_policy.model_dump(mode="json")
+        frozen = plan.prompt_policy.model_dump(mode="json")
+        for field in sorted(set(child) | set(frozen)):
+            if child.get(field) != frozen.get(field):
+                mismatches.append(f"prompt.{field}")
+    if manifest.prompt_policy_hash != plan.prompt_policy_hash:
+        mismatches.append("prompt.hash")
+    strict_agent_prompt = (
+        plan.prompt_policy is not None
+        and plan.prompt_policy.resolver_id == "agent_execution_prompt_policy_v1"
+    )
+    if strict_agent_prompt or manifest.agent_configuration_hash is not None:
+        if manifest.agent_configuration_hash != plan.system.agent_configuration_hash:
+            mismatches.append("agent_configuration_hash")
+    return mismatches
 
 
 def validate_plan_binding(

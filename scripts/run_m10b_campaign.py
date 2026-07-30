@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -28,7 +27,7 @@ from verigym_codex_cli.runtime_execution import build_runtime_process_request
 from verigym_codex_cli.util import atomic_json
 
 from verigym.core.external_agent import RuntimeExternalAgentBridge
-from verigym.core.hashing import canonical_json, content_hash, hash_directory
+from verigym.core.hashing import canonical_json, content_hash
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
@@ -47,7 +46,6 @@ from verigym.evolution.ledger import (
     authorize_process,
     finish_process,
     seal_process_ledger,
-    validate_process_records,
 )
 from verigym.evolution.memory import (
     build_agent_version,
@@ -78,6 +76,7 @@ from verigym.experiments.state import (
     atomic_write_text,
     load_jsonl_models,
 )
+from verigym.prompts.policy import prompt_contract_identity_hash
 from verigym.reporting.loader import load_report_inputs
 from verigym.runtimes.docker.external_process import (
     external_process_configuration_fingerprint,
@@ -86,12 +85,12 @@ from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.evolution import (
     AgentVersionManifest,
     EpisodeTrajectory,
-    EvolutionProcessLedgerRecord,
     MemoryPack,
     RunAgentVersionAssignment,
     TaskSplitEntry,
     TaskSplitManifest,
 )
+from verigym.schemas.external_agent import ExternalProcessResult
 from verigym.schemas.repository import RepositoryTaskManifest
 from verigym.schemas.run import RunConfig, RunResult
 from verigym.schemas.runtime import (
@@ -100,9 +99,9 @@ from verigym.schemas.runtime import (
     SessionSpec,
 )
 
-AUTHORIZATION_ID = "m10b-owner-contract-v1"
-START_COMMIT = "53b0755715a876432ddcdface143632278ccddd3"
-START_BRANCH = "milestone10a-repository-rtl-repair"
+AUTHORIZATION_ID = "m10b-prompt-binding-owner-contract-v1"
+START_COMMIT = "de9dc9ddf723173cf085c7870dfa6857ed109064"
+START_BRANCH = "milestone10b-evolving-agent-evaluation"
 MODEL_ID = "gpt-5.4"
 REASONING_EFFORT = "xhigh"
 CODEX_VERSION = "codex-cli 0.144.6"
@@ -116,11 +115,11 @@ REPOSITORY_AGENT_IMAGE_ID = (
 MEMORY_AGENT_IMAGE_ID = "sha256:b22da25b8db35190a2d1f4d80d02c60a952e7fb0006dc0a3cc7ab975e95c598f"
 PUBLIC_LAUNCHER_SHA256 = "e3276ee142e7de78fd60bf4078138152d1974c93f72f27fd2eb95a3f6493b407"
 M10A_BUNDLE = Path("/data/jzhu484/Agent/VeriGym_milestone10a_53b0755/evidence-bundle-final")
+FAILED_M10B_BUNDLE = Path("/data/jzhu484/Agent/VeriGym_milestone10b_de9dc9d/evidence-bundle-final")
+FAILED_M10B_CHECKSUM_HASH = "fd549b7e064aabdad1c2e07630de62f8e424a9a4c368d7df71813c048def8188"
 REFERENCE_EXPERIMENT = Path("/data/jzhu484/Agent/VeriGym_reference_qualified_52318e1")
 REFERENCE_CHECKPOINT_MANIFEST = REFERENCE_EXPERIMENT / "checkpoint-bundle-114/BUNDLE-MANIFEST.json"
 REFERENCE_CHECKPOINT_HASH = "2d5cdb67bf60c1a26f3b20bfab4c50bbe3efc331db3bf7508ece2f1cbf3d1ce9"
-PRIOR_PROBE_COMMIT = "860c83642c405d6f7622f6c37596e4420e1d71ee"
-PRIOR_PROBE_TREE = "11f4c49948eab27f97d4cd4f22d8ce02a64cb6b2"
 TRAINING_TASKS = (
     "repo-rtl/arbiter-reset-recovery",
     "repo-rtl/counter-wrap",
@@ -197,79 +196,20 @@ def _assert_checksum_manifest(root: Path) -> int:
 
 
 def _preservation_identity() -> dict[str, Any]:
+    failed_m10b_count = _assert_checksum_manifest(FAILED_M10B_BUNDLE)
+    if _sha256(FAILED_M10B_BUNDLE / "SHA256SUMS") != FAILED_M10B_CHECKSUM_HASH:
+        raise RuntimeError("failed M10B bundle checksum-manifest identity changed")
     m10a_count = _assert_checksum_manifest(M10A_BUNDLE)
     if _sha256(REFERENCE_CHECKPOINT_MANIFEST) != REFERENCE_CHECKPOINT_HASH:
         raise RuntimeError("reference-qualified experiment checkpoint identity changed")
     return {
         "schema_version": "1.0",
+        "failed_m10b_bundle_checksum_manifest_sha256": _sha256(FAILED_M10B_BUNDLE / "SHA256SUMS"),
+        "failed_m10b_bundle_verified_file_count": failed_m10b_count,
         "m10a_bundle_checksum_manifest_sha256": _sha256(M10A_BUNDLE / "SHA256SUMS"),
         "m10a_bundle_verified_file_count": m10a_count,
         "reference_experiment_checkpoint_manifest_sha256": _sha256(REFERENCE_CHECKPOINT_MANIFEST),
         "protected_assets_modified": False,
-    }
-
-
-def _prior_probe_identity(root: Path) -> dict[str, Any]:
-    """Validate the one immutable failed Probe 1 before authorizing Probe 2."""
-
-    if root.is_symlink():
-        raise RuntimeError("prior probe root must not be a symlink")
-    resolved = root.resolve(strict=True)
-    if not resolved.is_dir():
-        raise RuntimeError("prior probe root must be a regular directory")
-    source = json.loads((resolved / "preflight/source-identity.json").read_text("utf-8"))
-    if (
-        source.get("source_commit") != PRIOR_PROBE_COMMIT
-        or source.get("source_tree") != PRIOR_PROBE_TREE
-    ):
-        raise RuntimeError("prior probe source identity differs from the failed Probe 1")
-    ledger_path = resolved / "model-process-ledger.jsonl"
-    records = validate_process_records(
-        load_jsonl_models(ledger_path, EvolutionProcessLedgerRecord),
-        authorization_id=AUTHORIZATION_ID,
-    )
-    if (
-        len(records) != 2
-        or records[0].record_phase != "authorized"
-        or records[1].record_phase != "terminal"
-        or records[0].process_kind != "implementation_probe"
-        or records[1].process_kind != "implementation_probe"
-        or records[1].terminal_outcome != "infrastructure_invalid"
-        or not records[1].model_process_started
-        or records[0].requested_model_id != MODEL_ID
-        or records[0].reasoning_effort != REASONING_EFFORT
-    ):
-        raise RuntimeError("prior Probe 1 ledger does not describe one terminal failed process")
-    runtime_paths = sorted(
-        (resolved / "real-probe-1/runs").glob("*/artifacts/codex_cli/runtime_process.json")
-    )
-    if len(runtime_paths) != 1:
-        raise RuntimeError("prior Probe 1 runtime evidence is incomplete")
-    runtime = json.loads(runtime_paths[0].read_text("utf-8"))
-    security = runtime.get("security")
-    identity = runtime.get("runtime_identity")
-    if (
-        runtime.get("failure_reason") != "container_inspect_timeout"
-        or runtime.get("cleanup_complete") is not False
-        or not isinstance(security, dict)
-        or security.get("cleanup_verified") is not False
-        or not isinstance(identity, dict)
-        or identity.get("model_process_count") != 1
-    ):
-        raise RuntimeError("prior Probe 1 does not match the demonstrated cleanup defect")
-    return {
-        "schema_version": "1.0",
-        "source_commit": PRIOR_PROBE_COMMIT,
-        "source_tree": PRIOR_PROBE_TREE,
-        "campaign_root_hash": hash_directory(resolved),
-        "ledger_sha256": _sha256(ledger_path),
-        "authorization_record_hash": records[0].record_hash,
-        "terminal_record_hash": records[1].record_hash,
-        "started_processes": 1,
-        "terminal_outcome": records[1].terminal_outcome,
-        "failure_reason": runtime["failure_reason"],
-        "candidate_repaired": False,
-        "retried": False,
     }
 
 
@@ -537,6 +477,19 @@ def _validate_plan_versions(plan: ExperimentPlan) -> None:
             source_commit=str(source_commit),
             package_hashes=package_hashes,
         )
+        prompt = item.prompt_policy
+        if (
+            prompt is None
+            or prompt.resolver_id != "agent_execution_prompt_policy_v1"
+            or item.prompt_policy_hash != prompt.configuration_fingerprint
+            or prompt.agent_version_id != version.agent_version_id
+            or prompt.agent_version_hash != version.version_hash
+            or prompt.memory_pack_hash != version.memory_pack_hash
+            or prompt_contract_identity_hash(prompt) != version.prompt_contract_hash
+        ):
+            raise RuntimeError(
+                "plan prompt policy differs from its frozen agent-version execution identity"
+            )
 
 
 def _run_experiment(
@@ -667,6 +620,27 @@ def _run_outcomes(experiment: Path) -> list[dict[str, Any]]:
     for run in sorted(inputs.valid_runs, key=lambda value: value.plan_index):
         if run.plan_item is None:
             raise RuntimeError("run lacks a frozen plan item")
+        prompt = run.manifest.prompt_policy
+        frozen_prompt = run.plan_item.prompt_policy
+        runtime_process_path = (
+            experiment / run.relative_path / "artifacts/codex_cli/runtime_process.json"
+        )
+        runtime_process = load_model(runtime_process_path, ExternalProcessResult)
+        runtime_prompt_hash = runtime_process.runtime_identity.prompt_policy_hash
+        prompt_binding_verified = (
+            prompt is not None
+            and frozen_prompt is not None
+            and prompt == frozen_prompt
+            and run.manifest.prompt_policy_hash == run.plan_item.prompt_policy_hash
+            and run.manifest.prompt_policy_hash == runtime_prompt_hash
+            and run.manifest.agent_configuration_hash
+            == run.plan_item.system.agent_configuration_hash
+        )
+        if not prompt_binding_verified:
+            raise RuntimeError(
+                f"run {run.manifest.run_id} lacks exact plan/child/harness prompt binding"
+            )
+        assert prompt is not None
         score = run.scorecard
         outcomes.append(
             {
@@ -675,6 +649,15 @@ def _run_outcomes(experiment: Path) -> list[dict[str, Any]]:
                 "task_id": run.manifest.task_id,
                 "system_id": run.plan_item.system.system_id,
                 "agent_version_id": run.plan_item.system.agent_options.get("agent_version_id"),
+                "plan_prompt_policy_hash": run.plan_item.prompt_policy_hash,
+                "child_prompt_policy_hash": run.manifest.prompt_policy_hash,
+                "harness_runtime_prompt_policy_hash": runtime_prompt_hash,
+                "task_context_hash": prompt.task_context_hash,
+                "agent_version_hash": prompt.agent_version_hash,
+                "memory_pack_hash": prompt.memory_pack_hash,
+                "plan_agent_configuration_hash": (run.plan_item.system.agent_configuration_hash),
+                "child_agent_configuration_hash": run.manifest.agent_configuration_hash,
+                "prompt_binding_verified": prompt_binding_verified,
                 "sample_index": run.manifest.sample_index,
                 "outcome_kind": classify_outcome(score),
                 "resolved": score.resolved,
@@ -943,8 +926,9 @@ def _seal_bundle(
     heldout_experiment: Path,
     heldout_dataset: Path,
     heldout_reports: Path,
-    prior_probe_root: Path,
-    prior_probe_identity: Mapping[str, Any],
+    forensic_evidence: Path,
+    historical_binding_evidence: Path,
+    resolver_test_evidence: Path,
     probe_experiment: Path,
     probe_dataset: Path,
     probe_replay: Sequence[Mapping[str, Any]],
@@ -960,6 +944,8 @@ def _seal_bundle(
     version_set: Any,
     assignment_manifest: Any,
     process_manifest: Any,
+    probe_outcomes: Sequence[Mapping[str, Any]],
+    training_outcomes: Sequence[Mapping[str, Any]],
     outcomes: Sequence[Mapping[str, Any]],
     evaluation: Any,
     repository_root: Path,
@@ -968,6 +954,9 @@ def _seal_bundle(
     bundle = campaign_root / "evidence-bundle-final"
     bundle.mkdir()
     for relative in (
+        "root-cause",
+        "implementation",
+        "probes",
         "source-identities",
         "package-and-image-identities",
         "task-splits",
@@ -990,13 +979,26 @@ def _seal_bundle(
     )
     shutil.copy2(
         campaign_root / "preflight/quality-and-ci.json",
-        bundle / "package-and-image-identities/quality-and-ci.json",
+        bundle / "implementation/CI-and-package-identities.json",
+    )
+    shutil.copy2(forensic_evidence, bundle / "root-cause/prompt-binding-forensic.json")
+    shutil.copy2(
+        historical_binding_evidence,
+        bundle / "root-cause/historical-probe2-binding-check.json",
+    )
+    shutil.copy2(
+        resolver_test_evidence,
+        bundle / "implementation/resolver-test-matrix.json",
     )
     shutil.copy2(
         campaign_root / "preflight/codex-capabilities.json",
         bundle / "package-and-image-identities/codex-capabilities.json",
     )
     _copy_tree(repository_root / "docs/schemas", bundle / "schemas")
+    shutil.copy2(
+        repository_root / "docs/schemas/prompt-policy-descriptor.schema.json",
+        bundle / "implementation/prompt-policy-schema.json",
+    )
     atomic_dump_json(bundle / "task-splits/task-split-manifest.json", split)
     atomic_dump_json(bundle / "task-splits/contamination-scan.json", contamination)
     _copy_tree(training_experiment, bundle / "training/experiment")
@@ -1006,15 +1008,14 @@ def _seal_bundle(
         bundle / "evolution/sanitized-training-summary.json",
         training_summary,
     )
-    _copy_tree(prior_probe_root, bundle / "real-probes/probe-1-failed/campaign")
-    atomic_dump_json(
-        bundle / "real-probes/probe-1-failed/identity.json",
-        dict(prior_probe_identity),
-    )
-    _copy_tree(probe_experiment, bundle / "real-probes/probe-2-success/experiment")
+    _copy_tree(probe_experiment, bundle / "probes/probe-1/experiment")
     _copy_tree(
         probe_dataset,
-        bundle / "real-probes/probe-2-success/trajectory-dataset",
+        bundle / "probes/probe-1/trajectory-dataset",
+    )
+    atomic_dump_json(
+        bundle / "probes/probe-1/per-run-outcomes.json",
+        {"schema_version": "1.0", "runs": list(probe_outcomes)},
     )
     _copy_tree(memory_root, bundle / "evolution/memory-builder")
     atomic_dump_json(bundle / "evolution/agent-version-v0.json", v0)
@@ -1032,6 +1033,10 @@ def _seal_bundle(
     atomic_dump_json(
         bundle / "heldout-evaluation/per-run-outcomes.json",
         {"schema_version": "1.0", "runs": list(outcomes)},
+    )
+    atomic_dump_json(
+        bundle / "training/per-run-outcomes.json",
+        {"schema_version": "1.0", "runs": list(training_outcomes)},
     )
     atomic_dump_json(
         bundle / "replay/replay-summary.json",
@@ -1058,14 +1063,11 @@ def _seal_bundle(
         {
             "schema_version": "1.0",
             "authorization_id": AUTHORIZATION_ID,
-            "failed_probe_1_started_processes": prior_probe_identity["started_processes"],
-            "final_campaign_started_processes": process_manifest.started_processes,
-            "total_started_processes": (
-                prior_probe_identity["started_processes"] + process_manifest.started_processes
-            ),
-            "maximum_authorized_processes": 24,
-            "failed_probe_1_terminal_record_hash": prior_probe_identity["terminal_record_hash"],
-            "final_campaign_ledger_manifest_hash": process_manifest.manifest_hash,
+            "historical_failed_campaign_processes": 2,
+            "historical_processes_counted_against_new_authorization": False,
+            "new_campaign_started_processes": process_manifest.started_processes,
+            "maximum_new_authorized_processes": 24,
+            "new_campaign_ledger_manifest_hash": process_manifest.manifest_hash,
             "retry_or_resume": False,
         },
     )
@@ -1086,7 +1088,7 @@ def _seal_bundle(
         {
             "schema_version": "1.0",
             "gate": "PASS",
-            "label": "MILESTONE 10B EVOLVING-AGENT EVALUATION BRIDGE: PASS",
+            "label": "MILESTONE 10B PROMPT-BINDING REPAIR AND COMPLETION: PASS",
             "no_weight_update": True,
             "general_performance_improvement_established": False,
             "required_interpretation": (
@@ -1121,13 +1123,12 @@ def _seal_bundle(
         "training_processes": 3,
         "memory_synthesis_processes": 1,
         "heldout_processes": 18,
-        "probe_processes": 2,
-        "failed_probe_processes": 1,
+        "probe_processes": 1,
+        "optional_probe_processes": 0,
         "successful_probe_processes": 1,
-        "final_bundle_campaign_processes": process_manifest.started_processes,
-        "total_processes": (
-            prior_probe_identity["started_processes"] + process_manifest.started_processes
-        ),
+        "new_campaign_processes": process_manifest.started_processes,
+        "historical_processes": 2,
+        "maximum_new_authorized_processes": 24,
         "model_weights_modified": False,
         "historical_evidence_combined": False,
         "preseal_file_set_hash": content_hash(preseal),
@@ -1159,7 +1160,9 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument("--plugin-wheel", type=Path, required=True)
     parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--quality-evidence", type=Path, required=True)
-    parser.add_argument("--prior-failed-probe-root", type=Path, required=True)
+    parser.add_argument("--forensic-evidence", type=Path, required=True)
+    parser.add_argument("--historical-binding-evidence", type=Path, required=True)
+    parser.add_argument("--resolver-test-evidence", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -1177,8 +1180,15 @@ def main() -> int:
         raise RuntimeError("fully green quality/CI evidence is required before the probe")
     _assert_source_identity(args.source_commit, args.source_tree)
     preservation_before = _preservation_identity()
-    prior_probe_root = args.prior_failed_probe_root.resolve(strict=True)
-    prior_probe = _prior_probe_identity(prior_probe_root)
+    forensic_evidence = args.forensic_evidence.resolve(strict=True)
+    historical_binding_evidence = args.historical_binding_evidence.resolve(strict=True)
+    resolver_test_evidence = args.resolver_test_evidence.resolve(strict=True)
+    if (
+        not forensic_evidence.is_file()
+        or not historical_binding_evidence.is_file()
+        or not resolver_test_evidence.is_file()
+    ):
+        raise RuntimeError("zero-model forensic evidence is required before the probe")
     output.mkdir(parents=True)
     (output / "preflight").mkdir()
     shutil.copy2(args.quality_evidence, output / "preflight/quality-and-ci.json")
@@ -1272,7 +1282,7 @@ def main() -> int:
         auth_semantic_id=AUTH_SEMANTIC_ID,
         runtime_identity_hash=preview.runtime_identity_hash,
         tool_policy_hash=preview.tool_policy_hash,
-        prompt_contract_hash=preview.prompt_policy_hash,
+        prompt_contract_hash=prompt_contract_identity_hash(preview.prompt_policy),
         source_commit=args.source_commit,
         package_hashes=package_hashes,
         image_hashes={
@@ -1290,8 +1300,8 @@ def main() -> int:
     atomic_dump_json(output / "preflight/agent-version-v0.json", v0)
 
     probe_config = _experiment_config(
-        name="m10b implementation probe two",
-        output=output / "real-probe-2",
+        name="m10b prompt binding conformance probe one",
+        output=output / "real-probe-1",
         tasks=[TRAINING_TASKS[1]],
         systems=[("v0", _versioned_options(capability, v0))],
         samples=1,
@@ -1307,12 +1317,12 @@ def main() -> int:
         ledger=ledger,
         process_kind="implementation_probe",
     )
-    probe_dataset = output / "probe-2-trajectory-dataset"
+    probe_dataset = output / "probe-1-trajectory-dataset"
     probe_manifest = TrajectoryExporter().export(
         probe_experiment,
         probe_dataset,
         split_manifest=build_task_split(
-            split_id="m10b-probe-2-v0",
+            split_id="m10b-prompt-binding-probe-1-v0",
             training=[_task_entry(training_roots[TRAINING_TASKS[1]])],
             heldout=[],
         ),
@@ -1320,10 +1330,11 @@ def main() -> int:
         run_agent_versions=_run_assignments(probe_experiment, {"v0": v0.agent_version_id}),
         source_commit=args.source_commit,
         package_identities=package_hashes,
-        dataset_id="m10b-implementation-probe-2",
+        dataset_id="m10b-prompt-binding-probe-1",
     )
     replay_trajectory_dataset(probe_dataset, probe_experiment)
     probe_replay = _replay_experiment(probe_experiment)
+    probe_outcomes = _run_outcomes(probe_experiment)
     if probe_manifest.eligible_record_count != 1:
         raise RuntimeError("implementation probe did not produce one eligible trajectory")
 
@@ -1370,6 +1381,7 @@ def main() -> int:
     EvolutionReportService().generate_dataset(training_dataset, training_reports)
     atomic_dump_json(output / "sanitized-training-summary.json", summary)
     training_replay = _replay_experiment(training_experiment)
+    training_outcomes = _run_outcomes(training_experiment)
 
     memory_root = output / "memory-synthesis"
     memory_root.mkdir()
@@ -1448,6 +1460,28 @@ def main() -> int:
     )
     heldout_plan = ExperimentPlanner().build(heldout_config)
     _validate_plan_versions(heldout_plan)
+    for task in HELDOUT_TASKS:
+        by_system = {
+            item.system.system_id: item for item in heldout_plan.items if item.task_id == task
+        }
+        v0_item = by_system["v0"]
+        v1_item = by_system["v1"]
+        v0_prompt = v0_item.prompt_policy
+        v1_prompt = v1_item.prompt_policy
+        if (
+            v0_prompt is None
+            or v1_prompt is None
+            or v0_prompt.memory_pack_hash is not None
+            or v1_prompt.memory_pack_hash != memory.content_hash
+            or v0_prompt.configuration_fingerprint == v1_prompt.configuration_fingerprint
+            or v0_item.runtime_identity_hash != v1_item.runtime_identity_hash
+            or v0_item.tool_policy_hash != v1_item.tool_policy_hash
+            or v0_item.verifier_hash != v1_item.verifier_hash
+            or v0_item.system.agent_descriptor != v1_item.system.agent_descriptor
+            or v0_item.system.agent_options.get("model_id")
+            != v1_item.system.agent_options.get("model_id")
+        ):
+            raise RuntimeError("held-out v0/v1 prompt partition or shared identity is invalid")
     expected_order = [
         ("v0", 0),
         ("v1", 0),
@@ -1535,8 +1569,6 @@ def main() -> int:
         }
     ):
         raise RuntimeError("campaign-wide process accounting differs from 1+3+1+18")
-    if prior_probe["started_processes"] + process_manifest.started_processes != 24:
-        raise RuntimeError("global M10B accounting differs from the authorized 2+3+1+18")
     preservation_after = _preservation_identity()
     if preservation_after != preservation_before:
         raise RuntimeError("protected historical evidence changed during M10B")
@@ -1557,8 +1589,9 @@ def main() -> int:
         heldout_experiment=heldout_experiment,
         heldout_dataset=heldout_dataset,
         heldout_reports=heldout_reports,
-        prior_probe_root=prior_probe_root,
-        prior_probe_identity=prior_probe,
+        forensic_evidence=forensic_evidence,
+        historical_binding_evidence=historical_binding_evidence,
+        resolver_test_evidence=resolver_test_evidence,
         probe_experiment=probe_experiment,
         probe_dataset=probe_dataset,
         probe_replay=probe_replay,
@@ -1574,6 +1607,8 @@ def main() -> int:
         version_set=version_set,
         assignment_manifest=assignment_manifest,
         process_manifest=process_manifest,
+        probe_outcomes=probe_outcomes,
+        training_outcomes=training_outcomes,
         outcomes=outcomes,
         evaluation=evaluation,
         repository_root=repository_root,
@@ -1582,10 +1617,11 @@ def main() -> int:
     print(
         canonical_json(
             {
-                "gate": "MILESTONE 10B EVOLVING-AGENT EVALUATION BRIDGE: PASS",
+                "gate": "MILESTONE 10B PROMPT-BINDING REPAIR AND COMPLETION: PASS",
                 "bundle": bundle.name,
                 "bundle_sha256sums_sha256": _sha256(bundle / "SHA256SUMS"),
-                "processes": prior_probe["started_processes"] + process_manifest.started_processes,
+                "new_campaign_processes": process_manifest.started_processes,
+                "historical_processes": 2,
                 "v0_version_hash": v0.version_hash,
                 "v1_version_hash": v1.version_hash,
                 "evaluation_report_hash": evaluation.report_hash,

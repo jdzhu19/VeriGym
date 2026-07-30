@@ -73,7 +73,11 @@ from verigym.schemas.external_agent import (
 )
 from verigym.schemas.integrity import ArtifactManifest, IntegrityValidation
 from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
-from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
+from verigym.schemas.prompt import (
+    AgentPromptPolicySpec,
+    PromptPolicyDescriptor,
+    ToolPolicySnapshot,
+)
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.replay import ReplayEvidence
@@ -109,6 +113,7 @@ def _model(model: type[BaseModel]) -> SchemaFactory:
 _SCHEMAS: dict[str, SchemaFactory] = {
     "action": lambda: TypeAdapter(AgentAction).json_schema(mode="serialization"),
     "agent-descriptor": _model(AgentDescriptor),
+    "agent-prompt-policy-spec": _model(AgentPromptPolicySpec),
     "agent-lineage": _model(AgentLineage),
     "agent-update-manifest": _model(AgentUpdateManifest),
     "agent-version-manifest": _model(AgentVersionManifest),

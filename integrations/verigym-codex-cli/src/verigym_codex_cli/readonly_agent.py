@@ -16,6 +16,7 @@ from verigym.plugin_api import (
     AgentAdapter,
     AgentContext,
     AgentDescriptor,
+    AgentPromptPolicySpec,
     AgentTerminationError,
     EpisodeFailure,
     EpisodeResult,
@@ -27,6 +28,7 @@ from verigym.plugin_api import (
     InteractionMode,
     Observation,
     TerminationReason,
+    validate_prompt_text,
 )
 from verigym.schemas.agent import ApplyPatchAction
 
@@ -61,6 +63,7 @@ from .process import (
     CodexProcessResult,
     ExecutableIdentity,
 )
+from .prompt_policy import bind_prompt_policy
 from .runtime_execution import execute_runtime_process
 from .security import assert_empty_directory, assert_instruction_isolation
 from .util import redact_text
@@ -73,6 +76,16 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
     """Submit one textual RTL candidate after typed read-only event validation."""
 
     requires_model = False
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id="codex_cli_readonly_verilog_task_context_v1",
+        prompt_contract_version="1.0.0",
+        task_context_policy="visible_observation_rtl_context_v1",
+        base_instruction_policy="codex_cli_readonly_agent_instructions_v1",
+        content_visibility_policy="public_task_observation_no_hidden_reference_v1",
+        max_prompt_bytes=2 * 1024 * 1024,
+        max_task_context_bytes=1024 * 1024,
+        versioned_context_allowed=False,
+    )
     supported_modes = frozenset({InteractionMode.AGENT})
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
@@ -116,6 +129,11 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
         settings = settings_for_execution_backend(settings, bridge.execution_backend)
+        prompt_policy = bind_prompt_policy(
+            context,
+            settings,
+            versioned_context_allowed=False,
+        )
         self._context = context
         self._bridge = bridge
         self._executable = executable
@@ -124,6 +142,17 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
         self._launched = False
         self._awaiting_patch_result = False
         self._artifact_root = bridge.artifact_root
+        bridge.emit_event(
+            "codex_cli_prompt_policy_bound",
+            {
+                "prompt_policy_hash": prompt_policy.configuration_fingerprint,
+                "task_context_hash": prompt_policy.task_context_hash,
+                "agent_version_id": None,
+                "agent_version_hash": None,
+                "memory_pack_hash": None,
+                "model_call_count": 0,
+            },
+        )
         bridge.emit_event(
             "codex_cli_capabilities_resolved",
             {
@@ -205,7 +234,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                 "working_directory_policy": _WORKDIR_IDENTITY,
             },
         )
-        prompt = _readonly_prompt(context, observation)
+        prompt = validate_prompt_text(_readonly_prompt(context, observation), context.prompt_policy)
         parsed: ParsedEventStream | None = None
         policy: EventPolicyResult | None = None
         source: str | None = None
@@ -238,6 +267,7 @@ class CodexCliReadonlyAgentAdapter(AgentAdapter):
                         capabilities=capabilities,
                         settings=settings,
                         prompt=prompt,
+                        prompt_policy=context.prompt_policy,
                         workspace_mode="fresh_empty",
                     )
                     process = outcome.process
@@ -546,6 +576,9 @@ def _candidate_patch(
 def _readonly_prompt(context: AgentContext, observation: Observation) -> str:
     payload = {
         "schema_version": "1.0",
+        "prompt_policy": context.prompt_policy.model_dump(mode="json")
+        if context.prompt_policy is not None
+        else None,
         "execution_identity": {
             "surface": "codex_cli",
             "interaction_class": "cli_agent_single_turn_readonly",

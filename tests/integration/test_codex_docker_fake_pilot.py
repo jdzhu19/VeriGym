@@ -53,8 +53,9 @@ def _fake_runtime_result(
     executor: DockerExternalProcessExecutor,
     request: ExternalProcessRequest,
     visible_workspace: Path,
+    external_mounts: list[object],
 ) -> ExternalProcessResult:
-    del visible_workspace
+    del visible_workspace, external_mounts
     agent = executor._agent_image  # noqa: SLF001 - bounded fake-runtime acceptance harness
     verifier = executor._verifier_image  # noqa: SLF001
     agent_config = executor._agent_config  # noqa: SLF001
@@ -125,6 +126,8 @@ def _fake_runtime_result(
             configuration_fingerprint=hashlib.sha256(
                 b"verigym-zero-call-fake-docker-process-v1"
             ).hexdigest(),
+            prompt_policy_hash=request.prompt_policy_hash,
+            prompt_text_sha256=request.prompt_text_sha256,
             logical_workspace_root="/workspace",
         ),
         security=ExternalProcessSecurityEvidence(

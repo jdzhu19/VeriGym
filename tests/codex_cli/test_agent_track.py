@@ -57,6 +57,11 @@ def test_external_agent_good_candidate_uses_ordinary_freeze_and_verifier(
     repository_hash = hash_directory(Path("src/verigym/suites/toy_rtl/assets"))
     result = _run(tmp_path / "runs")
     assert result.scorecard.resolved is True
+    assert result.manifest.prompt_policy is not None
+    assert result.manifest.prompt_policy.resolver_id == "agent_execution_prompt_policy_v1"
+    assert result.manifest.prompt_policy_hash == (
+        result.manifest.prompt_policy.configuration_fingerprint
+    )
     assert result.scorecard.efficiency.tool_calls == 0
     assert result.scorecard.efficiency.external_patch_count == 1
     assert result.scorecard.efficiency.external_command_count == 0
@@ -148,6 +153,7 @@ def test_bad_candidate_is_normal_candidate_failure(
     assert result.scorecard.status == "completed"
     assert result.scorecard.failure is None
     assert result.scorecard.correctness.infrastructure_error is False
+    assert result.manifest.prompt_policy is not None
 
 
 def test_remote_failure_is_infrastructure_failure(
@@ -162,6 +168,7 @@ def test_remote_failure_is_infrastructure_failure(
     assert result.scorecard.failure.category == "authentication"
     assert result.scorecard.failure.kind == "model"
     assert result.scorecard.failure.infrastructure is True
+    assert result.manifest.prompt_policy is not None
 
 
 def test_bwrap_backend_failure_is_observable_infrastructure(
@@ -224,6 +231,7 @@ def test_contained_mcp_policy_failure_is_not_infrastructure(
     assert result.scorecard.failure is not None
     assert result.scorecard.failure.category == "workspace_policy"
     assert result.scorecard.failure.infrastructure is False
+    assert result.manifest.prompt_policy is not None
     event_policy = json.loads(
         (result.run_dir / "artifacts" / "codex_cli" / "event_policy.json").read_text(
             encoding="utf-8"

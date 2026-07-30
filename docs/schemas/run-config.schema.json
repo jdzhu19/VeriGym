@@ -402,6 +402,176 @@
       "title": "ModelRunConfig",
       "type": "object"
     },
+    "PromptPolicyDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_descriptor_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Descriptor Hash"
+        },
+        "agent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Hash"
+        },
+        "agent_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Id"
+        },
+        "base_instruction_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Instruction Policy"
+        },
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "content_visibility_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Visibility Policy"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "interaction_mode": {
+          "$ref": "#/$defs/InteractionMode"
+        },
+        "max_prompt_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Prompt Bytes"
+        },
+        "max_task_context_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Task Context Bytes"
+        },
+        "memory_pack_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Pack Hash"
+        },
+        "resolver_id": {
+          "anyOf": [
+            {
+              "const": "agent_execution_prompt_policy_v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolver Id"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_context_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Hash"
+        },
+        "task_context_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Policy"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "interaction_mode",
+        "configuration_fingerprint"
+      ],
+      "title": "PromptPolicyDescriptor",
+      "type": "object"
+    },
     "ResolvedArtifactIdentity": {
       "additionalProperties": false,
       "properties": {
@@ -1731,6 +1901,41 @@
       ],
       "default": null
     },
+    "expected_agent_configuration_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Agent Configuration Hash"
+    },
+    "expected_prompt_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptPolicyDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "expected_prompt_policy_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Prompt Policy Hash"
+    },
     "expected_resolved_profile": {
       "anyOf": [
         {
@@ -1842,6 +2047,41 @@
       ],
       "default": null,
       "title": "Plan Item Id"
+    },
+    "resolved_agent_configuration_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved Agent Configuration Hash"
+    },
+    "resolved_prompt_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptPolicyDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "resolved_prompt_policy_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved Prompt Policy Hash"
     },
     "run_id": {
       "anyOf": [

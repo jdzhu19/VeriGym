@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from verigym.core.hashing import content_hash
 from verigym.experiments.schemas import PlanItem
+from verigym.prompts.policy import prompt_contract_identity_hash
 from verigym.schemas.evolution import (
     AgentLineage,
     AgentUpdateManifest,
@@ -282,7 +283,11 @@ def validate_plan_agent_version_binding(
         "agent_descriptor_hash": content_hash(item.system.agent_descriptor),
         "runtime_identity_hash": item.runtime_identity_hash,
         "tool_policy_hash": item.tool_policy_hash,
-        "prompt_contract_hash": item.prompt_policy_hash,
+        "prompt_contract_hash": (
+            prompt_contract_identity_hash(item.prompt_policy)
+            if item.prompt_policy is not None
+            else None
+        ),
         "source_commit": source_commit,
         "package_hashes": dict(sorted(package_hashes.items())),
         "image_hashes": dict(sorted(image_hashes.items())),

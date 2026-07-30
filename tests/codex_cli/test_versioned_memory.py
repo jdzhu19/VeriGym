@@ -8,14 +8,15 @@ from verigym_codex_cli import CodexCliAgentAdapter
 from verigym_codex_cli.capabilities import runtime_capabilities
 from verigym_codex_cli.config import agent_settings, readonly_agent_settings
 
-from verigym.core.hashing import canonical_json
+from verigym.core.hashing import canonical_json, content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.evolution.memory import build_agent_version, build_memory_pack
-from verigym.experiments.planner import ExperimentPlanner
-from verigym.experiments.schemas import PlannedSystemIdentity
+from verigym.prompts.policy import (
+    prompt_contract_identity_hash,
+    resolve_prompt_policy,
+)
 from verigym.registry.collections import build_registries
 from verigym.schemas.common import InteractionMode
-from verigym.schemas.model import ModelRunConfig
 from verigym.schemas.run import RunConfig
 
 pytestmark = [pytest.mark.codex_cli, pytest.mark.codex_cli_agent]
@@ -34,6 +35,7 @@ def _memory():
 
 
 def _version(memory):
+    agent = CodexCliAgentAdapter()
     return build_agent_version(
         agent_version_id="codex-cli-agent-v1",
         status="frozen",
@@ -41,13 +43,13 @@ def _version(memory):
         update_type="context_memory",
         executable_in_m10b=True,
         base_agent_id="codex-cli-agent",
-        agent_descriptor_hash="2" * 64,
+        agent_descriptor_hash=content_hash(agent.descriptor),
         model_id="fake-model",
         reasoning_effort="xhigh",
         auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
         runtime_identity_hash="3" * 64,
         tool_policy_hash="4" * 64,
-        prompt_contract_hash="5" * 64,
+        prompt_contract_hash=_prompt_contract_hash(),
         source_commit="53b0755715a876432ddcdface143632278ccddd3",
         package_hashes={"verigym": "6" * 64, "plugin": "7" * 64},
         image_hashes={"agent": "8" * 64, "verifier": "9" * 64},
@@ -56,6 +58,43 @@ def _version(memory):
         reward_profile_hash="c" * 64,
         memory_builder_identity_hash="d" * 64,
         memory_pack_hash=memory.content_hash,
+        model_weights_modified=False,
+    )
+
+
+def _prompt_contract_hash() -> str:
+    registries = build_registries(discover_external=False)
+    _suite, task, _assets = VeriGym(registries).load_task("toy-rtl/and-gate-basic")
+    agent = CodexCliAgentAdapter()
+    policy = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=agent,
+        agent_options={},
+        task=task,
+    )
+    assert policy is not None
+    return prompt_contract_identity_hash(policy)
+
+
+def _version_v0():
+    agent = CodexCliAgentAdapter()
+    return build_agent_version(
+        agent_version_id="codex-cli-agent-v0",
+        status="frozen",
+        parent_version_hash=None,
+        update_type="none",
+        executable_in_m10b=True,
+        base_agent_id="codex-cli-agent",
+        agent_descriptor_hash=content_hash(agent.descriptor),
+        model_id="fake-model",
+        reasoning_effort="xhigh",
+        auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
+        runtime_identity_hash="3" * 64,
+        tool_policy_hash="4" * 64,
+        prompt_contract_hash=_prompt_contract_hash(),
+        source_commit="53b0755715a876432ddcdface143632278ccddd3",
+        package_hashes={"verigym": "6" * 64, "plugin": "7" * 64},
+        image_hashes={"agent": "8" * 64, "verifier": "9" * 64},
         model_weights_modified=False,
     )
 
@@ -112,40 +151,43 @@ def test_track_b_versioned_context_is_hash_bound_and_track_a_rejects_it(
         )
 
 
-def test_external_agent_prompt_contract_identity_excludes_versioned_memory() -> None:
-    descriptor = CodexCliAgentAdapter().descriptor
-
-    def planned(options):
-        return PlannedSystemIdentity(
-            system_id="codex-cli-agent",
-            agent_id="codex-cli-agent",
-            agent_descriptor=descriptor,
-            agent_configuration_hash="a" * 64,
-            agent_options=options,
-            agent_requires_model=False,
-            model_options=ModelRunConfig(),
-        )
-
-    base = {
-        "prompt_contract_id": "codex_cli_workspace_verilog_task_context_v1",
-    }
-    first = ExperimentPlanner._prompt_policy(  # noqa: SLF001 - deterministic contract fixture
-        planned(base),
-        InteractionMode.AGENT,
+def test_external_agent_prompt_identity_binds_version_and_memory() -> None:
+    registries = build_registries(discover_external=False)
+    _suite, task, _assets = VeriGym(registries).load_task("toy-rtl/and-gate-basic")
+    agent = CodexCliAgentAdapter()
+    v0 = _version_v0()
+    memory = _memory()
+    v1 = _version(memory)
+    first = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=agent,
+        agent_options={
+            "prompt_contract_id": "codex_cli_workspace_verilog_task_context_v1",
+            "agent_version_id": v0.agent_version_id,
+            "agent_version_hash": v0.version_hash,
+            "agent_version_manifest_json": canonical_json(v0),
+        },
+        task=task,
     )
-    second = ExperimentPlanner._prompt_policy(  # noqa: SLF001
-        planned(
-            {
-                **base,
-                "agent_version_hash": "b" * 64,
-                "memory_pack": _memory().model_dump(mode="json"),
-            }
-        ),
-        InteractionMode.AGENT,
+    second = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=agent,
+        agent_options={
+            "prompt_contract_id": "codex_cli_workspace_verilog_task_context_v1",
+            "agent_version_id": v1.agent_version_id,
+            "agent_version_hash": v1.version_hash,
+            "agent_version_manifest_json": canonical_json(v1),
+            "memory_pack": memory.model_dump(mode="json"),
+        },
+        task=task,
     )
-    assert first is not None
-    assert first == second
-    assert first.id == "codex_cli_workspace_verilog_task_context_v1"
+    assert first is not None and second is not None
+    assert first.configuration_fingerprint != second.configuration_fingerprint
+    assert first.agent_version_hash == v0.version_hash
+    assert first.memory_pack_hash is None
+    assert second.agent_version_hash == v1.version_hash
+    assert second.memory_pack_hash == memory.content_hash
+    assert prompt_contract_identity_hash(first) == prompt_contract_identity_hash(second)
 
 
 @pytest.mark.requires_iverilog

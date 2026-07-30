@@ -31,12 +31,12 @@ from verigym.experiments.schemas import (
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
-from verigym.prompts.builder import PromptBuilder
+from verigym.prompts.policy import agent_configuration_hash, resolve_prompt_policy
 from verigym.provenance import get_build_provenance
 from verigym.runtimes.base import Runtime
 from verigym.schemas.common import ToolchainProfile, ToolchainProfileRef
 from verigym.schemas.model import GenerationParameters, ModelRunConfig
-from verigym.schemas.prompt import PromptPolicyDescriptor, ToolPolicySnapshot
+from verigym.schemas.prompt import ToolPolicySnapshot
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import TaskRef, VeriTask
@@ -397,13 +397,9 @@ class ExperimentPlanner:
                     system_id=selected.id,
                     agent_id=selected.agent.id,
                     agent_descriptor=agent.descriptor,
-                    agent_configuration_hash=content_hash(
-                        {
-                            "descriptor": agent.descriptor,
-                            "options": selected.agent.options,
-                        }
-                        if selected.agent.options
-                        else agent.descriptor
+                    agent_configuration_hash=agent_configuration_hash(
+                        agent.descriptor,
+                        selected.agent.options,
                     ),
                     agent_options=selected.agent.options,
                     agent_requires_model=agent.requires_model,
@@ -464,9 +460,19 @@ class ExperimentPlanner:
             correctness_hash = correctness_definition_hash(task)
             repository_identity = repository_plan_identity(task)
             tool_policy = self._tool_policy(task, config.runs.mode)
-            prompt = None
             for system in systems:
-                prompt = self._prompt_policy(system, config.runs.mode)
+                agent = self.service.registries.agents.get(system.agent_id)
+                try:
+                    prompt = resolve_prompt_policy(
+                        interaction_mode=config.runs.mode,
+                        agent=agent,
+                        agent_options=system.agent_options,
+                        task=task,
+                    )
+                except ValueError as exc:
+                    raise ConfigurationError(
+                        f"cannot resolve prompt policy for system {system.system_id!r}: {exc}"
+                    ) from exc
                 system_identity = normalized_system_identity_payload(system)
                 system_hash = content_hash(system_identity)
                 for base_seed in config.runs.seeds:
@@ -573,29 +579,6 @@ class ExperimentPlanner:
                         raw["plan_item_id"] = content_hash(plan_item_identity_payload(raw))
                         items.append(PlanItem.model_validate(raw))
         return items
-
-    @staticmethod
-    def _prompt_policy(system: PlannedSystemIdentity, mode: Any) -> PromptPolicyDescriptor | None:
-        if system.agent_requires_model:
-            return PromptBuilder(mode).descriptor
-        contract = system.agent_options.get("prompt_contract_id")
-        if (
-            isinstance(contract, str)
-            and "external_coding_agent" in system.agent_descriptor.capabilities
-        ):
-            payload = {
-                "agent": system.agent_descriptor,
-                "prompt_contract_id": contract,
-                "interaction_mode": mode,
-                "memory_artifact": "separately_versioned_when_present",
-            }
-            return PromptPolicyDescriptor(
-                id=contract,
-                version=system.agent_descriptor.version,
-                interaction_mode=mode,
-                configuration_fingerprint=content_hash(payload),
-            )
-        return None
 
     @staticmethod
     def _order_items(items: list[PlanItem], policy: str) -> list[PlanItem]:

@@ -1,0 +1,76 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/agent-prompt-policy-spec.schema.json",
+  "additionalProperties": false,
+  "description": "Static safe declaration used by the generic prompt-policy resolver.",
+  "properties": {
+    "base_instruction_policy": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Base Instruction Policy",
+      "type": "string"
+    },
+    "content_visibility_policy": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Content Visibility Policy",
+      "type": "string"
+    },
+    "max_prompt_bytes": {
+      "maximum": 2097152,
+      "minimum": 1024,
+      "title": "Max Prompt Bytes",
+      "type": "integer"
+    },
+    "max_task_context_bytes": {
+      "maximum": 2097152,
+      "minimum": 1024,
+      "title": "Max Task Context Bytes",
+      "type": "integer"
+    },
+    "prompt_bearing": {
+      "const": true,
+      "default": true,
+      "title": "Prompt Bearing",
+      "type": "boolean"
+    },
+    "prompt_contract_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Prompt Contract Id",
+      "type": "string"
+    },
+    "prompt_contract_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Prompt Contract Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_context_policy": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Task Context Policy",
+      "type": "string"
+    },
+    "versioned_context_allowed": {
+      "default": false,
+      "title": "Versioned Context Allowed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "prompt_contract_id",
+    "prompt_contract_version",
+    "task_context_policy",
+    "base_instruction_policy",
+    "content_visibility_policy",
+    "max_prompt_bytes",
+    "max_task_context_bytes"
+  ],
+  "title": "AgentPromptPolicySpec",
+  "type": "object"
+}

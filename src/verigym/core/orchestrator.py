@@ -32,6 +32,11 @@ from verigym.models.base import ModelClient
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.prompts.builder import PromptBuilder
+from verigym.prompts.policy import (
+    agent_configuration_hash,
+    resolve_prompt_policy,
+    validate_prompt_policy_binding,
+)
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import Registries, build_registries
 from verigym.runtimes.base import Runtime, RuntimeSession
@@ -174,6 +179,59 @@ class VeriGym:
                 raise ConfigurationError(
                     f"agent {config.agent!r} does not use a model; omit --model"
                 )
+            actual_agent_configuration_hash = agent_configuration_hash(
+                agent.descriptor,
+                config.agent_options,
+            )
+            try:
+                resolved_prompt_policy = resolve_prompt_policy(
+                    interaction_mode=config.mode,
+                    agent=agent,
+                    agent_options=config.agent_options,
+                    task=task,
+                )
+                resolved_prompt_policy_hash = (
+                    resolved_prompt_policy.configuration_fingerprint
+                    if resolved_prompt_policy is not None
+                    else None
+                )
+                if config.expected_agent_configuration_hash is not None:
+                    if actual_agent_configuration_hash != config.expected_agent_configuration_hash:
+                        raise ValueError("agent execution configuration differs from frozen plan")
+                    if config.resolved_agent_configuration_hash != actual_agent_configuration_hash:
+                        raise ValueError("batch pre-launch agent resolution was not preserved")
+                    validate_prompt_policy_binding(
+                        expected=config.expected_prompt_policy,
+                        expected_hash=config.expected_prompt_policy_hash,
+                        resolved=resolved_prompt_policy,
+                        resolved_hash=resolved_prompt_policy_hash,
+                    )
+                    validate_prompt_policy_binding(
+                        expected=config.resolved_prompt_policy,
+                        expected_hash=config.resolved_prompt_policy_hash,
+                        resolved=resolved_prompt_policy,
+                        resolved_hash=resolved_prompt_policy_hash,
+                    )
+                elif any(
+                    value is not None
+                    for value in (
+                        config.expected_prompt_policy,
+                        config.expected_prompt_policy_hash,
+                        config.resolved_prompt_policy,
+                        config.resolved_prompt_policy_hash,
+                        config.resolved_agent_configuration_hash,
+                    )
+                ):
+                    raise ValueError("run prompt binding is incomplete")
+                if (
+                    prompt_builder is not None
+                    and prompt_builder.descriptor != resolved_prompt_policy
+                ):
+                    raise ValueError(
+                        "model-agent prompt builder differs from resolved prompt policy"
+                    )
+            except ValueError as exc:
+                raise ConfigurationError(str(exc)) from exc
         except BaseException:
             runtime.close()
             raise
@@ -254,7 +312,7 @@ class VeriGym:
             model=model_client.descriptor if model_client is not None else None,
             agent=agent.descriptor,
             agent_harness=agent.descriptor,
-            prompt_policy=prompt_builder.descriptor if prompt_builder is not None else None,
+            prompt_policy=resolved_prompt_policy,
             tool_policy=tool_policy,
             generation=(
                 GenerationParameters(
@@ -275,6 +333,7 @@ class VeriGym:
                 if external_agent_selected
                 else None
             ),
+            agent_configuration_hash=actual_agent_configuration_hash,
             suite_source=source_snapshot,
             runtime=runtime.descriptor,
             toolchain_profiles=[profile_ref],
@@ -301,11 +360,7 @@ class VeriGym:
                 resolved_profile.reference_candidate_hash if resolved_profile is not None else None
             ),
             budget=task.budget,
-            prompt_policy_hash=(
-                prompt_builder.descriptor.configuration_fingerprint
-                if prompt_builder is not None
-                else None
-            ),
+            prompt_policy_hash=resolved_prompt_policy_hash,
             experiment_id=config.experiment_id,
             plan_item_id=config.plan_item_id,
             system_id=config.system_id,
@@ -401,6 +456,7 @@ class VeriGym:
                     max_invalid_actions=config.max_invalid_actions,
                     agent_options=config.agent_options,
                     external_bridge=external_bridge,
+                    prompt_policy=resolved_prompt_policy,
                 )
             )
             agent_log = layout.logs / "agent.log"

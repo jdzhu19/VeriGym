@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Literal
@@ -9,6 +10,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
+from verigym.schemas.prompt import PromptPolicyDescriptor
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
@@ -76,10 +78,20 @@ class ExternalProcessRequest(StrictModel):
     max_output_bytes: int = Field(ge=1024, le=16 * 1024 * 1024)
     editable_globs: list[str] = Field(default_factory=list)
     readonly_globs: list[str] = Field(default_factory=list)
+    prompt_policy: PromptPolicyDescriptor | None = None
+    prompt_policy_hash: str | None = None
+    prompt_text_sha256: str | None = None
 
-    @field_validator("executable_sha256", "capability_fingerprint")
+    @field_validator(
+        "executable_sha256",
+        "capability_fingerprint",
+        "prompt_policy_hash",
+        "prompt_text_sha256",
+    )
     @classmethod
-    def validate_request_hash(cls, value: str) -> str:
+    def validate_request_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not _SHA256.fullmatch(value):
             raise ValueError("external process hashes must be lowercase SHA-256 values")
         return value
@@ -141,6 +153,23 @@ class ExternalProcessRequest(StrictModel):
             )
         if len(self.read_only_mounts) > 1:
             raise ValueError("external process supports at most one public-test mount")
+        prompt_fields = (
+            self.prompt_policy,
+            self.prompt_policy_hash,
+            self.prompt_text_sha256,
+        )
+        if any(value is not None for value in prompt_fields) and not all(
+            value is not None for value in prompt_fields
+        ):
+            raise ValueError("external process prompt identity fields must be supplied together")
+        if self.prompt_policy is not None:
+            if self.prompt_policy_hash != self.prompt_policy.configuration_fingerprint:
+                raise ValueError("external process prompt policy hash is inconsistent")
+            if (
+                self.prompt_text_sha256
+                != hashlib.sha256(self.stdin_text.encode("utf-8")).hexdigest()
+            ):
+                raise ValueError("external process prompt text hash is inconsistent")
         return self
 
 
@@ -164,6 +193,8 @@ class ExternalProcessRuntimeIdentity(StrictModel):
     host_executable_version: str
     capability_fingerprint: str
     configuration_fingerprint: str
+    prompt_policy_hash: str | None = None
+    prompt_text_sha256: str | None = None
     logical_workspace_root: Literal["/workspace"]
     model_process_count: Literal[1] = 1
     exec_server_process_count: Literal[1] = 1
@@ -173,9 +204,13 @@ class ExternalProcessRuntimeIdentity(StrictModel):
         "capability_fingerprint",
         "configuration_fingerprint",
         "agent_executable_sha256",
+        "prompt_policy_hash",
+        "prompt_text_sha256",
     )
     @classmethod
-    def validate_identity_hash(cls, value: str) -> str:
+    def validate_identity_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not _SHA256.fullmatch(value):
             raise ValueError("external runtime identity hashes must be lowercase SHA-256")
         return value

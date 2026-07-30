@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "m10b-de9dc9d-probe-2-null-child-prompt",
+  "historical_bundle_status": "failed_immutable",
+  "historical_bundle_sha256sums_sha256": "fd549b7e064aabdad1c2e07630de62f8e424a9a4c368d7df71813c048def8188",
+  "historical_plan_jsonl_sha256": "ed013f0814a21df21b2b96b3bf6221a2852bee431b07b5d08a58bb0de89eb033",
+  "historical_child_manifest_sha256": "f817efc6478c7cb337119a15a4128701dbbeb1cb27d768376ce2b96e391e9826",
+  "historical_plan_item_id": "342d3e1ddab2fe1166985a54d7ca3d1f1517d50da977e832fc4d8bed381c6788",
+  "historical_child_run_id": "20260729T181401Z-repo-rtl-counter-wrap-342d3e1dda-a1-649cd142",
+  "plan_prompt_policy": {
+    "schema_version": "1.0",
+    "id": "codex_cli_workspace_verilog_task_context_v1",
+    "version": "0.1.0",
+    "interaction_mode": "agent",
+    "configuration_fingerprint": "f1c3bb9d1c889ce51a530c3b4af30789b5c8b157c9316ac7e90356fde8cb3eee"
+  },
+  "plan_prompt_policy_hash": "f1c3bb9d1c889ce51a530c3b4af30789b5c8b157c9316ac7e90356fde8cb3eee",
+  "child_prompt_policy": null,
+  "child_prompt_policy_hash": null,
+  "model_calls_during_binding_check": 0,
+  "expected_binding_result": "fail"
+}
