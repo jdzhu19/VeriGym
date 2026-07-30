@@ -727,6 +727,12 @@ def _execute_memory_builder(
     process_kind: str = "memory_synthesis",
     build_id: str = "m10b-memory-synthesis",
 ) -> Any:
+    frozen_summary_path = output / "frozen-training-summary.json"
+    atomic_dump_json(frozen_summary_path, summary)
+    frozen_summary = load_model(
+        frozen_summary_path,
+        SanitizedTrainingSummary,
+    )
     empty_source = output / "empty-memory-workspace"
     empty_source.mkdir()
     runtime_config = _docker_config(_memory_agent_config())
@@ -813,7 +819,7 @@ def _execute_memory_builder(
             reasoning_effort=REASONING_EFFORT,
         )
         request = build_memory_builder_input(
-            training_summary=summary,
+            training_summary=frozen_summary,
             model_identity_hash=model_hash,
             codex_identity_hash=codex_hash,
             auth_semantic_id=AUTH_SEMANTIC_ID,
@@ -846,16 +852,12 @@ def _execute_memory_builder(
                 RewardVector.model_json_schema(mode="serialization")
             ),
         )
-        atomic_dump_json(output / "frozen-training-summary.json", summary)
         atomic_dump_json(output / "memory-builder-input.json", request)
         atomic_dump_json(output / "external-process-invocation-spec.json", invocation_spec)
         atomic_dump_json(output / "external-process-identity-preview.json", identity_preview)
         atomic_dump_json(output / "external-process-payload-binding.json", payload_binding)
         atomic_dump_json(output / "memory-synthesis-plan.json", synthesis_plan)
-        reloaded_summary = load_model(
-            output / "frozen-training-summary.json",
-            SanitizedTrainingSummary,
-        )
+        reloaded_summary = load_model(frozen_summary_path, SanitizedTrainingSummary)
         reloaded_request = load_model(
             output / "memory-builder-input.json",
             MemoryBuilderInput,
@@ -877,7 +879,7 @@ def _execute_memory_builder(
             run_or_build_id=request.build_id,
             requested_model_id=MODEL_ID,
             reasoning_effort=REASONING_EFFORT,
-            task_identity_hash=summary.summary_hash,
+            task_identity_hash=frozen_summary.summary_hash,
             invocation_spec_hash=invocation_spec.invocation_spec_hash,
             payload_binding_hash=payload_binding.payload_binding_hash,
             memory_synthesis_plan_hash=synthesis_plan.plan_hash,

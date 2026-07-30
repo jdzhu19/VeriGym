@@ -693,6 +693,22 @@ def _seal_bundle(
         },
     )
     atomic_dump_json(bundle / "reports/evolving-evaluation.json", evaluation)
+    final_synthesis_plan = load_model(
+        final_memory_root / "memory-synthesis-plan.json",
+        MemorySynthesisPlan,
+    )
+    synthesis_identities = {
+        "schema_version": "1.0",
+        "memory_synthesis_plan_hash": final_synthesis_plan.plan_hash,
+        "invocation_spec_hash": final_synthesis_plan.invocation_spec.invocation_spec_hash,
+        "payload_binding_hash": final_synthesis_plan.payload_binding.payload_binding_hash,
+        "rendered_prompt_hash": final_synthesis_plan.rendered_prompt_hash,
+        "rendered_prompt_utf8_bytes": final_synthesis_plan.rendered_prompt_utf8_bytes,
+    }
+    atomic_dump_json(
+        bundle / "reports/memory-synthesis-identities.json",
+        synthesis_identities,
+    )
     shutil.copy2(
         heldout_reports / "evolving-evaluation.md",
         bundle / "reports/evolving-evaluation.md",
@@ -758,6 +774,7 @@ def _seal_bundle(
         "all_heldout_runs_evaluable": len(outcomes) == 18,
         "historical_evidence_combined": False,
         "model_weights_modified": False,
+        **synthesis_identities,
         "evaluation_report_hash": evaluation.report_hash,
     }
     atomic_dump_json(bundle / "audit_manifest.json", audit)
@@ -951,6 +968,12 @@ def main() -> int:
     ):
         raise RuntimeError("final training dataset is not exactly three eligible trajectories")
     atomic_dump_json(output / "final-sanitized-training-summary.json", summary)
+    summary = load_model(
+        output / "final-sanitized-training-summary.json",
+        SanitizedTrainingSummary,
+    )
+    replay_trajectory_dataset(final_training_dataset, training_experiment)
+    base._make_read_only(final_training_dataset)
 
     # Exactly one final real synthesis, fully planned and reconstructed pre-authorization.
     final_memory_root = output / "final-memory-synthesis"
