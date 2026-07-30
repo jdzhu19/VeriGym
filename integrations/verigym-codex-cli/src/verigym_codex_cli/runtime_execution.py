@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from verigym.core.hashing import content_hash
 from verigym.plugin_api import (
     ExternalAgentBridge,
+    ExternalProcessInvocationSpec,
+    ExternalProcessPayloadBinding,
     ExternalProcessRequest,
     ExternalProcessResult,
     PromptPolicyDescriptor,
+    bind_external_process_payload,
+    build_external_process_request,
+    resolve_external_process_invocation_spec,
 )
 
 from .capabilities import CapabilityReport
@@ -24,17 +29,18 @@ class RuntimeExecutionOutcome:
     runtime_result: ExternalProcessResult
 
 
-def build_runtime_process_request(
+def resolve_runtime_process_invocation_spec(
     *,
     bridge: ExternalAgentBridge,
     executable: ExecutableIdentity,
     capabilities: CapabilityReport,
     settings: CodexSettings,
-    prompt: str,
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
     prompt_policy: PromptPolicyDescriptor | None = None,
-) -> ExternalProcessRequest:
-    """Build the complete immutable runtime-owned process request."""
+    prompt_contract_id: str | None = None,
+    expected_output_schema_hash: str | None = None,
+) -> ExternalProcessInvocationSpec:
+    """Resolve the launch-invariant Codex process identity without a prompt."""
 
     if settings.integration_track not in {
         "codex_cli_readonly_single_turn_agent",
@@ -46,12 +52,19 @@ def build_runtime_process_request(
     if settings.resolved_auth_mode != "inherited_codex_login":
         raise ValueError("Docker runtime execution requires inherited Codex login")
     read_only_mounts = list(getattr(bridge, "read_only_mounts", []))
-    return ExternalProcessRequest(
+    contract = prompt_contract_id or settings.prompt_contract_id
+    output_schema = expected_output_schema_hash or content_hash(
+        {
+            "schema_version": "1.0",
+            "protocol": "codex_app_server_remote_environment_v1",
+            "terminal_output": "codex_jsonl_event_stream",
+        }
+    )
+    return resolve_external_process_invocation_spec(
         protocol="codex_app_server_remote_environment_v1",
         runtime_role="agent",
         argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
         logical_cwd="/workspace",
-        stdin_text=prompt,
         stdin_transport="runtime_protocol_adapter",
         network_policy="none",
         mount_policy=(
@@ -71,7 +84,7 @@ def build_runtime_process_request(
         logical_workspace_root="/workspace",
         requested_model_id=settings.model_id,
         requested_reasoning_effort=cast(Literal["xhigh"], settings.requested_reasoning_effort),
-        executable_path=executable.path,
+        executable_path_identity="verified_host_codex_cli",
         executable_name=executable.name,
         executable_sha256=executable.sha256,
         executable_version=capabilities.version_output,
@@ -92,11 +105,62 @@ def build_runtime_process_request(
         prompt_policy_hash=(
             prompt_policy.configuration_fingerprint if prompt_policy is not None else None
         ),
-        prompt_text_sha256=(
-            hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-            if prompt_policy is not None
-            else None
+        prompt_contract_id=contract,
+        expected_output_schema_hash=output_schema,
+    )
+
+
+def build_runtime_process_request(
+    *,
+    bridge: ExternalAgentBridge,
+    executable: ExecutableIdentity,
+    capabilities: CapabilityReport,
+    settings: CodexSettings,
+    prompt: str,
+    workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
+    prompt_policy: PromptPolicyDescriptor | None = None,
+    invocation_spec: ExternalProcessInvocationSpec | None = None,
+    payload_binding: ExternalProcessPayloadBinding | None = None,
+    template_hash: str | None = None,
+    input_dataset_hash: str | None = None,
+    expected_output_schema_hash: str | None = None,
+) -> ExternalProcessRequest:
+    """Build the complete immutable runtime-owned process request."""
+
+    spec = invocation_spec or resolve_runtime_process_invocation_spec(
+        bridge=bridge,
+        executable=executable,
+        capabilities=capabilities,
+        settings=settings,
+        workspace_mode=workspace_mode,
+        prompt_policy=prompt_policy,
+        expected_output_schema_hash=expected_output_schema_hash,
+    )
+    binding = payload_binding or bind_external_process_payload(
+        spec,
+        prompt,
+        template_hash=template_hash
+        or content_hash(
+            {
+                "schema_version": "1.0",
+                "renderer": "codex_cli_runtime_prompt_v1",
+                "prompt_contract_id": spec.prompt_contract_id,
+            }
         ),
+        input_dataset_hash=input_dataset_hash
+        or content_hash(
+            {
+                "schema_version": "1.0",
+                "prompt_policy_hash": spec.prompt_policy_hash,
+                "workspace_mode": spec.workspace_mode,
+            }
+        ),
+    )
+    return build_external_process_request(
+        spec,
+        binding,
+        prompt,
+        executable_path=executable.path,
     )
 
 
@@ -109,6 +173,11 @@ def execute_runtime_process(
     prompt: str,
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
     prompt_policy: PromptPolicyDescriptor | None = None,
+    invocation_spec: ExternalProcessInvocationSpec | None = None,
+    payload_binding: ExternalProcessPayloadBinding | None = None,
+    template_hash: str | None = None,
+    input_dataset_hash: str | None = None,
+    expected_output_schema_hash: str | None = None,
 ) -> RuntimeExecutionOutcome:
     """Ask the selected runtime to own exactly one model-bearing process."""
 
@@ -120,6 +189,11 @@ def execute_runtime_process(
         prompt=prompt,
         prompt_policy=prompt_policy,
         workspace_mode=workspace_mode,
+        invocation_spec=invocation_spec,
+        payload_binding=payload_binding,
+        template_hash=template_hash,
+        input_dataset_hash=input_dataset_hash,
+        expected_output_schema_hash=expected_output_schema_hash,
     )
     runtime_result = bridge.execute_process(request)
     process = CodexProcessResult(
@@ -140,4 +214,5 @@ __all__ = [
     "RuntimeExecutionOutcome",
     "build_runtime_process_request",
     "execute_runtime_process",
+    "resolve_runtime_process_invocation_spec",
 ]

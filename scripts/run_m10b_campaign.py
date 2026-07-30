@@ -23,10 +23,14 @@ from verigym_codex_cli.memory_builder import (
     memory_runtime_binding_hashes,
 )
 from verigym_codex_cli.process import auth_identity_configuration
-from verigym_codex_cli.runtime_execution import build_runtime_process_request
+from verigym_codex_cli.runtime_execution import resolve_runtime_process_invocation_spec
 from verigym_codex_cli.util import atomic_json
 
 from verigym.core.external_agent import RuntimeExternalAgentBridge
+from verigym.core.external_process_identity import (
+    bind_external_process_payload,
+    preview_external_process_identity,
+)
 from verigym.core.hashing import canonical_json, content_hash
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
@@ -52,7 +56,14 @@ from verigym.evolution.memory import (
     prepare_training_summary,
     validate_memory_pack,
 )
-from verigym.evolution.memory_builder import build_memory_builder_input
+from verigym.evolution.memory_builder import (
+    MEMORY_BUILDER_PROMPT_CONTRACT_ID,
+    MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+    build_memory_builder_input,
+    build_memory_synthesis_plan,
+    reconstruct_memory_synthesis_launch,
+    render_memory_builder_prompt,
+)
 from verigym.evolution.reporting import EvolutionReportService
 from verigym.evolution.rewards import classify_outcome
 from verigym.evolution.splits import (
@@ -85,8 +96,12 @@ from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.evolution import (
     AgentVersionManifest,
     EpisodeTrajectory,
+    MemoryBuilderInput,
     MemoryPack,
+    MemorySynthesisPlan,
+    RewardVector,
     RunAgentVersionAssignment,
+    SanitizedTrainingSummary,
     TaskSplitEntry,
     TaskSplitManifest,
 )
@@ -421,16 +436,22 @@ def _experiment_config(
 
 
 class _CampaignChildExecutor:
-    def __init__(self, ledger: Path, process_kind: str) -> None:
+    def __init__(
+        self,
+        ledger: Path,
+        process_kind: str,
+        authorization_id: str = AUTHORIZATION_ID,
+    ) -> None:
         self.ledger = ledger
         self.process_kind = process_kind
+        self.authorization_id = authorization_id
 
     def __call__(self, item: PlanItem, config: RunConfig) -> RunResult:
         version_hash = item.system.agent_options.get("agent_version_hash")
         authorization = authorize_process(
             self.ledger,
             process_kind=self.process_kind,
-            authorization_id=AUTHORIZATION_ID,
+            authorization_id=self.authorization_id,
             run_or_build_id=config.run_id or item.plan_item_id,
             requested_model_id=MODEL_ID,
             reasoning_effort=REASONING_EFFORT,
@@ -497,6 +518,7 @@ def _run_experiment(
     *,
     ledger: Path,
     process_kind: str,
+    authorization_id: str = AUTHORIZATION_ID,
 ) -> tuple[ExperimentPlan, Path]:
     planner = ExperimentPlanner()
     plan = planner.build(config)
@@ -508,7 +530,11 @@ def _run_experiment(
         raise RuntimeError("frozen plan process count differs from its budget")
     runner = BatchRunner(
         planner=planner,
-        child_executor=_CampaignChildExecutor(ledger, process_kind),
+        child_executor=_CampaignChildExecutor(
+            ledger,
+            process_kind,
+            authorization_id=authorization_id,
+        ),
     )
     result = runner.run(plan)
     if result.exit_code != 0:
@@ -693,6 +719,13 @@ def _execute_memory_builder(
     summary: Any,
     ledger: Path,
     capability: Mapping[str, Any],
+    training_dataset_hash: str,
+    training_run_ids: Sequence[str],
+    training_source_identities: Mapping[str, str],
+    reward_profile_hash: str,
+    authorization_id: str = AUTHORIZATION_ID,
+    process_kind: str = "memory_synthesis",
+    build_id: str = "m10b-memory-synthesis",
 ) -> Any:
     empty_source = output / "empty-memory-workspace"
     empty_source.mkdir()
@@ -747,14 +780,17 @@ def _execute_memory_builder(
         agent = identity["external_agent"]
         if not isinstance(verifier, dict) or not isinstance(agent, dict):
             raise RuntimeError("memory runtime omitted its immutable role-image identities")
-        preview_request = build_runtime_process_request(
+        output_schema_hash = content_hash(MemoryPack.model_json_schema(mode="serialization"))
+        invocation_spec = resolve_runtime_process_invocation_spec(
             bridge=bridge,
             executable=executable,
             capabilities=observed_capabilities,
             settings=settings,
-            prompt="",
             workspace_mode="fresh_empty",
+            prompt_contract_id=MEMORY_BUILDER_PROMPT_CONTRACT_ID,
+            expected_output_schema_hash=output_schema_hash,
         )
+        identity_preview = preview_external_process_identity(invocation_spec)
         agent_runtime_config = runtime_config.external_agent
         if agent_runtime_config is None:
             raise RuntimeError("memory runtime omitted its external-agent configuration")
@@ -762,7 +798,7 @@ def _execute_memory_builder(
             agent_config=agent_runtime_config,
             agent_image_id=str(agent["resolved_image_id"]),
             verifier_image_id=str(verifier["resolved_image_id"]),
-            request=preview_request,
+            request=invocation_spec,
             synthesized_environment_names=["NO_PROXY", "no_proxy"],
             mandatory_loopback_bypass_present=True,
         )
@@ -785,18 +821,66 @@ def _execute_memory_builder(
             image_identity_hash=image_hash,
             requested_model_id=MODEL_ID,
             reasoning_effort=REASONING_EFFORT,
-            output_schema_hash=content_hash(MemoryPack.model_json_schema(mode="serialization")),
+            output_schema_hash=output_schema_hash,
+            build_id=build_id,
             timeout_s=300,
             max_output_bytes=131_072,
         )
+        rendered_prompt = render_memory_builder_prompt(request)
+        payload_binding = bind_external_process_payload(
+            invocation_spec,
+            rendered_prompt,
+            template_hash=MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+            input_dataset_hash=training_dataset_hash,
+        )
+        synthesis_plan = build_memory_synthesis_plan(
+            request=request,
+            invocation_spec=invocation_spec,
+            identity_preview=identity_preview,
+            payload_binding=payload_binding,
+            training_dataset_hash=training_dataset_hash,
+            training_run_ids=list(training_run_ids),
+            training_source_identities=training_source_identities,
+            reward_profile_hash=reward_profile_hash,
+            reward_vector_schema_hash=content_hash(
+                RewardVector.model_json_schema(mode="serialization")
+            ),
+        )
+        atomic_dump_json(output / "frozen-training-summary.json", summary)
+        atomic_dump_json(output / "memory-builder-input.json", request)
+        atomic_dump_json(output / "external-process-invocation-spec.json", invocation_spec)
+        atomic_dump_json(output / "external-process-identity-preview.json", identity_preview)
+        atomic_dump_json(output / "external-process-payload-binding.json", payload_binding)
+        atomic_dump_json(output / "memory-synthesis-plan.json", synthesis_plan)
+        reloaded_summary = load_model(
+            output / "frozen-training-summary.json",
+            SanitizedTrainingSummary,
+        )
+        reloaded_request = load_model(
+            output / "memory-builder-input.json",
+            MemoryBuilderInput,
+        )
+        reloaded_plan = load_model(
+            output / "memory-synthesis-plan.json",
+            MemorySynthesisPlan,
+        )
+        reconstruct_memory_synthesis_launch(
+            plan=reloaded_plan,
+            request=reloaded_request,
+            frozen_summary=reloaded_summary,
+            executable_path=executable.path,
+        )
         authorization = authorize_process(
             ledger,
-            process_kind="memory_synthesis",
-            authorization_id=AUTHORIZATION_ID,
+            process_kind=process_kind,
+            authorization_id=authorization_id,
             run_or_build_id=request.build_id,
             requested_model_id=MODEL_ID,
             reasoning_effort=REASONING_EFFORT,
             task_identity_hash=summary.summary_hash,
+            invocation_spec_hash=invocation_spec.invocation_spec_hash,
+            payload_binding_hash=payload_binding.payload_binding_hash,
+            memory_synthesis_plan_hash=synthesis_plan.plan_hash,
         )
         try:
             outcome = execute_memory_synthesis(
@@ -821,6 +905,7 @@ def _execute_memory_builder(
                 },
                 process_ledger_record_hash=authorization.record_hash,
                 artifact_root=output / "process-evidence",
+                synthesis_plan=synthesis_plan,
             )
         except BaseException as exc:
             finish_process(
@@ -839,7 +924,7 @@ def _execute_memory_builder(
                 f"memory synthesis did not produce an accepted pack: {outcome.result.status}"
             )
         validate_memory_pack(outcome.result.memory_pack)
-        return request, outcome.result, terminal
+        return request, outcome.result, terminal, synthesis_plan
     finally:
         session.close()
         runtime.close()
@@ -1267,7 +1352,7 @@ def main() -> int:
     if preview_plan.verigym_commit != args.source_commit:
         raise RuntimeError("installed core package provenance differs from the source commit")
     preview = preview_plan.items[0]
-    if preview.prompt_policy_hash is None:
+    if preview.prompt_policy_hash is None or preview.prompt_policy is None:
         raise RuntimeError("repository-agent plan omitted its prompt-policy hash")
     v0 = build_agent_version(
         agent_version_id="codex-cli-agent-v0",
@@ -1385,11 +1470,26 @@ def main() -> int:
 
     memory_root = output / "memory-synthesis"
     memory_root.mkdir()
-    request, memory_result, memory_terminal = _execute_memory_builder(
+    if training_manifest.reward_profile_hash is None:
+        raise RuntimeError("training trajectory dataset omitted its reward profile identity")
+    request, memory_result, memory_terminal, synthesis_plan = _execute_memory_builder(
         output=memory_root,
         summary=summary,
         ledger=ledger,
         capability=capability,
+        training_dataset_hash=training_manifest.dataset_hash,
+        training_run_ids=[trajectory.run_id for trajectory in trajectories],
+        training_source_identities={
+            trajectory.run_id: content_hash(
+                {
+                    "run_manifest_hash": trajectory.run_manifest_hash,
+                    "artifact_manifest_hash": trajectory.artifact_manifest_hash,
+                    "source_hash": trajectory.source_hash,
+                }
+            )
+            for trajectory in trajectories
+        },
+        reward_profile_hash=training_manifest.reward_profile_hash,
     )
     memory = memory_result.memory_pack
     assert memory is not None
@@ -1402,7 +1502,12 @@ def main() -> int:
         memory_builder_input_hash=request.input_hash,
         memory_builder_output_hash=memory_result.output_hash,
         process_ledger_hash=memory_terminal.record_hash,
+        memory_synthesis_plan_hash=synthesis_plan.plan_hash,
+        invocation_spec_hash=synthesis_plan.invocation_spec.invocation_spec_hash,
+        payload_binding_hash=synthesis_plan.payload_binding.payload_binding_hash,
     )
+    if memory_result.memory_synthesis_plan_hash != synthesis_plan.plan_hash:
+        raise RuntimeError("memory-builder result omitted its frozen synthesis-plan identity")
     replay_context_update(
         parent=v0,
         result=v1,

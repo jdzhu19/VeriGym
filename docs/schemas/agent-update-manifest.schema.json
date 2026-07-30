@@ -8,6 +8,18 @@
       "title": "Heldout Assets Loaded",
       "type": "boolean"
     },
+    "invocation_spec_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocation Spec Hash"
+    },
     "memory_builder_input_hash": {
       "title": "Memory Builder Input Hash",
       "type": "string"
@@ -20,6 +32,18 @@
       "title": "Memory Pack Hash",
       "type": "string"
     },
+    "memory_synthesis_plan_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Synthesis Plan Hash"
+    },
     "model_weights_modified": {
       "const": false,
       "default": false,
@@ -29,6 +53,18 @@
     "parent_version_hash": {
       "title": "Parent Version Hash",
       "type": "string"
+    },
+    "payload_binding_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Payload Binding Hash"
     },
     "process_ledger_hash": {
       "title": "Process Ledger Hash",

@@ -15,12 +15,22 @@ from verigym.evolution.memory import (
     build_memory_pack,
     validate_memory_pack,
 )
+from verigym.evolution.memory_builder import (
+    build_memory_synthesis_plan,
+    reconstruct_memory_synthesis_launch,
+    validate_memory_synthesis_plan,
+)
 from verigym.evolution.rewards import (
     REPO_RTL_SPARSE_V1,
     derive_reward,
     recompute_reward,
 )
 from verigym.evolution.splits import scan_contamination
+from verigym.evolution.training_import import (
+    build_historical_training_import_manifest,
+    build_training_episode_import_eligibility,
+    validate_historical_training_import_manifest,
+)
 
 __all__ = [
     "REPO_RTL_SPARSE_V1",
@@ -28,12 +38,18 @@ __all__ = [
     "authorize_process",
     "build_agent_version",
     "build_memory_pack",
+    "build_memory_synthesis_plan",
+    "build_historical_training_import_manifest",
+    "build_training_episode_import_eligibility",
     "derive_reward",
     "finish_process",
     "recompute_reward",
     "replay_trajectory_dataset",
+    "reconstruct_memory_synthesis_launch",
     "scan_contamination",
     "seal_process_ledger",
     "validate_memory_pack",
+    "validate_memory_synthesis_plan",
+    "validate_historical_training_import_manifest",
     "validate_trajectory_dataset",
 ]

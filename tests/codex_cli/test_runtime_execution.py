@@ -19,11 +19,22 @@ from verigym_codex_cli.memory_builder import (
 from verigym_codex_cli.runtime_execution import (
     build_runtime_process_request,
     execute_runtime_process,
+    resolve_runtime_process_invocation_spec,
 )
 
+from verigym.core.external_process_identity import (
+    bind_external_process_payload,
+    preview_external_process_identity,
+)
 from verigym.core.hashing import content_hash
 from verigym.evolution.memory import build_memory_pack
-from verigym.evolution.memory_builder import build_memory_builder_input
+from verigym.evolution.memory_builder import (
+    MEMORY_BUILDER_PROMPT_CONTRACT_ID,
+    MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+    build_memory_builder_input,
+    build_memory_synthesis_plan,
+    render_memory_builder_prompt,
+)
 from verigym.runtimes.docker.external_process import (
     external_process_configuration_fingerprint,
 )
@@ -294,7 +305,7 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
     tmp_path: Path,
 ) -> None:
     _executable_path, log, _scenario = fake_codex
-    _executable, capabilities = runtime_capabilities()
+    executable, capabilities = runtime_capabilities()
     model_hash, codex_hash = memory_builder_identity_hashes(
         capabilities,
         model_id="fake-model",
@@ -318,6 +329,49 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
         max_output_bytes=131_072,
     )
     bridge = MemoryRuntimeBridge(tmp_path)
+    settings = readonly_agent_settings(
+        {
+            "model_id": "fake-model",
+            "reasoning_effort": "xhigh",
+            "max_process_time_s": 300,
+            "max_output_bytes": 131_072,
+            "expected_execution_backend": "docker_outer_runtime_delegated",
+        },
+        capabilities,
+        task_wall_time_s=300,
+    )
+    settings = settings_for_execution_backend(
+        settings,
+        "docker_outer_runtime_delegated",
+    )
+    spec = resolve_runtime_process_invocation_spec(
+        bridge=bridge,
+        executable=executable,
+        capabilities=capabilities,
+        settings=settings,
+        workspace_mode="fresh_empty",
+        prompt_contract_id=MEMORY_BUILDER_PROMPT_CONTRACT_ID,
+        expected_output_schema_hash=request.output_schema_hash,
+    )
+    preview = preview_external_process_identity(spec)
+    prompt = render_memory_builder_prompt(request)
+    binding = bind_external_process_payload(
+        spec,
+        prompt,
+        template_hash=MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+        input_dataset_hash=request.training_summary.trajectory_dataset_hash,
+    )
+    plan = build_memory_synthesis_plan(
+        request=request,
+        invocation_spec=spec,
+        identity_preview=preview,
+        payload_binding=binding,
+        training_dataset_hash=request.training_summary.trajectory_dataset_hash,
+        training_run_ids=["synthetic-training-run"],
+        training_source_identities={"synthetic-training-run": "9" * 64},
+        reward_profile_hash="8" * 64,
+        reward_vector_schema_hash="7" * 64,
+    )
     evidence = tmp_path / "memory-evidence"
     outcome = execute_memory_synthesis(
         bridge=bridge,
@@ -331,6 +385,7 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
         },
         process_ledger_record_hash="f" * 64,
         artifact_root=evidence,
+        synthesis_plan=plan,
     )
     assert outcome.result.status == "success"
     assert outcome.result.model_processes_started == 1
@@ -339,11 +394,15 @@ def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
     assert len(bridge.requests) == 1
     assert bridge.requests[0].workspace_mode == "fresh_empty"
     assert bridge.requests[0].network_policy == "none"
+    assert bridge.requests[0].invocation_spec_hash == spec.invocation_spec_hash
+    assert bridge.requests[0].payload_binding_hash == binding.payload_binding_hash
+    assert outcome.result.memory_synthesis_plan_hash == plan.plan_hash
     assert not log.exists() or all(
         json.loads(line)["kind"] == "diagnostic"
         for line in log.read_text(encoding="utf-8").splitlines()
     )
     assert (evidence / "memory-pack.json").is_file()
+    assert (evidence / "memory-synthesis-plan.json").is_file()
     assert not (evidence / "raw_stdout.jsonl").exists()
     process = json.loads((evidence / "process-evidence.json").read_text(encoding="utf-8"))
     assert process["raw_output_persisted"] is False

@@ -10,6 +10,11 @@ from pydantic import ValidationError
 
 from verigym.agents.repository_scripted import ScriptedRepositoryGoodAgent
 from verigym.core.errors import ConfigurationError
+from verigym.core.external_process_identity import (
+    bind_external_process_payload,
+    preview_external_process_identity,
+    resolve_external_process_invocation_spec,
+)
 from verigym.core.hashing import canonical_json, content_hash, hash_directory
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
@@ -36,11 +41,16 @@ from verigym.evolution.memory import (
     validate_memory_pack,
 )
 from verigym.evolution.memory_builder import (
+    MEMORY_BUILDER_PROMPT_CONTRACT_ID,
     MEMORY_BUILDER_PROMPT_HASH,
+    MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
     build_memory_builder_input,
+    build_memory_synthesis_plan,
     parse_memory_builder_output,
+    reconstruct_memory_synthesis_launch,
     render_memory_builder_prompt,
     validate_memory_builder_input,
+    validate_memory_synthesis_plan,
 )
 from verigym.evolution.reporting import EvolutionReportService
 from verigym.evolution.rewards import classify_outcome
@@ -83,6 +93,7 @@ from verigym.schemas.evolution import (
     SanitizedTrainingSummary,
     TaskSplitEntry,
 )
+from verigym.schemas.external_agent import ExternalProcessRequest
 from verigym.schemas.prompt import AgentPromptPolicySpec
 from verigym.schemas.repository import RepositoryTaskManifest
 from verigym.schemas.run import RunConfig
@@ -303,6 +314,185 @@ def test_memory_builder_prompt_excludes_identity_hashes_and_parser_fails_closed(
             '{"principles":["one"],"principles":["two"],'
             '"public_test_strategy":["x"],"workspace_policy_reminders":["x"],'
             '"debugging_checklist":["x"],"patch_discipline":["x"]}'
+        )
+
+
+def _memory_lifecycle(summary: SanitizedTrainingSummary | None = None):
+    frozen_summary = summary or _summary()
+    request = build_memory_builder_input(
+        training_summary=frozen_summary,
+        model_identity_hash="1" * 64,
+        codex_identity_hash="2" * 64,
+        auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
+        runtime_identity_hash="3" * 64,
+        image_identity_hash="4" * 64,
+        requested_model_id="gpt-5.4",
+        reasoning_effort="xhigh",
+        output_schema_hash="5" * 64,
+    )
+    spec = resolve_external_process_invocation_spec(
+        protocol="codex_app_server_remote_environment_v1",
+        runtime_role="agent",
+        argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
+        logical_cwd="/workspace",
+        stdin_transport="runtime_protocol_adapter",
+        network_policy="none",
+        mount_policy="task_workspace_only",
+        writable_destinations=["/workspace", "/tmp"],
+        read_only_mounts=[],
+        container_environment_names=[],
+        integration_track="codex_cli_readonly_single_turn_agent",
+        workspace_mode="fresh_empty",
+        logical_workspace_root="/workspace",
+        requested_model_id="gpt-5.4",
+        requested_reasoning_effort="xhigh",
+        executable_path_identity="verified_host_codex_cli",
+        executable_name="codex.js",
+        executable_sha256="6" * 64,
+        executable_version="codex-cli 0.144.6",
+        capability_fingerprint="7" * 64,
+        requested_auth_mode="chatgpt_cli_session",
+        resolved_auth_mode="inherited_codex_login",
+        auth_semantic_id="codex.auth.inherited_chatgpt_session.v1",
+        allow_proxy_environment=True,
+        forwarded_proxy_environment_names=["HTTP_PROXY", "HTTPS_PROXY"],
+        timeout_s=300,
+        max_output_bytes=131_072,
+        editable_globs=[],
+        readonly_globs=[],
+        prompt_policy=None,
+        prompt_policy_hash=None,
+        prompt_contract_id=MEMORY_BUILDER_PROMPT_CONTRACT_ID,
+        expected_output_schema_hash=request.output_schema_hash,
+    )
+    preview = preview_external_process_identity(spec)
+    prompt = render_memory_builder_prompt(request)
+    binding = bind_external_process_payload(
+        spec,
+        prompt,
+        template_hash=MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+        input_dataset_hash=frozen_summary.trajectory_dataset_hash,
+    )
+    plan = build_memory_synthesis_plan(
+        request=request,
+        invocation_spec=spec,
+        identity_preview=preview,
+        payload_binding=binding,
+        training_dataset_hash=frozen_summary.trajectory_dataset_hash,
+        training_run_ids=["training-run-a"],
+        training_source_identities={"training-run-a": "8" * 64},
+        reward_profile_hash="9" * 64,
+        reward_vector_schema_hash="a" * 64,
+    )
+    return request, spec, preview, prompt, binding, plan
+
+
+def test_memory_synthesis_plan_reconstructs_exact_request_before_authorization() -> None:
+    request, spec, preview, prompt, binding, plan = _memory_lifecycle()
+    rebuilt_prompt, rebuilt_binding, executable = reconstruct_memory_synthesis_launch(
+        plan=plan,
+        request=request,
+        frozen_summary=request.training_summary,
+        executable_path=Path("/usr/local/bin/codex"),
+    )
+
+    assert validate_memory_synthesis_plan(plan) == plan
+    assert preview.payload_state == "unbound"
+    assert rebuilt_prompt == prompt
+    assert rebuilt_binding == binding
+    assert executable.invocation_spec == spec
+    assert executable.payload_binding == binding
+    assert executable.stdin_text == prompt
+    assert executable.stdin_utf8_bytes == len(prompt.encode("utf-8"))
+
+    empty = executable.model_dump(mode="json")
+    empty["stdin_text"] = ""
+    with pytest.raises(ValidationError):
+        ExternalProcessRequest.model_validate(empty)
+
+
+def test_memory_synthesis_identity_changes_with_dataset_reward_or_template() -> None:
+    request, spec, _preview, prompt, binding, plan = _memory_lifecycle()
+    summary_payload = request.training_summary.model_dump(mode="json", exclude={"summary_hash"})
+    summary_payload["trajectory_dataset_hash"] = "d" * 64
+    changed_summary = SanitizedTrainingSummary.model_validate(
+        {**summary_payload, "summary_hash": content_hash(summary_payload)}
+    )
+    changed_dataset_plan = _memory_lifecycle(changed_summary)[5]
+    changed_reward = build_memory_synthesis_plan(
+        request=request,
+        invocation_spec=spec,
+        identity_preview=preview_external_process_identity(spec),
+        payload_binding=binding,
+        training_dataset_hash=request.training_summary.trajectory_dataset_hash,
+        training_run_ids=["training-run-a"],
+        training_source_identities={"training-run-a": "8" * 64},
+        reward_profile_hash="f" * 64,
+        reward_vector_schema_hash="a" * 64,
+    )
+    changed_template_binding = bind_external_process_payload(
+        spec,
+        prompt,
+        template_hash="e" * 64,
+        input_dataset_hash=request.training_summary.trajectory_dataset_hash,
+    )
+
+    assert changed_dataset_plan.plan_hash != plan.plan_hash
+    assert changed_reward.plan_hash != plan.plan_hash
+    assert changed_template_binding.payload_binding_hash != binding.payload_binding_hash
+    with pytest.raises(ValueError, match="lifecycle identity"):
+        build_memory_synthesis_plan(
+            request=request,
+            invocation_spec=spec,
+            identity_preview=preview_external_process_identity(spec),
+            payload_binding=changed_template_binding,
+            training_dataset_hash=request.training_summary.trajectory_dataset_hash,
+            training_run_ids=["training-run-a"],
+            training_source_identities={"training-run-a": "8" * 64},
+            reward_profile_hash="9" * 64,
+            reward_vector_schema_hash="a" * 64,
+        )
+    different_dataset_binding = bind_external_process_payload(
+        spec,
+        prompt,
+        template_hash=MEMORY_BUILDER_PROMPT_TEMPLATE_HASH,
+        input_dataset_hash="d" * 64,
+    )
+    with pytest.raises(ValueError, match="lifecycle identity"):
+        build_memory_synthesis_plan(
+            request=request,
+            invocation_spec=spec,
+            identity_preview=preview_external_process_identity(spec),
+            payload_binding=different_dataset_binding,
+            training_dataset_hash="d" * 64,
+            training_run_ids=["training-run-a"],
+            training_source_identities={"training-run-a": "8" * 64},
+            reward_profile_hash="9" * 64,
+            reward_vector_schema_hash="a" * 64,
+        )
+
+
+def test_memory_prompt_is_byte_deterministic_for_reordered_semantic_json() -> None:
+    summary = _summary()
+    reversed_payload = dict(reversed(list(summary.model_dump(mode="json").items())))
+    reordered = SanitizedTrainingSummary.model_validate(reversed_payload)
+    first = _memory_lifecycle(summary)
+    second = _memory_lifecycle(reordered)
+
+    assert first[3].encode("utf-8") == second[3].encode("utf-8")
+    assert first[4] == second[4]
+    assert first[5] == second[5]
+
+
+def test_memory_synthesis_rejects_empty_or_sensitive_summary_before_authorization() -> None:
+    payload = _summary().model_dump(mode="json", exclude={"summary_hash"})
+    with pytest.raises(ValidationError):
+        SanitizedTrainingSummary.model_validate(
+            {**payload, "episodes": [], "summary_hash": "a" * 64}
+        )
+    with pytest.raises(ValidationError):
+        SanitizedTrainingSummary.model_validate(
+            {**payload, "hidden_assets_included": True, "summary_hash": "a" * 64}
         )
 
 

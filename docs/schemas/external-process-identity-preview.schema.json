@@ -1,0 +1,53 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-process-identity-preview.schema.json",
+  "additionalProperties": false,
+  "description": "Zero-I/O statement that a static process identity has no payload yet.",
+  "properties": {
+    "invocation_spec_hash": {
+      "title": "Invocation Spec Hash",
+      "type": "string"
+    },
+    "launch_authorized": {
+      "const": false,
+      "default": false,
+      "title": "Launch Authorized",
+      "type": "boolean"
+    },
+    "payload_binding_hash": {
+      "default": null,
+      "title": "Payload Binding Hash",
+      "type": "null"
+    },
+    "payload_state": {
+      "const": "unbound",
+      "default": "unbound",
+      "title": "Payload State",
+      "type": "string"
+    },
+    "preview_hash": {
+      "title": "Preview Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stdin_sha256": {
+      "default": null,
+      "title": "Stdin Sha256",
+      "type": "null"
+    },
+    "stdin_utf8_bytes": {
+      "default": null,
+      "title": "Stdin Utf8 Bytes",
+      "type": "null"
+    }
+  },
+  "required": [
+    "invocation_spec_hash",
+    "preview_hash"
+  ],
+  "title": "ExternalProcessIdentityPreview",
+  "type": "object"
+}

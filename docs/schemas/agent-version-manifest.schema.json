@@ -29,6 +29,18 @@
       "title": "Image Hashes",
       "type": "object"
     },
+    "invocation_spec_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocation Spec Hash"
+    },
     "memory_builder_identity_hash": {
       "anyOf": [
         {
@@ -52,6 +64,18 @@
       ],
       "default": null,
       "title": "Memory Pack Hash"
+    },
+    "memory_synthesis_plan_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Synthesis Plan Hash"
     },
     "model_id": {
       "title": "Model Id",
@@ -81,6 +105,18 @@
       ],
       "default": null,
       "title": "Parent Version Hash"
+    },
+    "payload_binding_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Payload Binding Hash"
     },
     "prompt_contract_hash": {
       "title": "Prompt Contract Hash",

@@ -3,6 +3,9 @@
 from verigym.schemas.agent import AgentAction, AgentDescriptor, Observation
 from verigym.schemas.common import SuiteDescriptor, ToolchainProfile, ToolDescriptor
 from verigym.schemas.external_agent import (
+    ExternalProcessIdentityPreview,
+    ExternalProcessInvocationSpec,
+    ExternalProcessPayloadBinding,
     ExternalProcessRequest,
     ExternalProcessResult,
     ExternalProcessRuntimeIdentity,
@@ -32,6 +35,9 @@ __all__ = [
     "DockerExternalAgentRuntimeConfig",
     "DockerRuntimeConfig",
     "ExternalProcessRequest",
+    "ExternalProcessIdentityPreview",
+    "ExternalProcessInvocationSpec",
+    "ExternalProcessPayloadBinding",
     "ExternalProcessResult",
     "ExternalProcessRuntimeIdentity",
     "ExternalProcessSecurityEvidence",

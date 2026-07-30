@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "m10b-memory-builder-empty-stdin-preview-9811aa4",
+  "source_commit": "9811aa42fda3ef95d2ef59c3eb8c74379111a0e6",
+  "preview_object_incorrectly_used": "ExternalProcessRequest",
+  "stdin_text": "",
+  "validation_error_field": "stdin_text",
+  "validation_error_constraint": "min_length=1",
+  "memory_process_authorizations": 0,
+  "model_processes_started": 0
+}

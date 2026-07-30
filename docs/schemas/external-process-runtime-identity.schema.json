@@ -84,6 +84,18 @@
       "title": "Host Executable Version",
       "type": "string"
     },
+    "invocation_spec_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocation Spec Hash"
+    },
     "logical_workspace_root": {
       "const": "/workspace",
       "title": "Logical Workspace Root",
@@ -94,6 +106,18 @@
       "default": 1,
       "title": "Model Process Count",
       "type": "integer"
+    },
+    "payload_binding_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Payload Binding Hash"
     },
     "prompt_policy_hash": {
       "anyOf": [

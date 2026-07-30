@@ -1,0 +1,66 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/external-process-payload-binding.schema.json",
+  "additionalProperties": false,
+  "description": "Hash-only binding between one static invocation and its rendered stdin.",
+  "properties": {
+    "input_dataset_hash": {
+      "title": "Input Dataset Hash",
+      "type": "string"
+    },
+    "invocation_spec_hash": {
+      "title": "Invocation Spec Hash",
+      "type": "string"
+    },
+    "payload_binding_hash": {
+      "title": "Payload Binding Hash",
+      "type": "string"
+    },
+    "payload_state": {
+      "const": "bound",
+      "default": "bound",
+      "title": "Payload State",
+      "type": "string"
+    },
+    "prompt_contract_id": {
+      "maxLength": 192,
+      "minLength": 1,
+      "title": "Prompt Contract Id",
+      "type": "string"
+    },
+    "rendered_prompt_hash": {
+      "title": "Rendered Prompt Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stdin_sha256": {
+      "title": "Stdin Sha256",
+      "type": "string"
+    },
+    "stdin_utf8_bytes": {
+      "maximum": 2097152,
+      "minimum": 1,
+      "title": "Stdin Utf8 Bytes",
+      "type": "integer"
+    },
+    "template_hash": {
+      "title": "Template Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "invocation_spec_hash",
+    "stdin_sha256",
+    "stdin_utf8_bytes",
+    "prompt_contract_id",
+    "template_hash",
+    "input_dataset_hash",
+    "rendered_prompt_hash",
+    "payload_binding_hash"
+  ],
+  "title": "ExternalProcessPayloadBinding",
+  "type": "object"
+}

@@ -30,7 +30,17 @@ def validate_process_record(
 ) -> EvolutionProcessLedgerRecord:
     payload = record.model_dump(mode="json")
     expected = payload.pop("record_hash")
-    if content_hash(payload) != expected:
+    candidates = [payload]
+    lifecycle_fields = (
+        "invocation_spec_hash",
+        "payload_binding_hash",
+        "memory_synthesis_plan_hash",
+    )
+    if all(payload[field] is None for field in lifecycle_fields):
+        candidates.append(
+            {key: value for key, value in payload.items() if key not in lifecycle_fields}
+        )
+    if all(content_hash(candidate) != expected for candidate in candidates):
         raise ValueError("evolution process-ledger record identity changed")
     return record
 
@@ -88,6 +98,9 @@ def validate_process_records(
             "run_or_build_id",
             "task_identity_hash",
             "agent_version_hash",
+            "invocation_spec_hash",
+            "payload_binding_hash",
+            "memory_synthesis_plan_hash",
             "requested_model_id",
             "reasoning_effort",
             "retry",
@@ -124,6 +137,9 @@ def authorize_process(
     reasoning_effort: str,
     task_identity_hash: str | None = None,
     agent_version_hash: str | None = None,
+    invocation_spec_hash: str | None = None,
+    payload_binding_hash: str | None = None,
+    memory_synthesis_plan_hash: str | None = None,
 ) -> EvolutionProcessLedgerRecord:
     """Durably append an authorization before a single process is launched."""
 
@@ -147,6 +163,9 @@ def authorize_process(
         run_or_build_id=run_or_build_id,
         task_identity_hash=task_identity_hash,
         agent_version_hash=agent_version_hash,
+        invocation_spec_hash=invocation_spec_hash,
+        payload_binding_hash=payload_binding_hash,
+        memory_synthesis_plan_hash=memory_synthesis_plan_hash,
         requested_model_id=requested_model_id,
         reasoning_effort=reasoning_effort,
         model_process_started=False,

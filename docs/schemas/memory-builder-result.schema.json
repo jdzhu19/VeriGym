@@ -132,6 +132,18 @@
       "default": null,
       "title": "Input Tokens"
     },
+    "invocation_spec_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocation Spec Hash"
+    },
     "memory_pack": {
       "anyOf": [
         {
@@ -142,6 +154,18 @@
         }
       ],
       "default": null
+    },
+    "memory_synthesis_plan_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Synthesis Plan Hash"
     },
     "model_processes_started": {
       "const": 1,
@@ -165,6 +189,18 @@
       ],
       "default": null,
       "title": "Output Tokens"
+    },
+    "payload_binding_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Payload Binding Hash"
     },
     "private_reasoning_exported": {
       "const": false,

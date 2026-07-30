@@ -137,13 +137,32 @@ def build_agent_version(**values: Any) -> AgentVersionManifest:
     payload.pop("version_hash", None)
     provisional = AgentVersionManifest(**payload, version_hash="0" * 64)
     normalized = provisional.model_dump(mode="json", exclude={"version_hash"})
+    lifecycle_fields = (
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
+    )
+    if all(normalized[field] is None for field in lifecycle_fields):
+        normalized = {
+            key: value for key, value in normalized.items() if key not in lifecycle_fields
+        }
     return provisional.model_copy(update={"version_hash": content_hash(normalized)})
 
 
 def validate_agent_version(version: AgentVersionManifest) -> AgentVersionManifest:
     payload = version.model_dump(mode="json")
     expected = payload.pop("version_hash")
-    if content_hash(payload) != expected:
+    candidates = [payload]
+    lifecycle_fields = (
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
+    )
+    if all(payload[field] is None for field in lifecycle_fields):
+        candidates.append(
+            {key: value for key, value in payload.items() if key not in lifecycle_fields}
+        )
+    if all(content_hash(candidate) != expected for candidate in candidates):
         raise ValueError("agent version identity changed after freezing")
     return version
 

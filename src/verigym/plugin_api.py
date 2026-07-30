@@ -3,6 +3,13 @@
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
+from verigym.core.external_process_identity import (
+    bind_external_process_payload,
+    build_external_process_request,
+    preview_external_process_identity,
+    resolve_external_process_invocation_spec,
+    validate_external_process_request_identity,
+)
 from verigym.models.base import ModelClient, ModelClientError
 from verigym.prompts.policy import validate_prompt_text
 from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAction, Observation
@@ -19,6 +26,9 @@ from verigym.schemas.common import (
 from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalAgentCallIdentity,
+    ExternalProcessIdentityPreview,
+    ExternalProcessInvocationSpec,
+    ExternalProcessPayloadBinding,
     ExternalProcessRequest,
     ExternalProcessResult,
     ExternalReadOnlyMountIdentity,
@@ -62,6 +72,9 @@ __all__ = [
     "ExternalAgentAccounting",
     "ExternalAgentBridge",
     "ExternalAgentCallIdentity",
+    "ExternalProcessIdentityPreview",
+    "ExternalProcessInvocationSpec",
+    "ExternalProcessPayloadBinding",
     "ExternalProcessRequest",
     "ExternalProcessResult",
     "ExternalReadOnlyMountIdentity",
@@ -99,4 +112,9 @@ __all__ = [
     "VeriTask",
     "validate_plugin_options",
     "validate_prompt_text",
+    "bind_external_process_payload",
+    "build_external_process_request",
+    "preview_external_process_identity",
+    "resolve_external_process_invocation_spec",
+    "validate_external_process_request_identity",
 ]

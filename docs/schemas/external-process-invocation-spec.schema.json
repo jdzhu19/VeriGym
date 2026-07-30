@@ -1,0 +1,466 @@
+{
+  "$defs": {
+    "ExternalReadOnlyMountIdentity": {
+      "additionalProperties": false,
+      "description": "Content identity for a runtime-staged agent-container read-only mount.",
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "destination": {
+          "const": "/verigym-public",
+          "title": "Destination",
+          "type": "string"
+        },
+        "label": {
+          "const": "public_tests",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination",
+        "content_hash",
+        "label"
+      ],
+      "title": "ExternalReadOnlyMountIdentity",
+      "type": "object"
+    },
+    "InteractionMode": {
+      "enum": [
+        "chat",
+        "agent",
+        "train"
+      ],
+      "title": "InteractionMode",
+      "type": "string"
+    },
+    "PromptPolicyDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_descriptor_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Descriptor Hash"
+        },
+        "agent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Hash"
+        },
+        "agent_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Id"
+        },
+        "base_instruction_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Instruction Policy"
+        },
+        "configuration_fingerprint": {
+          "title": "Configuration Fingerprint",
+          "type": "string"
+        },
+        "content_visibility_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Visibility Policy"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "interaction_mode": {
+          "$ref": "#/$defs/InteractionMode"
+        },
+        "max_prompt_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Prompt Bytes"
+        },
+        "max_task_context_bytes": {
+          "anyOf": [
+            {
+              "maximum": 2097152,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Task Context Bytes"
+        },
+        "memory_pack_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Pack Hash"
+        },
+        "resolver_id": {
+          "anyOf": [
+            {
+              "const": "agent_execution_prompt_policy_v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolver Id"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_context_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Hash"
+        },
+        "task_context_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Context Policy"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "interaction_mode",
+        "configuration_fingerprint"
+      ],
+      "title": "PromptPolicyDescriptor",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/external-process-invocation-spec.schema.json",
+  "additionalProperties": false,
+  "description": "Static, payload-free identity for one runtime-owned external process.",
+  "properties": {
+    "allow_proxy_environment": {
+      "title": "Allow Proxy Environment",
+      "type": "boolean"
+    },
+    "argv": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Argv",
+      "type": "array"
+    },
+    "auth_semantic_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Auth Semantic Id",
+      "type": "string"
+    },
+    "capability_fingerprint": {
+      "title": "Capability Fingerprint",
+      "type": "string"
+    },
+    "container_environment_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Container Environment Names",
+      "type": "array"
+    },
+    "editable_globs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Editable Globs",
+      "type": "array"
+    },
+    "executable_name": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Executable Name",
+      "type": "string"
+    },
+    "executable_path_identity": {
+      "const": "verified_host_codex_cli",
+      "default": "verified_host_codex_cli",
+      "title": "Executable Path Identity",
+      "type": "string"
+    },
+    "executable_sha256": {
+      "title": "Executable Sha256",
+      "type": "string"
+    },
+    "executable_version": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Executable Version",
+      "type": "string"
+    },
+    "expected_output_schema_hash": {
+      "title": "Expected Output Schema Hash",
+      "type": "string"
+    },
+    "forwarded_proxy_environment_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Forwarded Proxy Environment Names",
+      "type": "array"
+    },
+    "integration_track": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Integration Track",
+      "type": "string"
+    },
+    "invocation_spec_hash": {
+      "title": "Invocation Spec Hash",
+      "type": "string"
+    },
+    "logical_cwd": {
+      "const": "/workspace",
+      "default": "/workspace",
+      "title": "Logical Cwd",
+      "type": "string"
+    },
+    "logical_workspace_root": {
+      "const": "/workspace",
+      "default": "/workspace",
+      "title": "Logical Workspace Root",
+      "type": "string"
+    },
+    "max_output_bytes": {
+      "maximum": 16777216,
+      "minimum": 1024,
+      "title": "Max Output Bytes",
+      "type": "integer"
+    },
+    "mount_policy": {
+      "default": "task_workspace_only",
+      "enum": [
+        "task_workspace_only",
+        "task_workspace_and_public_tests"
+      ],
+      "title": "Mount Policy",
+      "type": "string"
+    },
+    "network_policy": {
+      "const": "none",
+      "default": "none",
+      "title": "Network Policy",
+      "type": "string"
+    },
+    "prompt_contract_id": {
+      "maxLength": 192,
+      "minLength": 1,
+      "title": "Prompt Contract Id",
+      "type": "string"
+    },
+    "prompt_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptPolicyDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "prompt_policy_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Policy Hash"
+    },
+    "protocol": {
+      "pattern": "^[A-Za-z0-9._-]{1,128}$",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "read_only_mounts": {
+      "items": {
+        "$ref": "#/$defs/ExternalReadOnlyMountIdentity"
+      },
+      "title": "Read Only Mounts",
+      "type": "array"
+    },
+    "readonly_globs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Readonly Globs",
+      "type": "array"
+    },
+    "requested_auth_mode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Requested Auth Mode",
+      "type": "string"
+    },
+    "requested_model_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Requested Model Id",
+      "type": "string"
+    },
+    "requested_reasoning_effort": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Requested Reasoning Effort",
+      "type": "string"
+    },
+    "resolved_auth_mode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Resolved Auth Mode",
+      "type": "string"
+    },
+    "runtime_role": {
+      "const": "agent",
+      "default": "agent",
+      "title": "Runtime Role",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stdin_transport": {
+      "const": "runtime_protocol_adapter",
+      "default": "runtime_protocol_adapter",
+      "title": "Stdin Transport",
+      "type": "string"
+    },
+    "timeout_s": {
+      "exclusiveMinimum": 0.0,
+      "maximum": 1800.0,
+      "title": "Timeout S",
+      "type": "number"
+    },
+    "workspace_mode": {
+      "enum": [
+        "fresh_empty",
+        "visible_task_workspace"
+      ],
+      "title": "Workspace Mode",
+      "type": "string"
+    },
+    "writable_destinations": {
+      "items": {
+        "enum": [
+          "/workspace",
+          "/tmp"
+        ],
+        "type": "string"
+      },
+      "title": "Writable Destinations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "protocol",
+    "argv",
+    "writable_destinations",
+    "integration_track",
+    "workspace_mode",
+    "requested_model_id",
+    "requested_reasoning_effort",
+    "executable_name",
+    "executable_sha256",
+    "executable_version",
+    "capability_fingerprint",
+    "requested_auth_mode",
+    "resolved_auth_mode",
+    "auth_semantic_id",
+    "allow_proxy_environment",
+    "timeout_s",
+    "max_output_bytes",
+    "prompt_contract_id",
+    "expected_output_schema_hash",
+    "invocation_spec_hash"
+  ],
+  "title": "ExternalProcessInvocationSpec",
+  "type": "object"
+}

@@ -10,11 +10,13 @@ from verigym.core.hashing import canonical_json, content_hash
 from verigym.evolution.memory_builder import (
     build_memory_builder_result,
     parse_memory_builder_output,
+    reconstruct_memory_synthesis_launch,
     render_memory_builder_prompt,
     validate_memory_builder_input,
+    validate_memory_synthesis_plan,
 )
 from verigym.plugin_api import ExternalAgentBridge, JsonValue
-from verigym.schemas.evolution import MemoryBuilderInput, MemoryBuilderResult
+from verigym.schemas.evolution import MemoryBuilderInput, MemoryBuilderResult, MemorySynthesisPlan
 from verigym.schemas.external_agent import ExternalProcessResult
 
 from .capabilities import CapabilityReport, runtime_capabilities
@@ -124,6 +126,7 @@ def execute_memory_synthesis(
     process_ledger_record_hash: str,
     artifact_root: Path,
     heldout_only_tokens: tuple[str, ...] = (),
+    synthesis_plan: MemorySynthesisPlan | None = None,
 ) -> MemorySynthesisOutcome:
     """Run exactly one process and preserve a safe terminal result without retrying."""
 
@@ -151,14 +154,41 @@ def execute_memory_synthesis(
     ):
         raise ValueError("memory-builder process settings differ from the frozen input")
 
-    outcome = execute_runtime_process(
-        bridge=bridge,
-        executable=executable,
-        capabilities=capabilities,
-        settings=settings,
-        prompt=render_memory_builder_prompt(request),
-        workspace_mode="fresh_empty",
-    )
+    if synthesis_plan is not None:
+        validate_memory_synthesis_plan(synthesis_plan)
+        prompt, payload_binding, executable_request = reconstruct_memory_synthesis_launch(
+            plan=synthesis_plan,
+            request=request,
+            frozen_summary=request.training_summary,
+            executable_path=executable.path,
+        )
+        if (
+            executable_request.requested_model_id != settings.model_id
+            or executable_request.requested_reasoning_effort != settings.effective_reasoning_effort
+        ):
+            raise ValueError("memory synthesis executable request differs from process settings")
+        outcome = execute_runtime_process(
+            bridge=bridge,
+            executable=executable,
+            capabilities=capabilities,
+            settings=settings,
+            prompt=prompt,
+            workspace_mode="fresh_empty",
+            invocation_spec=synthesis_plan.invocation_spec,
+            payload_binding=payload_binding,
+            template_hash=synthesis_plan.prompt_template_hash,
+            input_dataset_hash=synthesis_plan.training_dataset_hash,
+            expected_output_schema_hash=synthesis_plan.output_schema_hash,
+        )
+    else:
+        outcome = execute_runtime_process(
+            bridge=bridge,
+            executable=executable,
+            capabilities=capabilities,
+            settings=settings,
+            prompt=render_memory_builder_prompt(request),
+            workspace_mode="fresh_empty",
+        )
     process = outcome.process
     runtime_result = outcome.runtime_result
     observed_runtime, observed_images = _observed_runtime_hashes(runtime_result)
@@ -228,6 +258,19 @@ def execute_memory_synthesis(
         "image_identity_hash": observed_images,
         "requested_model_id": request.requested_model_id,
         "reasoning_effort": request.reasoning_effort,
+        "invocation_spec_hash": (
+            synthesis_plan.invocation_spec.invocation_spec_hash
+            if synthesis_plan is not None
+            else None
+        ),
+        "payload_binding_hash": (
+            synthesis_plan.payload_binding.payload_binding_hash
+            if synthesis_plan is not None
+            else None
+        ),
+        "memory_synthesis_plan_hash": (
+            synthesis_plan.plan_hash if synthesis_plan is not None else None
+        ),
     }
     safe_output = (
         canonical_json({section.section: section.items for section in memory.sections})
@@ -244,11 +287,37 @@ def execute_memory_synthesis(
         wall_time_s=process.duration_s,
         input_tokens=parsed.input_tokens if parsed is not None else None,
         output_tokens=parsed.output_tokens if parsed is not None else None,
+        memory_synthesis_plan_hash=(
+            synthesis_plan.plan_hash if synthesis_plan is not None else None
+        ),
+        invocation_spec_hash=(
+            synthesis_plan.invocation_spec.invocation_spec_hash
+            if synthesis_plan is not None
+            else None
+        ),
+        payload_binding_hash=(
+            synthesis_plan.payload_binding.payload_binding_hash
+            if synthesis_plan is not None
+            else None
+        ),
     )
 
     destination = safe_regular_directory(artifact_root, create=True)
     atomic_json(destination / "memory-builder-input.json", request.model_dump(mode="json"))
     atomic_json(destination / "memory-builder-result.json", result.model_dump(mode="json"))
+    if synthesis_plan is not None:
+        atomic_json(
+            destination / "memory-synthesis-plan.json",
+            synthesis_plan.model_dump(mode="json"),
+        )
+        atomic_json(
+            destination / "external-process-invocation-spec.json",
+            synthesis_plan.invocation_spec.model_dump(mode="json"),
+        )
+        atomic_json(
+            destination / "external-process-payload-binding.json",
+            synthesis_plan.payload_binding.model_dump(mode="json"),
+        )
     atomic_json(
         destination / "process-evidence.json", _safe_process_evidence(runtime_result, parsed=parsed)
     )

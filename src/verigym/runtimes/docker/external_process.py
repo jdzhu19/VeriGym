@@ -31,6 +31,7 @@ from verigym.runtimes.docker.security import security_arguments, verify_effectiv
 from verigym.runtimes.docker.stdio_broker import LoopbackWebSocketStdioBroker
 from verigym.schemas.common import RuntimeImageIdentity
 from verigym.schemas.external_agent import (
+    ExternalProcessInvocationSpec,
     ExternalProcessRequest,
     ExternalProcessResult,
     ExternalProcessRuntimeIdentity,
@@ -114,25 +115,31 @@ def external_process_configuration_fingerprint(
     agent_config: DockerExternalAgentRuntimeConfig,
     agent_image_id: str,
     verifier_image_id: str,
-    request: ExternalProcessRequest,
+    request: ExternalProcessRequest | ExternalProcessInvocationSpec,
     synthesized_environment_names: Sequence[str],
     mandatory_loopback_bypass_present: bool,
 ) -> str:
     """Hash the complete observable external-process configuration."""
 
+    spec = request.invocation_spec if isinstance(request, ExternalProcessRequest) else request
+    static = spec or request
     return content_hash(
         {
             "agent_config": agent_config,
             "agent_image_id": agent_image_id,
             "verifier_image_id": verifier_image_id,
-            "protocol": request.protocol,
-            "model": request.requested_model_id,
-            "reasoning_effort": request.requested_reasoning_effort,
-            "auth_semantic_id": request.auth_semantic_id,
-            "prompt_policy_hash": request.prompt_policy_hash,
-            "prompt_text_sha256": request.prompt_text_sha256,
-            "read_only_mounts": request.read_only_mounts,
-            "proxy_names": request.forwarded_proxy_environment_names,
+            "protocol": static.protocol,
+            "model": static.requested_model_id,
+            "reasoning_effort": static.requested_reasoning_effort,
+            "auth_semantic_id": static.auth_semantic_id,
+            "prompt_policy_hash": static.prompt_policy_hash,
+            "read_only_mounts": static.read_only_mounts,
+            "proxy_names": static.forwarded_proxy_environment_names,
+            "invocation_spec_hash": (
+                static.invocation_spec_hash
+                if isinstance(static, ExternalProcessInvocationSpec)
+                else None
+            ),
             "synthesized_control_plane_environment_names": synthesized_environment_names,
             "mandatory_loopback_bypass_present": mandatory_loopback_bypass_present,
             "overrides": list(_APP_SERVER_CONFIG_OVERRIDES),
@@ -469,6 +476,8 @@ class DockerExternalProcessExecutor:
             ),
             prompt_policy_hash=request.prompt_policy_hash,
             prompt_text_sha256=request.prompt_text_sha256,
+            invocation_spec_hash=request.invocation_spec_hash,
+            payload_binding_hash=request.payload_binding_hash,
             logical_workspace_root="/workspace",
         )
         security = ExternalProcessSecurityEvidence(

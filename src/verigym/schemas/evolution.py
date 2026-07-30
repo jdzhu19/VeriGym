@@ -8,9 +8,15 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
+from verigym.schemas.external_agent import (
+    ExternalProcessIdentityPreview,
+    ExternalProcessInvocationSpec,
+    ExternalProcessPayloadBinding,
+)
 from verigym.schemas.options import JsonValue
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
 _SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -470,6 +476,9 @@ class AgentVersionManifest(StrictModel):
     reward_schema_hash: str | None = None
     reward_profile_hash: str | None = None
     memory_builder_identity_hash: str | None = None
+    memory_synthesis_plan_hash: str | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
     memory_pack_hash: str | None = None
     version_hash: str
     model_weights_modified: Literal[False] = False
@@ -495,6 +504,9 @@ class AgentVersionManifest(StrictModel):
         "reward_schema_hash",
         "reward_profile_hash",
         "memory_builder_identity_hash",
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
         "memory_pack_hash",
         "version_hash",
     )
@@ -509,6 +521,15 @@ class AgentVersionManifest(StrictModel):
 
     @model_validator(mode="after")
     def validate_update_contract(self) -> AgentVersionManifest:
+        lifecycle = (
+            self.memory_synthesis_plan_hash,
+            self.invocation_spec_hash,
+            self.payload_binding_hash,
+        )
+        if any(value is not None for value in lifecycle) and not all(
+            value is not None for value in lifecycle
+        ):
+            raise ValueError("agent version lifecycle identities are all-or-none")
         if self.update_type == "none":
             if self.parent_version_hash is not None or self.memory_pack_hash is not None:
                 raise ValueError("base agent version cannot bind a parent or memory pack")
@@ -536,6 +557,9 @@ class AgentUpdateManifest(StrictModel):
     training_summary_hash: str
     memory_builder_input_hash: str
     memory_builder_output_hash: str
+    memory_synthesis_plan_hash: str | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
     memory_pack_hash: str
     process_ledger_hash: str
     heldout_assets_loaded: Literal[False] = False
@@ -553,13 +577,29 @@ class AgentUpdateManifest(StrictModel):
         "training_summary_hash",
         "memory_builder_input_hash",
         "memory_builder_output_hash",
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
         "memory_pack_hash",
         "process_ledger_hash",
         "update_hash",
     )
     @classmethod
-    def validate_hashes(cls, value: str) -> str:
-        return _hash(value)
+    def validate_hashes(cls, value: str | None) -> str | None:
+        return _hash(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def lifecycle_is_all_or_none(self) -> AgentUpdateManifest:
+        lifecycle = (
+            self.memory_synthesis_plan_hash,
+            self.invocation_spec_hash,
+            self.payload_binding_hash,
+        )
+        if any(value is not None for value in lifecycle) and not all(
+            value is not None for value in lifecycle
+        ):
+            raise ValueError("agent update lifecycle identities are all-or-none")
+        return self
 
 
 class AgentLineage(StrictModel):
@@ -990,6 +1030,105 @@ class MemoryBuilderInput(StrictModel):
         return _hash(value)
 
 
+class MemorySynthesisPlan(StrictModel):
+    """Frozen two-phase identity for one payload-bound memory-builder process."""
+
+    schema_version: str = SCHEMA_VERSION
+    plan_id: str
+    build_id: str
+    invocation_spec: ExternalProcessInvocationSpec
+    identity_preview: ExternalProcessIdentityPreview
+    payload_binding: ExternalProcessPayloadBinding
+    training_dataset_hash: str
+    training_run_ids: list[str] = Field(min_length=1, max_length=128)
+    training_source_identities: dict[str, str]
+    reward_profile_hash: str
+    reward_vector_schema_hash: str
+    sanitized_summary_hash: str
+    builder_input_hash: str
+    prompt_contract_id: str
+    prompt_contract_hash: str
+    prompt_template_hash: str
+    rendered_prompt_hash: str
+    rendered_prompt_utf8_bytes: int = Field(ge=1, le=2 * 1024 * 1024)
+    output_schema_hash: str
+    model_identity_hash: str
+    codex_identity_hash: str
+    auth_semantic_id: str
+    runtime_identity_hash: str
+    image_identity_hash: str
+    requested_model_id: str
+    reasoning_effort: str
+    timeout_s: int = Field(ge=1, le=300)
+    max_output_bytes: int = Field(ge=1024, le=262_144)
+    payload_state: Literal["bound"] = "bound"
+    sealed_before_authorization: Literal[True] = True
+    plan_hash: str
+
+    @field_validator(
+        "plan_id",
+        "build_id",
+        "prompt_contract_id",
+        "auth_semantic_id",
+        "requested_model_id",
+        "reasoning_effort",
+    )
+    @classmethod
+    def validate_ids(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("training_run_ids")
+    @classmethod
+    def validate_run_ids(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("memory synthesis training run IDs must be unique")
+        return [_safe_id(value) for value in values]
+
+    @field_validator(
+        "training_dataset_hash",
+        "reward_profile_hash",
+        "reward_vector_schema_hash",
+        "sanitized_summary_hash",
+        "builder_input_hash",
+        "prompt_contract_hash",
+        "prompt_template_hash",
+        "rendered_prompt_hash",
+        "output_schema_hash",
+        "model_identity_hash",
+        "codex_identity_hash",
+        "runtime_identity_hash",
+        "image_identity_hash",
+        "plan_hash",
+    )
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @field_validator("training_source_identities")
+    @classmethod
+    def validate_source_identities(cls, values: dict[str, str]) -> dict[str, str]:
+        if not values:
+            raise ValueError("memory synthesis requires training source identities")
+        return {key: _hash(value) for key, value in sorted(values.items())}
+
+    @model_validator(mode="after")
+    def validate_linkage(self) -> MemorySynthesisPlan:
+        if (
+            self.identity_preview.invocation_spec_hash != self.invocation_spec.invocation_spec_hash
+            or self.payload_binding.invocation_spec_hash
+            != self.invocation_spec.invocation_spec_hash
+            or self.payload_binding.prompt_contract_id != self.prompt_contract_id
+            or self.payload_binding.template_hash != self.prompt_template_hash
+            or self.payload_binding.input_dataset_hash != self.training_dataset_hash
+            or self.payload_binding.rendered_prompt_hash != self.rendered_prompt_hash
+            or self.payload_binding.stdin_utf8_bytes != self.rendered_prompt_utf8_bytes
+            or self.invocation_spec.prompt_contract_id != self.prompt_contract_id
+            or self.invocation_spec.expected_output_schema_hash != self.output_schema_hash
+        ):
+            raise ValueError("memory synthesis plan lifecycle identities disagree")
+        return self
+
+
 class MemoryBuilderResult(StrictModel):
     schema_version: str = SCHEMA_VERSION
     build_id: str
@@ -1007,6 +1146,9 @@ class MemoryBuilderResult(StrictModel):
     private_reasoning_exported: Literal[False] = False
     credentials_exported: Literal[False] = False
     output_hash: str
+    memory_synthesis_plan_hash: str | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
 
     @field_validator("build_id")
     @classmethod
@@ -1019,6 +1161,9 @@ class MemoryBuilderResult(StrictModel):
         "process_ledger_record_hash",
         "redacted_output_hash",
         "output_hash",
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
     )
     @classmethod
     def validate_hashes(cls, value: str) -> str:
@@ -1028,6 +1173,111 @@ class MemoryBuilderResult(StrictModel):
     def result_matches_status(self) -> MemoryBuilderResult:
         if (self.memory_pack is not None) != (self.status == "success"):
             raise ValueError("only successful memory synthesis may contain a memory pack")
+        lifecycle = (
+            self.memory_synthesis_plan_hash,
+            self.invocation_spec_hash,
+            self.payload_binding_hash,
+        )
+        if any(value is not None for value in lifecycle) and not all(
+            value is not None for value in lifecycle
+        ):
+            raise ValueError("memory-builder result lifecycle identities are all-or-none")
+        return self
+
+
+class HistoricalTrainingEpisodeImportEligibility(StrictModel):
+    """Per-run all-or-none import decision without rewriting historical evidence."""
+
+    schema_version: str = SCHEMA_VERSION
+    run_id: str
+    task_id: str
+    outcome_kind: str
+    eligible: bool
+    checks: dict[str, bool]
+    ineligible_reasons: list[str] = Field(default_factory=list)
+    original_run_manifest_hash: str
+    original_artifact_manifest_hash: str
+    original_source_commit: str
+    exporter_source_commit: str
+    trajectory_hash: str
+    reward_hash: str
+    record_hash: str
+
+    @field_validator("run_id", "outcome_kind")
+    @classmethod
+    def validate_ids(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, value: str) -> str:
+        return _safe_task_id(value)
+
+    @field_validator(
+        "original_run_manifest_hash",
+        "original_artifact_manifest_hash",
+        "trajectory_hash",
+        "reward_hash",
+        "record_hash",
+    )
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @field_validator("original_source_commit", "exporter_source_commit")
+    @classmethod
+    def validate_commits(cls, value: str) -> str:
+        if not _GIT_SHA.fullmatch(value):
+            raise ValueError("training import source commits must be full Git SHA-1 identities")
+        return value
+
+    @model_validator(mode="after")
+    def decision_matches_checks(self) -> HistoricalTrainingEpisodeImportEligibility:
+        passed = all(self.checks.values()) and not self.ineligible_reasons
+        if self.eligible != passed:
+            raise ValueError("historical training import decision disagrees with checks")
+        return self
+
+
+class HistoricalTrainingImportManifest(StrictModel):
+    """Campaign-wide all-or-none decision for one immutable training triplet."""
+
+    schema_version: str = SCHEMA_VERSION
+    import_id: str
+    source_bundle_sha256sums_hash: str
+    exporter_source_commit: str
+    episodes: list[HistoricalTrainingEpisodeImportEligibility] = Field(min_length=3, max_length=3)
+    all_or_none_policy: Literal[True] = True
+    import_all: bool
+    rerun_all: bool
+    mixed_sources: Literal[False] = False
+    manifest_hash: str
+
+    @field_validator("import_id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _safe_id(value)
+
+    @field_validator(
+        "source_bundle_sha256sums_hash",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @field_validator("exporter_source_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if not _GIT_SHA.fullmatch(value):
+            raise ValueError("training import source commit must be a full Git SHA-1 identity")
+        return value
+
+    @model_validator(mode="after")
+    def validate_all_or_none(self) -> HistoricalTrainingImportManifest:
+        eligible = all(episode.eligible for episode in self.episodes)
+        if self.import_all != eligible or self.rerun_all == self.import_all:
+            raise ValueError("historical training triplet must be imported all or rerun all")
         return self
 
 
@@ -1045,6 +1295,9 @@ class EvolutionProcessLedgerRecord(StrictModel):
     run_or_build_id: str
     task_identity_hash: str | None = None
     agent_version_hash: str | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
+    memory_synthesis_plan_hash: str | None = None
     requested_model_id: str
     reasoning_effort: str
     model_process_started: bool
@@ -1069,6 +1322,9 @@ class EvolutionProcessLedgerRecord(StrictModel):
     @field_validator(
         "task_identity_hash",
         "agent_version_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
+        "memory_synthesis_plan_hash",
         "source_ledger_record_hash",
         "record_hash",
     )
@@ -1296,8 +1552,11 @@ __all__ = [
     "EpisodeTrajectory",
     "ExternalAgentVersionImportManifest",
     "ExternalTrainerExportManifest",
+    "HistoricalTrainingEpisodeImportEligibility",
+    "HistoricalTrainingImportManifest",
     "MemoryBuilderInput",
     "MemoryBuilderResult",
+    "MemorySynthesisPlan",
     "MemoryPack",
     "MemoryPackAudit",
     "MemoryPackSection",

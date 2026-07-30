@@ -36,6 +36,9 @@ def freeze_context_update(
     memory_builder_input_hash: str,
     memory_builder_output_hash: str,
     process_ledger_hash: str,
+    memory_synthesis_plan_hash: str | None = None,
+    invocation_spec_hash: str | None = None,
+    payload_binding_hash: str | None = None,
     version_id: str = "codex-cli-agent-v1",
     update_id: str = "evolve-context-v0-to-v1",
 ) -> tuple[AgentVersionManifest, AgentUpdateManifest]:
@@ -48,6 +51,15 @@ def freeze_context_update(
         raise ValueError("Evolve-Context parent must be a memory-free base version")
     if training_summary.trajectory_dataset_hash != dataset.dataset_hash:
         raise ValueError("training summary and trajectory dataset identities disagree")
+    lifecycle = (
+        memory_synthesis_plan_hash,
+        invocation_spec_hash,
+        payload_binding_hash,
+    )
+    if any(value is not None for value in lifecycle) and not all(
+        value is not None for value in lifecycle
+    ):
+        raise ValueError("context update lifecycle identities are all-or-none")
     v1 = build_agent_version(
         agent_version_id=version_id,
         status="frozen",
@@ -69,6 +81,9 @@ def freeze_context_update(
         reward_schema_hash=content_hash(RewardVector.model_json_schema(mode="serialization")),
         reward_profile_hash=dataset.reward_profile_hash,
         memory_builder_identity_hash=memory_builder_identity_hash,
+        memory_synthesis_plan_hash=memory_synthesis_plan_hash,
+        invocation_spec_hash=invocation_spec_hash,
+        payload_binding_hash=payload_binding_hash,
         memory_pack_hash=memory_pack.content_hash,
         model_weights_modified=False,
     )
@@ -86,6 +101,13 @@ def freeze_context_update(
         "heldout_assets_loaded": False,
         "model_weights_modified": False,
     }
+    if all(value is not None for value in lifecycle):
+        update_base = {
+            **update_base,
+            "memory_synthesis_plan_hash": memory_synthesis_plan_hash,
+            "invocation_spec_hash": invocation_spec_hash,
+            "payload_binding_hash": payload_binding_hash,
+        }
     update = AgentUpdateManifest.model_validate(
         {**update_base, "update_hash": content_hash(update_base)}
     )
@@ -109,7 +131,17 @@ def replay_context_update(
     validate_memory_pack(memory_pack)
     update_payload = update.model_dump(mode="json")
     update_hash = update_payload.pop("update_hash")
-    if content_hash(update_payload) != update_hash:
+    candidates = [update_payload]
+    lifecycle_fields = (
+        "memory_synthesis_plan_hash",
+        "invocation_spec_hash",
+        "payload_binding_hash",
+    )
+    if all(update_payload[field] is None for field in lifecycle_fields):
+        candidates.append(
+            {key: value for key, value in update_payload.items() if key not in lifecycle_fields}
+        )
+    if all(content_hash(candidate) != update_hash for candidate in candidates):
         raise ValueError("agent update manifest identity changed")
     checks = {
         "parent": update.parent_version_hash == parent.version_hash,
@@ -125,6 +157,11 @@ def replay_context_update(
         ),
         "lineage": result.parent_version_hash == parent.version_hash,
         "weights": not result.model_weights_modified and not update.model_weights_modified,
+        "request_identity": (
+            result.memory_synthesis_plan_hash == update.memory_synthesis_plan_hash
+            and result.invocation_spec_hash == update.invocation_spec_hash
+            and result.payload_binding_hash == update.payload_binding_hash
+        ),
     }
     mismatches = sorted(name for name, valid in checks.items() if not valid)
     if mismatches:

@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from verigym.core.hashing import content_hash
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.prompt import PromptPolicyDescriptor
 
@@ -39,6 +40,196 @@ class ExternalReadOnlyMountIdentity(StrictModel):
         if not _SHA256.fullmatch(value):
             raise ValueError("external read-only mount hash must be lowercase SHA-256")
         return value
+
+
+class ExternalProcessInvocationSpec(StrictModel):
+    """Static, payload-free identity for one runtime-owned external process."""
+
+    schema_version: str = SCHEMA_VERSION
+    protocol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,128}$")
+    runtime_role: Literal["agent"] = "agent"
+    argv: list[str] = Field(min_length=1, max_length=64)
+    logical_cwd: Literal["/workspace"] = "/workspace"
+    stdin_transport: Literal["runtime_protocol_adapter"] = "runtime_protocol_adapter"
+    network_policy: Literal["none"] = "none"
+    mount_policy: Literal[
+        "task_workspace_only",
+        "task_workspace_and_public_tests",
+    ] = "task_workspace_only"
+    writable_destinations: list[Literal["/workspace", "/tmp"]]
+    read_only_mounts: list[ExternalReadOnlyMountIdentity] = Field(default_factory=list)
+    container_environment_names: list[str] = Field(default_factory=list)
+    integration_track: str = Field(min_length=1, max_length=128)
+    workspace_mode: Literal["fresh_empty", "visible_task_workspace"]
+    logical_workspace_root: Literal["/workspace"] = "/workspace"
+    requested_model_id: str = Field(min_length=1, max_length=256)
+    requested_reasoning_effort: str = Field(min_length=1, max_length=32)
+    executable_path_identity: Literal["verified_host_codex_cli"] = "verified_host_codex_cli"
+    executable_name: str = Field(min_length=1, max_length=256)
+    executable_sha256: str
+    executable_version: str = Field(min_length=1, max_length=512)
+    capability_fingerprint: str
+    requested_auth_mode: str = Field(min_length=1, max_length=64)
+    resolved_auth_mode: str = Field(min_length=1, max_length=64)
+    auth_semantic_id: str = Field(min_length=1, max_length=128)
+    allow_proxy_environment: bool
+    forwarded_proxy_environment_names: list[str] = Field(default_factory=list)
+    timeout_s: float = Field(gt=0.0, le=1800.0)
+    max_output_bytes: int = Field(ge=1024, le=16 * 1024 * 1024)
+    editable_globs: list[str] = Field(default_factory=list)
+    readonly_globs: list[str] = Field(default_factory=list)
+    prompt_policy: PromptPolicyDescriptor | None = None
+    prompt_policy_hash: str | None = None
+    prompt_contract_id: str = Field(min_length=1, max_length=192)
+    expected_output_schema_hash: str
+    invocation_spec_hash: str
+
+    @field_validator(
+        "executable_sha256",
+        "capability_fingerprint",
+        "prompt_policy_hash",
+        "expected_output_schema_hash",
+        "invocation_spec_hash",
+    )
+    @classmethod
+    def validate_spec_hash(cls, value: str | None) -> str | None:
+        if value is not None and not _SHA256.fullmatch(value):
+            raise ValueError("external invocation hashes must be lowercase SHA-256")
+        return value
+
+    @field_validator("argv")
+    @classmethod
+    def validate_argv(cls, values: list[str]) -> list[str]:
+        if any(
+            not value or "\x00" in value or "\r" in value or "\n" in value or len(value) > 4096
+            for value in values
+        ):
+            raise ValueError("external invocation argv contains an invalid argument")
+        return values
+
+    @field_validator("forwarded_proxy_environment_names")
+    @classmethod
+    def validate_proxy_names(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("forwarded proxy environment names must be unique")
+        if any(
+            not _SAFE_ENVIRONMENT_NAME.fullmatch(value)
+            or value not in _FORWARDED_PROXY_ENVIRONMENT_NAMES
+            for value in values
+        ):
+            raise ValueError("external invocation proxy forwarding is outside the strict allowlist")
+        return [name for name in ("HTTP_PROXY", "HTTPS_PROXY") if name in set(values)]
+
+    @field_validator("container_environment_names")
+    @classmethod
+    def validate_container_environment_names(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("container environment names must be unique")
+        if any(not _SAFE_ENVIRONMENT_NAME.fullmatch(value) for value in values):
+            raise ValueError("invalid container environment name")
+        if any(
+            value in _CONTAINER_PROXY_ENVIRONMENT_NAMES
+            or re.search(r"(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|AUTH)", value, re.I)
+            for value in values
+        ):
+            raise ValueError("credential or proxy environment names are forbidden in the agent")
+        return sorted(values)
+
+    @model_validator(mode="after")
+    def validate_spec_contract(self) -> ExternalProcessInvocationSpec:
+        if self.forwarded_proxy_environment_names and not self.allow_proxy_environment:
+            raise ValueError("proxy names require allow_proxy_environment=true")
+        if self.container_environment_names:
+            raise ValueError(
+                "external agent-container environment is owned entirely by the runtime"
+            )
+        if self.writable_destinations != ["/workspace", "/tmp"]:
+            raise ValueError("Docker external processes have exactly two writable destinations")
+        expected_mount_policy = (
+            "task_workspace_and_public_tests" if self.read_only_mounts else "task_workspace_only"
+        )
+        if self.mount_policy != expected_mount_policy:
+            raise ValueError(
+                "external invocation mount policy disagrees with read-only mount identity"
+            )
+        if len(self.read_only_mounts) > 1:
+            raise ValueError("external invocation supports at most one public-test mount")
+        if (self.prompt_policy is None) != (self.prompt_policy_hash is None):
+            raise ValueError("external invocation prompt policy fields must be supplied together")
+        if (
+            self.prompt_policy is not None
+            and self.prompt_policy_hash != self.prompt_policy.configuration_fingerprint
+        ):
+            raise ValueError("external invocation prompt policy hash is inconsistent")
+        payload = self.model_dump(mode="json", exclude={"invocation_spec_hash"})
+        if content_hash(payload) != self.invocation_spec_hash:
+            raise ValueError("external invocation specification identity changed")
+        return self
+
+
+class ExternalProcessIdentityPreview(StrictModel):
+    """Zero-I/O statement that a static process identity has no payload yet."""
+
+    schema_version: str = SCHEMA_VERSION
+    invocation_spec_hash: str
+    payload_state: Literal["unbound"] = "unbound"
+    stdin_sha256: None = None
+    stdin_utf8_bytes: None = None
+    payload_binding_hash: None = None
+    launch_authorized: Literal[False] = False
+    preview_hash: str
+
+    @field_validator("invocation_spec_hash", "preview_hash")
+    @classmethod
+    def validate_preview_hash(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("external process preview hashes must be lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_preview_identity(self) -> ExternalProcessIdentityPreview:
+        payload = self.model_dump(mode="json", exclude={"preview_hash"})
+        if content_hash(payload) != self.preview_hash:
+            raise ValueError("external process identity preview changed")
+        return self
+
+
+class ExternalProcessPayloadBinding(StrictModel):
+    """Hash-only binding between one static invocation and its rendered stdin."""
+
+    schema_version: str = SCHEMA_VERSION
+    invocation_spec_hash: str
+    payload_state: Literal["bound"] = "bound"
+    stdin_sha256: str
+    stdin_utf8_bytes: int = Field(ge=1, le=2 * 1024 * 1024)
+    prompt_contract_id: str = Field(min_length=1, max_length=192)
+    template_hash: str
+    input_dataset_hash: str
+    rendered_prompt_hash: str
+    payload_binding_hash: str
+
+    @field_validator(
+        "invocation_spec_hash",
+        "stdin_sha256",
+        "template_hash",
+        "input_dataset_hash",
+        "rendered_prompt_hash",
+        "payload_binding_hash",
+    )
+    @classmethod
+    def validate_binding_hash(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("external payload hashes must be lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_payload_identity(self) -> ExternalProcessPayloadBinding:
+        if self.stdin_sha256 != self.rendered_prompt_hash:
+            raise ValueError("rendered prompt hash differs from stdin hash")
+        payload = self.model_dump(mode="json", exclude={"payload_binding_hash"})
+        if content_hash(payload) != self.payload_binding_hash:
+            raise ValueError("external process payload binding changed")
+        return self
 
 
 class ExternalProcessRequest(StrictModel):
@@ -81,12 +272,19 @@ class ExternalProcessRequest(StrictModel):
     prompt_policy: PromptPolicyDescriptor | None = None
     prompt_policy_hash: str | None = None
     prompt_text_sha256: str | None = None
+    invocation_spec: ExternalProcessInvocationSpec | None = None
+    payload_binding: ExternalProcessPayloadBinding | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
+    stdin_utf8_bytes: int | None = Field(default=None, ge=1, le=2 * 1024 * 1024)
 
     @field_validator(
         "executable_sha256",
         "capability_fingerprint",
         "prompt_policy_hash",
         "prompt_text_sha256",
+        "invocation_spec_hash",
+        "payload_binding_hash",
     )
     @classmethod
     def validate_request_hash(cls, value: str | None) -> str | None:
@@ -170,6 +368,29 @@ class ExternalProcessRequest(StrictModel):
                 != hashlib.sha256(self.stdin_text.encode("utf-8")).hexdigest()
             ):
                 raise ValueError("external process prompt text hash is inconsistent")
+        lifecycle_fields = (
+            self.invocation_spec,
+            self.payload_binding,
+            self.invocation_spec_hash,
+            self.payload_binding_hash,
+            self.stdin_utf8_bytes,
+        )
+        if any(value is not None for value in lifecycle_fields) and not all(
+            value is not None for value in lifecycle_fields
+        ):
+            raise ValueError("external process lifecycle identities must be supplied together")
+        if self.invocation_spec is not None and self.payload_binding is not None:
+            if (
+                self.invocation_spec_hash != self.invocation_spec.invocation_spec_hash
+                or self.payload_binding_hash != self.payload_binding.payload_binding_hash
+                or self.payload_binding.invocation_spec_hash != self.invocation_spec_hash
+                or self.payload_binding.prompt_contract_id
+                != self.invocation_spec.prompt_contract_id
+                or self.payload_binding.stdin_sha256
+                != hashlib.sha256(self.stdin_text.encode("utf-8")).hexdigest()
+                or self.stdin_utf8_bytes != len(self.stdin_text.encode("utf-8"))
+            ):
+                raise ValueError("external process request differs from its lifecycle binding")
         return self
 
 
@@ -195,6 +416,8 @@ class ExternalProcessRuntimeIdentity(StrictModel):
     configuration_fingerprint: str
     prompt_policy_hash: str | None = None
     prompt_text_sha256: str | None = None
+    invocation_spec_hash: str | None = None
+    payload_binding_hash: str | None = None
     logical_workspace_root: Literal["/workspace"]
     model_process_count: Literal[1] = 1
     exec_server_process_count: Literal[1] = 1
@@ -206,6 +429,8 @@ class ExternalProcessRuntimeIdentity(StrictModel):
         "agent_executable_sha256",
         "prompt_policy_hash",
         "prompt_text_sha256",
+        "invocation_spec_hash",
+        "payload_binding_hash",
     )
     @classmethod
     def validate_identity_hash(cls, value: str | None) -> str | None:
@@ -556,6 +781,9 @@ class ExternalAgentAccounting(StrictModel):
 __all__ = [
     "ExternalAgentAccounting",
     "ExternalAgentCallIdentity",
+    "ExternalProcessIdentityPreview",
+    "ExternalProcessInvocationSpec",
+    "ExternalProcessPayloadBinding",
     "ExternalProcessRequest",
     "ExternalProcessResult",
     "ExternalProcessRuntimeIdentity",

@@ -19,6 +19,30 @@
           "title": "Authorization Id",
           "type": "string"
         },
+        "invocation_spec_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invocation Spec Hash"
+        },
+        "memory_synthesis_plan_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Synthesis Plan Hash"
+        },
         "model_process_started": {
           "title": "Model Process Started",
           "type": "boolean"
@@ -28,6 +52,18 @@
           "minimum": 1,
           "title": "Ordinal",
           "type": "integer"
+        },
+        "payload_binding_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payload Binding Hash"
         },
         "process_kind": {
           "enum": [
