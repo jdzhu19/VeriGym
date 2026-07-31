@@ -72,6 +72,33 @@ def test_historical_allowed_corpus_identifier_is_diagnostic_not_secret(tmp_path:
     assert report.raw_suspected_values_exported is False
 
 
+def test_provider_prefix_kebab_identifier_is_diagnostic_but_sensitive_field_blocks(
+    tmp_path: Path,
+) -> None:
+    identifier = "sk-generalized-memory-policy"
+    _write(
+        tmp_path / "forensic.json",
+        json.dumps({"matched_noncredential_suffix": identifier}),
+    )
+    diagnostic = _scan(tmp_path)
+    assert diagnostic.gate == "pass"
+    assert diagnostic.hard_secret_leak_count == 0
+    assert any(
+        finding.rationale_code == "provider_prefix_kebab_identifier_without_secret_value"
+        for finding in diagnostic.findings
+    )
+    assert identifier not in diagnostic.model_dump_json()
+
+    _write(tmp_path / "credential.json", json.dumps({"api_key": identifier}))
+    blocking = _scan(tmp_path)
+    assert blocking.gate == "fail"
+    assert any(
+        finding.field_role == "credential_value_candidate"
+        and finding.severity == "hard_secret_leak"
+        for finding in blocking.findings
+    )
+
+
 @pytest.mark.parametrize(
     ("relative", "payload", "category"),
     [

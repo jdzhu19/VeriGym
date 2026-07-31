@@ -85,6 +85,7 @@ _PROVIDER_TOKEN = re.compile(
     rb"xox[baprs]-[A-Za-z0-9-]{24,}"
     rb")(?![A-Za-z0-9_-])"
 )
+_PROVIDER_STYLE_IDENTIFIER = re.compile(rb"sk-(?:[a-z][a-z0-9]{2,}-){1,}[a-z][a-z0-9]{2,}$")
 _CREDENTIAL_URI = re.compile(
     rb"(?i)\b[a-z][a-z0-9+.-]{1,20}://([^\s/@:]{1,256}):([^\s/@]{1,4096})@"
 )
@@ -389,6 +390,24 @@ def _explicit_secret_findings(
     for match in _PROVIDER_TOKEN.finditer(data):
         candidate = match.group(0)
         if not _fixture_placeholder(candidate.decode("ascii", errors="ignore"), fixture):
+            if (
+                _PROVIDER_STYLE_IDENTIFIER.fullmatch(candidate)
+                and not candidate.startswith((b"sk-proj-", b"sk-ant-"))
+                and role != "credential_value_candidate"
+            ):
+                findings.append(
+                    _finding(
+                        relative=relative,
+                        content_class=content_class,
+                        field_path=field_path,
+                        role=role,
+                        category="conceptual_security_vocabulary",
+                        severity="diagnostic_security_vocabulary",
+                        value=None,
+                        rationale="provider_prefix_kebab_identifier_without_secret_value",
+                    )
+                )
+                continue
             findings.append(
                 _finding(
                     relative=relative,
