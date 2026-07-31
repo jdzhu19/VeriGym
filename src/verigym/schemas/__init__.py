@@ -20,6 +20,12 @@ from verigym.schemas.run import RunConfig, RunManifest, RunResult
 from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
 from verigym.schemas.sampling import PassAtKReport, SampleSetManifest, SampleSetResult
 from verigym.schemas.score import ScoreCard
+from verigym.schemas.security_scan import (
+    ArtifactSecurityScan,
+    SecurityFinding,
+    SecurityScanPolicy,
+    SecurityScanReport,
+)
 from verigym.schemas.task import VeriTask
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
@@ -30,6 +36,7 @@ __all__ = [
     "AgentDescriptor",
     "ArtifactEntry",
     "ArtifactManifest",
+    "ArtifactSecurityScan",
     "BuildProvenance",
     "EpisodeEvent",
     "DockerExternalAgentRuntimeConfig",
@@ -53,6 +60,9 @@ __all__ = [
     "RunManifest",
     "RunResult",
     "ScoreCard",
+    "SecurityFinding",
+    "SecurityScanPolicy",
+    "SecurityScanReport",
     "SampleSetManifest",
     "SampleSetResult",
     "SuiteDescriptor",

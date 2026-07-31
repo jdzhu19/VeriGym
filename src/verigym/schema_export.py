@@ -107,6 +107,12 @@ from verigym.schemas.run import RunConfig, RunManifest
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import PassAtKReport, SampleRunRef, SampleSetManifest
 from verigym.schemas.score import ScoreCard
+from verigym.schemas.security_scan import (
+    ArtifactSecurityScan,
+    SecurityFinding,
+    SecurityScanPolicy,
+    SecurityScanReport,
+)
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import VeriTask
@@ -134,6 +140,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "aggregate-report": _model(AggregateReport),
     "audit-manifest": _model(AuditManifest),
     "artifact-manifest": _model(ArtifactManifest),
+    "artifact-security-scan": _model(ArtifactSecurityScan),
     "asset-signature-manifest": _model(AssetSignatureManifest),
     "batch-event": _model(BatchEvent),
     "build-provenance": _model(BuildProvenance),
@@ -210,6 +217,9 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "sample-set-manifest": _model(SampleSetManifest),
     "sanitized-training-summary": _model(SanitizedTrainingSummary),
     "scorecard": _model(ScoreCard),
+    "security-finding": _model(SecurityFinding),
+    "security-scan-policy": _model(SecurityScanPolicy),
+    "security-scan-report": _model(SecurityScanReport),
     "suite-descriptor": _model(SuiteDescriptor),
     "suite-source-config": _model(SuiteSourceConfig),
     "suite-source-snapshot": _model(SuiteSourceSnapshot),

@@ -36,6 +36,7 @@ from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.sampling import classify_sample_outcome
+from verigym.core.security_scanner import require_security_scan_pass, scan_artifact_roots
 from verigym.core.trace import TraceWriter
 from verigym.core.workspace import WorkspacePolicy
 from verigym.evolution.comparison import (
@@ -942,39 +943,19 @@ def _scan_exported_content(
     proxy_values: Sequence[str],
     forbidden_host_root: str,
 ) -> dict[str, Any]:
-    secret_pattern = re.compile(
-        rb"(?:BEGIN [A-Z ]*PRIVATE KEY|Authorization\s*:\s*Bearer|"
-        rb"sk-[A-Za-z0-9_-]{16,}|refresh[_ -]?token)",
-        re.IGNORECASE,
+    report = require_security_scan_pass(
+        scan_artifact_roots(
+            roots,
+            report_id="m10b-exported-content-security-scan",
+            proxy_values=proxy_values,
+            forbidden_host_roots=(forbidden_host_root,),
+        )
     )
-    proxy_bytes = [value.encode("utf-8") for value in proxy_values if value]
-    host = forbidden_host_root.encode("utf-8")
-    scanned_files = 0
-    scanned_bytes = 0
-    for root in roots:
-        for path in sorted(root.rglob("*")):
-            metadata = os.lstat(path)
-            if stat.S_ISLNK(metadata.st_mode):
-                raise RuntimeError(f"security scan found a symlink: {path}")
-            if not stat.S_ISREG(metadata.st_mode):
-                continue
-            data = path.read_bytes()
-            scanned_files += 1
-            scanned_bytes += len(data)
-            if secret_pattern.search(data):
-                raise RuntimeError(f"security scan found credential-shaped content: {path}")
-            if any(value in data for value in proxy_bytes):
-                raise RuntimeError(f"security scan found a persisted proxy value: {path}")
-            if host in data:
-                raise RuntimeError(f"security scan found a raw source host path: {path}")
     return {
-        "schema_version": "1.0",
-        "scanned_files": scanned_files,
-        "scanned_bytes": scanned_bytes,
+        **report.model_dump(mode="json"),
         "credentials_or_tokens_found": False,
         "proxy_values_found": False,
         "raw_source_host_paths_found": False,
-        "proxy_values_persisted_or_hashed": False,
     }
 
 

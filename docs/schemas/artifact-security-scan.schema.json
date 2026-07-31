@@ -1,0 +1,95 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/artifact-security-scan.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_content_class": {
+      "enum": [
+        "runtime_artifact",
+        "trajectory_dataset",
+        "memory_pack",
+        "allowed_synthesis_corpus",
+        "schema_or_contract",
+        "documentation",
+        "security_scan_fixture",
+        "binary_build_artifact",
+        "unknown"
+      ],
+      "title": "Artifact Content Class",
+      "type": "string"
+    },
+    "diagnostic_security_vocabulary_count": {
+      "minimum": 0,
+      "title": "Diagnostic Security Vocabulary Count",
+      "type": "integer"
+    },
+    "fields_examined": {
+      "minimum": 0,
+      "title": "Fields Examined",
+      "type": "integer"
+    },
+    "hard_secret_leak_count": {
+      "minimum": 0,
+      "title": "Hard Secret Leak Count",
+      "type": "integer"
+    },
+    "parser": {
+      "enum": [
+        "json",
+        "jsonl",
+        "yaml",
+        "toml",
+        "csv",
+        "markdown",
+        "text",
+        "binary"
+      ],
+      "title": "Parser",
+      "type": "string"
+    },
+    "relative_path": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "scan_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Scan Hash",
+      "type": "string"
+    },
+    "scanner_error_count": {
+      "minimum": 0,
+      "title": "Scanner Error Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "size_bytes": {
+      "minimum": 0,
+      "title": "Size Bytes",
+      "type": "integer"
+    },
+    "structured": {
+      "title": "Structured",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "relative_path",
+    "artifact_content_class",
+    "parser",
+    "size_bytes",
+    "structured",
+    "fields_examined",
+    "hard_secret_leak_count",
+    "diagnostic_security_vocabulary_count",
+    "scanner_error_count",
+    "scan_hash"
+  ],
+  "title": "ArtifactSecurityScan",
+  "type": "object"
+}

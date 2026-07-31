@@ -1,0 +1,109 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/security-scan-policy.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "malformed_structured_policy": {
+      "const": "fail_closed",
+      "title": "Malformed Structured Policy",
+      "type": "string"
+    },
+    "max_file_bytes": {
+      "maximum": 1073741824,
+      "minimum": 1,
+      "title": "Max File Bytes",
+      "type": "integer"
+    },
+    "max_files": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Max Files",
+      "type": "integer"
+    },
+    "max_total_bytes": {
+      "maximum": 8589934592,
+      "minimum": 1,
+      "title": "Max Total Bytes",
+      "type": "integer"
+    },
+    "placeholder_policy": {
+      "const": "fixture_provenance_only",
+      "title": "Placeholder Policy",
+      "type": "string"
+    },
+    "policy_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Policy Hash",
+      "type": "string"
+    },
+    "policy_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "private_value_reporting": {
+      "const": "length_and_sha256_only",
+      "title": "Private Value Reporting",
+      "type": "string"
+    },
+    "provider_token_min_length": {
+      "maximum": 256,
+      "minimum": 12,
+      "title": "Provider Token Min Length",
+      "type": "integer"
+    },
+    "proxy_value_reporting": {
+      "const": "presence_only_never_hash",
+      "title": "Proxy Value Reporting",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "structured_extensions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Structured Extensions",
+      "type": "array"
+    },
+    "unknown_finding_policy": {
+      "const": "fail_closed",
+      "title": "Unknown Finding Policy",
+      "type": "string"
+    },
+    "unknown_sensitive_min_entropy_bits_per_character": {
+      "maximum": 8.0,
+      "minimum": 2.0,
+      "title": "Unknown Sensitive Min Entropy Bits Per Character",
+      "type": "number"
+    },
+    "unknown_sensitive_min_length": {
+      "maximum": 4096,
+      "minimum": 16,
+      "title": "Unknown Sensitive Min Length",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "policy_id",
+    "max_files",
+    "max_file_bytes",
+    "max_total_bytes",
+    "provider_token_min_length",
+    "unknown_sensitive_min_length",
+    "unknown_sensitive_min_entropy_bits_per_character",
+    "structured_extensions",
+    "placeholder_policy",
+    "private_value_reporting",
+    "proxy_value_reporting",
+    "malformed_structured_policy",
+    "unknown_finding_policy",
+    "policy_hash"
+  ],
+  "title": "SecurityScanPolicy",
+  "type": "object"
+}

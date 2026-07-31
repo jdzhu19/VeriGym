@@ -1,0 +1,143 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/security-finding.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_content_class": {
+      "enum": [
+        "runtime_artifact",
+        "trajectory_dataset",
+        "memory_pack",
+        "allowed_synthesis_corpus",
+        "schema_or_contract",
+        "documentation",
+        "security_scan_fixture",
+        "binary_build_artifact",
+        "unknown"
+      ],
+      "title": "Artifact Content Class",
+      "type": "string"
+    },
+    "evidence_category": {
+      "enum": [
+        "authorization_bearer",
+        "provider_api_token",
+        "session_or_cookie",
+        "private_key",
+        "credential_bearing_uri",
+        "persisted_secret_assignment",
+        "unknown_sensitive_high_entropy",
+        "persisted_proxy_value",
+        "raw_host_path",
+        "conceptual_security_vocabulary",
+        "malformed_structured_artifact",
+        "unsafe_filesystem_entry",
+        "unsupported_or_oversized_artifact"
+      ],
+      "title": "Evidence Category",
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Sha256"
+    },
+    "field_role": {
+      "enum": [
+        "field_name",
+        "enum_or_identifier",
+        "boolean_or_null_policy",
+        "known_hash_identity",
+        "known_path_identity",
+        "documentation_text",
+        "runtime_value",
+        "credential_value_candidate",
+        "unknown_value"
+      ],
+      "title": "Field Role",
+      "type": "string"
+    },
+    "rationale_code": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Rationale Code",
+      "type": "string"
+    },
+    "recoverable_fragment_exported": {
+      "const": false,
+      "default": false,
+      "title": "Recoverable Fragment Exported",
+      "type": "boolean"
+    },
+    "redacted": {
+      "const": true,
+      "default": true,
+      "title": "Redacted",
+      "type": "boolean"
+    },
+    "relative_path": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "hard_secret_leak",
+        "diagnostic_security_vocabulary",
+        "scanner_error"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "structured_field_path": {
+      "anyOf": [
+        {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Structured Field Path"
+    },
+    "value_length": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Value Length"
+    }
+  },
+  "required": [
+    "relative_path",
+    "artifact_content_class",
+    "field_role",
+    "evidence_category",
+    "severity",
+    "rationale_code"
+  ],
+  "title": "SecurityFinding",
+  "type": "object"
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "fixture_kind": "sanitized_historical_false_positive_reproduction",
+  "historical_relative_path": "implementation/allowed-synthesis-corpus.json",
+  "historical_file_sha256": "496b388ed63898bb182856c76bc686ccbf578861cde0d1d7df345007f26fd6d3",
+  "historical_structured_field_path": "$.normalized_tokens[446]",
+  "normalized_tokens": [
+    "task-independent-memory-policy",
+    "authentication",
+    "authorization",
+    "credential",
+    "private-reasoning",
+    "proxy",
+    "secret",
+    "token",
+    "validation"
+  ],
+  "heldout_assets_included": false,
+  "hidden_assets_included": false,
+  "reference_assets_included": false,
+  "contains_actual_credential_value": false,
+  "model_calls": 0
+}
