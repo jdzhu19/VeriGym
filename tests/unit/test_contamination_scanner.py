@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from scripts.run_m10b_security_reseal_campaign import load_historical_contamination_report
+from scripts.run_m10b_security_reseal_campaign import (
+    contamination_integrity_summary,
+    load_historical_contamination_report,
+)
 from verigym.core.hashing import content_hash
 from verigym.core.loaders import load_model
 from verigym.evolution.memory import validate_memory_pack
@@ -126,7 +129,12 @@ def test_final_reseal_loads_composite_contamination_report(tmp_path: Path) -> No
     path = tmp_path / "contamination-report.json"
     path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
-    assert load_historical_contamination_report(path) == report
+    loaded = load_historical_contamination_report(path)
+    assert loaded == report
+    assert contamination_integrity_summary(loaded) == {
+        "contamination_report_hash": report.report_hash,
+        "contamination_gate": "pass",
+    }
 
 
 def _memory_with_items(items: list[str]) -> MemoryPack:

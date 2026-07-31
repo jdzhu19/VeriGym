@@ -105,6 +105,15 @@ def load_historical_contamination_report(path: Path) -> ContaminationScanReport:
     return report
 
 
+def contamination_integrity_summary(report: ContaminationScanReport) -> dict[str, object]:
+    """Return the validated composite-report identity used by final evidence."""
+
+    return {
+        "contamination_report_hash": report.report_hash,
+        "contamination_gate": "pass" if report.passed else "fail",
+    }
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -710,8 +719,7 @@ def main() -> int:
             "experiment_artifact_manifest_hash": experiment_integrity.manifest_hash,
             "run_artifact_manifests_verified": 18,
             "trajectory_dataset_hash": dataset_manifest.dataset_hash,
-            "contamination_scan_hash": contamination.scan_hash,
-            "contamination_gate": "pass" if contamination.passed else "fail",
+            **contamination_integrity_summary(contamination),
             "hidden_or_reference_leaks": 0,
             "private_reasoning_exported": False,
             "candidate_outcomes_modified": False,
