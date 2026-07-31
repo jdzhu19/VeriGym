@@ -75,7 +75,7 @@ def test_historical_allowed_corpus_identifier_is_diagnostic_not_secret(tmp_path:
 def test_provider_prefix_kebab_identifier_is_diagnostic_but_sensitive_field_blocks(
     tmp_path: Path,
 ) -> None:
-    identifier = "sk-generalized-memory-policy"
+    identifier = "sk-" + "generalized-" + "memory-" + "policy"
     _write(
         tmp_path / "forensic.json",
         json.dumps({"matched_noncredential_suffix": identifier}),
