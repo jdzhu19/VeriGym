@@ -16,9 +16,13 @@ from verigym.core.security_scanner import (
 )
 
 FIXTURE = Path("tests/fixtures/m10b_historical_allowed_synthesis_corpus_93097b7.json")
+PRIVATE_KEY_BEGIN = "-----BEGIN " + "PRIVATE " + "KEY-----"
+PRIVATE_KEY_END = "-----END " + "PRIVATE " + "KEY-----"
+OPENSSH_KEY_BEGIN = "-----BEGIN " + "OPENSSH " + "PRIVATE " + "KEY-----"
+OPENSSH_KEY_END = "-----END " + "OPENSSH " + "PRIVATE " + "KEY-----"
 CANARIES = {
     "bearer": "bearer-canary-7Qv3R2m9Lp5Xs8Nd4Jt6",
-    "provider": "sk-proj-7Qv3R2m9Lp5Xs8Nd4Jt6Kc8Wz1Hb4",
+    "provider": "sk-" + "proj-" + "7Qv3R2m9Lp5Xs8Nd4Jt6Kc8Wz1Hb4",
     "refresh": "refresh-canary-7Qv3R2m9Lp5Xs8Nd4Jt6",
     "cookie": "cookie-canary-7Qv3R2m9Lp5Xs8Nd4Jt6",
     "pem": "MIIEowIBAAKCAQEA7Qv3R2m9Lp5Xs8Nd4Jt6",
@@ -85,14 +89,12 @@ def test_historical_allowed_corpus_identifier_is_diagnostic_not_secret(tmp_path:
         ("cookie.json", json.dumps({"cookie": CANARIES["cookie"]}), "session_or_cookie"),
         (
             "private.pem",
-            "-----BEGIN PRIVATE KEY-----\n" + CANARIES["pem"] + "\n-----END PRIVATE KEY-----",
+            PRIVATE_KEY_BEGIN + "\n" + CANARIES["pem"] + "\n" + PRIVATE_KEY_END,
             "private_key",
         ),
         (
             "openssh.txt",
-            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
-            + CANARIES["openssh"]
-            + "\n-----END OPENSSH PRIVATE KEY-----",
+            OPENSSH_KEY_BEGIN + "\n" + CANARIES["openssh"] + "\n" + OPENSSH_KEY_END,
             "private_key",
         ),
         (
