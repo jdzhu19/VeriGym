@@ -21,7 +21,7 @@ from verigym.evolution.comparison import build_evolving_evaluation
 from verigym.evolution.exporter import replay_trajectory_dataset, validate_trajectory_dataset
 from verigym.evolution.memory import validate_agent_version, validate_memory_pack
 from verigym.evolution.reporting import EvolutionReportService
-from verigym.evolution.splits import validate_contamination_scan, validate_task_split
+from verigym.evolution.splits import validate_contamination_scan_report, validate_task_split
 from verigym.evolution.versions import (
     build_agent_lineage,
     replay_context_update,
@@ -32,7 +32,7 @@ from verigym.reporting.loader import load_report_inputs
 from verigym.schemas.evolution import (
     AgentUpdateManifest,
     AgentVersionManifest,
-    ContaminationScan,
+    ContaminationScanReport,
     EvolvingEvaluationReport,
     MemoryPack,
     SanitizedTrainingSummary,
@@ -93,6 +93,16 @@ PROXY_NAMES = (
     "ALL_PROXY",
     "all_proxy",
 )
+
+
+def load_historical_contamination_report(path: Path) -> ContaminationScanReport:
+    """Load and validate the frozen two-stage contamination report."""
+
+    report = load_json_model(path, ContaminationScanReport)
+    validate_contamination_scan_report(report)
+    if not report.passed or report.hard_contamination_count:
+        raise RuntimeError("frozen contamination report no longer passes")
+    return report
 
 
 def _sha256(path: Path) -> str:
@@ -525,12 +535,9 @@ def main() -> int:
         raise RuntimeError("held-out trajectory replay identity changed")
     split = load_json_model(historical_dataset / "task-split-manifest.json", TaskSplitManifest)
     validate_task_split(split)
-    contamination = load_json_model(
-        HISTORICAL_ROOT / "implementation/contamination-report.json", ContaminationScan
+    contamination = load_historical_contamination_report(
+        HISTORICAL_ROOT / "implementation/contamination-report.json"
     )
-    validate_contamination_scan(contamination)
-    if not contamination.passed or contamination.findings:
-        raise RuntimeError("frozen contamination scan no longer passes")
     v0, v1, memory, lineage = _validate_lineage()
     evaluation = build_evolving_evaluation(
         historical_experiment,
