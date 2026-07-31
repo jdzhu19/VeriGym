@@ -463,8 +463,8 @@ def _final_report(source_commit: str) -> str:
             "- True-positive bearer, API-token, session, cookie, private-key, credential-URI, "
             "secret-assignment, proxy-value, and unknown-sensitive-entropy canaries remained "
             "blocking.",
-            "- Raw canary and proxy values were not exported, logged, hashed, or included in "
-            "exceptions.",
+            "- Raw canary values were not exported, logged, or included in exceptions; proxy "
+            "values were neither persisted nor hashed.",
             "- Historical result integrity, prompt binding, candidate artifacts, process "
             "accounting, lineage, and contamination evidence were revalidated offline.",
             "- Zero-call replay coverage was 19/19 with Codex, broker, credentials, proxies, "
