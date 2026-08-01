@@ -233,6 +233,35 @@ def test_environment_name_metadata_requires_environment_identifier_shape(tmp_pat
     assert _scan(tmp_path).gate == "fail"
 
 
+def test_credential_source_distinguishes_environment_name_from_value(tmp_path: Path) -> None:
+    environment_name = "SYNTHETIC_PROVIDER_API_KEY"
+    assert (
+        classify_structured_field_role(
+            key="credential_source",
+            value=environment_name,
+            content_class="runtime_artifact",
+            field_path="$.credential_source",
+        )
+        == "environment_variable_name"
+    )
+    assert (
+        classify_structured_field_role(
+            key="credential_source",
+            value=CANARIES["assignment"],
+            content_class="runtime_artifact",
+            field_path="$.credential_source",
+        )
+        == "credential_value_candidate"
+    )
+    _write(tmp_path / "safe.json", json.dumps({"credential_source": environment_name}))
+    assert _scan(tmp_path).gate == "pass"
+    _write(
+        tmp_path / "unsafe.json",
+        json.dumps({"credential_source": CANARIES["assignment"]}),
+    )
+    assert _scan(tmp_path).gate == "fail"
+
+
 @pytest.mark.parametrize(
     ("safe", "unsafe", "safe_role"),
     [

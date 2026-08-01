@@ -60,7 +60,9 @@ _IDENTITY_KEY = re.compile(
 )
 _ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
 _ENVIRONMENT_NAME_KEY = re.compile(
-    r"(?i)(?:^|[_-])(?:env|environment)(?:[_-](?:var(?:iable)?[_-])?name)?(?:s)?$"
+    r"(?i)(?:^|[_-])(?:(?:env|environment)(?:[_-](?:var(?:iable)?[_-])?name)?|"
+    r"credential[_-](?:source|env(?:ironment)?(?:[_-](?:var(?:iable)?[_-])?name)?))"
+    r"(?:s)?$"
 )
 _AUTHENTICATION_MODE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:auth(?:entication)?)(?:[_-](?:semantic[_-]?id|mode))$"
