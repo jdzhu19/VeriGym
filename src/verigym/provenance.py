@@ -46,6 +46,11 @@ _MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024
 
 
 def _git(root: Path, arguments: list[str]) -> bytes:
+    environment = {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
     process = subprocess.run(
         ["git", *arguments],
         cwd=root,
@@ -55,6 +60,7 @@ def _git(root: Path, arguments: list[str]) -> bytes:
         stderr=subprocess.DEVNULL,
         timeout=15,
         shell=False,
+        env=environment,
     )
     if process.returncode != 0:
         raise RuntimeError(f"git command failed with exit code {process.returncode}")
