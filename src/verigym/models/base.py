@@ -6,7 +6,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from verigym.schemas.common import ModelDescriptor
-from verigym.schemas.model import ModelClientErrorInfo, ModelRequest, ModelResponse, ModelRunConfig
+from verigym.schemas.model import (
+    ModelClientErrorInfo,
+    ModelRequest,
+    ModelResponse,
+    ModelRunConfig,
+    ProviderRequestIdentity,
+)
 from verigym.schemas.options import JsonValue
 
 
@@ -38,6 +44,12 @@ class ModelClient(ABC):
         """Return safe plugin events accumulated by the most recent call."""
 
         return []
+
+    def request_identity(self, request: ModelRequest) -> ProviderRequestIdentity | None:
+        """Resolve a secret-free request identity before model authorization."""
+
+        del request
+        return None
 
     def export_run_artifacts(self, destination: Path) -> None:
         """Persist bounded plugin artifacts after model interaction has ended."""

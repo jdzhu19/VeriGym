@@ -174,7 +174,8 @@ class VeriGym:
                     update={"sample_index": config.sample_index}
                 )
                 model_client = configured_model.clone_for_run(model_options)
-                prompt_builder = PromptBuilder(config.mode)
+                if agent.prompt_policy_spec is None:
+                    prompt_builder = PromptBuilder(config.mode)
             elif config.model is not None:
                 raise ConfigurationError(
                     f"agent {config.agent!r} does not use a model; omit --model"
@@ -372,6 +373,16 @@ class VeriGym:
                 "network_policy": task.interaction.network_policy,
                 "unsafe_local_runtime": runtime.descriptor.isolation_level == "local_trusted",
                 "verifier_isolation": "separate_runtime_session",
+                **(
+                    {
+                        "agent_execution_backend": "docker_outer_runtime_delegated",
+                        "credential_bearing_http_location": "trusted_controller",
+                        "agent_workspace_credentials": False,
+                    }
+                    if "api_backed_repository_agent" in agent.descriptor.capabilities
+                    and runtime.descriptor.isolation_level == "docker_standard"
+                    else {}
+                ),
                 **(
                     {
                         "external_agent_isolation": (

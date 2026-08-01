@@ -39,9 +39,8 @@ def resolve_prompt_policy(
     """Resolve one safe prompt identity from the actual agent execution configuration."""
 
     if agent.requires_model:
-        if agent.prompt_policy_spec is not None:
-            raise ValueError("model-backed agents may not replace the built-in prompt contract")
-        return PromptBuilder(interaction_mode).descriptor
+        if agent.prompt_policy_spec is None:
+            return PromptBuilder(interaction_mode).descriptor
     spec = agent.prompt_policy_spec
     if spec is None:
         return None

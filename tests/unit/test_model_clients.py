@@ -70,6 +70,7 @@ class FakeTransport:
         connect_timeout_s: float,
         read_timeout_s: float,
         request_timeout_s: float,
+        max_response_bytes: int,
     ) -> Mapping[str, Any]:
         self.calls.append(
             {
@@ -81,6 +82,7 @@ class FakeTransport:
                     read_timeout_s,
                     request_timeout_s,
                 ),
+                "max_response_bytes": max_response_bytes,
             }
         )
         if isinstance(self.result, Exception):
@@ -124,13 +126,14 @@ def test_openai_compatible_mock_success_normalizes_response_without_network() ->
     }
     assert transport.calls[0]["url"] == "https://models.example.test/v1/chat/completions"
     assert transport.calls[0]["timeouts"] == (1, 2, 3)
+    assert transport.calls[0]["max_response_bytes"] == 4 * 1024 * 1024
 
 
 @pytest.mark.parametrize(
     ("transport_error", "category"),
     [
         (TimeoutError("slow"), ModelErrorCategory.TIMEOUT),
-        (OSError("offline"), ModelErrorCategory.TRANSPORT),
+        (OSError("offline"), ModelErrorCategory.PROVIDER_UNAVAILABLE),
     ],
 )
 def test_openai_compatible_transport_errors_are_structured(

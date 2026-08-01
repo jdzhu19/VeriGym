@@ -116,6 +116,15 @@ def normalized_system_identity_payload(system: Any) -> dict[str, Any]:
     model_options = raw.get("model_options")
     if isinstance(model_options, dict) and not model_options.get("client_options"):
         model_options.pop("client_options", None)
+    if isinstance(model_options, dict):
+        for field, default in (
+            ("base_url_env", None),
+            ("provider_id", None),
+            ("max_response_bytes", 4 * 1024 * 1024),
+            ("require_exact_model_id", False),
+        ):
+            if model_options.get(field) == default:
+                model_options.pop(field, None)
     return cast(dict[str, Any], raw)
 
 

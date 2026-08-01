@@ -142,6 +142,30 @@ REPOSITORY_CSV_COLUMNS = [
     "policy_failure_category",
 ]
 
+API_AGENT_CSV_COLUMNS = [
+    *CSV_COLUMNS,
+    "provider_id",
+    "api_protocol",
+    "api_endpoint_origin",
+    "api_normalized_base_url",
+    "api_base_url_hash",
+    "api_request_parameters_hash",
+    "api_prompt_payload_hash",
+    "api_prompt_policy_hash",
+    "api_agent_configuration_hash",
+    "safe_provider_request_id",
+    "observed_provider_model_id",
+    "system_fingerprint",
+    "model_latency_s",
+    "usage_missing",
+    "api_request_count",
+    "authentication_mode",
+    "credential_env_name",
+    "credential_persisted",
+    "credential_hashed",
+    "agent_execution_backend",
+]
+
 
 def build_run_rows(inputs: LoadedReportInputs) -> list[dict[str, Any]]:
     valid = {(run.plan_index, run.attempt): run for run in inputs.valid_runs}
@@ -216,6 +240,8 @@ def _columns_for_rows(rows: list[dict[str, Any]]) -> list[str]:
     repository = any(row.get("repository_manifest_hash") for row in rows)
     if any(row.get("integration_track") for row in rows):
         return [*CODEX_CLI_CSV_COLUMNS, *(REPOSITORY_CSV_COLUMNS if repository else [])]
+    if any(row.get("api_protocol") for row in rows):
+        return [*API_AGENT_CSV_COLUMNS, *(REPOSITORY_CSV_COLUMNS if repository else [])]
     return [*CSV_COLUMNS, *(REPOSITORY_CSV_COLUMNS if repository else [])]
 
 
@@ -243,6 +269,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         )
     )
     codex = _codex_dimensions(manifest)
+    api = _api_dimensions(manifest)
     repository = manifest.repository_candidate
     repository_identity = manifest.repository_task_identity
     public_tests = manifest.repository_public_tests
@@ -264,6 +291,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "interaction_mode": manifest.interaction_mode,
         "system_id": manifest.system_id or (plan.system.system_id if plan else None),
         **codex,
+        **api,
         "model_id": manifest.model.model_id if manifest.model else None,
         "agent_id": manifest.agent.name,
         "base_seed": manifest.base_seed if manifest.base_seed is not None else manifest.seed,
@@ -476,6 +504,22 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
             "pure_api_model_eval": False,
             "direct_api_benchmark": False,
         }
+    api: dict[str, Any] = {}
+    if (
+        plan.system.model_descriptor is not None
+        and "api_backed_repository_agent" in plan.system.agent_descriptor.capabilities
+    ):
+        configuration = plan.system.model_descriptor.configuration
+        api = {
+            "provider_id": plan.system.model_descriptor.provider,
+            "api_protocol": configuration.get("protocol"),
+            "api_endpoint_origin": configuration.get("base_url"),
+            "authentication_mode": configuration.get("authentication_mode"),
+            "credential_env_name": configuration.get("credential_env_name"),
+            "credential_persisted": configuration.get("credential_persisted"),
+            "credential_hashed": configuration.get("credential_hashed"),
+            "agent_execution_backend": "docker_outer_runtime_delegated",
+        }
     return {
         "experiment_id": experiment_id,
         "plan_index": plan.plan_index,
@@ -490,6 +534,7 @@ def _plan_fields(experiment_id: str, plan: Any) -> dict[str, Any]:
         "interaction_mode": plan.interaction_mode.value,
         "system_id": plan.system.system_id,
         **codex,
+        **api,
         "model_id": plan.system.model_descriptor.model_id if plan.system.model_descriptor else None,
         "agent_id": plan.system.agent_id,
         "base_seed": plan.base_seed,
@@ -637,6 +682,64 @@ def _codex_dimensions(manifest: Any) -> dict[str, Any]:
     return {}
 
 
+def _api_dimensions(manifest: Any) -> dict[str, Any]:
+    if manifest.model is None or "api_backed_repository_agent" not in manifest.agent.capabilities:
+        return {}
+    observation = manifest.model_observations[-1] if manifest.model_observations else None
+    request = observation.provider_request if observation is not None else None
+    configuration = manifest.model.configuration
+    return {
+        "provider_id": request.provider_id if request is not None else manifest.model.provider,
+        "api_protocol": request.protocol if request is not None else configuration.get("protocol"),
+        "api_endpoint_origin": (
+            request.endpoint_origin if request is not None else configuration.get("base_url")
+        ),
+        "api_normalized_base_url": (
+            request.normalized_base_url if request is not None else configuration.get("base_url")
+        ),
+        "api_base_url_hash": request.base_url_hash if request is not None else None,
+        "api_request_parameters_hash": (
+            request.request_parameters_hash if request is not None else None
+        ),
+        "api_prompt_payload_hash": request.prompt_payload_hash if request is not None else None,
+        "api_prompt_policy_hash": request.prompt_policy_hash if request is not None else None,
+        "api_agent_configuration_hash": (
+            request.agent_configuration_hash if request is not None else None
+        ),
+        "safe_provider_request_id": (
+            observation.safe_provider_request_id if observation is not None else None
+        ),
+        "observed_provider_model_id": (
+            observation.observed_provider_model_id if observation is not None else None
+        ),
+        "system_fingerprint": observation.system_fingerprint if observation is not None else None,
+        "model_latency_s": observation.latency_s if observation is not None else None,
+        "usage_missing": observation.usage_missing if observation is not None else None,
+        "api_request_count": len(manifest.model_observations),
+        "authentication_mode": (
+            request.authentication_mode
+            if request is not None
+            else configuration.get("authentication_mode")
+        ),
+        "credential_env_name": (
+            request.credential_env_name
+            if request is not None
+            else configuration.get("credential_env_name")
+        ),
+        "credential_persisted": (
+            request.credential_persisted
+            if request is not None
+            else configuration.get("credential_persisted")
+        ),
+        "credential_hashed": (
+            request.credential_hashed
+            if request is not None
+            else configuration.get("credential_hashed")
+        ),
+        "agent_execution_backend": manifest.environment_summary.get("agent_execution_backend"),
+    }
+
+
 def _csv_value(value: Any) -> str:
     if value is None:
         return ""
@@ -652,6 +755,7 @@ def _csv_value(value: Any) -> str:
 
 
 __all__ = [
+    "API_AGENT_CSV_COLUMNS",
     "CODEX_CLI_CSV_COLUMNS",
     "CSV_COLUMNS",
     "REPOSITORY_CSV_COLUMNS",

@@ -34,6 +34,7 @@ class Registries:
 def build_registries(*, discover_external: bool = True) -> Registries:
     """Create a fresh registry collection populated with first-party plugins."""
 
+    from verigym.agents.api_repository import ApiRepositoryAgent
     from verigym.agents.react import ReferenceReActAgent
     from verigym.agents.repository_scripted import (
         ScriptedRepositoryBadAgent,
@@ -83,6 +84,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     registries.agents.register(ScriptedBadAgent(), origin=builtin_origin)
     registries.agents.register(SingleTurnAgent(), origin=builtin_origin)
     registries.agents.register(ReferenceReActAgent(), origin=builtin_origin)
+    registries.agents.register(ApiRepositoryAgent(), origin=builtin_origin)
     registries.agents.register(ScriptedRepositoryGoodAgent(), origin=builtin_origin)
     registries.agents.register(ScriptedRepositoryBadAgent(), origin=builtin_origin)
     registries.agents.register(ScriptedRepositoryPolicyBadAgent(), origin=builtin_origin)

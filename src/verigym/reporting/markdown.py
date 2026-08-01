@@ -28,6 +28,8 @@ def markdown_escape(value: object) -> str:
 
 def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> str:
     coverage = aggregate.coverage
+    direct_api = aggregate.metadata.get("direct_llm_api_evaluation", {})
+    direct_api = direct_api if isinstance(direct_api, dict) else {}
     lines = [
         f"# VeriGym experiment report: {markdown_escape(aggregate.experiment_id)}",
         "",
@@ -71,9 +73,11 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             "and capability fingerprints are reported as distinct systems. Authentication "
             "comparison uses the semantic ID; requested labels remain provenance.",
             "",
-            "Direct LLM API evaluation implemented: false. Direct LLM API evaluation executed: "
-            "false. Reason: no direct API credential/transport was authorized; Codex CLI is an "
-            "agent harness.",
+            "Direct LLM API evaluation implemented: "
+            f"{markdown_escape(direct_api.get('implemented', False))}. "
+            "Direct LLM API evaluation executed: "
+            f"{markdown_escape(direct_api.get('executed', False))}. Reason: "
+            f"{markdown_escape(direct_api.get('reason', 'unavailable'))}.",
             "",
             "| Track | Surface | Interaction | Harness | Tool policy | ChatEval | Direct API | "
             "Requested model | Observed model | Confidence | CLI version | "
@@ -113,6 +117,41 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"{markdown_escape(partition.get('auth_alias_used', ''))} | "
                 f"{markdown_escape(partition.get('sandbox_policy', ''))} | "
                 f"{markdown_escape(partition.get('approval_policy', ''))} |"
+            )
+    api_partitions = aggregate.metadata.get("api_agent_identity_partitions", [])
+    if isinstance(api_partitions, list) and api_partitions:
+        lines.extend(
+            [
+                "",
+                "## API-backed repository-agent identity",
+                "",
+                "Credential-bearing HTTP executes only in the trusted controller. The Docker "
+                "repository workspace remains credential-free; missing usage and cost stay null.",
+                "",
+                "| Provider | Protocol | Requested model | Observed model | Endpoint | "
+                "Auth mode | Credential env | Persisted | Hashed | Workspace backend | Runs | "
+                "Requests | Missing usage |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | "
+                "---: |",
+            ]
+        )
+        for partition in api_partitions:
+            if not isinstance(partition, dict):
+                continue
+            lines.append(
+                f"| {markdown_escape(partition.get('provider_id', ''))} | "
+                f"{markdown_escape(partition.get('api_protocol', ''))} | "
+                f"{markdown_escape(partition.get('requested_model_id', ''))} | "
+                f"{markdown_escape(partition.get('observed_model_id', ''))} | "
+                f"{markdown_escape(partition.get('endpoint_origin', ''))} | "
+                f"{markdown_escape(partition.get('authentication_mode', ''))} | "
+                f"{markdown_escape(partition.get('credential_env_name', ''))} | "
+                f"{markdown_escape(partition.get('credential_persisted', ''))} | "
+                f"{markdown_escape(partition.get('credential_hashed', ''))} | "
+                f"{markdown_escape(partition.get('agent_execution_backend', ''))} | "
+                f"{markdown_escape(partition.get('run_count', 0))} | "
+                f"{markdown_escape(partition.get('api_request_count', 0))} | "
+                f"{markdown_escape(partition.get('usage_missing_count', 0))} |"
             )
     repository = aggregate.metadata.get("repository_repair")
     if isinstance(repository, dict):

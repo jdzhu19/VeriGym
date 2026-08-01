@@ -78,6 +78,8 @@ _GROUP_DIMENSIONS = {
     "chat_eval_compatible",
     "pure_api_model_eval",
     "direct_api_benchmark",
+    "provider_id",
+    "api_protocol",
 }
 
 
@@ -221,6 +223,7 @@ class ReportBuilder:
                     )
                 ),
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
+                "api_agent_identity_partitions": _api_agent_partitions(runs),
                 "repository_repair": _repository_repair_summary(inputs, runs),
                 "codex_cli_comparison_policy": (
                     "execution surface, interaction class, harness, tool policy, tracks, "
@@ -228,10 +231,13 @@ class ReportBuilder:
                     "IDs remain distinct; requested authentication labels are provenance only"
                 ),
                 "direct_llm_api_evaluation": {
-                    "implemented": False,
-                    "executed": False,
+                    "implemented": bool(_api_agent_partitions(runs)),
+                    "executed": bool(_api_agent_partitions(runs)),
                     "reason": (
-                        "no direct API credential/transport was authorized; "
+                        "credential-bearing HTTP ran in the trusted controller while the "
+                        "repository workspace remained credential-free"
+                        if _api_agent_partitions(runs)
+                        else "no direct API credential/transport was authorized; "
                         "Codex CLI is an agent harness"
                     ),
                 },
@@ -1192,6 +1198,7 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
     manifest = run.manifest
     plan = run.plan_item
     codex = _run_codex_identity(run)
+    api = _run_api_identity(run)
     values: dict[str, str] = {
         "suite": manifest.suite,
         "release": manifest.release_id or manifest.suite_version,
@@ -1238,12 +1245,15 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
         "chat_eval_compatible": codex.get("chat_eval_compatible", ""),
         "pure_api_model_eval": codex.get("pure_api_model_eval", ""),
         "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
+        "provider_id": api.get("provider_id", ""),
+        "api_protocol": api.get("api_protocol", ""),
     }
     return values[dimension]
 
 
 def _plan_group_value(item: PlanItem, dimension: str) -> str:
     codex = _plan_codex_identity(item)
+    api = _plan_api_identity(item)
     values: dict[str, str] = {
         "suite": item.suite,
         "release": item.release_id or item.suite_version,
@@ -1286,6 +1296,8 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "chat_eval_compatible": codex.get("chat_eval_compatible", ""),
         "pure_api_model_eval": codex.get("pure_api_model_eval", ""),
         "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
+        "provider_id": api.get("provider_id", ""),
+        "api_protocol": api.get("api_protocol", ""),
     }
     return values[dimension]
 
@@ -1657,6 +1669,137 @@ def _plan_codex_identity(item: PlanItem) -> dict[str, str]:
             "direct_api_benchmark": "false",
         }
     return {}
+
+
+def _run_api_identity(run: ValidatedRun) -> dict[str, str]:
+    manifest = run.manifest
+    if manifest.model is None or "api_backed_repository_agent" not in manifest.agent.capabilities:
+        return {}
+    observation = manifest.model_observations[-1] if manifest.model_observations else None
+    request = observation.provider_request if observation is not None else None
+    configuration = manifest.model.configuration
+    return {
+        "provider_id": request.provider_id if request is not None else manifest.model.provider,
+        "api_protocol": (
+            request.protocol if request is not None else str(configuration.get("protocol") or "")
+        ),
+        "requested_model_id": manifest.model.model_id,
+        "observed_model_id": (
+            observation.observed_provider_model_id if observation is not None else ""
+        )
+        or "",
+        "endpoint_origin": request.endpoint_origin if request is not None else "",
+        "normalized_base_url": request.normalized_base_url if request is not None else "",
+        "base_url_hash": request.base_url_hash if request is not None else "",
+        "request_parameters_hash": (request.request_parameters_hash if request is not None else ""),
+        "authentication_mode": (
+            request.authentication_mode
+            if request is not None
+            else str(configuration.get("authentication_mode") or "")
+        ),
+        "credential_env_name": (
+            request.credential_env_name
+            if request is not None and request.credential_env_name is not None
+            else str(configuration.get("credential_env_name") or "")
+        ),
+        "credential_persisted": (
+            "false" if request is not None else str(configuration.get("credential_persisted"))
+        ),
+        "credential_hashed": (
+            "false" if request is not None else str(configuration.get("credential_hashed"))
+        ),
+        "agent_execution_backend": str(
+            manifest.environment_summary.get("agent_execution_backend") or ""
+        ),
+        "safe_provider_request_id": (
+            observation.safe_provider_request_id if observation is not None else ""
+        )
+        or "",
+        "usage_missing": (
+            ""
+            if observation is None or observation.usage_missing is None
+            else "true"
+            if observation.usage_missing
+            else "false"
+        ),
+    }
+
+
+def _plan_api_identity(item: PlanItem) -> dict[str, str]:
+    descriptor = item.system.model_descriptor
+    if descriptor is None or "api_backed_repository_agent" not in (
+        item.system.agent_descriptor.capabilities
+    ):
+        return {}
+    return {
+        "provider_id": descriptor.provider,
+        "api_protocol": str(descriptor.configuration.get("protocol") or ""),
+    }
+
+
+def _api_agent_partitions(runs: list[ValidatedRun]) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, ...], dict[str, Any]] = {}
+    for run in runs:
+        identity = _run_api_identity(run)
+        if not identity:
+            continue
+        partition_key: tuple[str, ...] = (
+            identity["provider_id"],
+            identity["api_protocol"],
+            identity["requested_model_id"],
+            identity["observed_model_id"],
+            identity["endpoint_origin"],
+            identity["normalized_base_url"],
+            identity["base_url_hash"],
+            identity["request_parameters_hash"],
+            identity["authentication_mode"],
+            identity["credential_env_name"],
+            identity["credential_persisted"],
+            identity["credential_hashed"],
+            identity["agent_execution_backend"],
+        )
+        bucket = buckets.setdefault(
+            partition_key,
+            {
+                **{
+                    name: value
+                    for name, value in zip(
+                        (
+                            "provider_id",
+                            "api_protocol",
+                            "requested_model_id",
+                            "observed_model_id",
+                            "endpoint_origin",
+                            "normalized_base_url",
+                            "base_url_hash",
+                            "request_parameters_hash",
+                            "authentication_mode",
+                            "credential_env_name",
+                            "credential_persisted",
+                            "credential_hashed",
+                            "agent_execution_backend",
+                        ),
+                        partition_key,
+                        strict=True,
+                    )
+                },
+                "run_count": 0,
+                "api_request_count": 0,
+                "usage_missing_count": 0,
+                "safe_provider_request_ids": set(),
+            },
+        )
+        bucket["run_count"] += 1
+        bucket["api_request_count"] += len(run.manifest.model_observations)
+        bucket["usage_missing_count"] += int(identity["usage_missing"] == "true")
+        if identity["safe_provider_request_id"]:
+            bucket["safe_provider_request_ids"].add(identity["safe_provider_request_id"])
+    result: list[dict[str, Any]] = []
+    for partition_key in sorted(buckets):
+        bucket = buckets[partition_key]
+        bucket["safe_provider_request_ids"] = sorted(bucket["safe_provider_request_ids"])
+        result.append(bucket)
+    return result
 
 
 def _codex_cli_partitions(runs: list[ValidatedRun]) -> list[dict[str, str]]:

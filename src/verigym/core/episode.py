@@ -51,6 +51,9 @@ class BudgetTracker:
         self.model_input_tokens: int | None = 0
         self.model_output_tokens: int | None = 0
         self.total_tokens: int | None = 0
+        self.model_api_cost: float | None = None
+        self.model_api_cost_currency: str | None = None
+        self.model_api_cost_unit: str | None = None
         self.agent_time_s = 0.0
         self.tool_time_s = 0.0
         self.verifier_time_s = 0.0
@@ -101,6 +104,27 @@ class BudgetTracker:
         self.total_tokens = self._accumulate(
             self.total_tokens, usage.total_tokens if usage else None
         )
+
+    def record_model_cost(
+        self,
+        cost: float | None,
+        *,
+        currency: str | None,
+        unit: str | None,
+    ) -> None:
+        if cost is None:
+            return
+        if self.model_api_cost is None:
+            self.model_api_cost = cost
+            self.model_api_cost_currency = currency
+            self.model_api_cost_unit = unit
+            return
+        if self.model_api_cost_currency != currency or self.model_api_cost_unit != unit:
+            self.model_api_cost = None
+            self.model_api_cost_currency = None
+            self.model_api_cost_unit = None
+            return
+        self.model_api_cost += cost
 
     def exhausted_after_model(self) -> TerminationReason | None:
         if self.wall_time_s >= self.spec.max_wall_time_s:

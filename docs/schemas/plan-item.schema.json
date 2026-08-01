@@ -621,6 +621,19 @@
           "default": null,
           "title": "Base Url"
         },
+        "base_url_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url Env"
+        },
         "client_options": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
@@ -634,6 +647,13 @@
           "title": "Connect Timeout S",
           "type": "number"
         },
+        "max_response_bytes": {
+          "default": 4194304,
+          "maximum": 67108864,
+          "minimum": 1024,
+          "title": "Max Response Bytes",
+          "type": "integer"
+        },
         "model_id": {
           "anyOf": [
             {
@@ -646,6 +666,19 @@
           "default": null,
           "title": "Model Id"
         },
+        "provider_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Id"
+        },
         "read_timeout_s": {
           "default": 60.0,
           "exclusiveMinimum": 0.0,
@@ -657,6 +690,11 @@
           "exclusiveMinimum": 0.0,
           "title": "Request Timeout S",
           "type": "number"
+        },
+        "require_exact_model_id": {
+          "default": false,
+          "title": "Require Exact Model Id",
+          "type": "boolean"
         },
         "sample_index": {
           "anyOf": [

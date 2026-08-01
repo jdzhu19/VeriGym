@@ -293,6 +293,15 @@ class ExperimentConfig(StrictModel):
             model = system.get("model")
             if model is not None and not model["options"].get("client_options"):
                 model["options"].pop("client_options", None)
+            if model is not None:
+                for field, default in (
+                    ("base_url_env", None),
+                    ("provider_id", None),
+                    ("max_response_bytes", 4 * 1024 * 1024),
+                    ("require_exact_model_id", False),
+                ):
+                    if model["options"].get(field) == default:
+                        model["options"].pop(field, None)
         return payload
 
 

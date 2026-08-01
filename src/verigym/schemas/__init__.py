@@ -12,7 +12,12 @@ from verigym.schemas.external_agent import (
     ExternalProcessSecurityEvidence,
 )
 from verigym.schemas.integrity import ArtifactEntry, ArtifactManifest, IntegrityValidation
-from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
+from verigym.schemas.model import (
+    ModelCallIdentity,
+    ModelRequest,
+    ModelResponse,
+    ProviderRequestIdentity,
+)
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.replay import ReplayEvidence
@@ -54,6 +59,7 @@ __all__ = [
     "PassAtKReport",
     "ModelRequest",
     "ModelResponse",
+    "ProviderRequestIdentity",
     "ReleaseManifest",
     "ReplayEvidence",
     "RunConfig",

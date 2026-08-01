@@ -185,6 +185,7 @@ def replay_run(
         raise ReplayError("trace does not begin with episode_started")
     if events[-1].event_type != "episode_terminated":
         raise ReplayError("trace does not end with episode_terminated")
+    _validate_provider_request_identities(manifest, events)
 
     reverified: list[VerifierResult] | None = None
     replay_candidate_synthesis: SynthesisMetrics | None = None
@@ -293,6 +294,81 @@ def replay_run(
         reverified_candidate_synthesis=replay_candidate_synthesis,
         reverified_reference_synthesis=replay_reference_synthesis,
     )
+
+
+def _validate_provider_request_identities(
+    manifest: RunManifest,
+    events: list[EpisodeEvent],
+) -> None:
+    provider_observations = [
+        observation
+        for observation in manifest.model_observations
+        if observation.provider_request is not None
+    ]
+    if not provider_observations:
+        return
+    if manifest.model is None:
+        raise ReplayError("provider request identity lacks a model descriptor")
+    requests = {
+        str(event.payload.get("request", {}).get("request_id")): event
+        for event in events
+        if event.event_type == "model_request" and isinstance(event.payload.get("request"), dict)
+    }
+    for observation in provider_observations:
+        identity = observation.provider_request
+        assert identity is not None
+        if identity.credential_persisted or identity.credential_hashed:
+            raise ReplayError("provider request identity claims unsafe credential handling")
+        if (
+            identity.provider_id != manifest.model.provider
+            or identity.requested_model_id != manifest.model.model_id
+        ):
+            raise ReplayError("provider request identity differs from the model descriptor")
+        configuration = manifest.model.configuration
+        base_url = configuration.get("base_url")
+        if (
+            not isinstance(base_url, str)
+            or identity.normalized_base_url != base_url
+            or identity.base_url_hash != content_hash(base_url)
+        ):
+            raise ReplayError("provider base URL identity differs from the model descriptor")
+        if (
+            identity.prompt_policy_hash != manifest.prompt_policy_hash
+            or identity.agent_configuration_hash != manifest.agent_configuration_hash
+        ):
+            raise ReplayError("provider request prompt or agent binding differs from the run")
+        event = requests.get(observation.request_id)
+        if event is None or event.payload.get("content_truncated") is True:
+            raise ReplayError("provider request trace is missing or truncated")
+        request = event.payload.get("request")
+        assert isinstance(request, dict)
+        messages = request.get("messages")
+        if not isinstance(messages, list):
+            raise ReplayError("provider request trace has no message list")
+        normalized_messages: list[dict[str, str]] = []
+        for message in messages:
+            if (
+                not isinstance(message, dict)
+                or not isinstance(message.get("role"), str)
+                or not isinstance(message.get("content"), str)
+            ):
+                raise ReplayError("provider request trace contains an invalid message")
+            normalized_messages.append(
+                {
+                    "role": message["role"],
+                    "content": message["content"],
+                }
+            )
+        if identity.prompt_payload_hash != content_hash(normalized_messages):
+            raise ReplayError("provider request prompt payload hash cannot be reproduced")
+        parameters = {
+            "temperature": request.get("temperature"),
+            "top_p": request.get("top_p"),
+            "max_output_tokens": request.get("max_output_tokens"),
+            "stop": request.get("stop"),
+        }
+        if identity.request_parameters_hash != content_hash(parameters):
+            raise ReplayError("provider request parameter hash cannot be reproduced")
 
 
 def _normalized_synthesis(metrics: SynthesisMetrics | None) -> dict[str, object] | None:

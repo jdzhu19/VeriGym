@@ -84,7 +84,12 @@ from verigym.schemas.external_agent import (
     ExternalProcessSecurityEvidence,
 )
 from verigym.schemas.integrity import ArtifactManifest, IntegrityValidation
-from verigym.schemas.model import ModelCallIdentity, ModelRequest, ModelResponse
+from verigym.schemas.model import (
+    ModelCallIdentity,
+    ModelRequest,
+    ModelResponse,
+    ProviderRequestIdentity,
+)
 from verigym.schemas.prompt import (
     AgentPromptPolicySpec,
     PromptPolicyDescriptor,
@@ -176,6 +181,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "model-process-ledger-record": _model(ModelProcessLedgerRecord),
     "model-request": _model(ModelRequest),
     "model-response": _model(ModelResponse),
+    "provider-request-identity": _model(ProviderRequestIdentity),
     "memory-pack": _model(MemoryPack),
     "memory-pack-audit": _model(MemoryPackAudit),
     "memory-builder-input": _model(MemoryBuilderInput),

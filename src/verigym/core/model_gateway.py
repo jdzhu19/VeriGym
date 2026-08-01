@@ -76,6 +76,7 @@ class ModelGateway:
         exhausted = self.tracker.exhausted_before_model()
         if exhausted is not None:
             raise ModelBudgetError(exhausted)
+        provider_request = self.client.request_identity(request)
         bounded_request, request_truncated = self._bounded_request(request)
         request_event = self.trace.emit(
             "model_request",
@@ -83,6 +84,11 @@ class ModelGateway:
                 "model": self._model_reference(),
                 "request": bounded_request,
                 "content_truncated": request_truncated,
+                "provider_request_identity": (
+                    provider_request.model_dump(mode="json")
+                    if provider_request is not None
+                    else None
+                ),
             },
         )
         self.tracker.consume_model_call()
@@ -118,10 +124,15 @@ class ModelGateway:
                 },
                 parent_event_id=request_event.event_id,
             )
-            self.observations.append(self._call_identity(request, None))
+            self.observations.append(self._call_identity(request, None, provider_request))
             raise
         response.latency_s = time.monotonic() - started
         self.tracker.record_model_usage(response.usage)
+        self.tracker.record_model_cost(
+            response.cost,
+            currency=response.cost_currency,
+            unit=response.cost_unit,
+        )
         bounded_text, response_truncated = bound_text(response.text, self.max_visible_bytes)
         self.trace.emit(
             "model_response",
@@ -136,11 +147,14 @@ class ModelGateway:
                 "finish_reason": response.finish_reason.value,
                 "usage": response.usage.model_dump(mode="json"),
                 "latency_s": response.latency_s,
+                "cost": response.cost,
+                "cost_currency": response.cost_currency,
+                "cost_unit": response.cost_unit,
                 "error": None,
             },
             parent_event_id=request_event.event_id,
         )
-        self.observations.append(self._call_identity(request, response))
+        self.observations.append(self._call_identity(request, response, provider_request))
         exhausted_after = self.tracker.exhausted_after_model()
         if exhausted_after is not None:
             raise ModelBudgetError(exhausted_after)
@@ -213,6 +227,7 @@ class ModelGateway:
         self,
         request: ModelRequest,
         response: ModelResponse | None,
+        provider_request: Any = None,
     ) -> ModelCallIdentity:
         descriptor = self.client.descriptor
         exact_offline = {
@@ -254,6 +269,25 @@ class ModelGateway:
                 else "requested_remote_identity"
             ),
             mutable_remote_service=not exact_offline,
+            provider_request=provider_request,
+            safe_provider_request_id=(response.response_id if response is not None else None),
+            latency_s=(response.latency_s if response is not None else None),
+            usage=(response.usage if response is not None else None),
+            usage_missing=(
+                all(
+                    value is None
+                    for value in (
+                        response.usage.input_tokens,
+                        response.usage.output_tokens,
+                        response.usage.total_tokens,
+                    )
+                )
+                if response is not None
+                else None
+            ),
+            cost=(response.cost if response is not None else None),
+            cost_currency=(response.cost_currency if response is not None else None),
+            cost_unit=(response.cost_unit if response is not None else None),
         )
 
     def _bounded_request(self, request: ModelRequest) -> tuple[dict[str, Any], bool]:
@@ -275,6 +309,7 @@ class ModelGateway:
                 "request_id": request.request_id,
                 "messages": messages,
                 "temperature": request.temperature,
+                "top_p": request.top_p,
                 "max_output_tokens": request.max_output_tokens,
                 "stop": request.stop,
                 "metadata": metadata,

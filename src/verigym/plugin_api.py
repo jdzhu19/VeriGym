@@ -42,6 +42,7 @@ from verigym.schemas.model import (
     ModelResponse,
     ModelRunConfig,
     NormalizedModelUsage,
+    ProviderRequestIdentity,
 )
 from verigym.schemas.options import JsonScalar, JsonValue, validate_plugin_options
 from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
@@ -94,6 +95,7 @@ __all__ = [
     "ModelResponse",
     "ModelRunConfig",
     "NormalizedModelUsage",
+    "ProviderRequestIdentity",
     "PLUGIN_API_VERSION",
     "PromptPolicyDescriptor",
     "ResolvedTaskAssets",

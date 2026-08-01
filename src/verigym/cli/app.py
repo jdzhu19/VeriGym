@@ -377,6 +377,16 @@ def run_task(
         "--model-base-url",
         help="OpenAI-compatible base URL without embedded credentials.",
     ),
+    model_base_url_env: str | None = typer.Option(
+        None,
+        "--model-base-url-env",
+        help="Name of the environment variable containing an OpenAI-compatible base URL.",
+    ),
+    model_provider_id: str | None = typer.Option(
+        None,
+        "--model-provider-id",
+        help="Provider identity label for a generic configurable model client.",
+    ),
     model_id: str | None = typer.Option(
         None,
         "--model-id",
@@ -390,6 +400,15 @@ def run_task(
     model_connect_timeout_s: float = typer.Option(10.0, "--model-connect-timeout-s"),
     model_read_timeout_s: float = typer.Option(60.0, "--model-read-timeout-s"),
     model_request_timeout_s: float = typer.Option(90.0, "--model-request-timeout-s"),
+    model_max_response_bytes: int = typer.Option(
+        4 * 1024 * 1024,
+        "--model-max-response-bytes",
+        min=1024,
+    ),
+    model_require_exact_model_id: bool = typer.Option(
+        False,
+        "--model-require-exact-id/--model-allow-observed-id",
+    ),
     model_option: list[str] | None = typer.Option(
         None,
         "--model-option",
@@ -503,11 +522,15 @@ def run_task(
             model=model,
             model_options=ModelRunConfig(
                 base_url=model_base_url,
+                base_url_env=model_base_url_env,
+                provider_id=model_provider_id,
                 model_id=model_id,
                 api_key_env=model_api_key_env,
                 connect_timeout_s=model_connect_timeout_s,
                 read_timeout_s=model_read_timeout_s,
                 request_timeout_s=model_request_timeout_s,
+                max_response_bytes=model_max_response_bytes,
+                require_exact_model_id=model_require_exact_model_id,
                 temperature=temperature,
                 top_p=top_p,
                 client_options=_plugin_options(model_option, flag="--model-option"),

@@ -49,6 +49,9 @@
         "transport",
         "rate_limit",
         "invalid_response",
+        "provider_unavailable",
+        "protocol_error",
+        "malformed_response",
         "exhausted",
         "internal"
       ],
@@ -122,6 +125,47 @@
   "$id": "https://verigym.dev/schemas/1.0/model-response.schema.json",
   "additionalProperties": false,
   "properties": {
+    "cost": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost"
+    },
+    "cost_currency": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Currency"
+    },
+    "cost_unit": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Unit"
+    },
     "error": {
       "anyOf": [
         {
