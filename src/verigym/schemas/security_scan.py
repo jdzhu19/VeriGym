@@ -21,6 +21,14 @@ ArtifactContentClass = Literal[
 ]
 StructuredFieldRole = Literal[
     "field_name",
+    "environment_variable_name",
+    "authentication_mode",
+    "execution_boundary_enum",
+    "boolean_policy",
+    "null_policy",
+    "known_hash_or_digest",
+    "known_identifier",
+    "normalized_base_url",
     "enum_or_identifier",
     "boolean_or_null_policy",
     "known_hash_identity",
@@ -32,6 +40,7 @@ StructuredFieldRole = Literal[
 ]
 SecuritySeverity = Literal[
     "hard_secret_leak",
+    "diagnostic_security_metadata",
     "diagnostic_security_vocabulary",
     "scanner_error",
 ]
@@ -45,6 +54,7 @@ SecretEvidenceCategory = Literal[
     "unknown_sensitive_high_entropy",
     "persisted_proxy_value",
     "raw_host_path",
+    "diagnostic_security_metadata",
     "conceptual_security_vocabulary",
     "malformed_structured_artifact",
     "unsafe_filesystem_entry",
@@ -73,7 +83,7 @@ class SecurityScanPolicy(StrictModel):
     unknown_sensitive_min_entropy_bits_per_character: float = Field(ge=2.0, le=8.0)
     structured_extensions: tuple[str, ...]
     placeholder_policy: Literal["fixture_provenance_only"]
-    private_value_reporting: Literal["length_and_sha256_only"]
+    private_value_reporting: Literal["length_and_sha256_only", "length_only_never_hash"]
     proxy_value_reporting: Literal["presence_only_never_hash"]
     malformed_structured_policy: Literal["fail_closed"]
     unknown_finding_policy: Literal["fail_closed"]
@@ -105,8 +115,11 @@ class SecurityFinding(StrictModel):
     def _proxy_values_are_never_hashed(self) -> SecurityFinding:
         if self.evidence_category == "persisted_proxy_value" and self.evidence_sha256 is not None:
             raise ValueError("proxy values must never be persisted or hashed")
-        if self.severity == "diagnostic_security_vocabulary" and self.evidence_sha256 is not None:
-            raise ValueError("conceptual security vocabulary must not hash source vocabulary")
+        if (
+            self.severity in {"diagnostic_security_metadata", "diagnostic_security_vocabulary"}
+            and self.evidence_sha256 is not None
+        ):
+            raise ValueError("diagnostic security metadata must not hash source vocabulary")
         return self
 
 
@@ -147,7 +160,8 @@ class SecurityScanReport(StrictModel):
     def _counts_and_gate_match(self) -> SecurityScanReport:
         hard = sum(item.severity == "hard_secret_leak" for item in self.findings)
         diagnostic = sum(
-            item.severity == "diagnostic_security_vocabulary" for item in self.findings
+            item.severity in {"diagnostic_security_metadata", "diagnostic_security_vocabulary"}
+            for item in self.findings
         )
         errors = sum(item.severity == "scanner_error" for item in self.findings)
         if (

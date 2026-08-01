@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from verigym.core.security_scanner import (
     SecurityScanFailure,
     build_security_scan_policy,
+    classify_structured_field_role,
     require_security_scan_pass,
     scan_artifact_roots,
     validate_security_scan_policy,
@@ -16,6 +19,8 @@ from verigym.core.security_scanner import (
 )
 
 FIXTURE = Path("tests/fixtures/m10b_historical_allowed_synthesis_corpus_93097b7.json")
+M11_HISTORICAL_FIXTURE = Path("tests/fixtures/m11_historical_100_safe_provenance_fields.json")
+M11_HISTORICAL_FIXTURE_SHA256 = "fbbe310ce773e6c5d1429ac624436222f0449874fbb699393d110491e263ca03"
 PRIVATE_KEY_BEGIN = "-----BEGIN " + "PRIVATE " + "KEY-----"
 PRIVATE_KEY_END = "-----END " + "PRIVATE " + "KEY-----"
 OPENSSH_KEY_BEGIN = "-----BEGIN " + "OPENSSH " + "PRIVATE " + "KEY-----"
@@ -169,6 +174,205 @@ def test_true_positive_canaries_are_blocking_and_redacted(
         assert canary not in captured.out + captured.err
     assert all(finding.redacted for finding in report.findings)
     assert all(not finding.recoverable_fragment_exported for finding in report.findings)
+    assert all(finding.evidence_sha256 is None for finding in report.findings)
+
+
+def test_historical_m11_100_safe_provenance_fields_are_role_classified(
+    tmp_path: Path,
+) -> None:
+    fixture_bytes = M11_HISTORICAL_FIXTURE.read_bytes()
+    assert hashlib.sha256(fixture_bytes).hexdigest() == M11_HISTORICAL_FIXTURE_SHA256
+    payload = json.loads(fixture_bytes)
+    expected = {
+        "environment_variable_name": 61,
+        "boolean_policy": 28,
+        "execution_boundary_enum": 11,
+    }
+    observed: Counter[str] = Counter()
+    for key, values in payload.items():
+        for index, value in enumerate(values):
+            observed[
+                classify_structured_field_role(
+                    key=key,
+                    value=value,
+                    content_class="runtime_artifact",
+                    field_path=f"$.{key}[{index}]",
+                )
+            ] += 1
+    assert observed == expected
+
+    _write(tmp_path / "historical-safe-provenance.json", fixture_bytes.decode("utf-8"))
+    report = _scan(tmp_path)
+    assert report.gate == "pass"
+    assert report.hard_secret_leak_count == report.scanner_error_count == 0
+    assert report.diagnostic_security_vocabulary_count > 0
+
+
+def test_environment_name_metadata_requires_environment_identifier_shape(tmp_path: Path) -> None:
+    safe = "SYNTHETIC_PROVIDER_API_KEY"
+    unsafe = CANARIES["assignment"]
+    assert (
+        classify_structured_field_role(
+            key="credential_env_name",
+            value=safe,
+            content_class="runtime_artifact",
+            field_path="$.credential_env_name",
+        )
+        == "environment_variable_name"
+    )
+    assert (
+        classify_structured_field_role(
+            key="credential_env_name",
+            value=unsafe,
+            content_class="runtime_artifact",
+            field_path="$.credential_env_name",
+        )
+        == "credential_value_candidate"
+    )
+    _write(tmp_path / "unsafe.json", json.dumps({"credential_env_name": unsafe}))
+    assert _scan(tmp_path).gate == "fail"
+
+
+@pytest.mark.parametrize(
+    ("safe", "unsafe", "safe_role"),
+    [
+        (
+            {"credential_env_name": "SYNTHETIC_PROVIDER_API_KEY"},
+            {"SYNTHETIC_PROVIDER_API_KEY": CANARIES["assignment"]},
+            "environment_variable_name",
+        ),
+        ({"api_key": False}, {"api_key": CANARIES["yaml"]}, "boolean_policy"),
+        (
+            {"authentication_mode": "api_key_env"},
+            {"authorization": "Bearer " + CANARIES["bearer"]},
+            "authentication_mode",
+        ),
+        (
+            {"execution_boundary": "trusted_controller"},
+            {"controller_credential": CANARIES["assignment"]},
+            "execution_boundary_enum",
+        ),
+        (
+            {"normalized_base_url": "https://provider.example.test/v1"},
+            {"normalized_base_url": "https://user:" + CANARIES["uri"] + "@example.test"},
+            "normalized_base_url",
+        ),
+        (
+            {"bundle_sha256": "a" * 64},
+            {"unknown_sensitive_value": CANARIES["unknown"]},
+            "known_hash_or_digest",
+        ),
+    ],
+)
+def test_safe_and_value_bearing_context_pairs_diverge(
+    tmp_path: Path,
+    safe: dict[str, object],
+    unsafe: dict[str, object],
+    safe_role: str,
+) -> None:
+    safe_key, safe_value = next(iter(safe.items()))
+    assert (
+        classify_structured_field_role(
+            key=safe_key,
+            value=safe_value,
+            content_class="runtime_artifact",
+            field_path=f"$.{safe_key}",
+        )
+        == safe_role
+    )
+    _write(tmp_path / "safe.json", json.dumps(safe))
+    safe_report = _scan(tmp_path)
+    assert safe_report.gate == "pass"
+
+    _write(tmp_path / "unsafe.json", json.dumps(unsafe))
+    unsafe_report = _scan(tmp_path)
+    assert unsafe_report.gate == "fail"
+    assert unsafe_report.hard_secret_leak_count >= 1
+    assert all(finding.evidence_sha256 is None for finding in unsafe_report.findings)
+
+
+@pytest.mark.parametrize(
+    ("relative", "payload", "category"),
+    [
+        (
+            "authorization.json",
+            json.dumps({"authorization": "Bearer " + CANARIES["bearer"]}),
+            "authorization_bearer",
+        ),
+        (
+            "query.json",
+            json.dumps(
+                {
+                    "normalized_base_url": (
+                        "https://provider.example.test/v1?access_token=" + CANARIES["bearer"]
+                    )
+                }
+            ),
+            "credential_bearing_uri",
+        ),
+        (
+            "quoted.sh",
+            'api_key="' + CANARIES["assignment"] + '"\n',
+            "persisted_secret_assignment",
+        ),
+        (
+            "dotenv.env",
+            "SESSION_TOKEN='" + CANARIES["refresh"] + "'\n",
+            "persisted_secret_assignment",
+        ),
+    ],
+)
+def test_additional_value_bearing_forms_block_without_value_hashes(
+    tmp_path: Path, relative: str, payload: str, category: str
+) -> None:
+    _write(tmp_path / relative, payload)
+    report = _scan(tmp_path)
+    assert report.gate == "fail"
+    assert category in {finding.evidence_category for finding in report.findings}
+    assert all(finding.evidence_sha256 is None for finding in report.findings)
+    assert all(value not in report.model_dump_json() for value in CANARIES.values())
+
+
+def test_complete_synthetic_m11_bundle_is_deterministic_and_redacted(tmp_path: Path) -> None:
+    bundle = tmp_path / "synthetic-m11"
+    _write(
+        bundle / "identity/provider.json",
+        json.dumps(
+            {
+                "provider": "synthetic",
+                "request_id": "req-fixture-001",
+                "credential_env_name": "SYNTHETIC_PROVIDER_API_KEY",
+                "credential_persisted": False,
+                "credential_hashed": False,
+                "execution_boundary": "trusted_controller",
+                "normalized_base_url": "https://provider.example.test/v1",
+                "plan_hash": "a" * 64,
+            }
+        ),
+    )
+    _write(bundle / "reports/scorecard.json", '{"resolved":false,"cost":null}\n')
+    _write(bundle / "replay/replay.json", '{"api_calls":0,"network_calls":0}\n')
+    _write(
+        bundle / "security/injected.json",
+        json.dumps({"session_token": CANARIES["refresh"]}),
+    )
+    first = _scan(bundle)
+    second = _scan(bundle)
+    assert first == second
+    assert first.gate == "fail"
+    assert {finding.evidence_category for finding in first.findings} >= {
+        "session_or_cookie",
+        "diagnostic_security_metadata",
+    }
+    serialized_json = first.model_dump_json()
+    serialized_markdown = "\n".join(
+        f"- {finding.relative_path}: {finding.evidence_category}" for finding in first.findings
+    )
+    audit_log = str(SecurityScanFailure(first))
+    for value in CANARIES.values():
+        assert value not in serialized_json
+        assert value not in serialized_markdown
+        assert value not in audit_log
 
 
 def test_known_content_identities_never_block(tmp_path: Path) -> None:

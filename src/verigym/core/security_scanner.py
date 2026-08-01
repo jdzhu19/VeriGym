@@ -13,10 +13,11 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
+from urllib.parse import parse_qsl, urlsplit
 
 import yaml
 
-from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.hashing import content_hash
 from verigym.schemas.security_scan import (
     ArtifactContentClass,
     ArtifactParser,
@@ -44,7 +45,7 @@ _TEXT_EXTENSIONS = (
 )
 _SECURITY_VOCABULARY = re.compile(
     r"(?i)(?:auth(?:entication|orization)?|bearer|cookie|credential|key|password|"
-    r"private.reasoning|proxy|secret|session|token|validation)"
+    r"controller|private.reasoning|proxy|secret|session|token|validation)"
 )
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:access[_-]?token|api[_-]?key|authorization|bearer|cookie|"
@@ -56,6 +57,25 @@ _HASH_KEY = re.compile(
 )
 _IDENTITY_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:id|mode|class|kind|type|status|role|policy|name|version)(?:$|[_-])"
+)
+_ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
+_ENVIRONMENT_NAME_KEY = re.compile(
+    r"(?i)(?:^|[_-])(?:env|environment)(?:[_-](?:var(?:iable)?[_-])?name)?(?:s)?$"
+)
+_AUTHENTICATION_MODE_KEY = re.compile(
+    r"(?i)(?:^|[_-])(?:auth(?:entication)?)(?:[_-](?:semantic[_-]?id|mode))$"
+)
+_EXECUTION_BOUNDARY_KEY = re.compile(
+    r"(?i)(?:execution[_-]?boundary|credential[_-]?bearing[_-]?http[_-]?location|"
+    r"controller[_-]?(?:role|location|boundary)|trust[_-]?boundary|process[_-]?boundary)"
+)
+_BASE_URL_KEY = re.compile(
+    r"(?i)(?:^|[_-])(?:normalized[_-])?(?:base[_-]?url|endpoint[_-]?origin|"
+    r"provider[_-]?url|proxy[_-]?(?:url|uri))(?:$|[_-])"
+)
+_BOOLEAN_POLICY_KEY = re.compile(
+    r"(?i)(?:^|[_-])(?:allowed|available|enabled|exposed|exported|forwarded|hashed|"
+    r"included|modified|persisted|present|redacted|required|resolved|verified)(?:$|[_-])"
 )
 _PATH_KEY = re.compile(r"(?i)(?:^|[_-])(?:path|file|directory|root|uri)(?:$|[_-])")
 _DOCUMENTATION_KEY = re.compile(
@@ -76,6 +96,7 @@ _PRIVATE_KEY = re.compile(
     re.IGNORECASE,
 )
 _BEARER = re.compile(rb"(?i)\bAuthorization\s*:\s*Bearer\s+([A-Za-z0-9._~+/=-]{1,4096})")
+_BARE_BEARER = re.compile(rb"(?i)^Bearer\s+([A-Za-z0-9._~+/=-]{1,4096})$")
 _PROVIDER_TOKEN = re.compile(
     rb"(?<![A-Za-z0-9_-])(?:"
     rb"sk-(?:proj-|ant-)?[A-Za-z0-9_-]{24,}|"
@@ -86,12 +107,11 @@ _PROVIDER_TOKEN = re.compile(
     rb")(?![A-Za-z0-9_-])"
 )
 _PROVIDER_STYLE_IDENTIFIER = re.compile(rb"sk-(?:[a-z][a-z0-9]{2,}-){1,}[a-z][a-z0-9]{2,}$")
-_CREDENTIAL_URI = re.compile(
-    rb"(?i)\b[a-z][a-z0-9+.-]{1,20}://([^\s/@:]{1,256}):([^\s/@]{1,4096})@"
-)
+_URL = re.compile(rb"(?i)\b[a-z][a-z0-9+.-]{1,20}://[^\s<>\"']{1,8192}")
 _ASSIGNMENT = re.compile(
-    rb"(?im)(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]{1,127})\s*=\s*"
-    rb"([^\s'\"`]{1,4096})"
+    rb"(?im)^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]{1,127})[ \t]*=[ \t]*"
+    rb"(?:'([^'\r\n]{1,4096})'|\"([^\"\r\n]{1,4096})\"|([^\s#;`]{1,4096}))[ \t]*"
+    rb"(?:[#;].*)?$"
 )
 _PLACEHOLDERS = {
     "<redacted>",
@@ -129,7 +149,7 @@ def build_security_scan_policy() -> SecurityScanPolicy:
 
     base = {
         "schema_version": "1.0",
-        "policy_id": "context_aware_artifact_secret_scan_v1",
+        "policy_id": "context_aware_structured_artifact_secret_scan_v2",
         "max_files": 100_000,
         "max_file_bytes": 256 * 1024 * 1024,
         "max_total_bytes": 2 * 1024 * 1024 * 1024,
@@ -138,7 +158,7 @@ def build_security_scan_policy() -> SecurityScanPolicy:
         "unknown_sensitive_min_entropy_bits_per_character": 3.5,
         "structured_extensions": _STRUCTURED_EXTENSIONS,
         "placeholder_policy": "fixture_provenance_only",
-        "private_value_reporting": "length_and_sha256_only",
+        "private_value_reporting": "length_only_never_hash",
         "proxy_value_reporting": "presence_only_never_hash",
         "malformed_structured_policy": "fail_closed",
         "unknown_finding_policy": "fail_closed",
@@ -231,26 +251,63 @@ def _looks_like_identity(key: str | None, value: str) -> bool:
     return key is None or bool(_HASH_KEY.search(key) or _IDENTITY_KEY.search(key))
 
 
-def _role(
+def _boolean_or_null_string_role(key: str | None, value: Any) -> StructuredFieldRole | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    normalized_key = (key or "").casefold()
+    policy_context = bool(
+        _BOOLEAN_POLICY_KEY.search(normalized_key) or _SENSITIVE_KEY.search(normalized_key)
+    )
+    if not policy_context:
+        return None
+    if normalized in {"true", "false"}:
+        return "boolean_policy"
+    if normalized in {"null", "none"}:
+        return "null_policy"
+    return None
+
+
+def classify_structured_field_role(
     *,
     key: str | None,
     value: Any,
     content_class: ArtifactContentClass,
     field_path: str,
 ) -> StructuredFieldRole:
-    if value is None or isinstance(value, bool):
-        return "boolean_or_null_policy"
+    """Resolve a leaf's semantic role without inspecting external state or secret values."""
+
+    if value is None:
+        return "null_policy"
+    if isinstance(value, bool):
+        return "boolean_policy"
     normalized_key = (key or "").casefold()
+    string_policy_role = _boolean_or_null_string_role(key, value)
+    if string_policy_role is not None:
+        return string_policy_role
     if isinstance(value, str) and _looks_like_identity(key, value):
-        return "known_hash_identity"
+        return "known_hash_or_digest"
+    if key and _ENVIRONMENT_VARIABLE_NAME.fullmatch(key) and _SENSITIVE_KEY.search(key):
+        return "credential_value_candidate"
+    if (
+        key
+        and isinstance(value, str)
+        and _ENVIRONMENT_NAME_KEY.search(normalized_key)
+        and _ENVIRONMENT_VARIABLE_NAME.fullmatch(value.strip())
+    ):
+        return "environment_variable_name"
+    if key and _AUTHENTICATION_MODE_KEY.search(normalized_key):
+        return "authentication_mode"
+    if key and _EXECUTION_BOUNDARY_KEY.search(normalized_key):
+        return "execution_boundary_enum"
+    if key and _BASE_URL_KEY.search(normalized_key):
+        return "normalized_base_url"
     if key and (
-        normalized_key.endswith(("_env", "_environment", "_environment_name"))
-        or "semantic_id" in normalized_key
-        or "auth_mode" in normalized_key
+        "semantic_id" in normalized_key
         or normalized_key.endswith("_state")
         or (normalized_key.endswith("_id") and normalized_key not in {"cookie_id", "session_id"})
     ):
-        return "enum_or_identifier"
+        return "known_identifier"
     if key and _SENSITIVE_KEY.search(normalized_key):
         return "credential_value_candidate"
     if key and _UNKNOWN_SENSITIVE_KEY.search(normalized_key):
@@ -259,13 +316,13 @@ def _role(
         ".normalized_tokens[" in field_path
         or normalized_key in {"source_class", "source_id", "policy_id", "corpus_id"}
     ):
-        return "enum_or_identifier"
+        return "known_identifier"
     if key and _PATH_KEY.search(normalized_key):
         return "known_path_identity"
     if key and _DOCUMENTATION_KEY.search(normalized_key):
         return "documentation_text"
     if key and _IDENTITY_KEY.search(normalized_key):
-        return "enum_or_identifier"
+        return "known_identifier"
     if content_class in {"documentation", "schema_or_contract"}:
         return "documentation_text"
     if isinstance(value, (str, int, float)):
@@ -305,7 +362,12 @@ def _walk_structured(
         path,
         key,
         value,
-        _role(key=key, value=value, content_class=content_class, field_path=path),
+        classify_structured_field_role(
+            key=key,
+            value=value,
+            content_class=content_class,
+            field_path=path,
+        ),
     )
 
 
@@ -333,7 +395,6 @@ def _finding(
     severity: str,
     value: bytes | None,
     rationale: str,
-    hash_value: bool = True,
 ) -> SecurityFinding:
     return SecurityFinding(
         relative_path=relative,
@@ -343,7 +404,7 @@ def _finding(
         evidence_category=cast(Any, category),
         severity=cast(Any, severity),
         value_length=len(value) if value is not None else None,
-        evidence_sha256=(hash_bytes(value) if value is not None and hash_value else None),
+        evidence_sha256=None,
         rationale_code=rationale,
     )
 
@@ -387,6 +448,23 @@ def _explicit_secret_findings(
                     rationale="authorization_header_has_value",
                 )
             )
+    if role == "credential_value_candidate":
+        bare_bearer = _BARE_BEARER.fullmatch(data.strip())
+        if bare_bearer is not None:
+            candidate = bare_bearer.group(1)
+            if not _fixture_placeholder(candidate.decode("ascii", errors="ignore"), fixture):
+                findings.append(
+                    _finding(
+                        relative=relative,
+                        content_class=content_class,
+                        field_path=field_path,
+                        role=role,
+                        category="authorization_bearer",
+                        severity="hard_secret_leak",
+                        value=candidate,
+                        rationale="structured_authorization_bearer_has_value",
+                    )
+                )
     for match in _PROVIDER_TOKEN.finditer(data):
         candidate = match.group(0)
         if not _fixture_placeholder(candidate.decode("ascii", errors="ignore"), fixture):
@@ -401,8 +479,8 @@ def _explicit_secret_findings(
                         content_class=content_class,
                         field_path=field_path,
                         role=role,
-                        category="conceptual_security_vocabulary",
-                        severity="diagnostic_security_vocabulary",
+                        category="diagnostic_security_metadata",
+                        severity="diagnostic_security_metadata",
                         value=None,
                         rationale="provider_prefix_kebab_identifier_without_secret_value",
                     )
@@ -420,26 +498,39 @@ def _explicit_secret_findings(
                     rationale="anchored_provider_token_shape",
                 )
             )
-    for match in _CREDENTIAL_URI.finditer(data):
-        candidate = match.group(0)
-        findings.append(
-            _finding(
-                relative=relative,
-                content_class=content_class,
-                field_path=field_path,
-                role=role,
-                category="credential_bearing_uri",
-                severity="hard_secret_leak",
-                value=candidate,
-                rationale="uri_contains_userinfo_secret",
+    for match in _URL.finditer(data):
+        candidate = match.group(0).rstrip(b".,);]}")
+        decoded = candidate.decode("utf-8", errors="ignore")
+        parsed = urlsplit(decoded)
+        rationale: str | None = None
+        if parsed.username is not None or parsed.password is not None:
+            rationale = "uri_contains_userinfo_secret"
+        else:
+            for query_key, query_value in parse_qsl(parsed.query, keep_blank_values=True):
+                if _SENSITIVE_KEY.search(query_key) and query_value.strip():
+                    rationale = "uri_contains_sensitive_query_value"
+                    break
+        if rationale is not None:
+            findings.append(
+                _finding(
+                    relative=relative,
+                    content_class=content_class,
+                    field_path=field_path,
+                    role=role,
+                    category="credential_bearing_uri",
+                    severity="hard_secret_leak",
+                    value=candidate,
+                    rationale=rationale,
+                )
             )
-        )
     for match in _ASSIGNMENT.finditer(data):
         assignment_name = match.group(1).decode("ascii", errors="ignore")
         if not _SENSITIVE_KEY.search(assignment_name):
             continue
-        candidate = match.group(2)
-        if not _fixture_placeholder(candidate.decode("utf-8", errors="ignore"), fixture):
+        candidate = next(group for group in match.groups()[1:] if group is not None)
+        decoded = candidate.decode("utf-8", errors="ignore").strip()
+        safe_non_value = decoded.casefold() in {"false", "true", "null", "none"}
+        if not safe_non_value and not _fixture_placeholder(decoded, fixture):
             findings.append(
                 _finding(
                     relative=relative,
@@ -472,8 +563,8 @@ def _structured_node_findings(
                     content_class=content_class,
                     field_path=node.path,
                     role="field_name",
-                    category="conceptual_security_vocabulary",
-                    severity="diagnostic_security_vocabulary",
+                    category="diagnostic_security_metadata",
+                    severity="diagnostic_security_metadata",
                     value=None,
                     rationale="security_vocabulary_in_field_name",
                 )
@@ -536,6 +627,14 @@ def _structured_node_findings(
         diagnostics_remaining > 0
         and node.role
         in {
+            "environment_variable_name",
+            "authentication_mode",
+            "execution_boundary_enum",
+            "boolean_policy",
+            "null_policy",
+            "known_hash_or_digest",
+            "known_identifier",
+            "normalized_base_url",
             "enum_or_identifier",
             "boolean_or_null_policy",
             "known_hash_identity",
@@ -549,8 +648,8 @@ def _structured_node_findings(
                 content_class=content_class,
                 field_path=node.path,
                 role=node.role,
-                category="conceptual_security_vocabulary",
-                severity="diagnostic_security_vocabulary",
+                category="diagnostic_security_metadata",
+                severity="diagnostic_security_metadata",
                 value=None,
                 rationale="non_value_bearing_security_vocabulary",
             )
@@ -578,7 +677,8 @@ def _artifact_record(
         "fields_examined": fields,
         "hard_secret_leak_count": sum(item.severity == "hard_secret_leak" for item in findings),
         "diagnostic_security_vocabulary_count": sum(
-            item.severity == "diagnostic_security_vocabulary" for item in findings
+            item.severity in {"diagnostic_security_metadata", "diagnostic_security_vocabulary"}
+            for item in findings
         ),
         "scanner_error_count": sum(item.severity == "scanner_error" for item in findings),
     }
@@ -706,7 +806,6 @@ def scan_artifact_roots(
                     severity="hard_secret_leak",
                     value=None,
                     rationale="exact_proxy_value_persisted",
-                    hash_value=False,
                 )
             )
         if any(value in data for value in host_bytes):
@@ -739,7 +838,9 @@ def scan_artifact_roots(
                         diagnostics_remaining=_MAX_DIAGNOSTICS_PER_ARTIFACT - diagnostics,
                     )
                     diagnostics += sum(
-                        item.severity == "diagnostic_security_vocabulary" for item in node_findings
+                        item.severity
+                        in {"diagnostic_security_metadata", "diagnostic_security_vocabulary"}
+                        for item in node_findings
                     )
                     artifact_findings.extend(node_findings)
             except (ValueError, TypeError, UnicodeDecodeError, yaml.YAMLError, csv.Error):
@@ -779,8 +880,8 @@ def scan_artifact_roots(
                         content_class=content_class,
                         field_path=None,
                         role="documentation_text",
-                        category="conceptual_security_vocabulary",
-                        severity="diagnostic_security_vocabulary",
+                        category="diagnostic_security_metadata",
+                        severity="diagnostic_security_metadata",
                         value=None,
                         rationale="security_vocabulary_in_text",
                     )
@@ -825,7 +926,10 @@ def scan_artifact_roots(
     )
     ordered_artifacts = tuple(sorted(artifacts, key=lambda item: item.relative_path))
     hard = sum(item.severity == "hard_secret_leak" for item in ordered_findings)
-    diagnostic = sum(item.severity == "diagnostic_security_vocabulary" for item in ordered_findings)
+    diagnostic = sum(
+        item.severity in {"diagnostic_security_metadata", "diagnostic_security_vocabulary"}
+        for item in ordered_findings
+    )
     errors = sum(item.severity == "scanner_error" for item in ordered_findings)
     base = {
         "schema_version": "1.0",
@@ -871,6 +975,7 @@ def require_security_scan_pass(report: SecurityScanReport) -> SecurityScanReport
 __all__ = [
     "SecurityScanFailure",
     "build_security_scan_policy",
+    "classify_structured_field_role",
     "require_security_scan_pass",
     "scan_artifact_roots",
     "validate_security_scan_policy",

@@ -143,6 +143,20 @@ not a sandbox. Once loaded, plugins still cannot bypass the environment’s allo
 policy, hidden-asset separation, budgets, candidate freeze, or runtime controls through the
 supported interfaces. Artifact loaders do not discover or execute plugins.
 
+### Context-aware artifact secret scanning
+
+The artifact scanner parses JSON, JSONL, YAML, TOML, and CSV before classifying values. It treats
+environment-variable names, authentication modes, execution-boundary enums, boolean/null policy
+values, declared hashes and identifiers, documentation, and normalized credential-free base URLs
+as provenance metadata rather than credential material. A sensitive field containing a concrete
+value, an environment-variable assignment, an authorization value, a private key, a
+credential-bearing URL, or unknown high-entropy material still fails closed.
+
+Findings expose only the relative artifact path, structured field path, semantic role, evidence
+kind, and value length. Suspected credential values are neither serialized nor hashed. Exact proxy
+matching similarly records presence only. Malformed structured artifacts, unknown evidence kinds,
+unsafe filesystem entries, and scanner errors block finalization.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

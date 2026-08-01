@@ -28,6 +28,7 @@
         "unknown_sensitive_high_entropy",
         "persisted_proxy_value",
         "raw_host_path",
+        "diagnostic_security_metadata",
         "conceptual_security_vocabulary",
         "malformed_structured_artifact",
         "unsafe_filesystem_entry",
@@ -52,6 +53,14 @@
     "field_role": {
       "enum": [
         "field_name",
+        "environment_variable_name",
+        "authentication_mode",
+        "execution_boundary_enum",
+        "boolean_policy",
+        "null_policy",
+        "known_hash_or_digest",
+        "known_identifier",
+        "normalized_base_url",
         "enum_or_identifier",
         "boolean_or_null_policy",
         "known_hash_identity",
@@ -97,6 +106,7 @@
     "severity": {
       "enum": [
         "hard_secret_leak",
+        "diagnostic_security_metadata",
         "diagnostic_security_vocabulary",
         "scanner_error"
       ],

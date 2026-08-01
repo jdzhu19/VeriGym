@@ -42,7 +42,10 @@
       "type": "string"
     },
     "private_value_reporting": {
-      "const": "length_and_sha256_only",
+      "enum": [
+        "length_and_sha256_only",
+        "length_only_never_hash"
+      ],
       "title": "Private Value Reporting",
       "type": "string"
     },
