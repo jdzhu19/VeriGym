@@ -175,8 +175,18 @@ class ApiRepositoryAgent(AgentAdapter):
     def _inspect_previous_action(self, observation: Observation) -> None:
         if self._last_action is None:
             return
+        previous_action = self._last_action
         result = observation.previous_tool_result
         self._last_action = None
+        if (
+            isinstance(previous_action, ApplyPatchAction)
+            and result is not None
+            and result.category == ErrorCategory.PERMISSION_DENIED
+            and result.message == "patch context does not match the workspace"
+        ):
+            raise _agent_output_error(
+                "provider patch could not be materialized against the visible repository"
+            )
         if result is not None and result.category in {
             ErrorCategory.PERMISSION_DENIED,
             ErrorCategory.POLICY_DENIED,

@@ -187,3 +187,50 @@ def test_model_request_schema_does_not_accept_secret_metadata() -> None:
     # The gateway redactor remains the persistence boundary; the agent itself emits only hashes.
     message = ModelMessage(role="user", content="public")
     assert message.content == "public"
+
+
+def test_patch_context_mismatch_is_agent_output_not_workspace_policy(tmp_path: Path) -> None:
+    agent, gateway, _suite, visible, _trace = _started_agent(tmp_path, _good_plan())
+    first = _advance_public_reads(agent, visible)
+    assert first.type == "apply_patch"
+
+    with pytest.raises(AgentTerminationError) as raised:
+        agent.act(
+            _observation(
+                ToolResult(
+                    tool="file.apply_patch",
+                    success=False,
+                    category=ErrorCategory.PERMISSION_DENIED,
+                    message="patch context does not match the workspace",
+                    stderr="patch context does not match the workspace",
+                )
+            )
+        )
+
+    assert raised.value.failure.category == "agent_output_error"
+    assert raised.value.failure.kind == "model"
+    assert raised.value.failure.infrastructure is False
+    assert gateway.tracker.model_calls == 1
+
+
+def test_true_patch_path_denial_remains_workspace_policy_failure(tmp_path: Path) -> None:
+    agent, gateway, _suite, visible, _trace = _started_agent(tmp_path, _good_plan())
+    first = _advance_public_reads(agent, visible)
+    assert first.type == "apply_patch"
+
+    with pytest.raises(AgentTerminationError) as raised:
+        agent.act(
+            _observation(
+                ToolResult(
+                    tool="file.apply_patch",
+                    success=False,
+                    category=ErrorCategory.POLICY_DENIED,
+                    message="patch target is outside the editable workspace",
+                )
+            )
+        )
+
+    assert raised.value.failure.category == "workspace_policy_failure"
+    assert raised.value.failure.kind == "policy"
+    assert raised.value.failure.infrastructure is False
+    assert gateway.tracker.model_calls == 1
