@@ -13,6 +13,7 @@ from verigym.experiments.runner import (
     _validate_execution_plan,
 )
 from verigym.experiments.schemas import ExperimentConfig
+from verigym.schemas.tool import HealthCheckResult
 
 
 def _config(output: Path) -> ExperimentConfig:
@@ -49,8 +50,23 @@ def _config(output: Path) -> ExperimentConfig:
     )
 
 
-def test_planner_and_batch_prelaunch_independently_bind_protocol(tmp_path: Path) -> None:
+def _tool_free_planner(monkeypatch: pytest.MonkeyPatch) -> ExperimentPlanner:
     planner = ExperimentPlanner()
+    for name in ("iverilog.compile", "iverilog.run"):
+        plugin = planner.service.registries.tools.get(name)
+        monkeypatch.setattr(
+            plugin,
+            "health_check",
+            lambda context=None: HealthCheckResult(healthy=True, message="fixture"),
+        )
+    return planner
+
+
+def test_planner_and_batch_prelaunch_independently_bind_protocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planner = _tool_free_planner(monkeypatch)
     plan = planner.build(_config(tmp_path / "experiment"))
     assert len(plan.items) == 1
     item = plan.items[0]
@@ -69,8 +85,11 @@ def test_planner_and_batch_prelaunch_independently_bind_protocol(tmp_path: Path)
     assert resolved.resolved_action_protocol == item.action_protocol
 
 
-def test_batch_prelaunch_rejects_transport_or_registry_identity_drift(tmp_path: Path) -> None:
-    planner = ExperimentPlanner()
+def test_batch_prelaunch_rejects_transport_or_registry_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planner = _tool_free_planner(monkeypatch)
     plan = planner.build(_config(tmp_path / "experiment"))
     item = plan.items[0]
     config = _child_config(
@@ -104,6 +123,7 @@ def test_batch_prelaunch_rejects_transport_or_registry_identity_drift(tmp_path: 
 
 def test_strict_multi_turn_campaign_requires_exact_reserved_api_call_budget(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base = _config(tmp_path / "experiment")
     strict_execution = base.execution.model_copy(
@@ -114,7 +134,7 @@ def test_strict_multi_turn_campaign_requires_exact_reserved_api_call_budget(
             "frozen_campaign_identity": {"protocol": "repository_action.v2"},
         }
     )
-    planner = ExperimentPlanner()
+    planner = _tool_free_planner(monkeypatch)
     missing_budget = planner.build(base.model_copy(update={"execution": strict_execution}))
     assert _maximum_model_api_calls(missing_budget.items[0]) == 6
     with pytest.raises(ConfigurationError, match="exact model API-call budget"):
