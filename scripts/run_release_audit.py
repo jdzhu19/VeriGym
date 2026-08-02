@@ -125,6 +125,7 @@ class AuditRunner:
         verilog_eval_root: Path | None,
         wheelhouse: Path | None,
         python_interpreters: dict[str, Path | None],
+        codex_binary: Path,
         source_date_epoch: int,
     ) -> None:
         self.root = root
@@ -137,6 +138,7 @@ class AuditRunner:
         self.verilog_eval_root = verilog_eval_root
         self.wheelhouse = wheelhouse
         self.python_interpreters = python_interpreters
+        self.codex_binary = codex_binary
         self.source_date_epoch = source_date_epoch
         self.evidence: list[EvidenceEntry] = []
         self.created_at = _now()
@@ -147,32 +149,36 @@ class AuditRunner:
             (str(self.output.resolve()), "<audit-root>"),
             (str(self.root.resolve()), "<workspace>"),
             (str(Path.home().resolve()), "<home>"),
+            (str(self.codex_binary.resolve()), "<host-codex-binary>"),
         ]
         if self.verilog_eval_root is not None:
-            replacements.insert(
-                0,
+            replacements.append(
                 (str(self.verilog_eval_root.resolve()), "<external-verilog-eval>"),
             )
         if self.wheelhouse is not None:
-            replacements.insert(
-                0,
+            replacements.append(
                 (str(self.wheelhouse.resolve()), "<dependency-wheelhouse>"),
             )
         for version, interpreter in self.python_interpreters.items():
             if interpreter is not None:
-                replacements.insert(
-                    0,
-                    (str(interpreter.resolve()), f"<python-{version}>"),
+                resolved = interpreter.resolve()
+                replacements.extend(
+                    [
+                        (str(resolved), f"<python-{version}>"),
+                        (str(resolved.parent.parent), f"<python-{version}-root>"),
+                    ]
                 )
         result = argument
-        for source, replacement in replacements:
+        for source, replacement in sorted(
+            replacements, key=lambda item: len(item[0]), reverse=True
+        ):
             result = result.replace(source, replacement)
         return result
 
     def _sanitize(self, payload: bytes) -> str:
         text = payload.decode("utf-8", errors="replace")
         text = self._display_argument(text)
-        text = re.sub(r"/tmp/[^\s'\"\\]]+", "<tmp>", text)
+        text = re.sub(r"/tmp/[^\s'\"\]]+", "<tmp>", text)
         text = re.sub(r"Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer <redacted>", text)
         text = re.sub(r"\bsk-[A-Za-z0-9_-]{12,}\b", "<redacted-api-key>", text)
         encoded = text.encode("utf-8")
@@ -419,6 +425,11 @@ class AuditRunner:
             ),
             "path": "<dependency-wheelhouse>" if self.wheelhouse is not None else None,
         }
+        codex_inventory = {
+            "path": "<host-codex-binary>",
+            "sha256": sha256_file(self.codex_binary),
+            "version": capture([str(self.codex_binary), "--version"]),
+        }
         return {
             "schema_version": "1.0",
             "platform": {
@@ -442,6 +453,7 @@ class AuditRunner:
             },
             "images": images,
             "python_interpreters": interpreter_inventory,
+            "host_codex": codex_inventory,
             "dependency_wheelhouse": wheelhouse_inventory,
             "external_verilog_eval": {
                 "provided": self.verilog_eval_root is not None,
@@ -504,9 +516,18 @@ class AuditRunner:
                     "not reproducible_build and not release_audit"
                 ),
             ],
-            environment=_safe_environment({"PATH": ""}),
+            environment=_safe_environment(
+                {
+                    "PATH": os.pathsep.join(
+                        (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")
+                    )
+                }
+            ),
             timeout=1200,
-            identities={"network": "not configured", "optional_tool_path": "empty"},
+            identities={
+                "network": "not configured",
+                "optional_eda_tools": "excluded by marker expression",
+            },
         )
         self.run(
             "local.icarus",
@@ -536,6 +557,7 @@ class AuditRunner:
                 {
                     "VERIGYM_RUN_DOCKER_TESTS": "1",
                     "VERIGYM_DOCKER_IMAGE": self.docker_iverilog_image,
+                    "VERIGYM_CODEX_BINARY": str(self.codex_binary),
                 }
             ),
             timeout=1500,
@@ -624,6 +646,7 @@ class AuditRunner:
                 environment=_safe_environment(
                     {
                         "VERIGYM_VERILOG_EVAL_ROOT": str(self.verilog_eval_root),
+                        "VERIGYM_DOCKER_IMAGE": self.docker_iverilog_image,
                         "VERIGYM_VERILOG_EVAL_DOCKER_IMAGE": self.docker_iverilog_image,
                         "VERIGYM_EXTERNAL_EVIDENCE_OUTPUT": str(
                             self.reports / "external_verilog_eval.json"
@@ -1176,6 +1199,7 @@ def main() -> int:
     parser.add_argument("--python-311", type=Path, default=Path(sys.executable))
     parser.add_argument("--python-312", type=Path)
     parser.add_argument("--python-313", type=Path)
+    parser.add_argument("--codex-binary", type=Path, required=True)
     parser.add_argument("--source-date-epoch", type=int, default=1_784_712_454)
     arguments = parser.parse_args()
     root = Path.cwd().resolve()
@@ -1196,6 +1220,8 @@ def main() -> int:
             not interpreter.is_file() or not os.access(interpreter, os.X_OK)
         ):
             parser.error(f"the supplied Python {version} interpreter is not executable")
+    if not arguments.codex_binary.is_file() or not os.access(arguments.codex_binary, os.X_OK):
+        parser.error("the supplied Codex binary is not executable")
     source_status = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=root,
@@ -1217,6 +1243,7 @@ def main() -> int:
             version: interpreter.resolve() if interpreter is not None else None
             for version, interpreter in python_interpreters.items()
         },
+        codex_binary=arguments.codex_binary.resolve(strict=True),
         source_date_epoch=arguments.source_date_epoch,
     )
     _write_json(output / "environment.json", runner.environment_inventory())

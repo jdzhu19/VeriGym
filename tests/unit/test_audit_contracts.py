@@ -16,7 +16,7 @@ import pytest
 from scripts.audit_distribution import inspect_distributions
 from scripts.reproducible_build import reproducible_build
 from scripts.run_frozen_experiment import _replay_integrity_status
-from scripts.run_release_audit import _build_frontend_environment
+from scripts.run_release_audit import AuditRunner, _build_frontend_environment
 from verigym.core.replay import ReplaySummary
 from verigym.provenance import _live_provenance
 from verigym.release_audit import evaluate_gate, validate_bundle
@@ -238,6 +238,28 @@ def test_release_frontend_uses_supplied_wheelhouse_without_an_index(tmp_path: Pa
         "SOURCE_DATE_EPOCH": "1784712454",
     }
     assert identities == {"build_dependency_resolution": "offline_hashed_wheelhouse"}
+
+
+def test_release_audit_sanitizes_host_tool_roots_and_temporary_paths(tmp_path: Path) -> None:
+    runner = object.__new__(AuditRunner)
+    runner.output = tmp_path / "audit"
+    runner.root = tmp_path / "workspace"
+    runner.verilog_eval_root = None
+    runner.wheelhouse = None
+    python_root = tmp_path / "cpython-3.12"
+    runner.python_interpreters = {"3.12": python_root / "bin" / "python3.12"}
+    runner.codex_binary = tmp_path / "codex" / "bin" / "codex"
+
+    sanitized = runner._sanitize(
+        (
+            f'{{"base_prefix":"{python_root}","module_path":"/tmp/install/lib/python/site.py"}}}}'
+        ).encode()
+    )
+
+    assert str(python_root) not in sanitized
+    assert "/tmp/" not in sanitized
+    assert "<python-3.12-root>" in sanitized
+    assert "<tmp>" in sanitized
 
 
 def test_repository_agent_image_build_context_honors_scoped_tmpdir() -> None:

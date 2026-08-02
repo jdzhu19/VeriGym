@@ -143,8 +143,9 @@ def test_exact_reference_and_representative_candidates_pass_all_five_frozen_task
     tmp_path: Path,
 ) -> None:
     assert SOURCE is not None
-    assert detect_icarus("iverilog").compatibility is IcarusCompatibility.REFERENCE_COMPATIBLE
-    assert detect_icarus("vvp").compatibility is IcarusCompatibility.REFERENCE_COMPATIBLE
+    if os.environ.get("VERIGYM_DOCKER_IMAGE") is None:
+        assert detect_icarus("iverilog").compatibility is IcarusCompatibility.REFERENCE_COMPATIBLE
+        assert detect_icarus("vvp").compatibility is IcarusCompatibility.REFERENCE_COMPATIBLE
     source = SuiteSourceConfig(source_root=Path(SOURCE), variant="v2-spec-to-rtl")
     service = _service()
     for task_record in _frozen_tasks():

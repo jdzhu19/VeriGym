@@ -33,6 +33,7 @@ python scripts/run_release_audit.py \
   --python-311 /path/to/python3.11 \
   --python-312 /path/to/python3.12 \
   --python-313 /path/to/python3.13 \
+  --codex-binary /path/to/codex-0.144.6 \
   --verilog-eval-root /path/to/pinned/verilog-eval
 ```
 

@@ -294,7 +294,10 @@ def test_fake_codex_repository_episode_uses_public_mount_and_ordinary_freeze(
 ) -> None:
     if os.environ.get("VERIGYM_RUN_DOCKER_TESTS") != "1":
         pytest.skip("set VERIGYM_RUN_DOCKER_TESTS=1 for Docker integration tests")
-    codex = Path(os.environ["VERIGYM_CODEX_BINARY"]).resolve(strict=True)
+    codex_value = os.environ.get("VERIGYM_CODEX_BINARY")
+    if codex_value is None:
+        pytest.skip("set VERIGYM_CODEX_BINARY for the Codex repository-agent integration test")
+    codex = Path(codex_value).resolve(strict=True)
     if hashlib.sha256(codex.read_bytes()).hexdigest() != CODEX_WRAPPER_SHA256:
         pytest.skip("exact Codex CLI 0.144.6 host control plane is unavailable")
     RepositoryFakeProvider.requests = []
