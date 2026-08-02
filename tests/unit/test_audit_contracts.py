@@ -16,6 +16,7 @@ import pytest
 from scripts.audit_distribution import inspect_distributions
 from scripts.reproducible_build import reproducible_build
 from scripts.run_frozen_experiment import _replay_integrity_status
+from scripts.run_release_audit import _build_frontend_environment
 from verigym.core.replay import ReplaySummary
 from verigym.provenance import _live_provenance
 from verigym.release_audit import evaluate_gate, validate_bundle
@@ -192,6 +193,7 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "SECURITY.md",
         "CONTRIBUTING.md",
         "CHANGELOG.md",
+        "docs/architecture.md",
         "docs/task_ir.md",
         "docs/artifact_contract.md",
         "docs/schema_compatibility.md",
@@ -226,6 +228,16 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
             # This is an exported nested configuration object, not a persistent top-level record.
             continue
         assert "schema_version" in json.dumps(json.loads(schema.read_text(encoding="utf-8")))
+
+
+def test_release_frontend_uses_supplied_wheelhouse_without_an_index(tmp_path: Path) -> None:
+    updates, identities = _build_frontend_environment(tmp_path, 1_784_712_454)
+    assert updates == {
+        "PIP_FIND_LINKS": str(tmp_path.resolve()),
+        "PIP_NO_INDEX": "1",
+        "SOURCE_DATE_EPOCH": "1784712454",
+    }
+    assert identities == {"build_dependency_resolution": "offline_hashed_wheelhouse"}
 
 
 def test_repository_agent_image_build_context_honors_scoped_tmpdir() -> None:

@@ -1,4 +1,4 @@
-"""Execute and assemble the local Milestones 0–9 release-candidate audit."""
+"""Execute and assemble the local VeriGym alpha release-candidate audit."""
 
 from __future__ import annotations
 
@@ -51,6 +51,8 @@ _REQUIRED_CHECKS = [
     "package.build-frontend",
     "package.reproducible",
     "package.clean-provenance",
+    "package.codex-cli-build",
+    "package.codex-cli-distribution-scan",
     "package.distribution-scan",
     "package.clean-dependency-install",
     "package.installed-wheel",
@@ -93,6 +95,23 @@ def _safe_environment(updates: dict[str, str] | None = None) -> dict[str, str]:
     if updates:
         environment.update(updates)
     return environment
+
+
+def _build_frontend_environment(
+    wheelhouse: Path | None,
+    source_date_epoch: int,
+) -> tuple[dict[str, str], dict[str, str]]:
+    updates = {"SOURCE_DATE_EPOCH": str(source_date_epoch)}
+    if wheelhouse is None:
+        updates["PIP_INDEX_URL"] = "https://pypi.org/simple"
+        return updates, {"build_dependency_resolution": "isolated_index"}
+    updates.update(
+        {
+            "PIP_FIND_LINKS": str(wheelhouse.resolve()),
+            "PIP_NO_INDEX": "1",
+        }
+    )
+    return updates, {"build_dependency_resolution": "offline_hashed_wheelhouse"}
 
 
 class AuditRunner:
@@ -444,7 +463,15 @@ class AuditRunner:
         )
         self.run("quality.format", ["ruff", "format", "--check", "."])
         self.run("quality.lint", ["ruff", "check", "."])
-        self.run("quality.mypy", ["mypy", "--strict", "src/verigym"])
+        self.run(
+            "quality.mypy",
+            [
+                "mypy",
+                "--strict",
+                "src/verigym",
+                "integrations/verigym-codex-cli/src/verigym_codex_cli",
+            ],
+        )
         self.run("quality.diff", ["git", "diff", "--check"])
         self.run(
             "quality.docs",
@@ -470,7 +497,12 @@ class AuditRunner:
                 "-m",
                 "pytest",
                 "-m",
-                "not docker and not yosys and not external_benchmark and not release_audit",
+                (
+                    "not requires_iverilog and not docker and not docker_yosys and "
+                    "not docker_batch and not yosys and not yosys_batch and "
+                    "not verilog_eval_batch and not external_benchmark and "
+                    "not reproducible_build and not release_audit"
+                ),
             ],
             environment=_safe_environment({"PATH": ""}),
             timeout=1200,
@@ -612,6 +644,10 @@ class AuditRunner:
         ]
         for frontend_file in frontend_files:
             frontend_file.unlink(missing_ok=True)
+        build_environment, build_identities = _build_frontend_environment(
+            self.wheelhouse,
+            self.source_date_epoch,
+        )
         self.run(
             "package.build-frontend",
             [
@@ -619,13 +655,9 @@ class AuditRunner:
                 "-m",
                 "build",
             ],
-            environment=_safe_environment(
-                {
-                    "PIP_INDEX_URL": "https://pypi.org/simple",
-                    "SOURCE_DATE_EPOCH": str(self.source_date_epoch),
-                }
-            ),
+            environment=_safe_environment(build_environment),
             timeout=600,
+            identities=build_identities,
             required_files=frontend_files,
         )
         self.run(
@@ -659,6 +691,44 @@ class AuditRunner:
                 str(self.source_date_epoch),
             ],
         )
+        codex_cli_wheel = self.packages / "verigym_codex_cli-0.1.0-py3-none-any.whl"
+        codex_cli_sdist = self.packages / "verigym_codex_cli-0.1.0.tar.gz"
+        for codex_cli_archive in (codex_cli_wheel, codex_cli_sdist):
+            codex_cli_archive.unlink(missing_ok=True)
+        self.run(
+            "package.codex-cli-build",
+            [
+                python,
+                "-m",
+                "build",
+                "integrations/verigym-codex-cli",
+                "--outdir",
+                str(self.packages),
+            ],
+            environment=_safe_environment(build_environment),
+            timeout=600,
+            identities=build_identities,
+            required_files=[codex_cli_wheel, codex_cli_sdist],
+        )
+        if codex_cli_wheel.is_file() and codex_cli_sdist.is_file():
+            self.run(
+                "package.codex-cli-distribution-scan",
+                [
+                    python,
+                    "scripts/audit_codex_cli_distribution.py",
+                    "--wheel",
+                    str(codex_cli_wheel),
+                    "--sdist",
+                    str(codex_cli_sdist),
+                ],
+            )
+        else:
+            self.unavailable(
+                "package.codex-cli-distribution-scan",
+                [python, "scripts/audit_codex_cli_distribution.py"],
+                classification="blocked",
+                reason="Codex CLI build did not produce the required archives",
+            )
         wheel = self.packages / "verigym-0.1.0-py3-none-any.whl"
         sdist = self.packages / "verigym-0.1.0.tar.gz"
         if wheel.is_file() and sdist.is_file():
@@ -993,7 +1063,7 @@ class AuditRunner:
         provenance = self._package_provenance()
         gate, reasons = evaluate_gate(self.evidence, provenance, _REQUIRED_CHECKS)
         manifest = AuditManifest(
-            audit_id="verigym-0.1.0-mvp-rc-audit",
+            audit_id="verigym-0.1.0-alpha-rc-audit",
             created_at=self.created_at,
             package_version="0.1.0",
             package_provenance=provenance,
@@ -1021,9 +1091,9 @@ class AuditRunner:
         (self.reports / "MVP_AUDIT_REPORT.md").write_text(
             "\n".join(
                 [
-                    "# VeriGym MVP release-candidate audit",
+                    "# VeriGym 0.1.0 alpha release-candidate audit",
                     "",
-                    f"MVP RELEASE-CANDIDATE GATE: {gate}",
+                    f"ALPHA RELEASE-CANDIDATE GATE: {gate}",
                     "",
                     "Package: `verigym 0.1.0`",
                     f"Source commit: `{provenance.source_commit or 'unknown'}`",
@@ -1040,9 +1110,11 @@ class AuditRunner:
                     "|---|---:|---:|---|",
                     evidence_rows,
                     "",
-                    "No formal/OpenROAD/full-PPA, commercial execution, repository adapter, "
-                    "external agent framework, trajectory/RL, distributed, or evolving-release "
-                    "scope was started.",
+                    "No formal/OpenROAD/full-PPA, commercial execution, third-party repository "
+                    "benchmark, model-weight training/RL, distributed execution, or continuously "
+                    "evolving benchmark-release scope is claimed. Bounded repository repair, "
+                    "observable trajectories, context-memory versions, and provider-neutral "
+                    "action conformance are included as alpha capabilities.",
                     "",
                 ]
             ),

@@ -25,8 +25,16 @@ from verigym.runtimes.docker.engine import DockerCliEngine
 from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
 
 CODEX_NATIVE_SHA256 = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
+RUN_DOCKER = os.environ.get("VERIGYM_RUN_DOCKER_TESTS") == "1"
 
-pytestmark = [pytest.mark.integration, pytest.mark.docker]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.docker,
+    pytest.mark.skipif(
+        not RUN_DOCKER,
+        reason="set VERIGYM_RUN_DOCKER_TESTS=1 to run real Docker integration tests",
+    ),
+]
 
 TASKS = [
     "repo-rtl/arbiter-reset-recovery",

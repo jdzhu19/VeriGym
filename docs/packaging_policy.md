@@ -5,6 +5,9 @@ the VerilogEval adapter metadata, built-in profiles, and the educational toy Lib
 sdist additionally contains source, tests, documentation, Docker recipes, scripts, and the
 installable plugin-conformance fixture.
 
+The alpha release audit also builds and scans the separately installable `verigym-codex-cli`
+wheel and sdist. That integration remains a plugin package rather than part of the core wheel.
+
 Included fixtures are small, synthetic, and explicitly licensed. Packages must not contain an
 external VerilogEval checkout, commercial binaries, PDKs, proprietary cell libraries, model
 weights, credentials, audit runs, caches, virtual environments, Docker layers, private
@@ -33,6 +36,8 @@ python scripts/run_release_audit.py \
   --verilog-eval-root /path/to/pinned/verilog-eval
 ```
 
-The wheelhouse and external checkout are prepared outside the audit. The driver never publishes,
-tags, pushes, pulls images, or downloads a benchmark. It refuses dirty source and existing output;
-unavailable required resources remain blocked/skipped evidence and fail the candidate gate.
+The wheelhouse and external checkout are prepared outside the audit. When a wheelhouse is supplied,
+both the isolated build frontend and clean-install checks resolve dependencies from it with package
+indexes disabled. The driver never publishes, tags, pushes, pulls images, or downloads a benchmark.
+It refuses dirty source and existing output; unavailable required resources remain blocked/skipped
+evidence and fail the candidate gate.

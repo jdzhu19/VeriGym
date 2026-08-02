@@ -2,17 +2,20 @@
 
 ## Unreleased
 
-- Stabilized the Milestones 0–9 MVP contracts for release-candidate auditing.
-- Added additive build provenance, artifact integrity, schema export and
-  compatibility fixtures, unit-aware cost reporting, and remote model identity.
-- Added installed-distribution plugin and public Python API conformance assets.
-- Established commit `1deea550815603f72f68887b8db3577ea9c72462` as the
-  final Codex CLI semantic-conformance baseline. The separately identified
-  read-only and visible-workspace-writing paths are both agent tracks; direct
-  API model evaluation was a separate integration at that baseline.
-- Added the provider-neutral `repository_action.v2` protocol, deterministic
-  multi-turn API-call accounting and replay, and three independent repository
-  conformance tasks.
+No unreleased changes.
 
-No cross-provider comparison, external benchmark, training, or release work is
-included.
+## 0.1.0 alpha - 2026-08-02
+
+- Stabilized the versioned task, verifier, runtime, artifact, replay, experiment, reporting, and
+  plugin contracts for release-candidate auditing.
+- Added ChatEval and AgentEval paths, VerilogEval V2 adaptation, Icarus and profile-scoped Yosys
+  evaluation, Local and Docker runtimes, and Codex CLI agent conformance tracks.
+- Added bounded repository-level RTL repair, observable trajectory export, decomposed rewards,
+  contamination-controlled splits, and immutable context-memory agent-version comparison.
+- Added the provider-neutral `repository_action.v2` protocol, deterministic multi-turn API-call
+  accounting and replay, and three independent repository conformance tasks.
+- Added build provenance, artifact integrity, schema compatibility, secret-aware scanning, and
+  installed-distribution conformance checks.
+
+This alpha does not claim cross-toolchain PPA comparability, commercial execution, built-in
+training/RL, continuously evolving benchmark releases, or broad external repository coverage.

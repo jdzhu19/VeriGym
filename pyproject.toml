@@ -6,7 +6,7 @@ backend-path = ["build_backend"]
 [project]
 name = "verigym"
 version = "0.1.0"
-description = "An executable interoperability layer for RTL LLM evaluation."
+description = "A benchmark-neutral, toolchain-aware evaluation environment for RTL agents."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -76,7 +76,12 @@ verigym = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers"
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "-m",
+  "not requires_iverilog and not docker and not docker_yosys and not docker_batch and not yosys and not yosys_batch and not verilog_eval_batch and not external_benchmark and not reproducible_build and not release_audit",
+]
 testpaths = ["tests"]
 markers = [
   "integration: exercises an installed external RTL tool",

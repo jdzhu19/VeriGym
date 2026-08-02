@@ -1,23 +1,41 @@
 # VeriGym
 
-VeriGym is an executable interoperability layer for RTL LLM evaluation. It turns a
-benchmark task into a versioned task IR, runs a policy-controlled evaluation episode,
-verifies the resulting RTL in a separate hidden-test context, and writes a replayable trace
-and correctness-first scorecard.
+VeriGym is a benchmark-neutral, toolchain-aware evaluation environment for RTL agents. It
+normalizes benchmark tasks, agent harnesses, tools, and runtimes into versioned contracts, runs a
+policy-controlled episode, and writes replayable traces and correctness-first evaluation summaries.
 
 ```text
-SuiteAdapter -> VeriTask -> Agent workspace -> Verifier DAG -> Trace + ScoreCard
+SuiteAdapter -> VeriTask -> AgentProtocol -> Tool/Runtime Profile
+             -> Verifier DAG -> Trace + ScoreCard + Evaluation Summary
 ```
+
+VeriGym supports three bounded evaluation protocols. **ChatEval** makes one model call without
+tool feedback. **AgentEval** permits budgeted multi-turn actions and tools. **EvolvingAgentEval**
+compares immutable agent versions produced from allowed observable history on a sealed held-out
+split. The current evolving bridge supports context-memory versions and external trainer manifests;
+it does not claim built-in model training or autonomous self-improvement. See the
+[architecture overview](docs/architecture.md).
 
 ## Install
 
 Python 3.11+ is required. `LocalRuntime` verification also needs host `iverilog` and `vvp`;
 DockerRuntime obtains them from its explicitly selected image.
 
+Use one virtual environment per Git worktree so an editable install cannot resolve to a sibling
+checkout:
+
 ```bash
-pip install -e .
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev,openai-compatible]' \
+  -e integrations/verigym-codex-cli
+python -c 'from pathlib import Path; import verigym; print(Path(verigym.__file__).resolve())'
 verigym doctor
 ```
+
+`pytest` runs the ordinary no-tool suite. Select an opt-in marker explicitly after provisioning
+its dependency, for example `pytest -m requires_iverilog`; Docker and Yosys markers additionally
+require the environment guards shown below.
 
 `LocalRuntime` is explicitly labeled `local_trusted`. It is suitable only for trusted toy
 tasks and development; it is not an untrusted-workload security boundary.
@@ -26,7 +44,7 @@ Docker isolation is optional and uses the external Docker CLI; no Docker Python 
 is required for the base installation. See [DockerRuntime](docs/docker_runtime.md) and the
 [security policy](SECURITY.md) before running untrusted inputs.
 
-## Stable MVP contracts
+## Stable platform contracts
 
 New runs and experiments record source/build provenance and include hash-bound artifact
 manifests. Older Milestones 0–9 artifacts remain readable with an explicit `legacy_unverified`
@@ -345,13 +363,10 @@ transport, representation-only normalizer, turn budget, and state transitions ar
 replayed offline. The independent `repo-api-protocol` suite supplies three Apache-2.0 conformance
 tasks without reusing the Milestone 11 task identities.
 
-Milestone 10A adds the bounded repository-level RTL repair environment on top
-of the preserved Milestones 0–9 contracts. Milestone 10B adds deterministic
-export of bounded observable trajectories, decomposed offline rewards, and
-immutable context-memory agent versions for those runs. See
-[the evolving-agent bridge guide](docs/evolving_agent_bridge.md). The
-reference images and Docker profiles are Linux-first. Quality reporting
-remains only profile-relative educational synthesis area—not full PPA or
-signoff. External repository benchmarks, OpenROAD, timing, power, formal
-expansion, commercial execution, distributed scheduling, model-weight
-training, RL, and evolving task or model releases remain out of scope.
+The repository-level environment supports deterministic export of bounded observable trajectories,
+decomposed offline rewards, and immutable context-memory agent versions. See
+[the evolving-agent bridge guide](docs/evolving_agent_bridge.md). Reference images and Docker
+profiles are Linux-first. Quality reporting remains profile-relative educational synthesis
+area—not full PPA or signoff. Third-party repository benchmark adapters, OpenROAD, timing, power,
+formal expansion, commercial execution, distributed scheduling, built-in model-weight training or
+RL, and continuously evolving benchmark releases remain out of scope for this alpha.
