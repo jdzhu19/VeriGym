@@ -168,6 +168,7 @@ class EpisodeFailure(StrictModel):
     category: str
     message: str
     infrastructure: bool = False
+    protocol_error_subcategory: str | None = None
 
 
 class ScoreCard(StrictModel):

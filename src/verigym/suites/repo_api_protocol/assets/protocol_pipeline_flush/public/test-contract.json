@@ -1,0 +1,45 @@
+{
+  "asset_files": {
+    "assets/tb_protocol_flush_public.sv": "5c551bba1ce72e4b9a5db047202d5ace7a9c419f0849c4d79cc62c8e2086b220"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "240a0cb1ff66726b9e1ef39c0e825424d0777fdb6a4d7dad31cb129d17e7f096",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_protocol_flush_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/flush_stage.sv",
+            "{repository}/rtl/flush_pipeline_top.sv",
+            "{public}/assets/tb_protocol_flush_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "protocol-pipeline-flush-public",
+      "title": "Flush invalidates a stalled word"
+    }
+  ]
+}

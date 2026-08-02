@@ -339,6 +339,12 @@ Only the environment-variable name is configured; its value and authorization he
 excluded from manifests, traces, logs, and configuration fingerprints. Credential-bearing
 URLs are rejected. See [Milestone 5 model and agent details](docs/milestone5-models-and-agents.md).
 
+Provider-backed repository agents can bind the strict, multi-turn
+[`repository_action.v2`](docs/repository_action_protocol.md) protocol. Its action registry,
+transport, representation-only normalizer, turn budget, and state transitions are plan-bound and
+replayed offline. The independent `repo-api-protocol` suite supplies three Apache-2.0 conformance
+tasks without reusing the Milestone 11 task identities.
+
 Milestone 10A adds the bounded repository-level RTL repair environment on top
 of the preserved Milestones 0–9 contracts. Milestone 10B adds deterministic
 export of bounded observable trajectories, decomposed offline rewards, and

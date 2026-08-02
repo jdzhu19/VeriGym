@@ -55,6 +55,10 @@ from verigym.prompts.policy import (
     resolve_prompt_policy,
     validate_prompt_policy_binding,
 )
+from verigym.protocols.repository_action import (
+    resolve_repository_action_protocol,
+    validate_repository_action_protocol_binding,
+)
 from verigym.reporting.loader import load_report_inputs, validate_plan_binding
 from verigym.reporting.service import ReportService
 from verigym.schemas.external_agent import ExternalProcessResult
@@ -145,6 +149,9 @@ class _ParentArtifacts:
                     + int(
                         record.artifact_validation_status in {"partial", "corrupt", "incompatible"}
                     ),
+                    "observed_model_api_call_count": (
+                        self.state.observed_model_api_call_count + record.model_api_call_count
+                    ),
                 }
             )
             atomic_dump_jsonl(self.root / "run_index.jsonl", self.records)
@@ -167,6 +174,7 @@ class _ParentArtifacts:
         *,
         resume: bool,
         maximum: int | None,
+        maximum_api_calls: int | None,
     ) -> ModelProcessLedgerRecord | None:
         reason = _model_bearing_reason(item)
         if reason is None:
@@ -178,6 +186,15 @@ class _ParentArtifacts:
                 )
             if maximum is not None and len(self.process_ledger) >= maximum:
                 raise ConfigurationError("campaign-wide model-process budget is exhausted")
+            reserved_api_calls = _maximum_model_api_calls(item)
+            authorized_api_calls = sum(
+                record.maximum_model_api_calls or 0 for record in self.process_ledger
+            )
+            if (
+                maximum_api_calls is not None
+                and authorized_api_calls + reserved_api_calls > maximum_api_calls
+            ):
+                raise ConfigurationError("campaign-wide model API-call budget is exhausted")
             requested_model = item.system.model_id
             if requested_model is None:
                 value = item.system.agent_options.get("model_id")
@@ -195,12 +212,17 @@ class _ParentArtifacts:
                 sample_index=item.sample_index,
                 model_bearing_reason=reason,
                 requested_model_id=requested_model,
+                model_api_call_budget_policy="reserved_max_calls_v1",
+                maximum_model_api_calls=reserved_api_calls,
                 resume=resume,
             )
             _append_jsonl_record(self.root / "process-ledger.jsonl", record)
             self.process_ledger.append(record)
             self.state = self.state.model_copy(
-                update={"authorized_model_process_count": len(self.process_ledger)}
+                update={
+                    "authorized_model_process_count": len(self.process_ledger),
+                    "authorized_model_api_call_budget": (authorized_api_calls + reserved_api_calls),
+                }
             )
             atomic_dump_json(self.root / "state.json", self.state)
         self.event(
@@ -212,6 +234,7 @@ class _ParentArtifacts:
                 "model_bearing_reason": record.model_bearing_reason,
                 "retry": False,
                 "resume": resume,
+                "maximum_model_api_calls": record.maximum_model_api_calls,
             },
         )
         return record
@@ -228,6 +251,8 @@ class _ParentArtifacts:
             "valid_terminal_count": self.state.valid_terminal_count,
             "infrastructure_error_count": self.state.infrastructure_error_count,
             "authorized_model_process_count": self.state.authorized_model_process_count,
+            "authorized_model_api_call_budget": self.state.authorized_model_api_call_budget,
+            "observed_model_api_call_count": self.state.observed_model_api_call_count,
             "active_count": self.state.active_count,
         }
         _append_jsonl_record(self.root / "summary-checkpoints.jsonl", record)
@@ -257,6 +282,11 @@ class _ParentArtifacts:
                     "corrupt_attempt_count": self.state.corrupt_attempt_count
                     - int(old.artifact_validation_status in corrupt_states)
                     + int(new.artifact_validation_status in corrupt_states),
+                    "observed_model_api_call_count": (
+                        self.state.observed_model_api_call_count
+                        - old.model_api_call_count
+                        + new.model_api_call_count
+                    ),
                 }
             )
             atomic_dump_jsonl(self.root / "run_index.jsonl", self.records)
@@ -377,7 +407,19 @@ class BatchRunner:
         checkpoints = _load_checkpoint_records(experiment_root / "summary-checkpoints.jsonl")
         state = load_json_model(experiment_root / "state.json", ExperimentState)
         state = _recovered_state(plan, manifest, state, events, records)
-        state = state.model_copy(update={"authorized_model_process_count": len(process_ledger)})
+        state = state.model_copy(
+            update={
+                "authorized_model_process_count": len(process_ledger),
+                "authorized_model_api_call_budget": sum(
+                    record.maximum_model_api_calls
+                    for record in process_ledger
+                    if record.maximum_model_api_calls is not None
+                ),
+                "observed_model_api_call_count": sum(
+                    record.model_api_call_count for record in records
+                ),
+            }
+        )
         parent = _ParentArtifacts(
             experiment_root,
             manifest,
@@ -704,6 +746,7 @@ class BatchRunner:
                 attempt,
                 resume=resume,
                 maximum=parent.manifest.execution_policy.max_model_processes,
+                maximum_api_calls=parent.manifest.execution_policy.max_model_api_calls,
             )
             result = self.child_executor(item, config)
             if (
@@ -792,6 +835,16 @@ class BatchRunner:
                 resolved=resolved_prompt,
                 resolved_hash=resolved_prompt_hash,
             )
+            resolved_action_protocol = resolve_repository_action_protocol(
+                agent_descriptor=agent.descriptor,
+                protocol_spec=agent.action_protocol_spec,
+                agent_options=config.agent_options,
+                task=task,
+            )
+            validate_repository_action_protocol_binding(
+                expected=item.action_protocol,
+                resolved=resolved_action_protocol,
+            )
         except ValueError as exc:
             raise ConfigurationError(str(exc)) from exc
         return config.model_copy(
@@ -799,6 +852,7 @@ class BatchRunner:
                 "resolved_prompt_policy": resolved_prompt,
                 "resolved_prompt_policy_hash": resolved_prompt_hash,
                 "resolved_agent_configuration_hash": actual_agent_hash,
+                "resolved_action_protocol": resolved_action_protocol,
             }
         )
 
@@ -1059,6 +1113,7 @@ def _record_from_result(
         resolved=result.scorecard.resolved,
         evaluable=evaluable,
         infrastructure_error=infrastructure,
+        model_api_call_count=len(result.manifest.model_observations),
         child_exit_category=failure,
         artifact_validation_status="valid",
         child_manifest_hash=hash_bytes((result.run_dir / "run_manifest.json").read_bytes()),
@@ -1077,20 +1132,50 @@ def _model_bearing_reason(
     return None
 
 
+def _maximum_model_api_calls(item: PlanItem) -> int:
+    if item.system.model_id is None:
+        return 0
+    if item.action_protocol is not None:
+        return item.action_protocol.max_completion_calls
+    return 1
+
+
 def _validate_model_process_result(item: PlanItem, result: RunResult) -> None:
     reason = _model_bearing_reason(item)
     if reason is None:
         return
     if reason == "configured_model_client":
-        if len(result.manifest.model_observations) != 1:
-            raise ConfigurationError("model-bearing child did not record exactly one model call")
+        model_observations = result.manifest.model_observations
+        if item.action_protocol is None:
+            if len(model_observations) != 1:
+                raise ConfigurationError(
+                    "model-bearing child did not record exactly one model call"
+                )
+            return
+        if not 1 <= len(model_observations) <= item.action_protocol.max_completion_calls:
+            raise ConfigurationError(
+                "repository-action child recorded an invalid model API-call count"
+            )
+        records = result.manifest.action_protocol_records
+        if len(records) != sum(
+            observation.safe_provider_request_id is not None for observation in model_observations
+        ):
+            raise ConfigurationError(
+                "repository-action child protocol records do not cover successful responses"
+            )
+        observation_ids = {observation.request_id for observation in model_observations}
+        record_ids = [record.request_id for record in records]
+        if len(record_ids) != len(set(record_ids)) or not set(record_ids) <= observation_ids:
+            raise ConfigurationError(
+                "repository-action child protocol/model request linkage is invalid"
+            )
         return
-    observations = result.manifest.external_agent_observations
-    if sum(identity.invocation_count for identity in observations) != 1:
+    external_observations = result.manifest.external_agent_observations
+    if sum(identity.invocation_count for identity in external_observations) != 1:
         raise ConfigurationError(
             "external coding-agent child did not record exactly one model process"
         )
-    identity = observations[-1]
+    identity = external_observations[-1]
     options = item.system.agent_options
     expected_values = {
         "requested_model_id": options.get("model_id"),
@@ -1181,6 +1266,8 @@ def _plan_audit(plan: ExperimentPlan, plan_path: Path) -> dict[str, object]:
     child_seeds = [item.child_seed for item in plan.items]
     model_bearing_item_count = sum(_model_bearing_reason(item) is not None for item in plan.items)
     maximum = plan.config.execution.max_model_processes
+    planned_model_api_call_budget = sum(_maximum_model_api_calls(item) for item in plan.items)
+    maximum_api_calls = plan.config.execution.max_model_api_calls
     strict_process_policy = (
         plan.config.execution.resume_model_process_policy == "never_rerun_after_authorization"
     )
@@ -1188,6 +1275,11 @@ def _plan_audit(plan: ExperimentPlan, plan_path: Path) -> dict[str, object]:
         maximum == model_bearing_item_count
         if strict_process_policy
         else maximum is None or maximum >= model_bearing_item_count
+    )
+    model_api_call_budget_exact = (
+        maximum_api_calls == planned_model_api_call_budget
+        if any(item.action_protocol is not None for item in plan.items)
+        else maximum_api_calls is None or maximum_api_calls >= planned_model_api_call_budget
     )
     strict_resume_ready = (
         plan.config.execution.resume_model_process_policy != "never_rerun_after_authorization"
@@ -1217,6 +1309,9 @@ def _plan_audit(plan: ExperimentPlan, plan_path: Path) -> dict[str, object]:
         "model_bearing_item_count": model_bearing_item_count,
         "max_model_processes": maximum,
         "model_process_budget_exact": process_budget_exact,
+        "planned_model_api_call_budget": planned_model_api_call_budget,
+        "max_model_api_calls": maximum_api_calls,
+        "model_api_call_budget_exact": model_api_call_budget_exact,
         "strict_resume_ready": strict_resume_ready,
         "frozen_campaign_identity_hash": (
             content_hash(plan.config.execution.frozen_campaign_identity)
@@ -1229,6 +1324,7 @@ def _plan_audit(plan: ExperimentPlan, plan_path: Path) -> dict[str, object]:
             len(plan.items) == len(set(item_ids)) == len(set(child_seeds))
             and observed_cells == expected_cells
             and process_budget_exact
+            and model_api_call_budget_exact
             and strict_resume_ready
         ),
     }
@@ -1241,6 +1337,13 @@ def _validate_execution_plan(plan: ExperimentPlan) -> None:
     model_bearing = sum(_model_bearing_reason(item) is not None for item in plan.items)
     if execution.max_model_processes != model_bearing:
         raise ConfigurationError("strict model-process campaign requires an exact process budget")
+    planned_api_calls = sum(_maximum_model_api_calls(item) for item in plan.items)
+    if any(item.action_protocol is not None for item in plan.items) and (
+        execution.max_model_api_calls != planned_api_calls
+    ):
+        raise ConfigurationError(
+            "strict multi-turn model campaign requires an exact model API-call budget"
+        )
 
 
 def _assert_persisted_plan(root: Path, plan: ExperimentPlan) -> None:
@@ -1310,6 +1413,11 @@ def _validate_process_ledger(
     maximum = plan.config.execution.max_model_processes
     if maximum is not None and len(records) > maximum:
         raise ConfigurationError("model-process ledger exceeds the configured budget")
+    maximum_api_calls = plan.config.execution.max_model_api_calls
+    if maximum_api_calls is not None and (
+        sum(record.maximum_model_api_calls or 0 for record in records) > maximum_api_calls
+    ):
+        raise ConfigurationError("model-process ledger exceeds the model API-call budget")
     for record in records:
         item = by_index.get(record.plan_index)
         if (
@@ -1318,6 +1426,10 @@ def _validate_process_ledger(
             or item.task_id != record.task_id
             or item.system.system_id != record.system_id
             or _model_bearing_reason(item) != record.model_bearing_reason
+            or (
+                record.model_api_call_budget_policy == "reserved_max_calls_v1"
+                and _maximum_model_api_calls(item) != record.maximum_model_api_calls
+            )
             or record.retry is not False
         ):
             raise ConfigurationError("model-process ledger identity differs from the plan")
@@ -1402,6 +1514,7 @@ def _child_config(
         expected_prompt_policy=item.prompt_policy,
         expected_prompt_policy_hash=item.prompt_policy_hash,
         expected_agent_configuration_hash=item.system.agent_configuration_hash,
+        expected_action_protocol=item.action_protocol,
     )
 
 

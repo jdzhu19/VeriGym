@@ -233,6 +233,20 @@
           "default": null,
           "title": "Max Consecutive Identical Shared Infrastructure Failures"
         },
+        "max_model_api_calls": {
+          "anyOf": [
+            {
+              "maximum": 3200000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Model Api Calls"
+        },
         "max_model_processes": {
           "anyOf": [
             {

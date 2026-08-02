@@ -154,16 +154,33 @@ API_AGENT_CSV_COLUMNS = [
     "api_prompt_policy_hash",
     "api_agent_configuration_hash",
     "safe_provider_request_id",
+    "safe_provider_request_ids",
     "observed_provider_model_id",
     "system_fingerprint",
     "model_latency_s",
+    "model_latency_total_s",
+    "model_latency_mean_s",
     "usage_missing",
+    "usage_missing_count",
     "api_request_count",
     "authentication_mode",
     "credential_env_name",
     "credential_persisted",
     "credential_hashed",
     "agent_execution_backend",
+    "action_protocol_id",
+    "action_protocol_version",
+    "action_transport",
+    "action_protocol_fingerprint",
+    "action_registry_hash",
+    "action_prompt_contract_hash",
+    "protocol_turn_count",
+    "protocol_accepted_turn_count",
+    "protocol_canonical_acceptance_count",
+    "protocol_normalized_acceptance_count",
+    "protocol_rejection_reasons",
+    "protocol_accepted_actions",
+    "protocol_error_subcategory",
 ]
 
 
@@ -270,6 +287,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
     )
     codex = _codex_dimensions(manifest)
     api = _api_dimensions(manifest)
+    action_protocol = _action_protocol_dimensions(manifest, score)
     repository = manifest.repository_candidate
     repository_identity = manifest.repository_task_identity
     public_tests = manifest.repository_public_tests
@@ -292,6 +310,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "system_id": manifest.system_id or (plan.system.system_id if plan else None),
         **codex,
         **api,
+        **action_protocol,
         "model_id": manifest.model.model_id if manifest.model else None,
         "agent_id": manifest.agent.name,
         "base_seed": manifest.base_seed if manifest.base_seed is not None else manifest.seed,
@@ -688,6 +707,13 @@ def _api_dimensions(manifest: Any) -> dict[str, Any]:
     observation = manifest.model_observations[-1] if manifest.model_observations else None
     request = observation.provider_request if observation is not None else None
     configuration = manifest.model.configuration
+    observations = manifest.model_observations
+    latencies = [item.latency_s for item in observations if item.latency_s is not None]
+    safe_request_ids = sorted(
+        item.safe_provider_request_id
+        for item in observations
+        if item.safe_provider_request_id is not None
+    )
     return {
         "provider_id": request.provider_id if request is not None else manifest.model.provider,
         "api_protocol": request.protocol if request is not None else configuration.get("protocol"),
@@ -709,12 +735,16 @@ def _api_dimensions(manifest: Any) -> dict[str, Any]:
         "safe_provider_request_id": (
             observation.safe_provider_request_id if observation is not None else None
         ),
+        "safe_provider_request_ids": ";".join(safe_request_ids),
         "observed_provider_model_id": (
             observation.observed_provider_model_id if observation is not None else None
         ),
         "system_fingerprint": observation.system_fingerprint if observation is not None else None,
         "model_latency_s": observation.latency_s if observation is not None else None,
+        "model_latency_total_s": sum(latencies) if latencies else None,
+        "model_latency_mean_s": sum(latencies) / len(latencies) if latencies else None,
         "usage_missing": observation.usage_missing if observation is not None else None,
+        "usage_missing_count": sum(item.usage_missing is True for item in observations),
         "api_request_count": len(manifest.model_observations),
         "authentication_mode": (
             request.authentication_mode
@@ -737,6 +767,39 @@ def _api_dimensions(manifest: Any) -> dict[str, Any]:
             else configuration.get("credential_hashed")
         ),
         "agent_execution_backend": manifest.environment_summary.get("agent_execution_backend"),
+    }
+
+
+def _action_protocol_dimensions(manifest: Any, score: Any) -> dict[str, Any]:
+    descriptor = manifest.action_protocol
+    if descriptor is None:
+        return {}
+    records = manifest.action_protocol_records
+    accepted = [record for record in records if record.accepted]
+    rejection_reasons = sorted(
+        record.error_subcategory for record in records if record.error_subcategory is not None
+    )
+    action_names = [record.action_name for record in accepted if record.action_name is not None]
+    return {
+        "action_protocol_id": descriptor.protocol_id,
+        "action_protocol_version": descriptor.protocol_version,
+        "action_transport": descriptor.action_transport,
+        "action_protocol_fingerprint": descriptor.configuration_fingerprint,
+        "action_registry_hash": descriptor.action_registry_hash,
+        "action_prompt_contract_hash": descriptor.prompt_contract_hash,
+        "protocol_turn_count": len(records),
+        "protocol_accepted_turn_count": len(accepted),
+        "protocol_canonical_acceptance_count": sum(
+            not record.permitted_normalization_used for record in accepted
+        ),
+        "protocol_normalized_acceptance_count": sum(
+            record.permitted_normalization_used for record in accepted
+        ),
+        "protocol_rejection_reasons": ";".join(rejection_reasons),
+        "protocol_accepted_actions": ";".join(action_names),
+        "protocol_error_subcategory": (
+            score.failure.protocol_error_subcategory if score.failure is not None else None
+        ),
     }
 
 

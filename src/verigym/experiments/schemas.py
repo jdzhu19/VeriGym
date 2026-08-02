@@ -10,6 +10,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 
 from verigym.profiles.base import ResolvedToolchainProfile
+from verigym.schemas.action_protocol import RepositoryActionProtocolDescriptor
 from verigym.schemas.agent import AgentDescriptor
 from verigym.schemas.base import StrictModel
 from verigym.schemas.common import (
@@ -165,6 +166,11 @@ class ExperimentExecutionConfig(StrictModel):
         ge=1,
         le=HARD_MAX_PLAN_ITEMS,
     )
+    max_model_api_calls: int | None = Field(
+        default=None,
+        ge=1,
+        le=HARD_MAX_PLAN_ITEMS * 32,
+    )
     resume_model_process_policy: Literal[
         "legacy_rerun_invalid",
         "never_rerun_after_authorization",
@@ -276,6 +282,7 @@ class ExperimentConfig(StrictModel):
             del payload["execution"]["max_plan_items"]
         execution_defaults: dict[str, Any] = {
             "max_model_processes": None,
+            "max_model_api_calls": None,
             "resume_model_process_policy": "legacy_rerun_invalid",
             "max_consecutive_identical_shared_infrastructure_failures": None,
             "max_total_infrastructure_failures": None,
@@ -337,6 +344,7 @@ class PlanItem(StrictModel):
     system: PlannedSystemIdentity
     prompt_policy: PromptPolicyDescriptor | None = None
     prompt_policy_hash: str | None = None
+    action_protocol: RepositoryActionProtocolDescriptor | None = None
     tool_policy: ToolPolicySnapshot
     tool_policy_hash: str
     base_seed: int = Field(ge=0, le=_MAX_SEED)
@@ -495,6 +503,7 @@ class RunIndexRecord(StrictModel):
     resolved: bool = False
     evaluable: bool = False
     infrastructure_error: bool = False
+    model_api_call_count: int = Field(default=0, ge=0, le=32)
     child_exit_category: str
     artifact_validation_status: ArtifactValidationStatus
     child_manifest_hash: str | None = None
@@ -539,6 +548,21 @@ class ModelProcessLedgerRecord(StrictModel):
         "external_coding_agent",
     ]
     requested_model_id: str | None = None
+    model_api_call_budget_policy: Literal[
+        "legacy_unbound",
+        "reserved_max_calls_v1",
+    ] = "legacy_unbound"
+    maximum_model_api_calls: int | None = Field(default=None, ge=0, le=32)
+
+    @model_validator(mode="after")
+    def validate_api_call_budget(self) -> ModelProcessLedgerRecord:
+        if self.model_api_call_budget_policy == "reserved_max_calls_v1":
+            if self.maximum_model_api_calls is None:
+                raise ValueError("reserved model API-call budget requires a maximum")
+        elif self.maximum_model_api_calls is not None:
+            raise ValueError("legacy model-process authorization cannot bind an API-call maximum")
+        return self
+
     retry: Literal[False] = False
     resume: bool
 
@@ -556,6 +580,8 @@ class ExperimentState(StrictModel):
     infrastructure_error_count: int = Field(default=0, ge=0)
     corrupt_attempt_count: int = Field(default=0, ge=0)
     authorized_model_process_count: int = Field(default=0, ge=0)
+    authorized_model_api_call_budget: int = Field(default=0, ge=0)
+    observed_model_api_call_count: int = Field(default=0, ge=0)
     active_count: int = Field(default=0, ge=0)
     observed_max_concurrency: int = Field(default=0, ge=0)
     last_event_sequence: int = Field(default=-1, ge=-1)

@@ -9,6 +9,10 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from verigym.profiles.base import ResolvedToolchainProfile
+from verigym.schemas.action_protocol import (
+    RepositoryActionProtocolDescriptor,
+    RepositoryActionTurnRecord,
+)
 from verigym.schemas.agent import AgentDescriptor
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
@@ -65,6 +69,8 @@ class RunConfig(StrictModel):
     resolved_prompt_policy_hash: str | None = None
     expected_agent_configuration_hash: str | None = None
     resolved_agent_configuration_hash: str | None = None
+    expected_action_protocol: RepositoryActionProtocolDescriptor | None = None
+    resolved_action_protocol: RepositoryActionProtocolDescriptor | None = None
 
     def identity_payload(self) -> dict[str, Any]:
         """Preserve pre-extension hashes while binding every nonempty option."""
@@ -79,6 +85,8 @@ class RunConfig(StrictModel):
             "resolved_prompt_policy_hash",
             "expected_agent_configuration_hash",
             "resolved_agent_configuration_hash",
+            "expected_action_protocol",
+            "resolved_action_protocol",
         )
         if all(payload.get(field) is None for field in prompt_binding_fields):
             for field in prompt_binding_fields:
@@ -154,6 +162,8 @@ class RunConfig(StrictModel):
             and self.expected_agent_configuration_hash is None
         ):
             raise ValueError("a resolved agent configuration requires a frozen expected hash")
+        if self.resolved_action_protocol is not None and self.expected_action_protocol is None:
+            raise ValueError("resolved repository action protocol requires a frozen expectation")
         return self
 
 
@@ -204,6 +214,8 @@ class RunManifest(StrictModel):
     reference_candidate_hash: str | None = None
     budget: BudgetSpec
     prompt_policy_hash: str | None = None
+    action_protocol: RepositoryActionProtocolDescriptor | None = None
+    action_protocol_records: list[RepositoryActionTurnRecord] = Field(default_factory=list)
     experiment_id: str | None = None
     plan_item_id: str | None = None
     system_id: str | None = None

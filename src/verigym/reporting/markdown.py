@@ -153,6 +153,52 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"{markdown_escape(partition.get('api_request_count', 0))} | "
                 f"{markdown_escape(partition.get('usage_missing_count', 0))} |"
             )
+    action_protocol = aggregate.metadata.get("repository_action_protocol")
+    if isinstance(action_protocol, dict):
+        turns = action_protocol.get("turns")
+        turns = turns if isinstance(turns, dict) else {}
+        reach = action_protocol.get("reach")
+        reach = reach if isinstance(reach, dict) else {}
+        lines.extend(
+            [
+                "",
+                "## Repository action protocol",
+                "",
+                "`repository_action.v2` keeps provider transport extraction separate from "
+                "canonical one-action validation. Normalization is representation-only.",
+                "",
+                f"- Protocol-valid turns: {turns.get('accepted', 0)}/{turns.get('total', 0)}",
+                f"- Canonical acceptance: {turns.get('canonical_acceptance', 0)}",
+                "- Permitted-normalized acceptance: "
+                f"{turns.get('permitted_normalized_acceptance', 0)}",
+                f"- Public-test action reach: {reach.get('public_test_action_runs', 0)} run(s)",
+                f"- Candidate-freeze reach: {reach.get('candidate_freeze_runs', 0)} run(s)",
+                f"- Hidden-verifier reach: {reach.get('hidden_verifier_runs', 0)} run(s)",
+                "- Rejection reasons: `"
+                f"{markdown_escape(action_protocol.get('rejection_reasons', {}))}`",
+                "- Terminal taxonomy: `"
+                f"{markdown_escape(action_protocol.get('terminal_taxonomy', {}))}`",
+            ]
+        )
+    process_accounting = aggregate.metadata.get("model_process_accounting")
+    if isinstance(process_accounting, dict) and process_accounting.get(
+        "planned_model_bearing_episodes"
+    ):
+        lines.extend(
+            [
+                "",
+                "## Model-process accounting",
+                "",
+                "- Episodes planned/authorized/launched/terminal: "
+                f"{process_accounting.get('planned_model_bearing_episodes', 0)}/"
+                f"{process_accounting.get('authorized_model_bearing_episodes', 0)}/"
+                f"{process_accounting.get('launched_model_bearing_episodes', 0)}/"
+                f"{process_accounting.get('terminal_model_bearing_episodes', 0)}",
+                "- API-call budget authorized/observed: "
+                f"{process_accounting.get('authorized_model_api_call_budget', 0)}/"
+                f"{process_accounting.get('observed_model_api_calls', 0)}",
+            ]
+        )
     repository = aggregate.metadata.get("repository_repair")
     if isinstance(repository, dict):
         public = repository.get("public_tests")

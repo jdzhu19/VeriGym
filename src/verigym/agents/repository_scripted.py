@@ -31,7 +31,7 @@ _GOOD_PATCHES = {
 +            count <= count + 4'h1;
          end
      end
- endmodule
+<CONTEXT-BLANK>endmodule
 """,
     "repo-rtl/pipeline-stall-backpressure": """--- a/repository/rtl/pipeline_stage.sv
 +++ b/repository/rtl/pipeline_stage.sv
@@ -136,12 +136,70 @@ _GOOD_PATCHES = {
          end else if (grant[1]) begin
 -            first_client <= 2'd1;
 +            first_client <= 2'd2;
-         end else if (grant[2]) begin
+<CONTEXT-BLANK>        end else if (grant[2]) begin
 -            first_client <= 2'd2;
 +            first_client <= 2'd0;
          end
      end
+<CONTEXT-BLANK>endmodule
+""",
+    "repo-api-protocol/protocol-valid-hold": """--- a/repository/rtl/valid_register.sv
++++ b/repository/rtl/valid_register.sv
+@@ -12,12 +12,12 @@
+         if (rst) begin
+             data_q <= 8'h00;
+             valid_q <= 1'b0;
++        end else if (hold) begin
++            data_q <= data_q;
++            valid_q <= valid_q;
+         end else if (load) begin
+             data_q <= data_in;
+             valid_q <= 1'b1;
+-        end else if (hold) begin
+-            data_q <= data_q;
+-            valid_q <= valid_q;
+         end
+     end
  endmodule
+""",
+    "repo-api-protocol/protocol-dual-fix": """--- a/repository/rtl/accumulator_core.sv
++++ b/repository/rtl/accumulator_core.sv
+@@ -10,11 +10,7 @@
+         if (clear) begin
+             total <= 8'h00;
+         end else if (step) begin
+-            if ({1'b0, total} + {1'b0, delta} > 9'h0ff) begin
+-                total <= 8'hff;
+-            end else begin
+-                total <= total + delta;
+-            end
++            total <= total + delta;
+         end
+     end
+ endmodule
+--- a/repository/rtl/accumulator_top.sv
++++ b/repository/rtl/accumulator_top.sv
+@@ -8,7 +8,7 @@
+ );
+     accumulator_core u_core (
+         .clk(clk),
+-        .clear(reset_n),
++        .clear(~reset_n),
+         .step(enable),
+         .delta(increment),
+         .total(total)
+""",
+    "repo-api-protocol/protocol-pipeline-flush": """--- a/repository/rtl/flush_stage.sv
++++ b/repository/rtl/flush_stage.sv
+@@ -12,7 +12,7 @@
+ );
+     assign in_ready = ~out_valid | out_ready;
+     always_ff @(posedge clk) begin
+-        if (rst) begin
++        if (rst || flush) begin
+             out_valid <= 1'b0;
+             out_data <= 8'h00;
+         end else if (in_ready) begin
 """,
 }
 _GOOD_PATCHES = {
@@ -237,6 +295,42 @@ _BAD_PATCHES = {
              first_client <= 2'd1;
          end else if (grant[2]) begin
 """,
+    "repo-api-protocol/protocol-valid-hold": """--- a/repository/rtl/valid_register.sv
++++ b/repository/rtl/valid_register.sv
+@@ -13,7 +13,7 @@
+             data_q <= 8'h00;
+             valid_q <= 1'b0;
+         end else if (load) begin
+-            data_q <= data_in;
++            data_q <= data_in + 8'h01;
+             valid_q <= 1'b1;
+         end else if (hold) begin
+             data_q <= data_q;
+""",
+    "repo-api-protocol/protocol-dual-fix": """--- a/repository/rtl/accumulator_top.sv
++++ b/repository/rtl/accumulator_top.sv
+@@ -8,7 +8,7 @@
+ );
+     accumulator_core u_core (
+         .clk(clk),
+-        .clear(reset_n),
++        .clear(~reset_n),
+         .step(enable),
+         .delta(increment),
+         .total(total)
+""",
+    "repo-api-protocol/protocol-pipeline-flush": """--- a/repository/rtl/flush_stage.sv
++++ b/repository/rtl/flush_stage.sv
+@@ -14,7 +14,7 @@
+     always_ff @(posedge clk) begin
+         if (rst) begin
+             out_valid <= 1'b0;
+-            out_data <= 8'h00;
++            out_data <= 8'hff;
+         end else if (in_ready) begin
+             out_valid <= in_valid;
+             if (in_valid) out_data <= in_data;
+""",
 }
 _BAD_PATCHES = {
     task_id: patch.replace("<CONTEXT-BLANK>", " ") for task_id, patch in _BAD_PATCHES.items()
@@ -249,6 +343,9 @@ _PUBLIC_TEST_IDS = {
     "repo-rtl/counter-load-wrap-heldout": "counter-load-wrap-public",
     "repo-rtl/pipeline-flush-heldout": "pipeline-flush-public",
     "repo-rtl/arbiter-rotating-priority-heldout": "arbiter-rotation-public",
+    "repo-api-protocol/protocol-valid-hold": "protocol-valid-hold-public",
+    "repo-api-protocol/protocol-dual-fix": "protocol-dual-fix-public",
+    "repo-api-protocol/protocol-pipeline-flush": "protocol-pipeline-flush-public",
 }
 
 

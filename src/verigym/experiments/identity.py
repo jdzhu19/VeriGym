@@ -141,6 +141,8 @@ def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
         raw["system"] = normalized_system_identity_payload(system)
     if raw.get("repository_task_identity") is None:
         raw.pop("repository_task_identity", None)
+    if raw.get("action_protocol") is None:
+        raw.pop("action_protocol", None)
     return cast(dict[str, Any], raw)
 
 

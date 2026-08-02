@@ -23,7 +23,14 @@ from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
+from verigym.protocols.repository_action import (
+    RepositoryActionProtocolViolation,
+    bounded_tool_result_identity,
+    extract_transport_action,
+    validate_canonical_action,
+)
 from verigym.provenance import get_build_provenance
+from verigym.schemas.action_protocol import ProviderNativeToolCall, RepositoryProtocolError
 from verigym.schemas.common import ToolchainProfile
 from verigym.schemas.integrity import IntegrityValidation
 from verigym.schemas.replay import ReplayEvidence
@@ -32,6 +39,7 @@ from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import VeriTask
+from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 
@@ -97,6 +105,20 @@ def replay_run(
         and manifest.agent_configuration_hash is None
     ):
         raise ReplayError("resolved agent prompt lacks its execution configuration identity")
+    if manifest.action_protocol is None and manifest.action_protocol_records:
+        raise ReplayError("run manifest contains action records without a protocol identity")
+    if manifest.action_protocol is not None:
+        if manifest.action_protocol.configuration_fingerprint != content_hash(
+            manifest.action_protocol.model_dump(
+                mode="json", exclude={"schema_version", "configuration_fingerprint"}
+            )
+        ):
+            raise ReplayError("run manifest repository action protocol hash is inconsistent")
+        expected_turn = 0
+        for record in manifest.action_protocol_records:
+            if record.turn_index != expected_turn:
+                raise ReplayError("repository action protocol records are not contiguous")
+            expected_turn += 1
     task = load_model(run_dir / "task_snapshot.json", VeriTask)
     try:
         task_payload = json.loads((run_dir / "task_snapshot.json").read_text(encoding="utf-8"))
@@ -186,6 +208,7 @@ def replay_run(
     if events[-1].event_type != "episode_terminated":
         raise ReplayError("trace does not end with episode_terminated")
     _validate_provider_request_identities(manifest, events)
+    _validate_repository_action_protocol_replay(manifest, events, task)
 
     reverified: list[VerifierResult] | None = None
     replay_candidate_synthesis: SynthesisMetrics | None = None
@@ -337,6 +360,13 @@ def _validate_provider_request_identities(
             or identity.agent_configuration_hash != manifest.agent_configuration_hash
         ):
             raise ReplayError("provider request prompt or agent binding differs from the run")
+        expected_action_protocol_hash = (
+            manifest.action_protocol.configuration_fingerprint
+            if manifest.action_protocol is not None
+            else None
+        )
+        if identity.action_protocol_hash != expected_action_protocol_hash:
+            raise ReplayError("provider request action-protocol binding differs from the run")
         event = requests.get(observation.request_id)
         if event is None or event.payload.get("content_truncated") is True:
             raise ReplayError("provider request trace is missing or truncated")
@@ -369,6 +399,213 @@ def _validate_provider_request_identities(
         }
         if identity.request_parameters_hash != content_hash(parameters):
             raise ReplayError("provider request parameter hash cannot be reproduced")
+
+
+def _validate_repository_action_protocol_replay(
+    manifest: RunManifest,
+    events: list[EpisodeEvent],
+    task: VeriTask,
+) -> None:
+    descriptor = manifest.action_protocol
+    if descriptor is None:
+        return
+    authorizations = [event for event in events if event.event_type == "model_call_authorized"]
+    requests = [event for event in events if event.event_type == "model_request"]
+    response_list = [event for event in events if event.event_type == "model_response"]
+    if not (
+        len(authorizations)
+        == len(requests)
+        == len(response_list)
+        == len(manifest.model_observations)
+    ):
+        raise ReplayError("repository action model-call ledger accounting is incomplete")
+    for ordinal, (authorization, request, response) in enumerate(
+        zip(authorizations, requests, response_list, strict=True),
+        1,
+    ):
+        request_payload = request.payload.get("request")
+        request_id = (
+            request_payload.get("request_id") if isinstance(request_payload, dict) else None
+        )
+        if (
+            authorization.payload.get("ordinal") != ordinal
+            or authorization.payload.get("request_id") != request_id
+            or response.payload.get("request_id") != request_id
+            or authorization.payload.get("action_protocol_hash")
+            != descriptor.configuration_fingerprint
+            or authorization.payload.get("retry") is not False
+            or authorization.payload.get("session_reuse") is not False
+            or not request.sequence < authorization.sequence < response.sequence
+        ):
+            raise ReplayError("repository action model-call authorization cannot be reproduced")
+    responses: dict[str, EpisodeEvent] = {}
+    parsed_events: dict[str, EpisodeEvent] = {}
+    rejected_events: dict[str, EpisodeEvent] = {}
+    for event in events:
+        request_id = event.payload.get("request_id")
+        if not isinstance(request_id, str):
+            continue
+        target = (
+            responses
+            if event.event_type == "model_response"
+            else parsed_events
+            if event.event_type == "agent_action_parsed"
+            else rejected_events
+            if event.event_type == "agent_action_rejected"
+            else None
+        )
+        if target is not None:
+            if request_id in target:
+                raise ReplayError("repository action trace contains duplicate request decisions")
+            target[request_id] = event
+    state = "awaiting_action"
+    patch_applied = False
+    public_observed = False
+    diff_observed = False
+    records = manifest.action_protocol_records
+    for index, record in enumerate(records):
+        if record.turn_index != index or record.state_before != state:
+            raise ReplayError("repository action state or turn index cannot be reproduced")
+        response_event = responses.get(record.request_id)
+        if response_event is None:
+            raise ReplayError("repository action record lacks its model response")
+        payload = response_event.payload
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise ReplayError("repository action response trace lacks bounded text")
+        text_bytes = text.encode("utf-8")
+        stored_bytes = payload.get("text_bytes")
+        stored_hash = payload.get("text_sha256")
+        if not isinstance(stored_bytes, int) or not isinstance(stored_hash, str):
+            raise ReplayError("repository action response lacks raw text identity")
+        if payload.get("content_truncated") is not True and (
+            stored_bytes != len(text_bytes) or stored_hash != hash_bytes(text_bytes)
+        ):
+            raise ReplayError("repository action raw response identity cannot be reproduced")
+        raw_calls = payload.get("native_tool_calls")
+        if not isinstance(raw_calls, list):
+            raise ReplayError("repository action response lacks native-call transport evidence")
+        try:
+            native_calls = [ProviderNativeToolCall.model_validate(value) for value in raw_calls]
+        except Exception as exc:
+            raise ReplayError("repository action native-call evidence is invalid") from exc
+        if payload.get("native_tool_calls_hash") != content_hash(
+            [call.model_dump(mode="json") for call in native_calls]
+        ):
+            raise ReplayError("repository action native-call identity cannot be reproduced")
+        failure: RepositoryProtocolError | None = None
+        normalization = None
+        raw = None
+        envelope = None
+        arguments = None
+        finish_reason = payload.get("finish_reason")
+        if finish_reason == "length":
+            failure = "agent_response_oversized"
+        elif finish_reason in {"content_filter", "error"}:
+            failure = "agent_unsupported_transport"
+        elif payload.get("content_truncated") is True:
+            if stored_bytes > descriptor.max_response_bytes:
+                failure = "agent_response_oversized"
+            else:
+                raise ReplayError("bounded action response cannot reproduce protocol parsing")
+        else:
+            try:
+                raw, normalization = extract_transport_action(
+                    transport=descriptor.action_transport,
+                    text=text,
+                    native_tool_calls=native_calls,
+                    max_response_bytes=descriptor.max_response_bytes,
+                )
+                envelope, arguments = validate_canonical_action(raw, task=task)
+                failure = _repository_action_state_failure(
+                    envelope.action,
+                    patch_applied=patch_applied,
+                    public_observed=public_observed,
+                    diff_observed=diff_observed,
+                    finished=state == "finished",
+                )
+            except RepositoryActionProtocolViolation as exc:
+                failure = exc.subcategory
+        if record.normalization != normalization:
+            raise ReplayError("repository action normalization decision cannot be reproduced")
+        expected_envelope_hash = content_hash(raw) if raw is not None else None
+        if record.action_envelope_hash != expected_envelope_hash:
+            raise ReplayError("repository action envelope hash cannot be reproduced")
+        if record.accepted:
+            if failure is not None or envelope is None or arguments is None:
+                raise ReplayError("accepted repository action cannot be reproduced")
+            if record.action_name != envelope.action:
+                raise ReplayError("repository action name differs from its frozen record")
+            if record.arguments_hash != content_hash(envelope.arguments):
+                raise ReplayError("repository action arguments hash cannot be reproduced")
+            parsed = parsed_events.get(record.request_id)
+            parsed_payload = parsed.payload.get("action") if parsed is not None else None
+            if not isinstance(parsed_payload, dict) or parsed_payload.get(
+                "action"
+            ) != envelope.model_dump(mode="json"):
+                raise ReplayError("repository action parsed-event linkage is inconsistent")
+            if envelope.action == "finish":
+                if record.tool_result_hash is not None or record.state_after != "finished":
+                    raise ReplayError("repository finish record has invalid terminal evidence")
+                state = "finished"
+                continue
+            next_sequence = (
+                responses[records[index + 1].request_id].sequence
+                if index + 1 < len(records) and records[index + 1].request_id in responses
+                else 2**63
+            )
+            result_events = [
+                event
+                for event in events
+                if event.event_type == "tool_result"
+                and response_event.sequence < event.sequence < next_sequence
+            ]
+            if len(result_events) != 1:
+                raise ReplayError("repository action tool-result linkage is ambiguous")
+            try:
+                result = ToolResult.model_validate(result_events[0].payload)
+            except Exception as exc:
+                raise ReplayError("repository action tool-result evidence is invalid") from exc
+            if record.tool_result_hash != content_hash(bounded_tool_result_identity(result)):
+                raise ReplayError("repository action tool-result hash cannot be reproduced")
+            if result.success and envelope.action == "apply_patch":
+                patch_applied = True
+                state = "candidate_modified"
+            elif envelope.action == "run_public_test":
+                public_observed = True
+                state = "public_test_observed"
+            elif envelope.action == "inspect_diff":
+                diff_observed = True
+                state = "diff_observed"
+            if record.state_after != state:
+                raise ReplayError("repository action state transition cannot be reproduced")
+        else:
+            if record.error_subcategory != failure:
+                raise ReplayError("repository action rejection reason cannot be reproduced")
+            rejected = rejected_events.get(record.request_id)
+            if rejected is None or rejected.payload.get("category") != failure:
+                raise ReplayError("repository action rejection-event linkage is inconsistent")
+        if record.termination_reason is not None:
+            terminal_reason = events[-1].payload.get("termination_reason")
+            if record.termination_reason != terminal_reason:
+                raise ReplayError("repository action terminal reason cannot be reproduced")
+
+
+def _repository_action_state_failure(
+    action: str,
+    *,
+    patch_applied: bool,
+    public_observed: bool,
+    diff_observed: bool,
+    finished: bool,
+) -> RepositoryProtocolError | None:
+    if finished:
+        return "agent_invalid_state_transition"
+    if action in {"run_public_test", "inspect_diff"} and not patch_applied:
+        return "agent_invalid_state_transition"
+    if action == "finish" and not (patch_applied and public_observed and diff_observed):
+        return "agent_finish_invalid"
+    return None
 
 
 def _normalized_synthesis(metrics: SynthesisMetrics | None) -> dict[str, object] | None:

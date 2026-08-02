@@ -1,0 +1,30 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/canonical-repository-action.schema.json",
+  "additionalProperties": false,
+  "description": "One strict canonical action; ``protocol`` carries its schema_version.",
+  "properties": {
+    "action": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Action",
+      "type": "string"
+    },
+    "arguments": {
+      "additionalProperties": true,
+      "title": "Arguments",
+      "type": "object"
+    },
+    "protocol": {
+      "const": "repository_action.v2",
+      "title": "Protocol",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocol",
+    "action",
+    "arguments"
+  ],
+  "title": "CanonicalRepositoryAction",
+  "type": "object"
+}

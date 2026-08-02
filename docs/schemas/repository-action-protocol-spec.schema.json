@@ -1,0 +1,84 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/repository-action-protocol-spec.schema.json",
+  "additionalProperties": false,
+  "description": "Static plugin declaration consumed by the generic resolver.",
+  "properties": {
+    "default_max_completion_calls": {
+      "default": 6,
+      "maximum": 32,
+      "minimum": 1,
+      "title": "Default Max Completion Calls",
+      "type": "integer"
+    },
+    "default_max_response_bytes": {
+      "default": 262144,
+      "maximum": 4194304,
+      "minimum": 1024,
+      "title": "Default Max Response Bytes",
+      "type": "integer"
+    },
+    "default_transport": {
+      "default": "json_content",
+      "enum": [
+        "json_content",
+        "native_tool_call"
+      ],
+      "title": "Default Transport",
+      "type": "string"
+    },
+    "normalizer_id": {
+      "const": "repository_action_json_representation_v1",
+      "default": "repository_action_json_representation_v1",
+      "title": "Normalizer Id",
+      "type": "string"
+    },
+    "prompt_contract_id": {
+      "const": "repository_action_v2_prompt_v1",
+      "default": "repository_action_v2_prompt_v1",
+      "title": "Prompt Contract Id",
+      "type": "string"
+    },
+    "protocol_id": {
+      "const": "repository_action.v2",
+      "default": "repository_action.v2",
+      "title": "Protocol Id",
+      "type": "string"
+    },
+    "protocol_version": {
+      "const": "2.0.0",
+      "default": "2.0.0",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "registry_version": {
+      "const": "2.0.0",
+      "default": "2.0.0",
+      "title": "Registry Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state_machine_id": {
+      "const": "repository_action_state_machine_v1",
+      "default": "repository_action_state_machine_v1",
+      "title": "State Machine Id",
+      "type": "string"
+    },
+    "supported_transports": {
+      "items": {
+        "enum": [
+          "json_content",
+          "native_tool_call"
+        ],
+        "type": "string"
+      },
+      "title": "Supported Transports",
+      "type": "array"
+    }
+  },
+  "title": "RepositoryActionProtocolSpec",
+  "type": "object"
+}

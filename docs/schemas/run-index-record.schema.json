@@ -80,6 +80,13 @@
       "default": null,
       "title": "Message"
     },
+    "model_api_call_count": {
+      "default": 0,
+      "maximum": 32,
+      "minimum": 0,
+      "title": "Model Api Call Count",
+      "type": "integer"
+    },
     "plan_index": {
       "minimum": 0,
       "title": "Plan Index",

@@ -9,6 +9,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
+from verigym.schemas.action_protocol import (
+    RepositoryActionProtocolDescriptor,
+    RepositoryActionProtocolSpec,
+    RepositoryActionTurnRecord,
+)
 from verigym.schemas.agent import AgentAction, EpisodeResult, Observation
 from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.options import JsonValue
@@ -32,6 +37,7 @@ class AgentContext:
     agent_options: Mapping[str, JsonValue] = field(default_factory=dict)
     external_bridge: ExternalAgentBridge | None = None
     prompt_policy: PromptPolicyDescriptor | None = None
+    action_protocol: RepositoryActionProtocolDescriptor | None = None
 
 
 class AgentTerminationError(Exception):
@@ -51,6 +57,7 @@ class AgentAdapter(ABC):
     descriptor: AgentDescriptor
     requires_model: ClassVar[bool] = False
     prompt_policy_spec: ClassVar[AgentPromptPolicySpec | None] = None
+    action_protocol_spec: ClassVar[RepositoryActionProtocolSpec | None] = None
     supported_modes: ClassVar[frozenset[InteractionMode]] = frozenset({InteractionMode.AGENT})
 
     @abstractmethod
@@ -64,3 +71,8 @@ class AgentAdapter(ABC):
     @abstractmethod
     def finish(self, result: EpisodeResult) -> None:
         """Receive the final public episode result."""
+
+    def action_protocol_records(self) -> list[RepositoryActionTurnRecord]:
+        """Return bounded protocol evidence; non-protocol agents return no records."""
+
+        return []

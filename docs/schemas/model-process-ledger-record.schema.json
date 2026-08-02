@@ -24,6 +24,29 @@
       "title": "Experiment Id",
       "type": "string"
     },
+    "maximum_model_api_calls": {
+      "anyOf": [
+        {
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Maximum Model Api Calls"
+    },
+    "model_api_call_budget_policy": {
+      "default": "legacy_unbound",
+      "enum": [
+        "legacy_unbound",
+        "reserved_max_calls_v1"
+      ],
+      "title": "Model Api Call Budget Policy",
+      "type": "string"
+    },
     "model_bearing_reason": {
       "enum": [
         "configured_model_client",

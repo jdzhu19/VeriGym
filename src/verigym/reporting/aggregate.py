@@ -80,6 +80,10 @@ _GROUP_DIMENSIONS = {
     "direct_api_benchmark",
     "provider_id",
     "api_protocol",
+    "action_protocol_id",
+    "action_protocol_transport",
+    "action_protocol_fingerprint",
+    "action_registry_hash",
 }
 
 
@@ -225,6 +229,8 @@ class ReportBuilder:
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
                 "api_agent_identity_partitions": _api_agent_partitions(runs),
                 "repository_repair": _repository_repair_summary(inputs, runs),
+                "repository_action_protocol": _repository_action_protocol_summary(runs),
+                "model_process_accounting": _model_process_accounting(inputs, runs),
                 "codex_cli_comparison_policy": (
                     "execution surface, interaction class, harness, tool policy, tracks, "
                     "executable versions, capability fingerprints, and authentication semantic "
@@ -370,6 +376,131 @@ def _repository_repair_summary(
             }
         ),
         "candidate_outcomes_are_not_infrastructure_failures": True,
+    }
+
+
+def _repository_action_protocol_summary(runs: list[ValidatedRun]) -> dict[str, Any] | None:
+    protocol_runs = [run for run in runs if run.manifest.action_protocol is not None]
+    if not protocol_runs:
+        return None
+    records = [record for run in protocol_runs for record in run.manifest.action_protocol_records]
+    accepted = [record for record in records if record.accepted]
+    canonical = [record for record in accepted if not record.permitted_normalization_used]
+    normalized = [record for record in accepted if record.permitted_normalization_used]
+    rejection_reasons = Counter(
+        record.error_subcategory for record in records if record.error_subcategory is not None
+    )
+    accepted_names = Counter(
+        record.action_name for record in accepted if record.action_name is not None
+    )
+    terminal = Counter(
+        (
+            f"{run.scorecard.failure.category}:{run.scorecard.failure.protocol_error_subcategory}"
+            if run.scorecard.failure is not None
+            and run.scorecard.failure.protocol_error_subcategory is not None
+            else run.scorecard.failure.category
+            if run.scorecard.failure is not None
+            else "resolved"
+            if run.scorecard.resolved
+            else "candidate_failure"
+        )
+        for run in protocol_runs
+    )
+    descriptors = {
+        run.manifest.action_protocol.configuration_fingerprint: run.manifest.action_protocol
+        for run in protocol_runs
+        if run.manifest.action_protocol is not None
+    }
+    protocol_valid_rate = len(accepted) / len(records) if records else None
+    unclassified = sum(
+        record.error_subcategory is None and not record.accepted for record in records
+    )
+    return {
+        "schema_version": "1.0",
+        "run_count": len(protocol_runs),
+        "identities": [
+            descriptor.model_dump(mode="json")
+            for descriptor in sorted(
+                descriptors.values(), key=lambda item: item.configuration_fingerprint
+            )
+        ],
+        "turns": {
+            "total": len(records),
+            "accepted": len(accepted),
+            "rejected": len(records) - len(accepted),
+            "protocol_valid_rate": protocol_valid_rate,
+            "canonical_acceptance": len(canonical),
+            "permitted_normalized_acceptance": len(normalized),
+            "canonical_acceptance_rate": len(canonical) / len(records) if records else None,
+            "permitted_normalized_acceptance_rate": (
+                len(normalized) / len(records) if records else None
+            ),
+        },
+        "protocol_valid_turn_rate": protocol_valid_rate,
+        "unclassified_protocol_error_count": unclassified,
+        "state_transition_violation_count": rejection_reasons.get(
+            "agent_invalid_state_transition", 0
+        ),
+        "accepted_actions": dict(sorted(accepted_names.items())),
+        "rejection_reasons": dict(sorted(rejection_reasons.items())),
+        "reach": {
+            "accepted_action_runs": sum(
+                any(record.accepted for record in run.manifest.action_protocol_records)
+                for run in protocol_runs
+            ),
+            "public_test_action_runs": sum(
+                any(
+                    record.accepted and record.action_name == "run_public_test"
+                    for record in run.manifest.action_protocol_records
+                )
+                for run in protocol_runs
+            ),
+            "candidate_freeze_runs": sum(
+                run.manifest.repository_candidate is not None for run in protocol_runs
+            ),
+            "hidden_verifier_runs": sum(
+                bool(run.scorecard.verifier_results) for run in protocol_runs
+            ),
+        },
+        "terminal_taxonomy": dict(sorted(terminal.items())),
+    }
+
+
+def _model_process_accounting(
+    inputs: LoadedReportInputs,
+    runs: list[ValidatedRun],
+) -> dict[str, Any]:
+    model_indices = {
+        item.plan_index
+        for item in inputs.plan_items
+        if item.system.model_id is not None
+        or "external_coding_agent" in item.system.agent_descriptor.capabilities
+    }
+    planned = len(model_indices)
+    observed_calls = sum(record.model_api_call_count for record in inputs.index_records)
+    return {
+        "schema_version": "1.0",
+        "planned_model_bearing_episodes": planned,
+        "authorized_model_bearing_episodes": len(inputs.process_ledger),
+        "launched_model_bearing_episodes": sum(
+            bool(run.manifest.model_observations or run.manifest.external_agent_observations)
+            for run in runs
+        ),
+        "terminal_model_bearing_episodes": sum(
+            record.terminal_status not in {"incompatible", "interrupted_after_model_authorization"}
+            for record in inputs.index_records
+            if record.plan_index in model_indices
+        ),
+        "authorized_model_api_call_budget": sum(
+            record.maximum_model_api_calls or 0 for record in inputs.process_ledger
+        ),
+        "observed_model_api_calls": observed_calls,
+        "authorization_precedes_each_episode": (
+            True if inputs.source_kind == "experiment" else None
+        ),
+        "completion_authorization_replay_required": any(
+            run.manifest.action_protocol is not None for run in runs
+        ),
     }
 
 
@@ -1247,6 +1378,10 @@ def _group_value(run: ValidatedRun, dimension: str) -> str:
         "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
         "provider_id": api.get("provider_id", ""),
         "api_protocol": api.get("api_protocol", ""),
+        "action_protocol_id": api.get("action_protocol_id", ""),
+        "action_protocol_transport": api.get("action_protocol_transport", ""),
+        "action_protocol_fingerprint": api.get("action_protocol_fingerprint", ""),
+        "action_registry_hash": api.get("action_registry_hash", ""),
     }
     return values[dimension]
 
@@ -1298,6 +1433,10 @@ def _plan_group_value(item: PlanItem, dimension: str) -> str:
         "direct_api_benchmark": codex.get("direct_api_benchmark", ""),
         "provider_id": api.get("provider_id", ""),
         "api_protocol": api.get("api_protocol", ""),
+        "action_protocol_id": api.get("action_protocol_id", ""),
+        "action_protocol_transport": api.get("action_protocol_transport", ""),
+        "action_protocol_fingerprint": api.get("action_protocol_fingerprint", ""),
+        "action_registry_hash": api.get("action_registry_hash", ""),
     }
     return values[dimension]
 
@@ -1678,6 +1817,7 @@ def _run_api_identity(run: ValidatedRun) -> dict[str, str]:
     observation = manifest.model_observations[-1] if manifest.model_observations else None
     request = observation.provider_request if observation is not None else None
     configuration = manifest.model.configuration
+    protocol = manifest.action_protocol
     return {
         "provider_id": request.provider_id if request is not None else manifest.model.provider,
         "api_protocol": (
@@ -1722,6 +1862,12 @@ def _run_api_identity(run: ValidatedRun) -> dict[str, str]:
             if observation.usage_missing
             else "false"
         ),
+        "action_protocol_id": protocol.protocol_id if protocol is not None else "",
+        "action_protocol_transport": (protocol.action_transport if protocol is not None else ""),
+        "action_protocol_fingerprint": (
+            protocol.configuration_fingerprint if protocol is not None else ""
+        ),
+        "action_registry_hash": protocol.action_registry_hash if protocol is not None else "",
     }
 
 
@@ -1734,6 +1880,20 @@ def _plan_api_identity(item: PlanItem) -> dict[str, str]:
     return {
         "provider_id": descriptor.provider,
         "api_protocol": str(descriptor.configuration.get("protocol") or ""),
+        "action_protocol_id": (
+            item.action_protocol.protocol_id if item.action_protocol is not None else ""
+        ),
+        "action_protocol_transport": (
+            item.action_protocol.action_transport if item.action_protocol is not None else ""
+        ),
+        "action_protocol_fingerprint": (
+            item.action_protocol.configuration_fingerprint
+            if item.action_protocol is not None
+            else ""
+        ),
+        "action_registry_hash": (
+            item.action_protocol.action_registry_hash if item.action_protocol is not None else ""
+        ),
     }
 
 
@@ -1757,6 +1917,10 @@ def _api_agent_partitions(runs: list[ValidatedRun]) -> list[dict[str, Any]]:
             identity["credential_persisted"],
             identity["credential_hashed"],
             identity["agent_execution_backend"],
+            identity["action_protocol_id"],
+            identity["action_protocol_transport"],
+            identity["action_protocol_fingerprint"],
+            identity["action_registry_hash"],
         )
         bucket = buckets.setdefault(
             partition_key,
@@ -1778,6 +1942,10 @@ def _api_agent_partitions(runs: list[ValidatedRun]) -> list[dict[str, Any]]:
                             "credential_persisted",
                             "credential_hashed",
                             "agent_execution_backend",
+                            "action_protocol_id",
+                            "action_protocol_transport",
+                            "action_protocol_fingerprint",
+                            "action_registry_hash",
                         ),
                         partition_key,
                         strict=True,
@@ -1791,9 +1959,14 @@ def _api_agent_partitions(runs: list[ValidatedRun]) -> list[dict[str, Any]]:
         )
         bucket["run_count"] += 1
         bucket["api_request_count"] += len(run.manifest.model_observations)
-        bucket["usage_missing_count"] += int(identity["usage_missing"] == "true")
-        if identity["safe_provider_request_id"]:
-            bucket["safe_provider_request_ids"].add(identity["safe_provider_request_id"])
+        bucket["usage_missing_count"] += sum(
+            observation.usage_missing is True for observation in run.manifest.model_observations
+        )
+        bucket["safe_provider_request_ids"].update(
+            observation.safe_provider_request_id
+            for observation in run.manifest.model_observations
+            if observation.safe_provider_request_id is not None
+        )
     result: list[dict[str, Any]] = []
     for partition_key in sorted(buckets):
         bucket = buckets[partition_key]

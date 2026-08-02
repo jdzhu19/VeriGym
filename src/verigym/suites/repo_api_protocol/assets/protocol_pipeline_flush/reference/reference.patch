@@ -1,0 +1,11 @@
+--- a/rtl/flush_stage.sv
++++ b/rtl/flush_stage.sv
+@@ -12,7 +12,7 @@
+ );
+     assign in_ready = ~out_valid | out_ready;
+     always_ff @(posedge clk) begin
+-        if (rst) begin
++        if (rst || flush) begin
+             out_valid <= 1'b0;
+             out_data <= 8'h00;
+         end else if (in_ready) begin

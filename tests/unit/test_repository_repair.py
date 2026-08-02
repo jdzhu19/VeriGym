@@ -26,6 +26,7 @@ from verigym.schemas.repository import (
     RepositoryWorkspaceContract,
 )
 from verigym.schemas.suite import SuiteSourceConfig
+from verigym.suites.repo_api_protocol.adapter import RepositoryApiProtocolSuite
 from verigym.suites.repo_rtl.adapter import RepositoryRtlSuite
 
 
@@ -54,7 +55,7 @@ def test_packaged_repository_suite_is_frozen_licensed_and_hidden_separated() -> 
             suite._root_for(task.id),  # noqa: SLF001 - immutable fixture conformance
             excluded_names={"task.yaml"},
         )
-        assert len(task.workspace.entrypoints) >= 3
+        assert len(task.workspace.entrypoints) >= 1
         assert (visible / "TASK.md").is_file()
         assert (visible / "PUBLIC_TESTS.md").is_file()
         assert not (visible / "hidden").exists()
@@ -75,6 +76,25 @@ def test_pipeline_reference_is_a_required_two_file_patch() -> None:
     assert "pipeline_stage.sv" in patch
     assert "pipeline_top.sv" in patch
     assert build_repository_patch(root / "repository", root / "reference" / "repository") == patch
+
+
+def test_protocol_conformance_set_has_one_and_two_file_reference_patches() -> None:
+    suite = RepositoryApiProtocolSuite()
+    assert suite.validate_source().valid
+    counts: dict[str, int] = {}
+    for reference in suite.discover():
+        task = suite.load_task(reference)
+        root = suite._root_for(task.id)  # noqa: SLF001 - fixture conformance
+        patch = (root / "reference" / "reference.patch").read_text(encoding="utf-8")
+        counts[task.id] = patch.count("--- a/")
+        assert (
+            build_repository_patch(root / "repository", root / "reference" / "repository") == patch
+        )
+    assert counts == {
+        "repo-api-protocol/protocol-dual-fix": 2,
+        "repo-api-protocol/protocol-pipeline-flush": 1,
+        "repo-api-protocol/protocol-valid-hold": 1,
+    }
 
 
 def test_repository_source_and_workspace_schemas_fail_closed() -> None:

@@ -1,0 +1,44 @@
+{
+  "asset_files": {
+    "assets/tb_valid_hold_public.sv": "60e8f4fc9a0418ace57a338fd845117793787addd8ce8a048c7c3c73ad7e5b69"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "550a8088630c6e9e2775b9b86aed883308f049269f680b464b832ef36eae6422",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_valid_hold_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/valid_register.sv",
+            "{public}/assets/tb_valid_hold_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "protocol-valid-hold-public",
+      "title": "Simultaneous hold and load priority"
+    }
+  ]
+}

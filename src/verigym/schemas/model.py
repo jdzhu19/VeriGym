@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from verigym.schemas.action_protocol import ProviderNativeToolCall
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import ModelDescriptor
 from verigym.schemas.options import JsonValue, validate_plugin_options
@@ -84,6 +85,7 @@ class ModelResponse(StrictModel):
     provider_model_id: str | None = None
     system_fingerprint: str | None = None
     text: str
+    native_tool_calls: list[ProviderNativeToolCall] = Field(default_factory=list)
     finish_reason: ModelFinishReason = ModelFinishReason.UNKNOWN
     usage: NormalizedModelUsage = Field(default_factory=NormalizedModelUsage)
     latency_s: float = Field(default=0.0, ge=0.0)
@@ -152,6 +154,7 @@ class ProviderRequestIdentity(StrictModel):
     prompt_payload_hash: str
     prompt_policy_hash: str | None = None
     agent_configuration_hash: str | None = None
+    action_protocol_hash: str | None = None
     connect_timeout_s: float = Field(gt=0.0)
     read_timeout_s: float = Field(gt=0.0)
     request_timeout_s: float = Field(gt=0.0)

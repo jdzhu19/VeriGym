@@ -1,0 +1,179 @@
+schema_version: '1.0'
+task:
+  schema_version: '1.0'
+  id: repo-api-protocol/protocol-dual-fix
+  suite: repo-api-protocol
+  suite_version: 0.1.0
+  task_type: repo_repair
+  title: Repair accumulator reset and wrap behavior
+  description: Repair both visible RTL defects according to TASK.md.
+  source:
+    kind: synthetic
+    revision: 1.0.0
+    license: Apache-2.0
+    attribution: VeriGym contributors
+    content_hash: f2542e7e6fd08c72caf7df4f1aadc824c2ed5ba39a73a68ba86b43ed4f8d2b3b
+  workspace:
+    base:
+      kind: directory
+      path: repository
+    editable_globs:
+    - repository/rtl/**/*.sv
+    readonly_globs:
+    - PUBLIC_TESTS.md
+    - TASK.md
+    - repository/LICENSE
+    - repository/README.md
+    excluded_globs:
+    - .git
+    - .git/**
+    - .verigym_internal
+    - .verigym_internal/**
+    - hidden
+    - hidden/**
+    entrypoints:
+    - repository/rtl/accumulator_core.sv
+    - repository/rtl/accumulator_top.sv
+    max_changed_files: 2
+    max_patch_lines: 120
+  interaction:
+    supported_modes:
+    - agent
+    default_mode: agent
+    allowed_tools:
+    - file.list
+    - file.read
+    - file.apply_patch
+    - file.diff
+    - repository.public_test
+    denied_tools: []
+    allow_general_shell: false
+    network_policy: none
+    initial_observation:
+      include_tree: true
+      include_readme: true
+      include_entrypoints: true
+    final_submission:
+      kind: patch
+  budget:
+    max_turns: 20
+    max_tool_calls: 40
+    max_model_calls: 6
+    max_wall_time_s: 300
+    max_tool_time_s: 60
+    max_output_tokens: 4096
+    max_output_bytes_per_tool: 200000
+    max_workspace_bytes: 2000000
+  verifier:
+    nodes:
+    - id: compile_hidden
+      plugin: iverilog.compile
+      depends_on: []
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        sources:
+        - repository/rtl/accumulator_core.sv
+        - repository/rtl/accumulator_top.sv
+        - hidden/tb_dual_fix_hidden.sv
+        top: tb_dual_fix_hidden
+        output: .verigym_internal/compile_hidden/simv
+    - id: run_hidden
+      plugin: iverilog.run
+      depends_on:
+      - compile_hidden
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        executable_from: compile_hidden
+        pass_marker: VERIGYM_PASS
+        fail_marker: VERIGYM_FAIL
+  scoring:
+    correctness_required_nodes:
+    - compile_hidden
+    - run_hidden
+    ppa_enabled: false
+  metadata:
+    category: protocol_two_file
+    difficulty: medium
+    m12a_task: true
+issue_file: issue.md
+issue_hash: c05c493b1ff8a8bf58ddc0aab1b92b5f390874ea3193e8fae08decf2edeedca2
+source:
+  schema_version: '1.0'
+  source_kind: package_resource
+  repository_hash: f2542e7e6fd08c72caf7df4f1aadc824c2ed5ba39a73a68ba86b43ed4f8d2b3b
+  license: Apache-2.0
+  license_file: LICENSE
+  attribution: VeriGym contributors
+  redistributable: true
+  task_bundle_hash: 1eeb0a3d0fe014583c4eb1d675b9fe8603a78831df2fc0531591a4ab08f204d1
+  license_file_hash: 264135b14d84ec2211affdce022bafa50b17d8e83b32fb2e5da1ed9dcec62758
+workspace:
+  schema_version: '1.0'
+  repository_root: repository
+  editable_globs:
+  - repository/rtl/**/*.sv
+  read_only_globs:
+  - PUBLIC_TESTS.md
+  - TASK.md
+  - repository/LICENSE
+  - repository/README.md
+  runtime_generated_globs:
+  - .verigym_internal/**
+  forbidden_globs:
+  - .git
+  - .git/**
+  max_changed_files: 2
+  max_patch_lines: 120
+  max_candidate_bytes: 2000000
+  max_file_bytes: 1000000
+  allow_file_addition: false
+  allow_file_deletion: false
+  allow_file_rename: false
+  allow_mode_change: false
+  allow_binary_files: false
+  case_sensitive_paths: true
+public_tests:
+  schema_version: '1.0'
+  protocol: verigym_public_test_v1
+  contract_file: test-contract.json
+  mount_destination: /verigym-public
+  public_assets_hash: e606e85fda8ba391ef56fe671e6035bf4d9147ad8d826a898e4877e085f6bdad
+  asset_files:
+    assets/tb_dual_fix_public.sv: 3cc717e0a05c3b5fcd30d8c47359a42c1aa66647aa380b9675910c50819c70aa
+  max_feedback_bytes: 65536
+  max_build_bytes: 33554432
+  tests:
+  - id: protocol-dual-fix-public
+    title: Active-low reset and wrap arithmetic
+    commands:
+    - argv:
+      - iverilog
+      - -g2012
+      - -s
+      - tb_dual_fix_public
+      - -o
+      - '{build}/simv'
+      - '{repository}/rtl/accumulator_core.sv'
+      - '{repository}/rtl/accumulator_top.sv'
+      - '{public}/assets/tb_dual_fix_public.sv'
+      cwd: repository
+      timeout_s: 30
+      expected_exit_code: 0
+    - argv:
+      - vvp
+      - '{build}/simv'
+      cwd: build
+      timeout_s: 30
+      expected_exit_code: 0
+verification:
+  schema_version: '1.0'
+  hidden_verifier_hash: 51cfcb43729d3750c60029bbc01aea4b24041fbe74c6895e34b300f9c145b341
+  verifier_image_profile: iverilog12_network_none
+  reference_candidate_hash: fb7121bf5e17d874e7bb67444f3f109ff2e533bf2298b374b243b56e86b83118
+  reference_patch_hash: 5eabc7590293dcf4cf94ef1e7d56da6a83e3771e5fa3d8c144841a1916cabf05

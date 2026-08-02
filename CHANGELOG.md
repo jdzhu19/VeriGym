@@ -9,7 +9,10 @@
 - Established commit `1deea550815603f72f68887b8db3577ea9c72462` as the
   final Codex CLI semantic-conformance baseline. The separately identified
   read-only and visible-workspace-writing paths are both agent tracks; direct
-  API model evaluation remains a future integration.
+  API model evaluation was a separate integration at that baseline.
+- Added the provider-neutral `repository_action.v2` protocol, deterministic
+  multi-turn API-call accounting and replay, and three independent repository
+  conformance tasks.
 
-No direct API evaluation, 30-run pilot execution, or other Milestone 10 scope
-is included.
+No cross-provider comparison, external benchmark, training, or release work is
+included.

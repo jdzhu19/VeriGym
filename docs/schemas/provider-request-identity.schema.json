@@ -3,6 +3,18 @@
   "additionalProperties": false,
   "description": "Secret-free identity of one credential-bearing remote request.",
   "properties": {
+    "action_protocol_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Action Protocol Hash"
+    },
     "agent_configuration_hash": {
       "anyOf": [
         {

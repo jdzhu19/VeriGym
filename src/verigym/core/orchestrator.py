@@ -37,6 +37,10 @@ from verigym.prompts.policy import (
     resolve_prompt_policy,
     validate_prompt_policy_binding,
 )
+from verigym.protocols.repository_action import (
+    resolve_repository_action_protocol,
+    validate_repository_action_protocol_binding,
+)
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import Registries, build_registries
 from verigym.runtimes.base import Runtime, RuntimeSession
@@ -196,6 +200,12 @@ class VeriGym:
                     if resolved_prompt_policy is not None
                     else None
                 )
+                resolved_action_protocol = resolve_repository_action_protocol(
+                    agent_descriptor=agent.descriptor,
+                    protocol_spec=agent.action_protocol_spec,
+                    agent_options=config.agent_options,
+                    task=task,
+                )
                 if config.expected_agent_configuration_hash is not None:
                     if actual_agent_configuration_hash != config.expected_agent_configuration_hash:
                         raise ValueError("agent execution configuration differs from frozen plan")
@@ -206,6 +216,14 @@ class VeriGym:
                         expected_hash=config.expected_prompt_policy_hash,
                         resolved=resolved_prompt_policy,
                         resolved_hash=resolved_prompt_policy_hash,
+                    )
+                    validate_repository_action_protocol_binding(
+                        expected=config.expected_action_protocol,
+                        resolved=resolved_action_protocol,
+                    )
+                    validate_repository_action_protocol_binding(
+                        expected=config.resolved_action_protocol,
+                        resolved=resolved_action_protocol,
                     )
                     validate_prompt_policy_binding(
                         expected=config.resolved_prompt_policy,
@@ -221,6 +239,8 @@ class VeriGym:
                         config.resolved_prompt_policy,
                         config.resolved_prompt_policy_hash,
                         config.resolved_agent_configuration_hash,
+                        config.expected_action_protocol,
+                        config.resolved_action_protocol,
                     )
                 ):
                     raise ValueError("run prompt binding is incomplete")
@@ -314,6 +334,7 @@ class VeriGym:
             agent=agent.descriptor,
             agent_harness=agent.descriptor,
             prompt_policy=resolved_prompt_policy,
+            action_protocol=resolved_action_protocol,
             tool_policy=tool_policy,
             generation=(
                 GenerationParameters(
@@ -450,7 +471,12 @@ class VeriGym:
                     client=model_client,
                     trace=trace,
                     tracker=env.tracker,
-                    max_visible_bytes=task.budget.max_output_bytes_per_tool,
+                    max_visible_bytes=max(
+                        task.budget.max_output_bytes_per_tool,
+                        resolved_action_protocol.max_response_bytes
+                        if resolved_action_protocol is not None
+                        else 0,
+                    ),
                     temperature=config.model_options.temperature,
                     top_p=config.model_options.top_p,
                 )
@@ -468,6 +494,7 @@ class VeriGym:
                     agent_options=config.agent_options,
                     external_bridge=external_bridge,
                     prompt_policy=resolved_prompt_policy,
+                    action_protocol=resolved_action_protocol,
                 )
             )
             agent_log = layout.logs / "agent.log"
@@ -724,6 +751,7 @@ class VeriGym:
                 if model_gateway is not None
                 else []
             )
+            manifest.action_protocol_records = agent.action_protocol_records()
             manifest.external_agent_observations = (
                 external_bridge.observations if external_bridge is not None else []
             )

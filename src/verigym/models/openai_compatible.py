@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from verigym.core.hashing import content_hash
 from verigym.models.base import ModelClient, ModelClientError
+from verigym.schemas.action_protocol import ProviderNativeToolCall
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import ModelDescriptor
 from verigym.schemas.model import (
@@ -276,6 +277,7 @@ class OpenAICompatibleModelClient(ModelClient):
             ),
             prompt_policy_hash=_optional_metadata_hash(metadata, "prompt_policy_hash"),
             agent_configuration_hash=_optional_metadata_hash(metadata, "agent_configuration_hash"),
+            action_protocol_hash=_optional_metadata_hash(metadata, "action_protocol_hash"),
             connect_timeout_s=self._connect_timeout_s,
             read_timeout_s=self._read_timeout_s,
             request_timeout_s=self._request_timeout_s,
@@ -354,8 +356,14 @@ class OpenAICompatibleModelClient(ModelClient):
             if not isinstance(choice, Mapping):
                 raise ValueError("choice must be an object")
             message = choice["message"]
-            if not isinstance(message, Mapping) or not isinstance(message.get("content"), str):
-                raise ValueError("choice.message.content must be text")
+            if not isinstance(message, Mapping):
+                raise ValueError("choice.message must be an object")
+            content = message.get("content")
+            native_tool_calls = _parse_native_tool_calls(message.get("tool_calls"))
+            if content is None and native_tool_calls:
+                content = ""
+            if not isinstance(content, str):
+                raise ValueError("choice.message.content must be text or null with tool calls")
             observed_model = _optional_safe_text(data.get("model"), "model", 256)
             if self._require_exact_model_id and observed_model != self._model_id:
                 raise _ProtocolViolation("observed provider model differs from the requested model")
@@ -374,7 +382,8 @@ class OpenAICompatibleModelClient(ModelClient):
                 system_fingerprint=_optional_safe_text(
                     data.get("system_fingerprint"), "system_fingerprint", 256
                 ),
-                text=str(message["content"]),
+                text=content,
+                native_tool_calls=native_tool_calls,
                 finish_reason=_normalize_finish_reason(choice.get("finish_reason")),
                 usage=usage,
                 cost=cost,
@@ -445,6 +454,32 @@ def _parse_usage(data: Mapping[str, Any]) -> NormalizedModelUsage:
         output_tokens=parsed["output_tokens"],
         total_tokens=parsed["total_tokens"],
     )
+
+
+def _parse_native_tool_calls(value: Any) -> list[ProviderNativeToolCall]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not value:
+        raise _ProtocolViolation("message.tool_calls must be a non-empty list when present")
+    result: list[ProviderNativeToolCall] = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) - {"id", "type", "function", "index"}:
+            raise _ProtocolViolation("native tool call has an invalid envelope")
+        if item.get("type") != "function":
+            raise _ProtocolViolation("only native function tool calls are supported")
+        function = item.get("function")
+        if not isinstance(function, Mapping) or set(function) - {"name", "arguments"}:
+            raise _ProtocolViolation("native tool call function has an invalid envelope")
+        name = function.get("name")
+        arguments = function.get("arguments")
+        if not isinstance(name, str) or not name or len(name) > 128:
+            raise _ProtocolViolation("native tool call name is invalid")
+        if not isinstance(arguments, str) or len(arguments.encode("utf-8")) > 4 * 1024 * 1024:
+            raise _ProtocolViolation("native tool call arguments are invalid")
+        raw_id = item.get("id")
+        safe_id = raw_id if isinstance(raw_id, str) and _SAFE_ID.fullmatch(raw_id) else None
+        result.append(ProviderNativeToolCall(call_id=safe_id, name=name, arguments_json=arguments))
+    return result
 
 
 def _parse_cost(data: Mapping[str, Any]) -> tuple[float | None, str | None, str | None]:

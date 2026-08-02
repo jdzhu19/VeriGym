@@ -1,0 +1,179 @@
+schema_version: '1.0'
+task:
+  schema_version: '1.0'
+  id: repo-api-protocol/protocol-pipeline-flush
+  suite: repo-api-protocol
+  suite_version: 0.1.0
+  task_type: repo_repair
+  title: Repair ready-valid pipeline flush
+  description: Repair the visible RTL repository according to TASK.md.
+  source:
+    kind: synthetic
+    revision: 1.0.0
+    license: Apache-2.0
+    attribution: VeriGym contributors
+    content_hash: 1cc3dd7d74e8e542cf87b3159994a6c56ae4597ff9efee1114da8dfda163e5c2
+  workspace:
+    base:
+      kind: directory
+      path: repository
+    editable_globs:
+    - repository/rtl/**/*.sv
+    readonly_globs:
+    - PUBLIC_TESTS.md
+    - TASK.md
+    - repository/LICENSE
+    - repository/README.md
+    excluded_globs:
+    - .git
+    - .git/**
+    - .verigym_internal
+    - .verigym_internal/**
+    - hidden
+    - hidden/**
+    entrypoints:
+    - repository/rtl/flush_pipeline_top.sv
+    - repository/rtl/flush_stage.sv
+    max_changed_files: 1
+    max_patch_lines: 80
+  interaction:
+    supported_modes:
+    - agent
+    default_mode: agent
+    allowed_tools:
+    - file.list
+    - file.read
+    - file.apply_patch
+    - file.diff
+    - repository.public_test
+    denied_tools: []
+    allow_general_shell: false
+    network_policy: none
+    initial_observation:
+      include_tree: true
+      include_readme: true
+      include_entrypoints: true
+    final_submission:
+      kind: patch
+  budget:
+    max_turns: 20
+    max_tool_calls: 40
+    max_model_calls: 6
+    max_wall_time_s: 300
+    max_tool_time_s: 60
+    max_output_tokens: 4096
+    max_output_bytes_per_tool: 200000
+    max_workspace_bytes: 2000000
+  verifier:
+    nodes:
+    - id: compile_hidden
+      plugin: iverilog.compile
+      depends_on: []
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        sources:
+        - repository/rtl/flush_stage.sv
+        - repository/rtl/flush_pipeline_top.sv
+        - hidden/tb_protocol_flush_hidden.sv
+        top: tb_protocol_flush_hidden
+        output: .verigym_internal/compile_hidden/simv
+    - id: run_hidden
+      plugin: iverilog.run
+      depends_on:
+      - compile_hidden
+      gate: true
+      required: true
+      visibility: verifier_only
+      timeout_s: 30
+      request:
+        executable_from: compile_hidden
+        pass_marker: VERIGYM_PASS
+        fail_marker: VERIGYM_FAIL
+  scoring:
+    correctness_required_nodes:
+    - compile_hidden
+    - run_hidden
+    ppa_enabled: false
+  metadata:
+    category: protocol_feedback
+    difficulty: easy
+    m12a_task: true
+issue_file: issue.md
+issue_hash: b4fe6dd24164ac578b161ece0ad1646a6796a24344239bd947a050d58e4076b5
+source:
+  schema_version: '1.0'
+  source_kind: package_resource
+  repository_hash: 1cc3dd7d74e8e542cf87b3159994a6c56ae4597ff9efee1114da8dfda163e5c2
+  license: Apache-2.0
+  license_file: LICENSE
+  attribution: VeriGym contributors
+  redistributable: true
+  task_bundle_hash: ff267e33b38a733c19602f0623aa8d72c1479e9d9440c42abf30c49dc84b84fb
+  license_file_hash: 264135b14d84ec2211affdce022bafa50b17d8e83b32fb2e5da1ed9dcec62758
+workspace:
+  schema_version: '1.0'
+  repository_root: repository
+  editable_globs:
+  - repository/rtl/**/*.sv
+  read_only_globs:
+  - PUBLIC_TESTS.md
+  - TASK.md
+  - repository/LICENSE
+  - repository/README.md
+  runtime_generated_globs:
+  - .verigym_internal/**
+  forbidden_globs:
+  - .git
+  - .git/**
+  max_changed_files: 1
+  max_patch_lines: 80
+  max_candidate_bytes: 2000000
+  max_file_bytes: 1000000
+  allow_file_addition: false
+  allow_file_deletion: false
+  allow_file_rename: false
+  allow_mode_change: false
+  allow_binary_files: false
+  case_sensitive_paths: true
+public_tests:
+  schema_version: '1.0'
+  protocol: verigym_public_test_v1
+  contract_file: test-contract.json
+  mount_destination: /verigym-public
+  public_assets_hash: 240a0cb1ff66726b9e1ef39c0e825424d0777fdb6a4d7dad31cb129d17e7f096
+  asset_files:
+    assets/tb_protocol_flush_public.sv: 5c551bba1ce72e4b9a5db047202d5ace7a9c419f0849c4d79cc62c8e2086b220
+  max_feedback_bytes: 65536
+  max_build_bytes: 33554432
+  tests:
+  - id: protocol-pipeline-flush-public
+    title: Flush invalidates a stalled word
+    commands:
+    - argv:
+      - iverilog
+      - -g2012
+      - -s
+      - tb_protocol_flush_public
+      - -o
+      - '{build}/simv'
+      - '{repository}/rtl/flush_stage.sv'
+      - '{repository}/rtl/flush_pipeline_top.sv'
+      - '{public}/assets/tb_protocol_flush_public.sv'
+      cwd: repository
+      timeout_s: 30
+      expected_exit_code: 0
+    - argv:
+      - vvp
+      - '{build}/simv'
+      cwd: build
+      timeout_s: 30
+      expected_exit_code: 0
+verification:
+  schema_version: '1.0'
+  hidden_verifier_hash: f216274c81ace73e5f548c5879497b308b52fa12875436d15d59f99b5a330977
+  verifier_image_profile: iverilog12_network_none
+  reference_candidate_hash: e7590436891728fb1b419a2217b70ce1834fce9cbfadff2bd1a0d9181d1695e9
+  reference_patch_hash: e75d41b55aeaf1445ed637076a42df6edbd0559e3971daf819de1e1e63154b1e

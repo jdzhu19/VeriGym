@@ -1,0 +1,45 @@
+{
+  "asset_files": {
+    "assets/tb_dual_fix_public.sv": "3cc717e0a05c3b5fcd30d8c47359a42c1aa66647aa380b9675910c50819c70aa"
+  },
+  "contract_file": "test-contract.json",
+  "max_build_bytes": 33554432,
+  "max_feedback_bytes": 65536,
+  "mount_destination": "/verigym-public",
+  "protocol": "verigym_public_test_v1",
+  "public_assets_hash": "e606e85fda8ba391ef56fe671e6035bf4d9147ad8d826a898e4877e085f6bdad",
+  "schema_version": "1.0",
+  "tests": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "tb_dual_fix_public",
+            "-o",
+            "{build}/simv",
+            "{repository}/rtl/accumulator_core.sv",
+            "{repository}/rtl/accumulator_top.sv",
+            "{public}/assets/tb_dual_fix_public.sv"
+          ],
+          "cwd": "repository",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        },
+        {
+          "argv": [
+            "vvp",
+            "{build}/simv"
+          ],
+          "cwd": "build",
+          "expected_exit_code": 0,
+          "timeout_s": 30
+        }
+      ],
+      "id": "protocol-dual-fix-public",
+      "title": "Active-low reset and wrap arithmetic"
+    }
+  ]
+}

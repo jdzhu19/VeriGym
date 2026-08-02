@@ -21,6 +21,13 @@ from verigym.experiments.schemas import (
 )
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.reporting.schemas import AggregateReport
+from verigym.schemas.action_protocol import (
+    CanonicalRepositoryAction,
+    ProviderNativeToolCall,
+    RepositoryActionProtocolDescriptor,
+    RepositoryActionProtocolSpec,
+    RepositoryActionTurnRecord,
+)
 from verigym.schemas.agent import AgentAction, Observation
 from verigym.schemas.audit import AuditManifest, EvidenceEntry
 from verigym.schemas.common import (
@@ -136,6 +143,7 @@ def _model(model: type[BaseModel]) -> SchemaFactory:
 _SCHEMAS: dict[str, SchemaFactory] = {
     "action": lambda: TypeAdapter(AgentAction).json_schema(mode="serialization"),
     "agent-descriptor": _model(AgentDescriptor),
+    "canonical-repository-action": _model(CanonicalRepositoryAction),
     "agent-prompt-policy-spec": _model(AgentPromptPolicySpec),
     "agent-lineage": _model(AgentLineage),
     "agent-update-manifest": _model(AgentUpdateManifest),
@@ -182,6 +190,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "model-request": _model(ModelRequest),
     "model-response": _model(ModelResponse),
     "provider-request-identity": _model(ProviderRequestIdentity),
+    "provider-native-tool-call": _model(ProviderNativeToolCall),
     "memory-pack": _model(MemoryPack),
     "memory-pack-audit": _model(MemoryPackAudit),
     "memory-builder-input": _model(MemoryBuilderInput),
@@ -199,6 +208,9 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "release-manifest": _model(ReleaseManifest),
     "replay-evidence": _model(ReplayEvidence),
     "repository-candidate-record": _model(RepositoryCandidateRecord),
+    "repository-action-protocol-descriptor": _model(RepositoryActionProtocolDescriptor),
+    "repository-action-protocol-spec": _model(RepositoryActionProtocolSpec),
+    "repository-action-turn-record": _model(RepositoryActionTurnRecord),
     "repository-patch-summary": _model(RepositoryPatchSummary),
     "repository-plan-identity": _model(RepositoryPlanIdentity),
     "repository-public-test-contract": _model(RepositoryPublicTestContract),

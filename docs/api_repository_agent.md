@@ -20,3 +20,8 @@ names in configuration. Keep Docker `environment_allowlist` empty unless a non-s
 is explicitly required. The repository-agent and verifier containers receive neither API
 credentials nor controller proxy credentials. Replay reads sealed artifacts only and does not
 instantiate the model client or access the network.
+
+For multi-turn provider-neutral agents, use `provider-neutral-api-repository-agent` with the
+versioned [`repository_action.v2`](repository_action_protocol.md) contract. It accepts exactly one
+strict registered action per completion, preserves precise protocol rejection subcategories, and
+replays normalization and action validation without a provider call.

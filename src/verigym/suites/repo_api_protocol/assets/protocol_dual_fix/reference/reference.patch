@@ -1,0 +1,26 @@
+--- a/rtl/accumulator_core.sv
++++ b/rtl/accumulator_core.sv
+@@ -10,11 +10,7 @@
+         if (clear) begin
+             total <= 8'h00;
+         end else if (step) begin
+-            if ({1'b0, total} + {1'b0, delta} > 9'h0ff) begin
+-                total <= 8'hff;
+-            end else begin
+-                total <= total + delta;
+-            end
++            total <= total + delta;
+         end
+     end
+ endmodule
+--- a/rtl/accumulator_top.sv
++++ b/rtl/accumulator_top.sv
+@@ -8,7 +8,7 @@
+ );
+     accumulator_core u_core (
+         .clk(clk),
+-        .clear(reset_n),
++        .clear(~reset_n),
+         .step(enable),
+         .delta(increment),
+         .total(total)

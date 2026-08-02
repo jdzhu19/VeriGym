@@ -1,0 +1,18 @@
+--- a/rtl/valid_register.sv
++++ b/rtl/valid_register.sv
+@@ -12,12 +12,12 @@
+         if (rst) begin
+             data_q <= 8'h00;
+             valid_q <= 1'b0;
++        end else if (hold) begin
++            data_q <= data_q;
++            valid_q <= valid_q;
+         end else if (load) begin
+             data_q <= data_in;
+             valid_q <= 1'b1;
+-        end else if (hold) begin
+-            data_q <= data_q;
+-            valid_q <= valid_q;
+         end
+     end
+ endmodule

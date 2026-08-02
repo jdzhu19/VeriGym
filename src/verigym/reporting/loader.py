@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +23,7 @@ from verigym.experiments.identity import (
 from verigym.experiments.schemas import (
     ExperimentConfig,
     ExperimentManifest,
+    ModelProcessLedgerRecord,
     PlanItem,
     RunIndexRecord,
 )
@@ -78,6 +79,7 @@ class LoadedReportInputs:
     requested_k: list[int]
     samples_per_task: int
     parent_integrity_status: str = "legacy_unverified"
+    process_ledger: list[ModelProcessLedgerRecord] = field(default_factory=list)
 
 
 def _bounded_json(path: Path, model: type[Any]) -> Any:
@@ -197,6 +199,11 @@ def _load_experiment(root: Path) -> LoadedReportInputs:
     _validate_manifest_plan_summary(manifest, plan_items)
     index_path = root / "run_index.jsonl"
     index_records = load_jsonl_models(index_path, RunIndexRecord) if index_path.is_file() else []
+    ledger_path = root / "process-ledger.jsonl"
+    process_ledger = (
+        load_jsonl_models(ledger_path, ModelProcessLedgerRecord) if ledger_path.is_file() else []
+    )
+    _validate_model_process_ledger(config, plan_items, process_ledger)
     attempts = [(record.plan_index, record.attempt) for record in index_records]
     if len(attempts) != len(set(attempts)):
         raise ConfigurationError("run index contains duplicate plan-index/attempt records")
@@ -283,7 +290,48 @@ def _load_experiment(root: Path) -> LoadedReportInputs:
         requested_k=manifest.sampling_policy.pass_k,
         samples_per_task=manifest.sampling_policy.samples_per_task,
         parent_integrity_status=parent_integrity_status,
+        process_ledger=process_ledger,
     )
+
+
+def _validate_model_process_ledger(
+    config: ExperimentConfig,
+    plan_items: list[PlanItem],
+    records: list[ModelProcessLedgerRecord],
+) -> None:
+    if [record.ordinal for record in records] != list(range(1, len(records) + 1)):
+        raise ConfigurationError("model-process ledger ordinals are not contiguous")
+    if len({record.plan_index for record in records}) != len(records):
+        raise ConfigurationError("model-process ledger repeats a plan item")
+    by_index = {item.plan_index: item for item in plan_items}
+    for record in records:
+        item = by_index.get(record.plan_index)
+        if (
+            item is None
+            or record.plan_item_id != item.plan_item_id
+            or record.task_id != item.task_id
+            or record.system_id != item.system.system_id
+            or (
+                record.model_api_call_budget_policy == "reserved_max_calls_v1"
+                and record.maximum_model_api_calls
+                != (
+                    item.action_protocol.max_completion_calls
+                    if item.system.model_id is not None and item.action_protocol is not None
+                    else 1
+                    if item.system.model_id is not None
+                    else 0
+                )
+            )
+        ):
+            raise ConfigurationError("model-process ledger identity differs from the plan")
+    process_limit = config.execution.max_model_processes
+    if process_limit is not None and len(records) > process_limit:
+        raise ConfigurationError("model-process ledger exceeds its process budget")
+    api_limit = config.execution.max_model_api_calls
+    if api_limit is not None and (
+        sum(record.maximum_model_api_calls or 0 for record in records) > api_limit
+    ):
+        raise ConfigurationError("model-process ledger exceeds its API-call budget")
 
 
 def _validate_manifest_plan_summary(
@@ -407,6 +455,7 @@ def _validate_cross_references(
         raise ConfigurationError("manifest and scorecard verifier hashes differ")
     if manifest.run_config_hash != scorecard.reproducibility.run_config_hash:
         raise ConfigurationError("manifest and scorecard run-config hashes differ")
+    _validate_api_action_protocol_observations(manifest)
     if plan is None:
         return
     mismatches: list[str] = []
@@ -423,6 +472,7 @@ def _validate_cross_references(
         "system": manifest.system_id == plan.system.system_id,
         "agent": manifest.agent == plan.system.agent_descriptor,
         "model": manifest.model == plan.system.model_descriptor,
+        "action_protocol": manifest.action_protocol == plan.action_protocol,
         "tool_policy": manifest.tool_policy == plan.tool_policy,
         "budget": manifest.budget == plan.budget,
         "verifier": manifest.verifier_hash == plan.verifier_hash,
@@ -435,6 +485,55 @@ def _validate_cross_references(
     mismatches.extend(_prompt_binding_mismatches(manifest, plan))
     if mismatches:
         raise ConfigurationError("child does not match plan fields: " + ", ".join(mismatches))
+
+
+def _validate_api_action_protocol_observations(manifest: RunManifest) -> None:
+    descriptor = manifest.action_protocol
+    if descriptor is None:
+        return
+    if manifest.model is None or "api_backed_repository_agent" not in manifest.agent.capabilities:
+        raise ConfigurationError("repository action protocol lacks its API-agent identity")
+    observations = manifest.model_observations
+    if not observations:
+        raise ConfigurationError("repository action protocol lacks model-call observations")
+    stable_request_identity: tuple[object, ...] | None = None
+    for observation in observations:
+        request = observation.provider_request
+        if request is None:
+            raise ConfigurationError("repository action call lacks provider request identity")
+        if (
+            observation.requested_model_id != manifest.model.model_id
+            or request.requested_model_id != manifest.model.model_id
+            or request.action_protocol_hash != descriptor.configuration_fingerprint
+            or request.prompt_policy_hash != manifest.prompt_policy_hash
+            or request.agent_configuration_hash != manifest.agent_configuration_hash
+            or request.credential_persisted
+            or request.credential_hashed
+        ):
+            raise ConfigurationError("repository action provider identity changed within the run")
+        if (
+            observation.observed_provider_model_id is not None
+            and observation.observed_provider_model_id != manifest.model.model_id
+        ):
+            raise ConfigurationError("repository action provider returned a different model")
+        current = (
+            request.provider_id,
+            request.protocol,
+            request.requested_model_id,
+            request.endpoint_origin,
+            request.normalized_base_url,
+            request.base_url_hash,
+            request.request_parameters_hash,
+            request.prompt_policy_hash,
+            request.agent_configuration_hash,
+            request.action_protocol_hash,
+            request.authentication_mode,
+            request.credential_env_name,
+        )
+        if stable_request_identity is None:
+            stable_request_identity = current
+        elif stable_request_identity != current:
+            raise ConfigurationError("repository action provider request identity mutated")
 
 
 def _prompt_binding_mismatches(manifest: RunManifest, plan: PlanItem) -> list[str]:

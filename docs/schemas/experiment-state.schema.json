@@ -8,6 +8,12 @@
       "title": "Active Count",
       "type": "integer"
     },
+    "authorized_model_api_call_budget": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Authorized Model Api Call Budget",
+      "type": "integer"
+    },
     "authorized_model_process_count": {
       "default": 0,
       "minimum": 0,
@@ -44,6 +50,12 @@
       "default": 0,
       "minimum": 0,
       "title": "Observed Max Concurrency",
+      "type": "integer"
+    },
+    "observed_model_api_call_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Observed Model Api Call Count",
       "type": "integer"
     },
     "plan_hash": {

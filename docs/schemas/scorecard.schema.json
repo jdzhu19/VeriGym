@@ -401,6 +401,18 @@
         "message": {
           "title": "Message",
           "type": "string"
+        },
+        "protocol_error_subcategory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocol Error Subcategory"
         }
       },
       "required": [

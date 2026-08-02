@@ -46,6 +46,19 @@ _HELDOUT_GRANT_ENV = "VERIGYM_M10B_HELDOUT_AGENT_VERSION_MANIFEST"
 class RepositoryRtlSuite(SuiteAdapter):
     """Package-backed generic repository repair fixtures."""
 
+    _PACKAGED_ASSETS_ROOT = Path(__file__).parent / "assets"
+    _EXPECTED_PACKAGED_TASK_IDS = frozenset(
+        {
+            "repo-rtl/arbiter-reset-recovery",
+            "repo-rtl/counter-wrap",
+            "repo-rtl/pipeline-stall-backpressure",
+        }
+    )
+    _SOURCE_VARIANT = "repo-rtl-v1"
+    _SOURCE_ROOT_LABEL = "<external-repo-rtl-source>"
+    _NATIVE_LAYOUT = "repo_rtl_task_bundles_v1"
+    _HELDOUT_ASSETS_ROOT: Path | None = Path(__file__).parent / "heldout_assets"
+
     descriptor = SuiteDescriptor(
         schema_version=SCHEMA_VERSION,
         name="repo-rtl",
@@ -70,12 +83,20 @@ class RepositoryRtlSuite(SuiteAdapter):
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._heldout_agent_version: AgentVersionManifest | None = None
         assets = (
-            Path(__file__).parent / "assets"
+            self._PACKAGED_ASSETS_ROOT
             if source_config is None
             else self._external_tasks_root(source_config.source_root)
         )
-        self._task_roots = self._discover_roots(assets)
-        if source_config is None:
+        self._task_roots = {
+            task_id: root
+            for task_id, root in self._discover_roots(assets).items()
+            if task_id.startswith(f"{self.descriptor.name}/")
+        }
+        if not self._task_roots:
+            raise ConfigurationError(
+                f"{self.descriptor.name} source contains no matching task bundles"
+            )
+        if source_config is None and self._HELDOUT_ASSETS_ROOT is not None:
             self._load_heldout_after_version_freeze()
         self._visible_temporaries: list[tempfile.TemporaryDirectory[str]] = []
 
@@ -85,7 +106,7 @@ class RepositoryRtlSuite(SuiteAdapter):
         return [
             TaskRef(
                 id=task_id,
-                suite="repo-rtl",
+                suite=self.descriptor.name,
                 native_id=task_id.split("/", 1)[1],
                 source_root=(
                     str(self._source_config.source_root)
@@ -168,11 +189,7 @@ class RepositoryRtlSuite(SuiteAdapter):
         if source_root is not None:
             return self.with_source(SuiteSourceConfig(source_root=source_root)).validate_source()
         issues: list[ValidationIssue] = []
-        expected = {
-            "repo-rtl/arbiter-reset-recovery",
-            "repo-rtl/counter-wrap",
-            "repo-rtl/pipeline-stall-backpressure",
-        }
+        expected = set(self._EXPECTED_PACKAGED_TASK_IDS)
         if self._heldout_agent_version is not None:
             expected.update(
                 {
@@ -214,9 +231,11 @@ class RepositoryRtlSuite(SuiteAdapter):
         )
 
     def with_source(self, config: SuiteSourceConfig) -> RepositoryRtlSuite:
-        if config.variant not in {None, "repo-rtl-v1"}:
-            raise ConfigurationError("repo-rtl supports only the repo-rtl-v1 source layout")
-        return RepositoryRtlSuite(config)
+        if config.variant not in {None, self._SOURCE_VARIANT}:
+            raise ConfigurationError(
+                f"{self.descriptor.name} supports only the {self._SOURCE_VARIANT} source layout"
+            )
+        return self.__class__(config)
 
     def source_snapshot(self) -> SuiteSourceSnapshot | None:
         if self._source_config is None:
@@ -225,15 +244,15 @@ class RepositoryRtlSuite(SuiteAdapter):
             root = self._source_config.source_root.resolve(strict=True)
             tasks_root = self._external_tasks_root(root)
             self._snapshot_cache = SuiteSourceSnapshot(
-                source_root="<external-repo-rtl-source>",
+                source_root=self._SOURCE_ROOT_LABEL,
                 dataset_root="tasks",
-                variant="repo-rtl-v1",
-                native_layout="repo_rtl_task_bundles_v1",
+                variant=self._SOURCE_VARIANT,
+                native_layout=self._NATIVE_LAYOUT,
                 strict_compatibility=self._source_config.strict_compatibility,
                 configuration_fingerprint=content_hash(
                     {
                         "source_content_hash": hash_directory(root),
-                        "variant": self._source_config.variant or "repo-rtl-v1",
+                        "variant": self._source_config.variant or self._SOURCE_VARIANT,
                         "strict_compatibility": self._source_config.strict_compatibility,
                     }
                 ),
@@ -263,7 +282,9 @@ class RepositoryRtlSuite(SuiteAdapter):
 
     def conformance_cases(self) -> Iterable[ConformanceCase]:
         for task_id in sorted(self._task_roots):
-            task = self.load_task(TaskRef(id=task_id, suite="repo-rtl", native_id=task_id))
+            task = self.load_task(
+                TaskRef(id=task_id, suite=self.descriptor.name, native_id=task_id)
+            )
             reference = self.reference_solution(task)
             assert reference is not None
             yield ConformanceCase(
@@ -328,7 +349,7 @@ class RepositoryRtlSuite(SuiteAdapter):
         try:
             return self._task_roots[task_id]
         except KeyError as exc:
-            raise KeyError(f"unknown repo-rtl task: {task_id}") from exc
+            raise KeyError(f"unknown {self.descriptor.name} task: {task_id}") from exc
 
     def _load_heldout_after_version_freeze(self) -> None:
         """Expose packaged held-out assets only after a frozen v1 grant is validated."""
@@ -357,7 +378,8 @@ class RepositoryRtlSuite(SuiteAdapter):
             raise ConfigurationError(
                 "M10B held-out access requires a frozen executable context-memory version"
             )
-        heldout = Path(__file__).parent / "heldout_assets"
+        heldout = self._HELDOUT_ASSETS_ROOT
+        assert heldout is not None
         roots = self._discover_roots(heldout)
         overlap = set(roots).intersection(self._task_roots)
         if overlap:

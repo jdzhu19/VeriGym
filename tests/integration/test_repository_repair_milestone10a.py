@@ -60,7 +60,7 @@ def _config(output: Path) -> ExperimentConfig:
             "name": "Milestone 10A zero-model repository matrix",
             "suite": {
                 "id": "repo-rtl",
-                "tasks": {"include": ["*"], "exclude": []},
+                "tasks": {"include": TASKS, "exclude": []},
             },
             "runs": {
                 "mode": "agent",

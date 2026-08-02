@@ -120,6 +120,42 @@
       },
       "title": "NormalizedModelUsage",
       "type": "object"
+    },
+    "ProviderNativeToolCall": {
+      "additionalProperties": false,
+      "description": "Provider-neutral native tool-call value; its schema_version is protocol-bound.",
+      "properties": {
+        "arguments_json": {
+          "maxLength": 4194304,
+          "title": "Arguments Json",
+          "type": "string"
+        },
+        "call_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Call Id"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "arguments_json"
+      ],
+      "title": "ProviderNativeToolCall",
+      "type": "object"
     }
   },
   "$id": "https://verigym.dev/schemas/1.0/model-response.schema.json",
@@ -186,6 +222,13 @@
       "minimum": 0.0,
       "title": "Latency S",
       "type": "number"
+    },
+    "native_tool_calls": {
+      "items": {
+        "$ref": "#/$defs/ProviderNativeToolCall"
+      },
+      "title": "Native Tool Calls",
+      "type": "array"
     },
     "provider_model_id": {
       "anyOf": [

@@ -33,6 +33,11 @@ TASKS = [
     "repo-rtl/counter-wrap",
     "repo-rtl/pipeline-stall-backpressure",
 ]
+PROTOCOL_V2_TASKS = [
+    "repo-api-protocol/protocol-dual-fix",
+    "repo-api-protocol/protocol-pipeline-flush",
+    "repo-api-protocol/protocol-valid-hold",
+]
 
 
 class RepositoryFakeProvider:
@@ -77,6 +82,57 @@ class RepositoryFakeProvider:
         return {
             "id": f"fake-provider-{self.call_count}",
             "model": "fake-repository-model",
+            "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            },
+        }
+
+
+class RepositoryActionV2FakeProvider:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def create_chat_completion(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        connect_timeout_s: float,
+        read_timeout_s: float,
+        request_timeout_s: float,
+        max_response_bytes: int,
+    ) -> Mapping[str, Any]:
+        del url, headers, connect_timeout_s, read_timeout_s, request_timeout_s, max_response_bytes
+        messages = payload.get("messages")
+        assert isinstance(messages, list) and len(messages) == 2
+        user = messages[1]
+        assert isinstance(user, dict) and isinstance(user.get("content"), str)
+        context = json.loads(user["content"])
+        task_id = context["task"]["id"]
+        turn = context["completed_turns"]
+        actions: list[tuple[str, dict[str, Any]]] = [
+            ("apply_patch", {"patch": _GOOD_PATCHES[task_id]}),
+            ("run_public_test", {"test_id": _PUBLIC_TEST_IDS[task_id]}),
+            ("inspect_diff", {}),
+            ("finish", {"message": "candidate frozen"}),
+        ]
+        action, arguments = actions[turn]
+        text = json.dumps(
+            {
+                "protocol": "repository_action.v2",
+                "action": action,
+                "arguments": arguments,
+            },
+            separators=(",", ":"),
+        )
+        self.call_count += 1
+        return {
+            "id": f"fake-protocol-v2-{self.call_count}",
+            "model": "fake-repository-action-v2-model",
             "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
             "usage": {
                 "prompt_tokens": 100,
@@ -234,3 +290,123 @@ def test_fake_provider_runs_ordinary_batch_report_and_zero_network_replay(
         assert replay.integrity.status == "verified"
         assert hash_directory(run_dir) == before
     assert provider.call_count == before_calls
+
+
+def test_protocol_v2_fake_provider_runs_batch_report_and_exact_offline_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = os.environ.get("VERIGYM_DOCKER_IMAGE", "verigym/rtl-iverilog:12.0")
+    provider = RepositoryActionV2FakeProvider()
+    registries = build_registries(discover_external=False)
+    registries.models.register(
+        OpenAICompatibleModelClient(
+            client_id="fake-repository-action-v2-model",
+            provider_id="fake-provider",
+            base_url="https://fake-provider.invalid/v1",
+            model_id="fake-repository-action-v2-model",
+            api_key="fake-provider-unit-key-v2",
+            require_exact_model_id=True,
+            transport=provider,
+        ),
+        origin=PluginOrigin(
+            package="tests",
+            version="1",
+            entry_point=None,
+            registration="runtime",
+        ),
+    )
+    service = VeriGym(registries)
+    output = tmp_path / "repository-action-v2-experiment"
+    config = ExperimentConfig.model_validate(
+        {
+            "name": "repository action v2 fake-provider conformance",
+            "suite": {"id": "repo-api-protocol", "tasks": {"include": PROTOCOL_V2_TASKS}},
+            "runs": {
+                "mode": "agent",
+                "seeds": [31],
+                "samples_per_task": 1,
+                "pass_k": [1],
+            },
+            "systems": [
+                {
+                    "id": "fake-provider-repository-action-v2",
+                    "agent": {
+                        "id": "provider-neutral-api-repository-agent",
+                        "options": {
+                            "action_protocol": "repository_action.v2",
+                            "action_transport": "json_content",
+                            "max_completion_calls": 6,
+                            "max_response_bytes": 262144,
+                        },
+                    },
+                    "model": {
+                        "id": "fake-repository-action-v2-model",
+                        "options": {
+                            "model_id": "fake-repository-action-v2-model",
+                            "require_exact_model_id": True,
+                        },
+                    },
+                }
+            ],
+            "runtime": {
+                "id": "docker",
+                "docker": _docker_config(image).model_dump(mode="json"),
+            },
+            "execution": {
+                "max_workers": 1,
+                "max_plan_items": 3,
+                "max_model_processes": 3,
+                "max_model_api_calls": 18,
+                "resume_model_process_policy": "never_rerun_after_authorization",
+                "seal_plan_before_execution": True,
+                "frozen_campaign_identity": {"protocol": "repository_action.v2"},
+            },
+            "output": {"root": output},
+        }
+    )
+    planner = ExperimentPlanner(service)
+    plan = planner.build(config)
+    assert len(plan.items) == 3
+    assert all(item.action_protocol is not None for item in plan.items)
+    result = BatchRunner(planner=planner, service_factory=lambda: service).run(plan)
+    assert result.state.valid_terminal_count == 3
+    assert result.state.infrastructure_error_count == 0
+    assert provider.call_count == 12
+    runs = load_report_inputs(output).valid_runs
+    assert len(runs) == 3
+    assert all(run.scorecard.resolved for run in runs)
+    assert all(
+        len(run.manifest.action_protocol_records) == 4
+        and all(record.accepted for record in run.manifest.action_protocol_records)
+        for run in runs
+    )
+    reports = ReportService().generate_all(
+        output,
+        group_by=("provider_id", "api_protocol", "action_protocol_id"),
+    )
+    protocol_summary = reports.aggregate.metadata["repository_action_protocol"]
+    assert protocol_summary["turns"]["total"] == 12
+    assert protocol_summary["turns"]["accepted"] == 12
+    assert protocol_summary["protocol_valid_turn_rate"] == 1.0
+    partitions = reports.aggregate.metadata["api_agent_identity_partitions"]
+    assert len(partitions) == 3
+    assert sum(partition["run_count"] for partition in partitions) == 3
+    assert all(
+        partition["action_protocol_id"] == "repository_action.v2" for partition in partitions
+    )
+
+    monkeypatch.delenv("VERIGYM_DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("VERIGYM_DEEPSEEK_API_BASE_URL", raising=False)
+    before_calls = provider.call_count
+    for run in runs:
+        run_dir = output / run.relative_path
+        before = hash_directory(run_dir)
+        replay = replay_run(run_dir, verify=False, service=service)
+        assert replay.integrity.status == "verified"
+        assert replay.reverified_resolved is None
+        assert hash_directory(run_dir) == before
+    assert provider.call_count == before_calls
+    for path in output.rglob("*"):
+        if path.is_file():
+            assert b"fake-provider-unit-key-v2" not in path.read_bytes()

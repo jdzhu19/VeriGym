@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from verigym.core.artifact_policy import bound_text, bound_value
 from verigym.core.episode import BudgetTracker, TerminationReason
+from verigym.core.hashing import content_hash, hash_bytes
 from verigym.core.redaction import redact_mapping
 from verigym.core.trace import TraceWriter
 from verigym.models.base import ModelClient, ModelClientError
@@ -91,6 +92,19 @@ class ModelGateway:
                 ),
             },
         )
+        self.trace.emit(
+            "model_call_authorized",
+            {
+                "request_id": request.request_id,
+                "ordinal": self.tracker.model_calls + 1,
+                "model": self._model_reference(),
+                "prompt_policy_hash": request.metadata.get("prompt_policy_hash"),
+                "action_protocol_hash": request.metadata.get("action_protocol_hash"),
+                "retry": False,
+                "session_reuse": False,
+            },
+            parent_event_id=request_event.event_id,
+        )
         self.tracker.consume_model_call()
         started = time.monotonic()
         try:
@@ -134,6 +148,10 @@ class ModelGateway:
             unit=response.cost_unit,
         )
         bounded_text, response_truncated = bound_text(response.text, self.max_visible_bytes)
+        bounded_native_calls, native_calls_truncated = bound_value(
+            [call.model_dump(mode="json") for call in response.native_tool_calls],
+            self.max_visible_bytes,
+        )
         self.trace.emit(
             "model_response",
             {
@@ -143,7 +161,13 @@ class ModelGateway:
                 "provider_model_id": response.provider_model_id,
                 "system_fingerprint": response.system_fingerprint,
                 "text": bounded_text,
-                "content_truncated": response_truncated,
+                "text_sha256": hash_bytes(response.text.encode("utf-8")),
+                "text_bytes": len(response.text.encode("utf-8")),
+                "native_tool_calls": bounded_native_calls,
+                "native_tool_calls_hash": content_hash(
+                    [call.model_dump(mode="json") for call in response.native_tool_calls]
+                ),
+                "content_truncated": response_truncated or native_calls_truncated,
                 "finish_reason": response.finish_reason.value,
                 "usage": response.usage.model_dump(mode="json"),
                 "latency_s": response.latency_s,

@@ -237,6 +237,61 @@ def test_missing_usage_is_explicitly_nullable_and_unsafe_request_id_is_dropped()
     assert response.usage.total_tokens is None
 
 
+def test_native_tool_calls_are_extracted_without_canonical_action_validation() -> None:
+    outcome = _response(
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "safe-call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path":"repository/rtl/source.sv"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    )
+    response = _client(outcome).generate(_request())
+    assert response.text == ""
+    assert len(response.native_tool_calls) == 1
+    assert response.native_tool_calls[0].name == "read_file"
+    assert response.native_tool_calls[0].call_id == "safe-call-1"
+
+
+@pytest.mark.parametrize(
+    "tool_calls",
+    [
+        [],
+        [{"type": "computer", "function": {"name": "read_file", "arguments": "{}"}}],
+        [{"type": "function", "function": {"name": "read_file", "arguments": {}}}],
+        [{"type": "function", "function": {"name": "", "arguments": "{}"}}],
+        [{"unexpected": "field"}],
+    ],
+)
+def test_native_tool_call_transport_envelope_fails_closed(tool_calls: object) -> None:
+    outcome = _response(
+        choices=[
+            {
+                "message": {"content": None, "tool_calls": tool_calls},
+                "finish_reason": "tool_calls",
+            }
+        ]
+    )
+    with pytest.raises(ModelClientError) as raised:
+        _client(outcome).generate(_request())
+    assert raised.value.info.category in {
+        ModelErrorCategory.MALFORMED_RESPONSE,
+        ModelErrorCategory.PROTOCOL_ERROR,
+    }
+
+
 def test_directly_reported_cost_is_normalized_without_invention() -> None:
     response = _client(_response(cost={"amount": 0.125, "currency": "USD"})).generate(_request())
     assert response.cost == 0.125

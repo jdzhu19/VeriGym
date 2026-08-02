@@ -32,6 +32,7 @@ from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
 from verigym.prompts.policy import agent_configuration_hash, resolve_prompt_policy
+from verigym.protocols.repository_action import resolve_repository_action_protocol
 from verigym.provenance import get_build_provenance
 from verigym.runtimes.base import Runtime
 from verigym.schemas.common import ToolchainProfile, ToolchainProfileRef
@@ -469,6 +470,12 @@ class ExperimentPlanner:
                         agent_options=system.agent_options,
                         task=task,
                     )
+                    action_protocol = resolve_repository_action_protocol(
+                        agent_descriptor=agent.descriptor,
+                        protocol_spec=agent.action_protocol_spec,
+                        agent_options=system.agent_options,
+                        task=task,
+                    )
                 except ValueError as exc:
                     raise ConfigurationError(
                         f"cannot resolve prompt policy for system {system.system_id!r}: {exc}"
@@ -572,6 +579,9 @@ class ExperimentPlanner:
                             "declared_profile_hash": raw["declared_profile_hash"],
                             "resolved_profile_hash": raw["resolved_profile_hash"],
                         }
+                        if action_protocol is not None:
+                            raw["action_protocol"] = action_protocol
+                            contract_payload["action_protocol"] = action_protocol
                         if repository_identity is not None:
                             contract_payload["repository_task_identity"] = repository_identity
                         contract = content_hash(contract_payload)
