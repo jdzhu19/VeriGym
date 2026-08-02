@@ -12,10 +12,11 @@ from pathlib import Path
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.orchestrator import VeriGym
-from verigym.core.workspace import normalize_relative_path
+from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.schemas import ExperimentPlan, PlanItem
 from verigym.experiments.state import atomic_dump_json
+from verigym.schemas.task import Candidate
 from verigym.schemas.verifier import VerifierStatus
 
 
@@ -67,11 +68,11 @@ def qualify_reference_candidates(
                 tempfile.TemporaryDirectory(prefix="verigym-reference-artifacts-") as artifact_name,
             ):
                 candidate_root = Path(candidate_name)
-                for raw_path, source in sorted(candidate.files.items()):
-                    relative = normalize_relative_path(raw_path)
-                    destination = candidate_root / relative
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    destination.write_text(source, encoding="utf-8")
+                _materialize_reference_candidate(
+                    visible_root=Path(assets.visible_root),
+                    candidate=candidate,
+                    candidate_root=candidate_root,
+                )
                 results = service._verify_candidate(
                     task=task,
                     assets=assets,
@@ -134,6 +135,22 @@ def qualification_sha256(path: Path) -> str:
     """Return the sealed qualification report byte hash."""
 
     return hash_bytes(path.read_bytes())
+
+
+def _materialize_reference_candidate(
+    *,
+    visible_root: Path,
+    candidate: Candidate,
+    candidate_root: Path,
+) -> None:
+    """Apply a reference candidate over the same frozen visible base used by a run."""
+
+    copy_tree_safely(visible_root, candidate_root)
+    for raw_path, source in sorted(candidate.files.items()):
+        relative = normalize_relative_path(raw_path)
+        destination = candidate_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(source, encoding="utf-8")
 
 
 __all__ = ["qualification_sha256", "qualify_reference_candidates"]

@@ -18,10 +18,14 @@ from verigym.experiments.identity import (
     runtime_identity_hash,
 )
 from verigym.experiments.planner import ExperimentPlanner
-from verigym.experiments.qualification import qualify_reference_candidates
+from verigym.experiments.qualification import (
+    _materialize_reference_candidate,
+    qualify_reference_candidates,
+)
 from verigym.experiments.runner import BatchRunner
 from verigym.experiments.schemas import ExperimentConfig
 from verigym.schemas.common import RuntimeImageIdentity, RuntimeResourceSummary
+from verigym.schemas.task import Candidate
 
 
 def test_experiment_schema_round_trip_is_strict_and_secret_free(tmp_path: Path) -> None:
@@ -310,6 +314,28 @@ def test_reference_qualification_uses_each_frozen_task_once_without_model(
     assert report["model_process_count"] == 0
     assert len(report["records"]) == 2
     assert output.stat().st_mode & 0o222 == 0
+
+
+def test_reference_candidate_is_overlaid_on_the_complete_visible_base(tmp_path: Path) -> None:
+    visible_root = tmp_path / "visible"
+    changed = visible_root / "repository" / "rtl" / "changed.sv"
+    unchanged = visible_root / "repository" / "rtl" / "unchanged_top.sv"
+    changed.parent.mkdir(parents=True)
+    changed.write_text("old\n", encoding="utf-8")
+    unchanged.write_text("module unchanged_top; endmodule\n", encoding="utf-8")
+
+    candidate_root = tmp_path / "candidate"
+    _materialize_reference_candidate(
+        visible_root=visible_root,
+        candidate=Candidate(files={"repository/rtl/changed.sv": "new\n"}),
+        candidate_root=candidate_root,
+    )
+
+    assert (candidate_root / "repository" / "rtl" / "changed.sv").read_text() == "new\n"
+    assert (candidate_root / "repository" / "rtl" / "unchanged_top.sv").read_text() == (
+        "module unchanged_top; endmodule\n"
+    )
+    assert changed.read_text() == "old\n"
 
 
 def test_task_selection_and_agent_model_pairing_fail_before_execution(tmp_path: Path) -> None:
