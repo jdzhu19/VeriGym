@@ -240,6 +240,26 @@ def test_release_frontend_uses_supplied_wheelhouse_without_an_index(tmp_path: Pa
     assert identities == {"build_dependency_resolution": "offline_hashed_wheelhouse"}
 
 
+def test_ci_opt_in_commands_override_the_default_marker_filter() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    normalized = " ".join(workflow.replace("\\\n", " ").split())
+    selections = [
+        ("docker", "tests/integration/test_docker_codex_external_agent.py"),
+        ("docker", "tests/integration/test_docker_repository_agent.py"),
+        ("docker", "tests/integration/test_docker_api_repository_agent.py"),
+        (
+            "external_benchmark",
+            (
+                "tests/codex_cli/test_verilog_eval_pilot_candidates.py::"
+                "test_f6b159b_track_b_forensic_candidates_reach_exact_hidden_verifier"
+            ),
+        ),
+    ]
+
+    for marker, target in selections:
+        assert f"pytest -q -m {marker} {target}" in normalized
+
+
 def test_release_audit_sanitizes_host_tool_roots_and_temporary_paths(tmp_path: Path) -> None:
     runner = object.__new__(AuditRunner)
     runner.output = tmp_path / "audit"
