@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from verigym.core.orchestrator import VeriGym
-from verigym.core.replay import replay_run
+from verigym.core.replay import ReplaySummary, replay_run
 from verigym.experiments.config import load_experiment_config
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.qualification import qualify_reference_candidates
@@ -135,7 +135,7 @@ def main() -> int:
                     "plan_index": run.plan_index,
                     "attempt": run.attempt,
                     "run_id": replay_result.manifest.run_id,
-                    "artifact_integrity": replay_result.artifact_integrity_status,
+                    "artifact_integrity": _replay_integrity_status(replay_result),
                     "model_calls": 0,
                     "runtime_calls": 0,
                     "network_calls": 0,
@@ -174,6 +174,12 @@ def _require_counts(
         raise SystemExit(f"expected {expected_tasks} tasks, observed {task_count}")
     if expected_items is not None and len(items) != expected_items:
         raise SystemExit(f"expected {expected_items} plan items, observed {len(items)}")
+
+
+def _replay_integrity_status(summary: ReplaySummary) -> str:
+    """Read the canonical nested integrity status from an offline replay summary."""
+
+    return summary.integrity.status
 
 
 if __name__ == "__main__":

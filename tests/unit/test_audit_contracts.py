@@ -8,14 +8,27 @@ import os
 import tarfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from scripts.audit_distribution import inspect_distributions
 from scripts.reproducible_build import reproducible_build
+from scripts.run_frozen_experiment import _replay_integrity_status
+from verigym.core.replay import ReplaySummary
 from verigym.provenance import _live_provenance
 from verigym.release_audit import evaluate_gate, validate_bundle
+from verigym.schemas.integrity import IntegrityValidation
 from verigym.schemas.provenance import BuildProvenance
+
+
+def test_frozen_experiment_replay_reads_nested_integrity_status() -> None:
+    summary = cast(
+        ReplaySummary,
+        SimpleNamespace(integrity=IntegrityValidation(status="verified")),
+    )
+    assert _replay_integrity_status(summary) == "verified"
 
 
 def test_clean_and_dirty_source_identity_is_explicit(
