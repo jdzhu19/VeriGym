@@ -14,6 +14,11 @@ my-tool = "my_package:MyTool"
 my-agent = "my_package:MyAgent"
 ```
 
+Real external-source suites can construct `VeriTask`, `SuiteSourceSnapshot`, verifier-graph,
+workspace, interaction, and toolchain-profile contracts entirely from `verigym.plugin_api`.
+They must not import `verigym.schemas.*`, `verigym.core.*`, or built-in suite implementation
+modules. This keeps plugins on the versioned author-facing surface rather than internal code.
+
 Every descriptor has a stable lowercase ID, package version, provider, and plugin API version.
 VeriGym records distribution/version/entry-point origins. One broken or incompatible entry point
 is rejected with a bounded diagnostic without disabling unrelated plugins; duplicate IDs remain

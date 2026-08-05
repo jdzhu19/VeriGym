@@ -3,6 +3,7 @@
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
+from verigym.core.errors import ConfigurationError
 from verigym.core.external_process_identity import (
     bind_external_process_payload,
     build_external_process_request,
@@ -16,11 +17,16 @@ from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAct
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     AgentDescriptor,
+    AssetRef,
     ErrorCategory,
     InteractionMode,
     ModelDescriptor,
+    RuntimeRequirement,
     SuiteDescriptor,
+    TaskType,
+    ToolchainProfile,
     ToolDescriptor,
+    ToolRequirement,
     ToolVisibility,
 )
 from verigym.schemas.external_agent import (
@@ -47,13 +53,25 @@ from verigym.schemas.model import (
 from verigym.schemas.options import JsonScalar, JsonValue, validate_plugin_options
 from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
 from verigym.schemas.score import EpisodeFailure
+from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import (
+    BudgetSpec,
+    Candidate,
+    ConformanceCase,
+    InteractionSpec,
+    ObservationPolicy,
     ResolvedTaskAssets,
+    ScoringSpec,
+    SourceSpec,
+    SubmissionPolicy,
     TaskRef,
+    ValidationIssue,
     ValidationReport,
     VeriTask,
+    WorkspaceSpec,
 )
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
+from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.suites.base import SuiteAdapter
 from verigym.tools.base import ToolContext, ToolPlugin
 
@@ -64,8 +82,13 @@ __all__ = [
     "AgentDescriptor",
     "AgentPromptPolicySpec",
     "AgentTerminationError",
+    "AssetRef",
+    "BudgetSpec",
+    "Candidate",
     "CommandSpec",
     "CompletedCommand",
+    "ConfigurationError",
+    "ConformanceCase",
     "EpisodeResult",
     "ErrorCategory",
     "EpisodeFailure",
@@ -82,6 +105,7 @@ __all__ = [
     "HealthCheckResult",
     "Observation",
     "InteractionMode",
+    "InteractionSpec",
     "JsonScalar",
     "JsonValue",
     "ModelClient",
@@ -95,23 +119,37 @@ __all__ = [
     "ModelResponse",
     "ModelRunConfig",
     "NormalizedModelUsage",
+    "ObservationPolicy",
     "ProviderRequestIdentity",
     "PLUGIN_API_VERSION",
     "PromptPolicyDescriptor",
     "ResolvedTaskAssets",
+    "RuntimeRequirement",
     "SCHEMA_VERSION",
+    "ScoringSpec",
+    "SourceSpec",
     "StrictModel",
+    "SubmissionPolicy",
     "SuiteAdapter",
     "SuiteDescriptor",
+    "SuiteSourceConfig",
+    "SuiteSourceSnapshot",
     "TaskRef",
+    "TaskType",
     "ToolContext",
     "ToolDescriptor",
     "ToolPlugin",
+    "ToolRequirement",
     "ToolResult",
+    "ToolchainProfile",
     "ToolVisibility",
     "TerminationReason",
+    "ValidationIssue",
     "ValidationReport",
     "VeriTask",
+    "VerifierGraph",
+    "VerifierNode",
+    "WorkspaceSpec",
     "validate_plugin_options",
     "validate_prompt_text",
     "bind_external_process_payload",
