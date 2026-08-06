@@ -55,6 +55,11 @@ Held-out v0/v1 runs use one sealed counterbalanced plan and are reported
 separately. A three-task pilot is descriptive and cannot establish general
 performance improvement.
 
+The [real evolving campaign smoke](audits/real_evolving_campaign_smoke.md) exercises this contract
+with an external pinned RTLLM adapter, a real provider-compatible model, versioned context memory,
+and VCS/DC. Its one-task held-out result is deliberately reported as a capability smoke rather
+than evidence of general improvement.
+
 ## External trainer boundary
 
 VeriGym exports trainer-ready observable trajectories and imports frozen

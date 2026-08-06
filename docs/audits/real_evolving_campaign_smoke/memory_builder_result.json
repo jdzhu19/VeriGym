@@ -1,0 +1,86 @@
+{
+  "build_id": "real-deepseek-context-memory-synthesis",
+  "credentials_exported": false,
+  "failure_reason": null,
+  "heldout_assets_available": false,
+  "input_hash": "5eebb4e23fe00759a565eb5109ee6168e637a2177abcd27004d7f5b842d49e08",
+  "input_tokens": 499,
+  "invocation_spec_hash": null,
+  "memory_pack": {
+    "code_free": true,
+    "content_hash": "b524d6418682ac36147be41f87ef2c814cb8c56fa9a26164574a729040247fb8",
+    "memory_pack_id": "evolve-context-v1-memory",
+    "policy_id": "task_independent_code_free_memory_v1",
+    "schema_version": "1.0",
+    "sections": [
+      {
+        "items": [
+          "Preserve repository infrastructure validity throughout the repair process.",
+          "Prefer deterministic, minimal workspace changes that address the task without altering unrelated components.",
+          "Freeze a candidate only after a complete and coherent workspace delta is in place.",
+          "Ensure policy compliance even when no public test harness is reachable.",
+          "Treat repository repair as a structured sequence of tool invocations leading to a stable final state."
+        ],
+        "schema_version": "1.0",
+        "section": "principles"
+      },
+      {
+        "items": [
+          "When public tests are absent or unreachable, validate through internal consistency checks and workspace inspection.",
+          "Do not assume test failure from missing public test signals; treat unreached tests as zero information.",
+          "If public tests exist later, design the candidate to be compatible with the expected harness.",
+          "Prioritize changes that do not require public tool calls to be recognized as a valid candidate."
+        ],
+        "schema_version": "1.0",
+        "section": "public_test_strategy"
+      },
+      {
+        "items": [
+          "Keep the workspace clean and well-scoped; avoid stray or unreferenced edits.",
+          "Record a workspace delta that reflects only intentional repair actions.",
+          "Verify file state and metadata before freezing a candidate.",
+          "Align the final workspace with policy constraints and infrastructure requirements.",
+          "Use tool invocations deliberately; each invocation should move the workspace toward a consistent candidate."
+        ],
+        "schema_version": "1.0",
+        "section": "workspace_policy_reminders"
+      },
+      {
+        "items": [
+          "Confirm that the original failure labels are empty; do not chase nonexistent symptoms.",
+          "Review the workspace delta to ensure the repair is materially present.",
+          "Check that all preceding tool invocations completed successfully and in the proper order.",
+          "Verify that no public tests were reported as failed; unresolved test status is not a failure.",
+          "Ensure candidate freeze occurs only after the workspace has settled."
+        ],
+        "schema_version": "1.0",
+        "section": "debugging_checklist"
+      },
+      {
+        "items": [
+          "Prefer zero-line or no-op patches if the existing workspace already satisfies the task.",
+          "Avoid introducing changes when changed-file metrics are zero; respect the final state.",
+          "Delay candidate freeze until the delta is identical to the intended repair.",
+          "Keep patch production separate from exploration; freeze only a deliberate final snapshot.",
+          "Maintain a reproducible final state by aligning workspace delta with candidate freeze."
+        ],
+        "schema_version": "1.0",
+        "section": "patch_discipline"
+      }
+    ],
+    "task_independent": true,
+    "total_utf8_bytes": 2598
+  },
+  "memory_synthesis_plan_hash": null,
+  "model_processes_started": 1,
+  "output_hash": "fc3f9d09914e48db224ad8eb4a352448d45ad6759e8f93d33afc3f06b081dc8c",
+  "output_tokens": 1244,
+  "payload_binding_hash": null,
+  "private_reasoning_exported": false,
+  "process_identity_hash": "ab5aebb498d4ef50a8f452ae2c3b45dfb6ea8a0f9098f38006424d5a5000e7f0",
+  "process_ledger_record_hash": "3623954da94f1e9f370ff4f2e591bad786f2a5e898cb43f3744ff3ddd4f24267",
+  "redacted_output_hash": "1b3921075a8223046be07300e459cf68c017d5e4b22df693d8fb4f2db0cc89e5",
+  "schema_version": "1.0",
+  "status": "success",
+  "wall_time_s": 11.186236465000547
+}

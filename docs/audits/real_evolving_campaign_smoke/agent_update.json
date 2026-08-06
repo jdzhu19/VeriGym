@@ -1,0 +1,18 @@
+{
+  "heldout_assets_loaded": false,
+  "invocation_spec_hash": null,
+  "memory_builder_input_hash": "5eebb4e23fe00759a565eb5109ee6168e637a2177abcd27004d7f5b842d49e08",
+  "memory_builder_output_hash": "fc3f9d09914e48db224ad8eb4a352448d45ad6759e8f93d33afc3f06b081dc8c",
+  "memory_pack_hash": "b524d6418682ac36147be41f87ef2c814cb8c56fa9a26164574a729040247fb8",
+  "memory_synthesis_plan_hash": null,
+  "model_weights_modified": false,
+  "parent_version_hash": "9151f970e75169aeec1c9c244f7accb93f59372436efc59b112745899242a5ae",
+  "payload_binding_hash": null,
+  "process_ledger_hash": "3623954da94f1e9f370ff4f2e591bad786f2a5e898cb43f3744ff3ddd4f24267",
+  "result_version_hash": "1218b64d9a627dd45c975590ef423f57a79433a94cdbbec08df98a754b9d873b",
+  "schema_version": "1.0",
+  "training_summary_hash": "0deb4f791a87b131a2c62f000ebb79924e0e898a786f4e6712ee7df4a1ff5355",
+  "update_hash": "f53cb59c3ac33f23d28274e5ddb7ae331b7175862153d3f15371b1b661119d36",
+  "update_id": "real-deepseek-context-v0-to-v1",
+  "update_type": "context_memory"
+}

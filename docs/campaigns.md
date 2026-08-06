@@ -17,8 +17,9 @@ Paths are resolved relative to the config file and may not traverse symlinks or 
 `experiment` inputs must declare `chat` or `agent` and contain exactly one frozen system. An
 `evolving_evaluation` input binds both the held-out experiment root and its independently validated
 `evolving-evaluation.json`. Its v0/v1 plans must match on task/sample sets, model configuration,
-runtime, prompt/tool policy, verifier, correctness definition, budgets, and resolved synthesis
-profile. Only explicit agent-version identity and bounded memory options may differ.
+runtime, version-neutral prompt contract, tool policy, verifier, correctness definition, budgets,
+and resolved synthesis profile. Only explicit agent-version identity, the bound prompt-policy
+fingerprint, and bounded memory options may differ.
 
 Generation writes three deterministic artifacts:
 
@@ -26,8 +27,10 @@ Generation writes three deterministic artifacts:
 - `campaign_report.csv`: evaluation rows plus exact PPA-partition rows;
 - `campaign_report.md`: a paper-oriented capability and result matrix.
 
-See the [real commercial-toolchain campaign smoke](audits/real_campaign_smoke.md) for a bounded
-chat/agent/evolving example and its committed JSON, CSV, and Markdown outputs.
+See the [all-real evolving campaign smoke](audits/real_evolving_campaign_smoke.md) for the current
+DeepSeek + RTLLM + VCS/DC platform example and committed provenance. The earlier
+[commercial-toolchain smoke](audits/real_campaign_smoke.md) retains the scripted evolving control
+as historical evidence.
 
 Correctness always retains explicit planned/evaluable/resolved denominators. License failures stay
 in verifier/tool infrastructure accounting and are never converted into model failures. Cost is

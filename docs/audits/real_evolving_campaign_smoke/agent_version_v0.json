@@ -1,0 +1,31 @@
+{
+  "agent_descriptor_hash": "a38af09b354d1dd244ec0d27ef5470fa6036aeffed2b020a69ca1c63afa83f70",
+  "agent_version_id": "deepseek-react-context-v0",
+  "auth_semantic_id": "deepseek.env-bearer.v1",
+  "base_agent_id": "react-context",
+  "executable_in_m10b": true,
+  "image_hashes": {},
+  "invocation_spec_hash": null,
+  "memory_builder_identity_hash": null,
+  "memory_pack_hash": null,
+  "memory_synthesis_plan_hash": null,
+  "model_id": "deepseek-v4-flash",
+  "model_weights_modified": false,
+  "package_hashes": {
+    "verigym": "a57b2efd845526bf3a0b01ef780d4dfff000e815cbaa49c90611db63068e5648"
+  },
+  "parent_version_hash": null,
+  "payload_binding_hash": null,
+  "prompt_contract_hash": "3cd7a5df6612cc88937d686998d3418a93f518c75904d29be794f3f74ff5002a",
+  "reasoning_effort": "not-applicable",
+  "reward_profile_hash": null,
+  "reward_schema_hash": null,
+  "runtime_identity_hash": "ef4ef9e0bab48724e2d980ef58f8610c7980e82f5311eb0361d6715a490eac9b",
+  "schema_version": "1.0",
+  "source_commit": "a342dccc6503d7c2c06d81f32174923ac8449d02",
+  "status": "frozen",
+  "tool_policy_hash": "da4effa3e31ee9b889569dfdd6783561890215bc0fd5fef227e11d1e90f7b84f",
+  "training_dataset_hash": null,
+  "update_type": "none",
+  "version_hash": "9151f970e75169aeec1c9c244f7accb93f59372436efc59b112745899242a5ae"
+}

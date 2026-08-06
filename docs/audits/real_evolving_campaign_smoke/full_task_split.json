@@ -1,0 +1,25 @@
+{
+  "heldout": [
+    {
+      "attribution": "RTLLM, supplied as an external pinned checkout.",
+      "license": "MIT",
+      "source_hash": "881d53299fb62a69d314bfe9fdf9c79ae78c57c9f7f156e417ff6b45fc09177a",
+      "task_hash": "f229348a8bf257dcfefcff52a7724b891d3b77dfcdb6e55d41ca42fe14223135",
+      "task_id": "rtllm/counter_12"
+    }
+  ],
+  "heldout_assets_loaded_after_version_hash": "1218b64d9a627dd45c975590ef423f57a79433a94cdbbec08df98a754b9d873b",
+  "manifest_hash": "58b482d2578e8222ab7ea05b90afdd4fd0ecd123e5be53b844aeac974685ad22",
+  "schema_version": "1.0",
+  "split_id": "real-deepseek-context-full-v1",
+  "training": [
+    {
+      "attribution": "RTLLM, supplied as an external pinned checkout.",
+      "license": "MIT",
+      "source_hash": "5ee24882e20efb83f2159c90333115f2941bab8c94df5c87341f41bdfa6b13b5",
+      "task_hash": "5033ec146ffb692f878cba4b3fb336a14bfa6c72c4f70901e25c9d5237d5cf5c",
+      "task_id": "rtllm/up_down_counter"
+    }
+  ],
+  "validation": []
+}

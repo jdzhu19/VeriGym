@@ -1,0 +1,13 @@
+{
+  "findings": [],
+  "heldout_file_count": 4,
+  "hidden_assets_exported": false,
+  "memory_pack_hash": "b524d6418682ac36147be41f87ef2c814cb8c56fa9a26164574a729040247fb8",
+  "passed": true,
+  "reference_assets_exported": false,
+  "scan_hash": "135f93c77113140e14e66e4c3ab312168dcb1a6d2904c5409655b64f562d4463",
+  "scan_id": "real-deepseek-context-full-v1-contamination",
+  "schema_version": "1.0",
+  "split_manifest_hash": "58b482d2578e8222ab7ea05b90afdd4fd0ecd123e5be53b844aeac974685ad22",
+  "train_file_count": 4
+}

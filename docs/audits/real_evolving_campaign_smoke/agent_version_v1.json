@@ -1,0 +1,31 @@
+{
+  "agent_descriptor_hash": "a38af09b354d1dd244ec0d27ef5470fa6036aeffed2b020a69ca1c63afa83f70",
+  "agent_version_id": "deepseek-react-context-v1",
+  "auth_semantic_id": "deepseek.env-bearer.v1",
+  "base_agent_id": "react-context",
+  "executable_in_m10b": true,
+  "image_hashes": {},
+  "invocation_spec_hash": null,
+  "memory_builder_identity_hash": "26607b05a67f08a77f6ce4b27690d1a4daba9e214b6cce0a7e30b521cc41d15b",
+  "memory_pack_hash": "b524d6418682ac36147be41f87ef2c814cb8c56fa9a26164574a729040247fb8",
+  "memory_synthesis_plan_hash": null,
+  "model_id": "deepseek-v4-flash",
+  "model_weights_modified": false,
+  "package_hashes": {
+    "verigym": "a57b2efd845526bf3a0b01ef780d4dfff000e815cbaa49c90611db63068e5648"
+  },
+  "parent_version_hash": "9151f970e75169aeec1c9c244f7accb93f59372436efc59b112745899242a5ae",
+  "payload_binding_hash": null,
+  "prompt_contract_hash": "3cd7a5df6612cc88937d686998d3418a93f518c75904d29be794f3f74ff5002a",
+  "reasoning_effort": "not-applicable",
+  "reward_profile_hash": "c53a9fe9f42c2e18fecb126b5f7fd25bf38b0076cd8739e710c8156976c19d5f",
+  "reward_schema_hash": "900143e95baca6f55486c5c22b2fce331ce30a555bfbd3b11e7105d48fb06a32",
+  "runtime_identity_hash": "ef4ef9e0bab48724e2d980ef58f8610c7980e82f5311eb0361d6715a490eac9b",
+  "schema_version": "1.0",
+  "source_commit": "a342dccc6503d7c2c06d81f32174923ac8449d02",
+  "status": "frozen",
+  "tool_policy_hash": "da4effa3e31ee9b889569dfdd6783561890215bc0fd5fef227e11d1e90f7b84f",
+  "training_dataset_hash": "c0f224282d6cd68bdd3e59fd5c752d5f32b02360ad17a936919d373e803e2eb7",
+  "update_type": "context_memory",
+  "version_hash": "1218b64d9a627dd45c975590ef423f57a79433a94cdbbec08df98a754b9d873b"
+}

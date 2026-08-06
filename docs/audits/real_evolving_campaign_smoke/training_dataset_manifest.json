@@ -1,0 +1,36 @@
+{
+  "agent_version_manifest_hash": "d95857318732b6c3e02330cb767c111959364114ae46378ce11d9d2368900162",
+  "attributions": [
+    "RTLLM, supplied as an external pinned checkout."
+  ],
+  "byte_count": 9875,
+  "dataset_hash": "c0f224282d6cd68bdd3e59fd5c752d5f32b02360ad17a936919d373e803e2eb7",
+  "dataset_id": "real-deepseek-context-v0-training-trajectories",
+  "eligible_record_count": 1,
+  "excluded_runs": {},
+  "export_policy_hash": "fbbeef03273de6070fdcc0f1a8c46a755e1394ea037aa5a0489a766329d5248a",
+  "export_policy_id": "observable_repo_trajectory_v1",
+  "included_run_ids": [
+    "20260806T095248Z-rtllm-up_down_counter-f499cd079c-a1-d2f73a00"
+  ],
+  "input_set_hash": "2bb18600b0b52cd367640d31f1fefe65733d1c32c4e367df8adeddc85ec39113",
+  "licenses": [
+    "MIT"
+  ],
+  "no_model_calls": true,
+  "no_network": true,
+  "no_public_launcher_calls": true,
+  "no_runtime_calls": true,
+  "no_verifier_calls": true,
+  "package_identities": {
+    "verigym": "a57b2efd845526bf3a0b01ef780d4dfff000e815cbaa49c90611db63068e5648"
+  },
+  "record_count": 1,
+  "reward_profile_hash": "c53a9fe9f42c2e18fecb126b5f7fd25bf38b0076cd8739e710c8156976c19d5f",
+  "schema_version": "1.0",
+  "source_commit": "a342dccc6503d7c2c06d81f32174923ac8449d02",
+  "source_experiment_ids": [
+    "m9-real-deepseek-context-v0-training-c4deabd253610378"
+  ],
+  "split_manifest_hash": "9818f6de63b652a1ddb579f4340dea621f645f4cbb7a4bb15f48187d37d21bb6"
+}

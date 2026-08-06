@@ -1,0 +1,59 @@
+{
+  "episodes": [
+    {
+      "compile_passed": null,
+      "generalized_failure_labels": [],
+      "hidden_regression_passed": null,
+      "observable_action_summary": [
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "tool_invocation",
+        "workspace_delta",
+        "candidate_freeze"
+      ],
+      "outcome_kind": "resolved_candidate",
+      "patch_metrics": {
+        "added_lines": 0,
+        "changed_file_count": 0,
+        "deleted_lines": 0,
+        "public_tool_calls": 0
+      },
+      "public_task_category": "repository_rtl_repair",
+      "public_test_outcomes": [],
+      "reward": {
+        "added_lines": null,
+        "candidate_compile_passed": null,
+        "changed_file_count": null,
+        "deleted_lines": null,
+        "hidden_regression_passed": null,
+        "infrastructure_valid": 1,
+        "input_tokens": 11079,
+        "outcome_kind": "resolved_candidate",
+        "output_tokens": 4247,
+        "patch_reproducible": null,
+        "policy_compliance": 1,
+        "public_test_passed": null,
+        "public_test_reached": 0,
+        "public_tool_calls": 0,
+        "schema_version": "1.0",
+        "task_resolved": 1,
+        "wall_time_s": 37.114456380000775
+      },
+      "schema_version": "1.0"
+    }
+  ],
+  "heldout_assets_included": false,
+  "hidden_assets_included": false,
+  "private_reasoning_included": false,
+  "references_included": false,
+  "schema_version": "1.0",
+  "split_manifest_hash": "9818f6de63b652a1ddb579f4340dea621f645f4cbb7a4bb15f48187d37d21bb6",
+  "summary_hash": "0deb4f791a87b131a2c62f000ebb79924e0e898a786f4e6712ee7df4a1ff5355",
+  "summary_id": "real-deepseek-context-v0-training-summary",
+  "trajectory_dataset_hash": "c0f224282d6cd68bdd3e59fd5c752d5f32b02360ad17a936919d373e803e2eb7"
+}

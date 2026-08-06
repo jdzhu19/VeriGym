@@ -1,0 +1,65 @@
+{
+  "code_free": true,
+  "content_hash": "b524d6418682ac36147be41f87ef2c814cb8c56fa9a26164574a729040247fb8",
+  "memory_pack_id": "evolve-context-v1-memory",
+  "policy_id": "task_independent_code_free_memory_v1",
+  "schema_version": "1.0",
+  "sections": [
+    {
+      "items": [
+        "Preserve repository infrastructure validity throughout the repair process.",
+        "Prefer deterministic, minimal workspace changes that address the task without altering unrelated components.",
+        "Freeze a candidate only after a complete and coherent workspace delta is in place.",
+        "Ensure policy compliance even when no public test harness is reachable.",
+        "Treat repository repair as a structured sequence of tool invocations leading to a stable final state."
+      ],
+      "schema_version": "1.0",
+      "section": "principles"
+    },
+    {
+      "items": [
+        "When public tests are absent or unreachable, validate through internal consistency checks and workspace inspection.",
+        "Do not assume test failure from missing public test signals; treat unreached tests as zero information.",
+        "If public tests exist later, design the candidate to be compatible with the expected harness.",
+        "Prioritize changes that do not require public tool calls to be recognized as a valid candidate."
+      ],
+      "schema_version": "1.0",
+      "section": "public_test_strategy"
+    },
+    {
+      "items": [
+        "Keep the workspace clean and well-scoped; avoid stray or unreferenced edits.",
+        "Record a workspace delta that reflects only intentional repair actions.",
+        "Verify file state and metadata before freezing a candidate.",
+        "Align the final workspace with policy constraints and infrastructure requirements.",
+        "Use tool invocations deliberately; each invocation should move the workspace toward a consistent candidate."
+      ],
+      "schema_version": "1.0",
+      "section": "workspace_policy_reminders"
+    },
+    {
+      "items": [
+        "Confirm that the original failure labels are empty; do not chase nonexistent symptoms.",
+        "Review the workspace delta to ensure the repair is materially present.",
+        "Check that all preceding tool invocations completed successfully and in the proper order.",
+        "Verify that no public tests were reported as failed; unresolved test status is not a failure.",
+        "Ensure candidate freeze occurs only after the workspace has settled."
+      ],
+      "schema_version": "1.0",
+      "section": "debugging_checklist"
+    },
+    {
+      "items": [
+        "Prefer zero-line or no-op patches if the existing workspace already satisfies the task.",
+        "Avoid introducing changes when changed-file metrics are zero; respect the final state.",
+        "Delay candidate freeze until the delta is identical to the intended repair.",
+        "Keep patch production separate from exploration; freeze only a deliberate final snapshot.",
+        "Maintain a reproducible final state by aligning workspace delta with candidate freeze."
+      ],
+      "schema_version": "1.0",
+      "section": "patch_discipline"
+    }
+  ],
+  "task_independent": true,
+  "total_utf8_bytes": 2598
+}
