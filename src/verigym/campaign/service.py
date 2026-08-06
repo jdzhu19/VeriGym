@@ -25,6 +25,7 @@ from verigym.core.hashing import content_hash, hash_bytes
 from verigym.evolution.comparison import validate_evolving_evaluation
 from verigym.experiments.schemas import ExperimentManifest, PlanItem
 from verigym.experiments.state import atomic_write_text, load_json_model, load_jsonl_models
+from verigym.prompts.policy import prompt_contract_identity_hash
 from verigym.provenance import get_build_provenance
 from verigym.reporting.aggregate import ReportBuilder
 from verigym.reporting.schemas import (
@@ -213,7 +214,12 @@ def _ordinary_summary(
     )
 
 
-_VERSION_OPTION_KEYS = {"agent_version_id", "agent_version_hash", "memory_pack"}
+_VERSION_OPTION_KEYS = {
+    "agent_version_id",
+    "agent_version_hash",
+    "agent_version_manifest_json",
+    "memory_pack",
+}
 
 
 def _version_id(item: PlanItem) -> str:
@@ -250,7 +256,11 @@ def _plan_comparison_signature(item: PlanItem) -> dict[str, Any]:
         "model_descriptor": item.system.model_descriptor,
         "model_configuration_hash": item.system.model_configuration_hash,
         "model_options": item.system.model_options,
-        "prompt_policy_hash": item.prompt_policy_hash,
+        "prompt_contract_hash": (
+            prompt_contract_identity_hash(item.prompt_policy)
+            if item.prompt_policy is not None
+            else None
+        ),
         "action_protocol": item.action_protocol,
         "tool_policy_hash": item.tool_policy_hash,
         "runtime_id": item.runtime_id,

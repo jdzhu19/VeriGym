@@ -32,12 +32,14 @@ from verigym.experiments.state import atomic_dump_json, load_jsonl_models
 from verigym.models.static import AND_GATE_GOOD_SOURCE, StaticModelClient
 from verigym.reporting.aggregate import ReportBuilder
 from verigym.reporting.schemas import QualityPartition, QualityRunValue
+from verigym.schemas.common import InteractionMode
 from verigym.schemas.evolution import (
     EvolvingEvaluationReport,
     PairedVersionDifference,
     TaskVersionMetric,
     VersionMetricSummary,
 )
+from verigym.schemas.prompt import PromptPolicyDescriptor
 
 
 def _chat_service() -> VeriGym:
@@ -352,6 +354,57 @@ def test_evolving_contract_rejects_tool_or_verifier_drift(tmp_path: Path) -> Non
             changed,
             {item.agent_version_id for item in report.version_metrics},
         )
+
+
+def test_evolving_contract_accepts_hash_bound_versioned_prompt_context(tmp_path: Path) -> None:
+    _chat, _agent, evolving, evolution = _campaign_fixture(tmp_path)
+    report = EvolvingEvaluationReport.model_validate_json(evolution.read_text(encoding="utf-8"))
+    items = load_jsonl_models(evolving / "plan.jsonl", PlanItem)
+    updated: list[PlanItem] = []
+    for item in items:
+        version_id = item.system.agent_options["agent_version_id"]
+        version_hash = item.system.agent_options["agent_version_hash"]
+        assert isinstance(version_id, str) and isinstance(version_hash, str)
+        memory_hash = "d" * 64 if version_id == "toy-v1" else None
+        prompt = PromptPolicyDescriptor(
+            id="versioned-context",
+            version="1.0.0",
+            interaction_mode=InteractionMode.AGENT,
+            configuration_fingerprint=("e" if version_id == "toy-v0" else "f") * 64,
+            resolver_id="agent_execution_prompt_policy_v1",
+            task_context_policy="public-task-v1",
+            task_context_hash="1" * 64,
+            base_instruction_policy="strict-agent-v1",
+            content_visibility_policy="public-only-v1",
+            max_prompt_bytes=4096,
+            max_task_context_bytes=2048,
+            agent_descriptor_hash=content_hash(item.system.agent_descriptor),
+            agent_version_id=version_id,
+            agent_version_hash=version_hash,
+            memory_pack_hash=memory_hash,
+        )
+        options = dict(item.system.agent_options)
+        options["agent_version_manifest_json"] = json.dumps({"version": version_id})
+        system = item.system.model_copy(update={"agent_options": options})
+        updated.append(
+            item.model_copy(
+                update={
+                    "system": system,
+                    "prompt_policy": prompt,
+                    "prompt_policy_hash": prompt.configuration_fingerprint,
+                }
+            )
+        )
+
+    by_version = validate_evolving_plan_contract(
+        updated,
+        {item.agent_version_id for item in report.version_metrics},
+    )
+
+    assert {key: len(value) for key, value in by_version.items()} == {
+        "toy-v0": 1,
+        "toy-v1": 1,
+    }
 
 
 def test_campaign_rejects_evolving_counts_that_differ_from_aggregate(tmp_path: Path) -> None:
