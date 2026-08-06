@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,9 @@ from verigym.cli.app import app
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.trace import read_trace
-from verigym.models.static import StaticModelClient, StaticResponseSpec
+from verigym.models.base import ModelClient
+from verigym.models.openai_compatible import OpenAICompatibleModelClient
+from verigym.models.static import COUNTER_GOOD_SOURCE, StaticModelClient, StaticResponseSpec
 from verigym.registry.collections import Registries, build_registries
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.model import (
@@ -32,7 +35,7 @@ pytestmark = [
 ]
 
 
-def service(*models: StaticModelClient) -> VeriGym:
+def service(*models: ModelClient) -> VeriGym:
     registries = build_registries(discover_external=False)
     for model in models:
         registries.models.register(model)
@@ -386,6 +389,59 @@ def test_replay_reverification_never_calls_model(tmp_path) -> None:
     assert replay.reverified_resolved is False
     assert calls == [f"{result.manifest.run_id}-model-0001"]
     assert (result.run_dir / "trace.jsonl").read_bytes() == trace_before
+
+
+class ReplayIdentityProvider:
+    def create_chat_completion(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        connect_timeout_s: float,
+        read_timeout_s: float,
+        request_timeout_s: float,
+        max_response_bytes: int,
+    ) -> Mapping[str, Any]:
+        del (
+            url,
+            headers,
+            payload,
+            connect_timeout_s,
+            read_timeout_s,
+            request_timeout_s,
+            max_response_bytes,
+        )
+        return {
+            "id": "safe-provider-request",
+            "model": "provider-replay-model",
+            "choices": [{"message": {"content": COUNTER_GOOD_SOURCE}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+        }
+
+
+def test_provider_backed_chat_run_replays_request_bindings(tmp_path) -> None:
+    model = OpenAICompatibleModelClient(
+        base_url="https://provider.example.test/v1",
+        client_id="provider-replay",
+        provider_id="provider-replay",
+        model_id="provider-replay-model",
+        api_key="test-only-key",
+        transport=ReplayIdentityProvider(),
+    )
+    result = service(model).run(
+        run_config(
+            tmp_path / "provider-replay",
+            mode=InteractionMode.CHAT,
+            agent="single-turn",
+            model=model.descriptor.name,
+        )
+    )
+    request = result.manifest.model_observations[0].provider_request
+    assert request is not None
+    assert request.prompt_policy_hash == result.manifest.prompt_policy_hash
+    assert request.agent_configuration_hash == result.manifest.agent_configuration_hash
+    assert replay_run(result.run_dir).scorecard.resolved
 
 
 def test_chat_and_react_literal_cli_commands_and_plugin_discovery(tmp_path) -> None:

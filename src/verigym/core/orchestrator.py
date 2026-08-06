@@ -479,6 +479,13 @@ class VeriGym:
                     ),
                     temperature=config.model_options.temperature,
                     top_p=config.model_options.top_p,
+                    prompt_policy_hash=resolved_prompt_policy_hash,
+                    agent_configuration_hash=actual_agent_configuration_hash,
+                    action_protocol_hash=(
+                        resolved_action_protocol.configuration_fingerprint
+                        if resolved_action_protocol is not None
+                        else None
+                    ),
                 )
                 if model_client is not None
                 else None

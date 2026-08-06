@@ -46,6 +46,9 @@ class ModelGateway:
         max_visible_bytes: int,
         temperature: float = 0.0,
         top_p: float | None = None,
+        prompt_policy_hash: str | None = None,
+        agent_configuration_hash: str | None = None,
+        action_protocol_hash: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.client = client
@@ -54,6 +57,11 @@ class ModelGateway:
         self.max_visible_bytes = max_visible_bytes
         self.temperature = temperature
         self.top_p = top_p
+        self._request_bindings = {
+            "prompt_policy_hash": prompt_policy_hash,
+            "agent_configuration_hash": agent_configuration_hash,
+            "action_protocol_hash": action_protocol_hash,
+        }
         self.observations: list[ModelCallIdentity] = []
 
     def create_request(
@@ -64,13 +72,20 @@ class ModelGateway:
         metadata: dict[str, Any] | None = None,
     ) -> ModelRequest:
         request_number = self.tracker.model_calls + 1
+        bound_metadata = dict(metadata or {})
+        for key, expected in self._request_bindings.items():
+            supplied = bound_metadata.get(key)
+            if supplied is not None and expected is not None and supplied != expected:
+                raise ValueError(f"model request {key} differs from the resolved run binding")
+            if expected is not None:
+                bound_metadata[key] = expected
         return ModelRequest(
             request_id=f"{self.run_id}-model-{request_number:04d}",
             messages=[message.model_copy(deep=True) for message in messages],
             temperature=self.temperature,
             top_p=self.top_p,
             max_output_tokens=max_output_tokens,
-            metadata=metadata or {},
+            metadata=bound_metadata,
         )
 
     def generate(self, request: ModelRequest) -> ModelResponse:

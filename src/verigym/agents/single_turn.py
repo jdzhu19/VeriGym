@@ -7,6 +7,7 @@ from verigym.agents.parsing import ModelOutputParseError, parse_single_turn_rtl
 from verigym.core.episode import TerminationReason
 from verigym.core.model_gateway import ModelBudgetError
 from verigym.models.base import ModelClientError
+from verigym.prompts.policy import agent_configuration_hash
 from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAction, Observation
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import AgentDescriptor, InteractionMode
@@ -61,7 +62,10 @@ class SingleTurnAgent(AgentAdapter):
             max_output_tokens=self._context.task.budget.max_output_tokens,
             metadata={
                 "interaction_mode": "chat",
-                "prompt_policy": builder.descriptor.configuration_fingerprint,
+                "prompt_policy_hash": builder.descriptor.configuration_fingerprint,
+                "agent_configuration_hash": agent_configuration_hash(
+                    self.descriptor, self._context.agent_options
+                ),
             },
         )
         try:

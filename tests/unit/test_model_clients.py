@@ -221,3 +221,34 @@ def test_model_gateway_redacts_metadata_and_bounds_persisted_content(tmp_path) -
     parsed = next(event for event in events if event.event_type == "agent_action_parsed")
     assert parsed.payload["content_truncated"] is True
     assert parsed.payload["action"]["content_omitted"] is True
+
+
+def test_model_gateway_binds_provider_identity_metadata(tmp_path) -> None:
+    prompt_hash = "a" * 64
+    agent_hash = "b" * 64
+    protocol_hash = "c" * 64
+    gateway = ModelGateway(
+        run_id="binding-run",
+        client=StaticModelClient(name="binding", responses=["done"]),
+        trace=TraceWriter(tmp_path / "trace.jsonl", "binding-run"),
+        tracker=BudgetTracker(BudgetSpec(max_model_calls=1)),
+        max_visible_bytes=1024,
+        prompt_policy_hash=prompt_hash,
+        agent_configuration_hash=agent_hash,
+        action_protocol_hash=protocol_hash,
+    )
+    request = gateway.create_request(
+        [ModelMessage(role="user", content="visible")],
+        metadata={"interaction_mode": "agent"},
+    )
+    assert request.metadata == {
+        "interaction_mode": "agent",
+        "prompt_policy_hash": prompt_hash,
+        "agent_configuration_hash": agent_hash,
+        "action_protocol_hash": protocol_hash,
+    }
+    with pytest.raises(ValueError, match="prompt_policy_hash differs"):
+        gateway.create_request(
+            [ModelMessage(role="user", content="visible")],
+            metadata={"prompt_policy_hash": "d" * 64},
+        )
