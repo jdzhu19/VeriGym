@@ -473,6 +473,30 @@ def test_memory_builder_result_reads_historical_artifact_without_failure_taxonom
     assert validate_memory_builder_result(loaded) == loaded
 
 
+def test_memory_builder_result_round_trips_without_optional_lifecycle() -> None:
+    request = _memory_lifecycle()[0]
+    current = build_memory_builder_result(
+        request=request,
+        status="content_policy_rejected",
+        failure_reason="memory_policy_credential",
+        redacted_output="withheld:content_policy_rejected",
+        process_identity_hash="b" * 64,
+        process_ledger_record_hash="c" * 64,
+        memory_pack=None,
+        wall_time_s=1.0,
+        input_tokens=1,
+        output_tokens=1,
+    )
+
+    loaded = MemoryBuilderResult.model_validate_json(current.model_dump_json())
+
+    assert loaded == current
+    assert loaded.memory_synthesis_plan_hash is None
+    assert loaded.invocation_spec_hash is None
+    assert loaded.payload_binding_hash is None
+    assert validate_memory_builder_result(loaded) == loaded
+
+
 def test_memory_synthesis_identity_changes_with_dataset_reward_or_template() -> None:
     request, spec, _preview, prompt, binding, plan = _memory_lifecycle()
     summary_payload = request.training_summary.model_dump(mode="json", exclude={"summary_hash"})

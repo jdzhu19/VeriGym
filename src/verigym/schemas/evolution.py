@@ -1503,8 +1503,8 @@ class MemoryBuilderResult(StrictModel):
         "payload_binding_hash",
     )
     @classmethod
-    def validate_hashes(cls, value: str) -> str:
-        return _hash(value)
+    def validate_hashes(cls, value: str | None) -> str | None:
+        return _hash(value) if value is not None else None
 
     @model_validator(mode="after")
     def result_matches_status(self) -> MemoryBuilderResult:
