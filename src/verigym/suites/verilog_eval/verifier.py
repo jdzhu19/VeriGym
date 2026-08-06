@@ -13,9 +13,10 @@ from verigym.core.workspace import normalize_relative_path
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
+from verigym.suites.verilog_eval.diagnostics import classify_compile_diagnostic
 from verigym.suites.verilog_eval.normalization import declared_modules
 from verigym.suites.verilog_eval.result_parser import parse_native_result
-from verigym.suites.verilog_eval.schemas import IcarusCompatibility
+from verigym.suites.verilog_eval.schemas import IcarusCompatibility, VerilogEvalDiagnosticCode
 from verigym.suites.verilog_eval.toolchain import IcarusVersionInfo, detect_icarus
 from verigym.tools.base import ToolContext, ToolPlugin
 
@@ -156,6 +157,7 @@ class VerilogEvalCompileTool(ToolPlugin):
             )
         if completed.exit_code != 0:
             metadata["candidate_failure"] = True
+            metadata["diagnostic_code"] = classify_compile_diagnostic(completed).value
             return _failure(
                 self.descriptor.name,
                 ErrorCategory.COMPILE_FAILED,
@@ -205,6 +207,9 @@ class VerilogEvalCompileTool(ToolPlugin):
                     "compile_ok": False,
                     "candidate_failure": True,
                     "candidate_top_found": False,
+                    "diagnostic_code": (
+                        VerilogEvalDiagnosticCode.COMPILE_TOP_MODULE_CONTRACT.value
+                    ),
                 },
             )
         reserved = sorted(set(modules) & {"RefModule", "tb"})
@@ -219,6 +224,7 @@ class VerilogEvalCompileTool(ToolPlugin):
                     "compile_ok": False,
                     "candidate_failure": True,
                     "reserved_module_collision": reserved,
+                    "diagnostic_code": VerilogEvalDiagnosticCode.COMPILE_RESERVED_MODULE.value,
                 },
             )
         command = self.build_command(request, context)

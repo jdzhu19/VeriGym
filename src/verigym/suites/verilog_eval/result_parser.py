@@ -8,6 +8,7 @@ from verigym.schemas.tool import CompletedCommand
 from verigym.suites.verilog_eval.schemas import (
     IcarusCompatibility,
     NativeRegressionResult,
+    VerilogEvalDiagnosticCode,
 )
 
 _SUMMARY = re.compile(r"(?m)^\s*Mismatches:\s*(\d+)\s+in\s+(\d+)\s+samples\s*$")
@@ -41,6 +42,17 @@ def parse_native_result(
         and sample_count > 0
         and not native_timeout
     )
+    diagnostic_code: VerilogEvalDiagnosticCode | None = None
+    if completed.timed_out:
+        diagnostic_code = VerilogEvalDiagnosticCode.SIMULATION_PROCESS_TIMEOUT
+    elif native_timeout:
+        diagnostic_code = VerilogEvalDiagnosticCode.SIMULATION_NATIVE_TIMEOUT
+    elif completed.exit_code != 0:
+        diagnostic_code = VerilogEvalDiagnosticCode.SIMULATION_NONZERO_EXIT
+    elif not matches:
+        diagnostic_code = VerilogEvalDiagnosticCode.SIMULATION_MISSING_SUMMARY
+    elif not resolved:
+        diagnostic_code = VerilogEvalDiagnosticCode.VERIFICATION_MISMATCH
     return NativeRegressionResult(
         compile_ok=True,
         simulation_ok=simulation_ok,
@@ -52,6 +64,7 @@ def parse_native_result(
         process_timed_out=completed.timed_out,
         tool_version=tool_version,
         compatibility_status=compatibility,
+        diagnostic_code=diagnostic_code,
     )
 
 

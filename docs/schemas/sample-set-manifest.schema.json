@@ -177,6 +177,18 @@
     "SampleRunRef": {
       "additionalProperties": false,
       "properties": {
+        "candidate_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Hash"
+        },
         "candidate_verdict": {
           "title": "Candidate Verdict",
           "type": "boolean"

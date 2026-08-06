@@ -77,6 +77,18 @@
     "SampleRunRef": {
       "additionalProperties": false,
       "properties": {
+        "candidate_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Hash"
+        },
         "candidate_verdict": {
           "title": "Candidate Verdict",
           "type": "boolean"
@@ -156,6 +168,37 @@
       "title": "Cancelled Truncated Count",
       "type": "integer"
     },
+    "candidate_diversity_index": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Diversity Index"
+    },
+    "candidate_diversity_invalid_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "candidate_hash_unavailable",
+      "title": "Candidate Diversity Invalid Reason"
+    },
+    "candidate_diversity_valid": {
+      "default": false,
+      "title": "Candidate Diversity Valid",
+      "type": "boolean"
+    },
     "candidate_failure_count": {
       "minimum": 0,
       "title": "Candidate Failure Count",
@@ -171,6 +214,12 @@
       },
       "title": "Child Runs",
       "type": "array"
+    },
+    "distinct_candidate_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Distinct Candidate Count",
+      "type": "integer"
     },
     "empirical_resolved_fraction": {
       "anyOf": [

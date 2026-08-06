@@ -12,6 +12,7 @@ from verigym_synopsys.dc import (
     DesignCompilerSynthesisTool,
     _generated_script_hash,
 )
+from verigym_synopsys.formality import FormalityEquivalenceTool, _script_identity
 from verigym_synopsys.vcs import VcsSimulationTool
 
 
@@ -148,11 +149,12 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         session.write_file(
             ".verigym_internal/dc/candidate/out/metrics.kv",
             (
-                "VERIGYM_DC_METRICS_V1\n"
+                "VERIGYM_DC_METRICS_V2\n"
                 "mapped_area=42.5\n"
                 "critical_path_delay=3.25\n"
                 "worst_negative_slack=-0.125\n"
                 "clock_period=10\n"
+                "num_cells=17\n"
                 "timing_unit=ns\n"
                 f"constraints_sha256={sdc_hash}\n"
             ).encode(),
@@ -167,7 +169,115 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         assert synthesis["mapped_area_raw"] == 42.5
         assert synthesis["critical_path_delay_raw"] == 3.25
         assert synthesis["worst_negative_slack_raw"] == -0.125
+        assert synthesis["num_cells"] == 17
         assert synthesis["timing_constraints_hash"] == sdc_hash
+    finally:
+        session.close()
+        runtime.close()
+
+
+@pytest.mark.parametrize(("status", "success"), [("equivalent", True), ("non_equivalent", False)])
+def test_formality_emits_script_bound_equivalence_result(
+    tmp_path: Path,
+    status: str,
+    success: bool,
+) -> None:
+    runtime, session = _session(
+        tmp_path,
+        {
+            "golden/reference.sv": b"module counter(input logic clk); endmodule\n",
+            "rtl/candidate.sv": b"module counter(input logic clk); endmodule\n",
+        },
+    )
+    try:
+        plugin = FormalityEquivalenceTool()
+        request = plugin.validate_request(
+            {
+                "reference_sources": ["golden/reference.sv"],
+                "implementation_sources": ["rtl/candidate.sv"],
+                "reference_top": "counter",
+                "executable": "/opt/synopsys/bin/fm_shell",
+            }
+        )
+        context = ToolContext(session=session, artifact_dir=tmp_path / "formality-artifacts")
+        command = plugin.build_command(request, context)
+        assert command.requires_shell is False
+        script = session.read_file(".verigym_internal/formality/flow.tcl").decode()
+        assert "read_sverilog -container r" in script
+        assert "read_sverilog -container i" in script
+        script_hash = _script_identity(script)
+        session.write_file(
+            ".verigym_internal/formality/out/equivalence.kv",
+            (
+                "VERIGYM_FORMALITY_RESULT_V1\n"
+                f"status={status}\n"
+                "reference_top=counter\n"
+                "implementation_top=counter\n"
+                f"script_sha256={script_hash}\n"
+            ).encode(),
+        )
+        session.write_file(
+            ".verigym_internal/formality/out/failing.rpt",
+            b"golden_internal_secret_point\n",
+        )
+        result = plugin.parse_result(
+            request,
+            CompletedCommand(
+                argv=command.argv,
+                cwd=command.cwd,
+                exit_code=0,
+                stdout="golden_internal_secret_point",
+            ),
+            context,
+        )
+        assert result.success is success
+        assert result.metadata["equivalence"]["status"] == status
+        assert result.metadata["candidate_failure"] is (not success)
+        assert result.category == (ErrorCategory.SUCCESS if success else ErrorCategory.TEST_FAILED)
+        assert result.stdout == ""
+        assert "failing.rpt" not in result.artifacts
+        assert not (tmp_path / "formality-artifacts" / "failing.rpt").exists()
+    finally:
+        session.close()
+        runtime.close()
+
+
+def test_formality_rejects_result_from_another_script(tmp_path: Path) -> None:
+    runtime, session = _session(
+        tmp_path,
+        {
+            "golden/reference.v": b"module counter; endmodule\n",
+            "rtl/candidate.v": b"module counter; endmodule\n",
+        },
+    )
+    try:
+        plugin = FormalityEquivalenceTool()
+        request = plugin.validate_request(
+            {
+                "reference_sources": ["golden/reference.v"],
+                "implementation_sources": ["rtl/candidate.v"],
+                "reference_top": "counter",
+            }
+        )
+        context = ToolContext(session=session)
+        command = plugin.build_command(request, context)
+        session.write_file(
+            ".verigym_internal/formality/out/equivalence.kv",
+            (
+                "VERIGYM_FORMALITY_RESULT_V1\n"
+                "status=equivalent\n"
+                "reference_top=counter\n"
+                "implementation_top=counter\n"
+                f"script_sha256={'0' * 64}\n"
+            ).encode(),
+        )
+        result = plugin.parse_result(
+            request,
+            CompletedCommand(argv=command.argv, cwd=command.cwd, exit_code=0),
+            context,
+        )
+        assert result.category == ErrorCategory.PARSER_ERROR
+        assert not result.success
     finally:
         session.close()
         runtime.close()

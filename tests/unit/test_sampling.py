@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 
 import pytest
@@ -68,6 +69,7 @@ def child(
         candidate_verdict=verdict,
         task_hash="task-hash",
         source_hash="source-hash",
+        candidate_hash=hashlib.sha256(f"candidate-{index}".encode()).hexdigest(),
         configuration_fingerprint=fingerprint,
     )
 
@@ -109,6 +111,9 @@ def test_report_counts_model_output_as_incorrect_candidate_verdict() -> None:
     assert report.candidate_failure_count == 1
     assert report.model_output_failure_count == 1
     assert report.empirical_resolved_fraction == 0.5
+    assert report.distinct_candidate_count == 4
+    assert report.candidate_diversity_index == pytest.approx(0.75)
+    assert report.candidate_diversity_valid
     assert [entry.value for entry in report.entries] == pytest.approx([0.5, 5 / 6, 1.0])
 
 
@@ -178,3 +183,17 @@ def test_missing_cancelled_and_k_greater_than_n_are_unavailable() -> None:
     )
     assert too_large.entries[0].invalid_reason == "k_exceeds_n"
     assert too_large.entries[0].value is None
+
+
+def test_candidate_diversity_uses_candidate_content_identity() -> None:
+    repeated = child(1, SampleOutcome.CANDIDATE_FAILURE)
+    first = child(0, SampleOutcome.RESOLVED)
+    repeated = repeated.model_copy(update={"candidate_hash": first.candidate_hash})
+    report = build_pass_at_k_report(manifest([first, repeated]))
+    assert report.distinct_candidate_count == 1
+    assert report.candidate_diversity_index == 0.0
+
+    unavailable = first.model_copy(update={"candidate_hash": None})
+    report = build_pass_at_k_report(manifest([unavailable]))
+    assert not report.candidate_diversity_valid
+    assert report.candidate_diversity_invalid_reason == "candidate_hash_unavailable"

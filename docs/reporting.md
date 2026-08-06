@@ -73,6 +73,10 @@ invalidates canonical pass@k and yields `null` with a reason. Macro mean/median 
 task/system/base-seed groups only and reports valid, invalid, and missing group counts. Best-of-N
 is reported only for a complete canonical group.
 
+Sample reports also retain content diversity as the number of distinct candidate snapshot hashes
+and the Gini-Simpson index. This is a descriptive evolving-agent/campaign signal, not a correctness
+or ranking metric, and is unavailable when candidate identities are incomplete.
+
 ## Profile-relative synthesis quality
 
 Quality remains educational and non-signoff. A ranked value requires an evaluable, functionally

@@ -43,8 +43,11 @@ from verigym.plugin_api import (
 
 from .common import license_failure, licensed_environment, redact, resolve_executable
 
-FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v1"
-_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v1"
+LEGACY_FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v1"
+_LEGACY_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v1"
+LEGACY_FLOW_TEMPLATE_HASH = hashlib.sha256(_LEGACY_FLOW_TEMPLATE_SOURCE.encode()).hexdigest()
+FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v2"
+_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v2"
 FLOW_TEMPLATE_HASH = hashlib.sha256(_FLOW_TEMPLATE_SOURCE.encode()).hexdigest()
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
@@ -53,13 +56,18 @@ _MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
 _MAX_METRICS_BYTES = 64 * 1024
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
 _DC_VERSION = re.compile(r"\b([A-Z]-\d{4}\.\d{2}(?:-[A-Za-z0-9.-]+)?)\b")
-_METRIC_KEYS = {
+_METRIC_KEYS_V1 = {
     "mapped_area",
     "critical_path_delay",
     "worst_negative_slack",
     "clock_period",
     "timing_unit",
     "constraints_sha256",
+}
+_METRIC_KEYS_V2 = {*_METRIC_KEYS_V1, "num_cells"}
+_TEMPLATE_HASHES = {
+    LEGACY_FLOW_TEMPLATE_ID: LEGACY_FLOW_TEMPLATE_HASH,
+    FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
 }
 
 
@@ -144,6 +152,9 @@ class DesignCompilerRequest(StrictModel):
     clock_period: float = Field(gt=0)
     emit_netlist_verilog: bool = True
     expected_flow_script_hash: str
+    flow_template_id: Literal["synopsys-dc-area-timing-v1", "synopsys-dc-area-timing-v2"] = (
+        "synopsys-dc-area-timing-v2"
+    )
     resolved_profile_hash: str
     tool_identity: dict[str, Any] = Field(default_factory=dict)
     run_label: Literal["candidate", "reference"]
@@ -212,13 +223,21 @@ def _script(
     timing_unit: str,
     constraints_hash: str,
     emit_netlist: bool,
+    template_id: str = FLOW_TEMPLATE_ID,
 ) -> str:
+    if template_id not in _TEMPLATE_HASHES:
+        raise ValueError(f"unsupported Design Compiler template: {template_id}")
     source_list = " ".join(
         f"input/{index:03d}{Path(item).suffix.lower()}" for index, item in enumerate(sources)
     )
     write_netlist = (
         "write -format verilog -hierarchy -output out/netlist.v\n" if emit_netlist else ""
     )
+    v2 = template_id == FLOW_TEMPLATE_ID
+    cell_metric = "set vg_num_cells [sizeof_collection [get_cells -hierarchical *]]\n" if v2 else ""
+    metric_sentinel = "VERIGYM_DC_METRICS_V2" if v2 else "VERIGYM_DC_METRICS_V1"
+    cell_metric_output = 'puts $vg_metrics "num_cells=$vg_num_cells"\n' if v2 else ""
+    qor_report = "report_qor > out/qor.rpt\n" if v2 else ""
     return (
         "set_app_var sh_continue_on_error false\n"
         "file mkdir out\n"
@@ -247,19 +266,22 @@ def _script(
         "set vg_slack [get_attribute $vg_paths slack]\n"
         "set vg_wns [expr {$vg_slack < 0.0 ? $vg_slack : 0.0}]\n"
         "set vg_period [get_attribute [index_collection $vg_clocks 0] period]\n"
+        f"{cell_metric}"
         f"if {{abs($vg_period - {clock_period:.12g}) > 1.0e-9}} "
         '{ error "clock period differs from profile" }\n'
         "set vg_metrics [open out/metrics.kv w]\n"
-        'puts $vg_metrics "VERIGYM_DC_METRICS_V1"\n'
+        f'puts $vg_metrics "{metric_sentinel}"\n'
         'puts $vg_metrics "mapped_area=$vg_area"\n'
         'puts $vg_metrics "critical_path_delay=$vg_arrival"\n'
         'puts $vg_metrics "worst_negative_slack=$vg_wns"\n'
         'puts $vg_metrics "clock_period=$vg_period"\n'
+        f"{cell_metric_output}"
         f'puts $vg_metrics "timing_unit={timing_unit}"\n'
         f'puts $vg_metrics "constraints_sha256={constraints_hash}"\n'
         "close $vg_metrics\n"
         "report_area > out/area.rpt\n"
         "report_timing -delay_type max -max_paths 1 > out/timing.rpt\n"
+        f"{qor_report}"
         f"{write_netlist}"
         "exit\n"
     )
@@ -272,6 +294,7 @@ def _generated_script_hash(
     timing_unit: str,
     constraints_hash: str,
     emit_netlist: bool,
+    template_id: str = FLOW_TEMPLATE_ID,
 ) -> str:
     return _hash_bytes(
         _script(
@@ -281,6 +304,7 @@ def _generated_script_hash(
             timing_unit=timing_unit,
             constraints_hash=constraints_hash,
             emit_netlist=emit_netlist,
+            template_id=template_id,
         ).encode("utf-8")
     )
 
@@ -330,7 +354,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             )
         if profile.flow.backend_plugin != self.descriptor.name:
             errors.append("profile selects a different synthesis backend")
-        if profile.flow.template_id != FLOW_TEMPLATE_ID:
+        if profile.flow.template_id not in _TEMPLATE_HASHES:
             errors.append(f"unsupported Design Compiler template: {profile.flow.template_id}")
         if profile.metrics.scope != "synthesis_area_timing":
             errors.append("Design Compiler profiles must use the area/timing metric scope")
@@ -357,7 +381,8 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             errors.append("profile requires exactly one application/x-synopsys-db library")
         if len(constraints) != 1:
             errors.append("profile requires exactly one application/x-sdc constraint asset")
-        if len(generated) != 1 or generated[0].content_hash != FLOW_TEMPLATE_HASH:
+        expected_template_hash = _TEMPLATE_HASHES.get(profile.flow.template_id)
+        if len(generated) != 1 or generated[0].content_hash != expected_template_hash:
             errors.append("profile generated-flow descriptor does not match this backend")
         for descriptor in [*libraries, *constraints]:
             if descriptor.content_hash is None:
@@ -472,6 +497,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             profile.metrics.delay.unit,
             constraints.content_hash,
             profile.flow.emit_netlist_verilog,
+            profile.flow.template_id,
         )
         unresolved = ResolvedToolchainProfile(
             profile_id=profile.id,
@@ -486,7 +512,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             flow_hash=_canonical_hash(profile.flow),
             metric_contract_hash=_canonical_hash(profile.metrics),
             reference_contract_hash=_canonical_hash(profile.reference),
-            flow_template_id=FLOW_TEMPLATE_ID,
+            flow_template_id=profile.flow.template_id,
             generated_script_hash=script_hash,
             top_module=top_module,
             source_paths=source_paths,
@@ -499,7 +525,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "library_sha256": library.content_hash,
                 "constraints_sha256": constraints.content_hash,
                 "clock_period": clock_period,
-                "flow_template_hash": FLOW_TEMPLATE_HASH,
+                "flow_template_hash": _TEMPLATE_HASHES[profile.flow.template_id],
             },
         )
         resolved = unresolved.model_copy(
@@ -546,6 +572,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             clock_period=float(resolved.metadata["clock_period"]),
             emit_netlist_verilog=profile.flow.emit_netlist_verilog,
             expected_flow_script_hash=resolved.generated_script_hash,
+            flow_template_id=resolved.flow_template_id,  # type: ignore[arg-type]
             resolved_profile_hash=resolved.resolved_profile_hash,
             tool_identity={"design_compiler_version": tool.version},
             run_label=run_label,  # type: ignore[arg-type]
@@ -603,6 +630,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             timing_unit=request.timing_unit,
             constraints_hash=request.constraints_sha256,
             emit_netlist=request.emit_netlist_verilog,
+            template_id=request.flow_template_id,
         )
         if _hash_bytes(script.encode("utf-8")) != request.expected_flow_script_hash:
             raise ValueError("generated Design Compiler script hash differs from resolved profile")
@@ -683,7 +711,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
         try:
             if metrics_payload is None:
                 raise ValueError("Design Compiler produced no metrics file")
-            parsed = _parse_metrics(metrics_payload)
+            parsed = _parse_metrics(metrics_payload, template_id=request.flow_template_id)
             if parsed["timing_unit"] != request.timing_unit:
                 raise ValueError("Design Compiler timing unit differs from the profile")
             if parsed["constraints_sha256"] != request.constraints_sha256:
@@ -691,6 +719,11 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             area = _positive_float(parsed["mapped_area"], "mapped_area")
             delay = _positive_float(parsed["critical_path_delay"], "critical_path_delay")
             slack = _finite_float(parsed["worst_negative_slack"], "worst_negative_slack")
+            num_cells = (
+                _nonnegative_int(parsed["num_cells"], "num_cells")
+                if request.flow_template_id == FLOW_TEMPLATE_ID
+                else None
+            )
             period = _positive_float(parsed["clock_period"], "clock_period")
             if not math.isclose(period, request.clock_period, rel_tol=0.0, abs_tol=1.0e-9):
                 raise ValueError("Design Compiler clock period differs from the profile")
@@ -709,6 +742,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             synthesis_ok=True,
             role=request.run_label,
             top=request.top,
+            num_cells=num_cells,
             mapped_area_raw=area,
             mapped_area_unit=request.area_unit,
             mapped_area_source_hash=request.library_sha256,
@@ -764,6 +798,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             ("metrics.kv", f"{stage}/out/metrics.kv", "statistics", None),
             ("area.rpt", f"{stage}/out/area.rpt", "statistics", None),
             ("timing.rpt", f"{stage}/out/timing.rpt", "statistics", None),
+            ("qor.rpt", f"{stage}/out/qor.rpt", "statistics", None),
             ("netlist.v", f"{stage}/out/netlist.v", "netlist_verilog", None),
         ]
         refs: list[SynthesisArtifactRef] = []
@@ -850,15 +885,19 @@ def _optional_session_file(root: Path, relative: str, limit: int) -> bytes | Non
         return None
 
 
-def _parse_metrics(payload: bytes) -> dict[str, str]:
+def _parse_metrics(payload: bytes, *, template_id: str) -> dict[str, str]:
     if len(payload) > _MAX_METRICS_BYTES:
         raise ValueError("Design Compiler metrics exceed the parser limit")
     try:
         lines = payload.decode("ascii").splitlines()
     except UnicodeDecodeError as exc:
         raise ValueError("Design Compiler metrics are not ASCII") from exc
-    if not lines or lines[0] != "VERIGYM_DC_METRICS_V1":
+    expected_sentinel = (
+        "VERIGYM_DC_METRICS_V2" if template_id == FLOW_TEMPLATE_ID else "VERIGYM_DC_METRICS_V1"
+    )
+    if not lines or lines[0] != expected_sentinel:
         raise ValueError("Design Compiler metrics sentinel is missing")
+    expected_keys = _METRIC_KEYS_V2 if template_id == FLOW_TEMPLATE_ID else _METRIC_KEYS_V1
     parsed: dict[str, str] = {}
     for line in lines[1:]:
         if line.count("=") != 1:
@@ -866,10 +905,10 @@ def _parse_metrics(payload: bytes) -> dict[str, str]:
         key, value = line.split("=", 1)
         if not value:
             raise ValueError(f"Design Compiler metric {key!r} is empty")
-        if key not in _METRIC_KEYS or key in parsed:
+        if key not in expected_keys or key in parsed:
             raise ValueError("Design Compiler metrics contain unknown or duplicate fields")
         parsed[key] = value
-    if set(parsed) != _METRIC_KEYS:
+    if set(parsed) != expected_keys:
         raise ValueError("Design Compiler metrics are incomplete")
     return parsed
 
@@ -891,9 +930,21 @@ def _positive_float(value: str, field: str) -> float:
     return result
 
 
+def _nonnegative_int(value: str, field: str) -> int:
+    try:
+        result = int(value)
+    except ValueError as exc:
+        raise ValueError(f"Design Compiler {field} is not an integer") from exc
+    if result < 0:
+        raise ValueError(f"Design Compiler {field} is negative")
+    return result
+
+
 __all__ = [
     "DesignCompilerRequest",
     "DesignCompilerSynthesisTool",
     "FLOW_TEMPLATE_HASH",
     "FLOW_TEMPLATE_ID",
+    "LEGACY_FLOW_TEMPLATE_HASH",
+    "LEGACY_FLOW_TEMPLATE_ID",
 ]

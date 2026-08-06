@@ -15,6 +15,18 @@
   "$id": "https://verigym.dev/schemas/1.0/sample-run-ref.schema.json",
   "additionalProperties": false,
   "properties": {
+    "candidate_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Hash"
+    },
     "candidate_verdict": {
       "title": "Candidate Verdict",
       "type": "boolean"

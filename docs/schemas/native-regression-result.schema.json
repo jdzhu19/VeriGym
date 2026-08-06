@@ -8,6 +8,27 @@
       ],
       "title": "IcarusCompatibility",
       "type": "string"
+    },
+    "VerilogEvalDiagnosticCode": {
+      "enum": [
+        "compile.top_module_contract",
+        "compile.reserved_module_collision",
+        "compile.syntax_error",
+        "compile.explicit_cast_required",
+        "compile.zero_width_constant",
+        "compile.missing_sensitivity",
+        "compile.wire_assignment",
+        "compile.unknown_module",
+        "compile.port_binding",
+        "compile.other",
+        "simulation.process_timeout",
+        "simulation.native_timeout",
+        "simulation.nonzero_exit",
+        "simulation.missing_summary",
+        "verification.mismatch"
+      ],
+      "title": "VerilogEvalDiagnosticCode",
+      "type": "string"
     }
   },
   "$id": "https://verigym.dev/schemas/1.0/native-regression-result.schema.json",
@@ -19,6 +40,17 @@
     "compile_ok": {
       "title": "Compile Ok",
       "type": "boolean"
+    },
+    "diagnostic_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerilogEvalDiagnosticCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "mismatches": {
       "anyOf": [

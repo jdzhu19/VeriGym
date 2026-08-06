@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -32,7 +33,15 @@ class SampleRunRef(StrictModel):
     candidate_verdict: bool
     task_hash: str
     source_hash: str
+    candidate_hash: str | None = None
     configuration_fingerprint: str
+
+    @field_validator("candidate_hash")
+    @classmethod
+    def candidate_identity(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError("candidate hashes must be lowercase SHA-256 values")
+        return value
 
     @field_validator("relative_path")
     @classmethod
@@ -111,6 +120,10 @@ class PassAtKReport(StrictModel):
     cancelled_truncated_count: int = Field(ge=0)
     missing_child_count: int = Field(ge=0)
     empirical_resolved_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
+    distinct_candidate_count: int = Field(default=0, ge=0)
+    candidate_diversity_index: float | None = Field(default=None, ge=0.0, le=1.0)
+    candidate_diversity_valid: bool = False
+    candidate_diversity_invalid_reason: str | None = "candidate_hash_unavailable"
     any_resolved: bool
     homogeneous: bool
     homogeneity_error: str | None = None
@@ -136,6 +149,17 @@ class PassAtKReport(StrictModel):
             raise ValueError("candidate-verdict counts are inconsistent")
         if self.any_resolved != (self.resolved_count > 0):
             raise ValueError("any_resolved is inconsistent with resolved_count")
+        if self.candidate_diversity_valid:
+            if (
+                self.candidate_diversity_index is None
+                or self.candidate_diversity_invalid_reason is not None
+            ):
+                raise ValueError("valid candidate diversity requires a value and no reason")
+        elif (
+            self.candidate_diversity_index is not None
+            or not self.candidate_diversity_invalid_reason
+        ):
+            raise ValueError("invalid candidate diversity requires a reason and no value")
         return self
 
 

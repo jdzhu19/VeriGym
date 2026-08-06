@@ -104,6 +104,10 @@ mismatch, candidate compile failure, missing `TopModule`, reserved-module collis
 candidate-caused timeout is an incorrect candidate. Missing tools, process-launch faults,
 corrupted source, and internal parser/runtime faults are infrastructure errors.
 
+Tool metadata additionally carries stable diagnostic subtypes such as `compile.syntax_error`,
+`compile.unknown_module`, `simulation.native_timeout`, and `verification.mismatch`. These bounded
+labels support aggregate analysis without making raw compiler wording part of the result contract.
+
 The manifest, scorecard, and verifier artifacts record exact detected Icarus versions and one of:
 
 - `canonical_or_reference_compatible` for the upstream reference major version 12;
@@ -167,6 +171,11 @@ settings, runtime, verifier/toolchain profile, and budget, no infrastructure res
 and `n >= k`. Malformed model output is a valid incorrect sample. Model transport failure,
 missing Icarus, runtime failure, cancellation, truncation, mixed configuration, or a missing child
 invalidates canonical pass@k instead of being counted as incorrect RTL.
+
+The same report records the number of distinct candidate snapshots and their Gini-Simpson
+diversity, `1 - sum((count(hash) / n)^2)`. Candidate identity comes from the immutable snapshot
+SHA-256 rather than log text. Diversity is `null` with a reason when a child or candidate hash is
+missing or the group mixes configurations; it does not affect pass@k or correctness.
 
 Aggregate regeneration reads only completed child manifests, scorecards, and traces and never
 calls the model:

@@ -3,12 +3,16 @@
 VeriGym core defines tool, synthesis-backend, profile, artifact, and result contracts; it does not
 ship vendor software. The optional
 [`verigym-synopsys`](../integrations/verigym-synopsys/README.md) package proves the interface with
-two site-local plugins:
+three site-local plugins:
 
 - `synopsys.vcs.simulate` runs a hash-bound hidden regression and classifies license, candidate,
   timeout, parser, and runtime failures separately.
-- `synopsys.dc.synth` runs a generated DC flow and emits mapped area, maximum-path delay, and
-  worst-negative slack from an exact `.db`/SDC pair.
+- `synopsys.dc.synth` runs a generated DC flow and emits mapped area, mapped cell count,
+  maximum-path delay, worst-negative slack, and a QoR report from an exact `.db`/SDC pair.
+- `synopsys.formality.equivalence` separately stages reference and implementation RTL, runs
+  `match`/`verify`, and emits a script-bound equivalence status. Detailed unmatched/failing-point
+  reports remain inside the ephemeral verifier session because they can reveal golden-design
+  identifiers. It is an optional correctness gate, not a scoring metric.
 
 The package contains no proprietary executable, `.db`, PDK, credential, license file, or license
 server address. Users install the commercial tools and create a site profile from assets they are
@@ -31,5 +35,5 @@ runtime, DB, SDC, generated script, units, clock period, flow, and reference. Ma
 alone is insufficient. Area, delay, and WNS stay separate; VeriGym does not combine them into an
 opaque score or claim cross-tool equivalence.
 
-Ordinary CI uses fake command results and parsers. Real VCS/DC tests are explicit, site-owned,
-license-gated checks and must not become dependencies of the ordinary test suite.
+Ordinary CI uses fake command results and parsers. Real VCS/DC/Formality tests are explicit,
+site-owned, license-gated checks and must not become dependencies of the ordinary test suite.

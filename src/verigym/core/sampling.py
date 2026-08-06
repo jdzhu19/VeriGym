@@ -281,6 +281,23 @@ def build_pass_at_k_report(manifest: SampleSetManifest) -> PassAtKReport:
         )
 
     complete_candidate_set = base_invalid_reason is None
+    candidate_hashes = [child.candidate_hash for child in children]
+    diversity_reason: str | None = None
+    if missing_count:
+        diversity_reason = "missing_child_results"
+    elif not homogeneous:
+        diversity_reason = "mixed_configuration"
+    elif any(value is None for value in candidate_hashes):
+        diversity_reason = "candidate_hash_unavailable"
+    hash_counts: dict[str, int] = {}
+    if diversity_reason is None:
+        for candidate_hash in candidate_hashes:
+            assert candidate_hash is not None
+            hash_counts[candidate_hash] = hash_counts.get(candidate_hash, 0) + 1
+    diversity = None
+    if diversity_reason is None:
+        total = len(candidate_hashes)
+        diversity = 1.0 - sum((count / total) ** 2 for count in hash_counts.values())
     return PassAtKReport(
         sample_set_id=manifest.sample_set_id,
         task_id=manifest.task_id,
@@ -295,6 +312,10 @@ def build_pass_at_k_report(manifest: SampleSetManifest) -> PassAtKReport:
         empirical_resolved_fraction=(
             resolved_count / manifest.requested_sample_count if complete_candidate_set else None
         ),
+        distinct_candidate_count=len(hash_counts),
+        candidate_diversity_index=diversity,
+        candidate_diversity_valid=diversity_reason is None,
+        candidate_diversity_invalid_reason=diversity_reason,
         any_resolved=resolved_count > 0,
         homogeneous=homogeneous,
         homogeneity_error=homogeneity_error,
@@ -362,6 +383,7 @@ def _sample_ref(
         candidate_verdict=verdict,
         task_hash=manifest.task_hash,
         source_hash=manifest.source_hash,
+        candidate_hash=manifest.candidate_hash,
         configuration_fingerprint=configuration_fingerprint,
     )
 

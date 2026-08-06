@@ -1,6 +1,7 @@
 # VeriGym Synopsys Integration
 
-This optional package connects site-installed Synopsys VCS and Design Compiler tools to VeriGym.
+This optional package connects site-installed Synopsys VCS, Design Compiler, and Formality tools
+to VeriGym.
 It contains only Python adapters and generated flow logic: no vendor executable, library database,
 license file, PDK, or benchmark asset is bundled.
 
@@ -15,6 +16,13 @@ verigym plugins list
 list and hidden testbench, invokes VCS without a shell, recognizes pass/fail sentinels, and maps
 license failures to `license_unavailable`. `synopsys.dc.synth` is a synthesis backend that reports
 mapped area, maximum-path delay, and worst-negative slack from a hash-bound DB and SDC pair.
+The current DC v2 flow additionally records mapped cell count and a complete `report_qor` artifact;
+the v1 flow remains accepted for replay compatibility. `synopsys.formality.equivalence` compares
+separately staged reference and implementation RTL,
+supports Verilog and SystemVerilog, and emits a script-bound structured equivalence result. All
+three plugins are verifier-only and intended for site-controlled runtimes; DC profiles explicitly
+require the trusted local runtime. Detailed Formality point reports are not exported because they
+can reveal golden-design identifiers.
 
 ## Prepare a site profile
 

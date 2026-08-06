@@ -7,8 +7,12 @@ from pydantic import ValidationError
 
 from verigym.schemas.common import ErrorCategory
 from verigym.schemas.tool import CompletedCommand
+from verigym.suites.verilog_eval.diagnostics import classify_compile_diagnostic
 from verigym.suites.verilog_eval.result_parser import parse_native_result
-from verigym.suites.verilog_eval.schemas import IcarusCompatibility
+from verigym.suites.verilog_eval.schemas import (
+    IcarusCompatibility,
+    VerilogEvalDiagnosticCode,
+)
 from verigym.suites.verilog_eval.toolchain import classify_icarus_version
 from verigym.suites.verilog_eval.verifier import (
     VerilogEvalCompileRequest,
@@ -68,10 +72,12 @@ def test_native_parser_requires_exact_stdout_marker_and_rejects_timeouts() -> No
     native_timeout = parse(completed("Mismatches: 0 in 2 samples\nTIMEOUT\n"))
     assert not native_timeout.resolved
     assert native_timeout.native_timeout
+    assert native_timeout.diagnostic_code == VerilogEvalDiagnosticCode.SIMULATION_NATIVE_TIMEOUT
 
     process_timeout = parse(completed("", exit_code=-9, timed_out=True))
     assert not process_timeout.simulation_ok
     assert process_timeout.process_timed_out
+    assert process_timeout.diagnostic_code == VerilogEvalDiagnosticCode.SIMULATION_PROCESS_TIMEOUT
 
 
 def test_native_parser_does_not_accept_stderr_marker_or_zero_samples() -> None:
@@ -130,3 +136,21 @@ def test_icarus_compatibility_labels(
     expected: IcarusCompatibility,
 ) -> None:
     assert classify_icarus_version(version) == expected
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        ("syntax error", VerilogEvalDiagnosticCode.COMPILE_SYNTAX_ERROR),
+        ("Unknown module type: missing", VerilogEvalDiagnosticCode.COMPILE_UNKNOWN_MODULE),
+        ("Port reset is not a port of dut", VerilogEvalDiagnosticCode.COMPILE_PORT_BINDING),
+        ("unclassified compiler failure", VerilogEvalDiagnosticCode.COMPILE_OTHER),
+    ],
+)
+def test_compile_diagnostics_use_stable_subtypes(
+    stderr: str,
+    expected: VerilogEvalDiagnosticCode,
+) -> None:
+    command = completed("", exit_code=1)
+    command.stderr = stderr
+    assert classify_compile_diagnostic(command) == expected
