@@ -38,6 +38,7 @@ _SECRET_PATTERNS = {
 @dataclass(frozen=True)
 class Policy:
     distribution: str
+    version: str
     module: str
     entry_markers: tuple[str, ...]
     forbidden_member_names: frozenset[str] = frozenset()
@@ -47,6 +48,7 @@ class Policy:
 _POLICIES = {
     "rtllm": Policy(
         distribution="verigym-rtllm",
+        version="0.2.0",
         module="verigym_rtllm",
         entry_markers=("[verigym.suites]", "rtllm = verigym_rtllm:RTLLMSuite"),
         forbidden_member_names=frozenset(
@@ -55,6 +57,7 @@ _POLICIES = {
     ),
     "synopsys": Policy(
         distribution="verigym-synopsys",
+        version="0.1.0",
         module="verigym_synopsys",
         entry_markers=(
             "[console_scripts]",
@@ -145,8 +148,8 @@ def _scan_wheel(path: Path, policy: Policy) -> dict[str, object]:
         metadata = Parser().parsestr(metadata_text)
         if metadata.get("Name") != policy.distribution:
             issues.append("wheel distribution name does not match its policy")
-        if metadata.get("Version") != "0.1.0":
-            issues.append("wheel version is not 0.1.0")
+        if metadata.get("Version") != policy.version:
+            issues.append(f"wheel version is not {policy.version}")
     if entries_text is None:
         issues.append("wheel entry_points.txt is missing")
     else:
