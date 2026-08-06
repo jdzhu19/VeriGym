@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-verilog-eval-codecomplete"
+version = "0.1.0"
+description = "Out-of-tree VeriGym adapter for VerilogEval V2 code-completion tasks."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "VeriGym contributors"}]
+dependencies = ["verigym>=0.1.0,<0.2"]
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "mypy>=1.10", "pytest>=8", "ruff>=0.6"]
+
+[project.entry-points."verigym.suites"]
+verilog-eval-code-complete = "verigym_verilog_eval_codecomplete:VerilogEvalCodeCompleteSuite"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_verilog_eval_codecomplete = ["assets/**/*", "py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "external_benchmark: requires a user-supplied official VerilogEval checkout",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["verigym_verilog_eval_codecomplete"]
