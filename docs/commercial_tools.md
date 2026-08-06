@@ -18,6 +18,8 @@ The package contains no proprietary executable, `.db`, PDK, credential, license 
 server address. Users install the commercial tools and create a site profile from assets they are
 authorized to use. `verigym-synopsys-prepare-profile` can locally convert a Liberty file with
 Library Compiler and emit a strict YAML profile containing hashes and re-resolution paths.
+The committed [real DC v2 smoke](audits/real_dc_v2_smoke.md) demonstrates mapped-cell extraction
+and `report_qor` generation without publishing the site DB, raw logs, or license configuration.
 
 ## Secrets and private assets
 
