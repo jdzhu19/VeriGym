@@ -28,7 +28,9 @@ Generation writes three deterministic artifacts:
 
 Correctness always retains explicit planned/evaluable/resolved denominators. License failures stay
 in verifier/tool infrastructure accounting and are never converted into model failures. Cost is
-summed only inside one explicit currency or provider-unit partition.
+summed only inside one explicit currency or provider-unit partition. Evaluation rows distinguish
+the model-client plugin from the frozen provider/model identity. PPA rows retain candidate and
+reference medians as well as ratios, with their units and exact comparison partition.
 
 ## PPA comparison boundary
 

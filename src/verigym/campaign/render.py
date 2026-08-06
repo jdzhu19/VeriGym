@@ -18,6 +18,8 @@ CAMPAIGN_CSV_COLUMNS = [
     "experiment_id",
     "system_id",
     "agent_id",
+    "model_client_id",
+    "model_provider",
     "model_id",
     "agent_version_id",
     "planned_count",
@@ -44,8 +46,14 @@ CAMPAIGN_CSV_COLUMNS = [
     "clock_period",
     "ppa_eligible_count",
     "ppa_ineligible_count",
+    "area_median",
+    "reference_area_median",
     "area_ratio_median",
+    "delay_median",
+    "reference_delay_median",
     "delay_ratio_median",
+    "worst_negative_slack_median",
+    "reference_worst_negative_slack_median",
     "worst_negative_slack_delta_median",
 ]
 
@@ -73,6 +81,8 @@ def render_campaign_csv(report: CampaignReport) -> str:
                     "experiment_id": evaluation.experiment_id,
                     "system_id": evaluation.system_id,
                     "agent_id": evaluation.agent_id,
+                    "model_client_id": evaluation.model_client_id,
+                    "model_provider": evaluation.model_provider,
                     "model_id": evaluation.model_id,
                     "agent_version_id": evaluation.agent_version_id,
                     "planned_count": evaluation.planned_count,
@@ -111,8 +121,16 @@ def render_campaign_csv(report: CampaignReport) -> str:
                     "clock_period": quality.clock_period,
                     "ppa_eligible_count": quality.eligible_run_count,
                     "ppa_ineligible_count": quality.ineligible_run_count,
+                    "area_median": quality.area_median,
+                    "reference_area_median": quality.reference_area_median,
                     "area_ratio_median": quality.area_ratio_median,
+                    "delay_median": quality.delay_median,
+                    "reference_delay_median": quality.reference_delay_median,
                     "delay_ratio_median": quality.delay_ratio_median,
+                    "worst_negative_slack_median": quality.worst_negative_slack_median,
+                    "reference_worst_negative_slack_median": (
+                        quality.reference_worst_negative_slack_median
+                    ),
                     "worst_negative_slack_delta_median": (
                         quality.worst_negative_slack_delta_median
                     ),
@@ -145,15 +163,20 @@ def render_campaign_markdown(report: CampaignReport) -> str:
         "",
         "## Evaluation matrix",
         "",
-        "| Input | Mode | Suite | System/version | Resolved | pass@1 | Tokens | Tools | Wall s |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| Input | Mode | Suite | System/version | Model | Resolved | pass@1 | "
+        "Tokens | Tools | Wall s |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     for evaluation in report.evaluations:
         system = evaluation.agent_version_id or evaluation.system_id
+        model = evaluation.model_id or "none"
+        if evaluation.model_provider is not None:
+            model = f"{evaluation.model_provider}/{model}"
         lines.append(
             f"| {markdown_escape(evaluation.input_id)} | "
             f"{markdown_escape(evaluation.evaluation_mode)} | "
             f"{markdown_escape(evaluation.suite_id)} | {markdown_escape(system)} | "
+            f"{markdown_escape(model)} | "
             f"{evaluation.resolved_count}/{evaluation.evaluable_count} "
             f"({_rate(evaluation.resolved_rate_evaluable.value)}) | "
             f"{_rate(evaluation.macro_pass_at_1)} | "
@@ -175,9 +198,9 @@ def render_campaign_markdown(report: CampaignReport) -> str:
     else:
         lines.extend(
             [
-                "| Input/version | Partition | Task | Eligible | Area ratio | "
-                "Delay ratio | WNS delta |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+                "| Input/version | Partition | Task | Eligible | Area cand/ref | "
+                "Delay cand/ref | WNS cand/ref | Ratios A/D |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for quality in report.quality_partitions:
@@ -186,9 +209,15 @@ def render_campaign_markdown(report: CampaignReport) -> str:
                 f"| {markdown_escape(label)} | "
                 f"`{markdown_escape(quality.comparison_partition_id[:16])}` | "
                 f"{markdown_escape(quality.task_id)} | {quality.eligible_run_count} | "
-                f"{_number(quality.area_ratio_median)} | "
-                f"{_number(quality.delay_ratio_median)} | "
-                f"{_number(quality.worst_negative_slack_delta_median)} |"
+                f"{_number(quality.area_median)}/{_number(quality.reference_area_median)} "
+                f"{markdown_escape(quality.area_unit)} | "
+                f"{_number(quality.delay_median)}/{_number(quality.reference_delay_median)} "
+                f"{markdown_escape(quality.timing_unit or '-')} | "
+                f"{_number(quality.worst_negative_slack_median)}/"
+                f"{_number(quality.reference_worst_negative_slack_median)} "
+                f"{markdown_escape(quality.timing_unit or '-')} | "
+                f"{_number(quality.area_ratio_median)}/"
+                f"{_number(quality.delay_ratio_median)} |"
             )
     if report.warnings:
         lines.extend(["", "## Warnings", ""])

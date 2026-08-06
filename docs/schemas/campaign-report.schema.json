@@ -282,6 +282,18 @@
           "default": null,
           "title": "Mean Wall Time S"
         },
+        "model_client_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Client Id"
+        },
         "model_cost_sum": {
           "anyOf": [
             {
@@ -318,6 +330,18 @@
           ],
           "default": null,
           "title": "Model Id"
+        },
+        "model_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Provider"
         },
         "observed_model_api_calls": {
           "anyOf": [
@@ -448,6 +472,18 @@
           "default": null,
           "title": "Agent Version Id"
         },
+        "area_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Median"
+        },
         "area_ratio_median": {
           "anyOf": [
             {
@@ -491,6 +527,18 @@
         "declared_profile_id": {
           "title": "Declared Profile Id",
           "type": "string"
+        },
+        "delay_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Median"
         },
         "delay_ratio_median": {
           "anyOf": [
@@ -543,9 +591,45 @@
           "title": "Metric Scope",
           "type": "string"
         },
+        "reference_area_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Area Median"
+        },
         "reference_candidate_hash": {
           "title": "Reference Candidate Hash",
           "type": "string"
+        },
+        "reference_delay_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Delay Median"
+        },
+        "reference_worst_negative_slack_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Worst Negative Slack Median"
         },
         "resolved_profile_hash": {
           "title": "Resolved Profile Hash",
@@ -590,6 +674,18 @@
           ],
           "default": null,
           "title": "Worst Negative Slack Delta Median"
+        },
+        "worst_negative_slack_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Median"
         }
       },
       "required": [

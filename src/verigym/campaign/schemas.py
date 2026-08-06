@@ -126,6 +126,8 @@ class CampaignEvaluationSummary(StrictModel):
     task_set_hash: str
     system_id: str
     agent_id: str
+    model_client_id: str | None = None
+    model_provider: str | None = None
     model_id: str | None = None
     agent_version_id: str | None = None
     compatibility_partition_ids: list[str]
@@ -185,8 +187,14 @@ class CampaignQualityPartition(StrictModel):
     reference_candidate_hash: str
     eligible_run_count: int = Field(ge=0)
     ineligible_run_count: int = Field(ge=0)
+    area_median: float | None = None
+    reference_area_median: float | None = None
     area_ratio_median: float | None = None
+    delay_median: float | None = None
+    reference_delay_median: float | None = None
     delay_ratio_median: float | None = None
+    worst_negative_slack_median: float | None = None
+    reference_worst_negative_slack_median: float | None = None
     worst_negative_slack_delta_median: float | None = None
 
     @field_validator("input_id")

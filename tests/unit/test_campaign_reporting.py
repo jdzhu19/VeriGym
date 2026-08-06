@@ -11,12 +11,15 @@ from typer.testing import CliRunner
 from tests.milestone9_helpers import experiment_config, offline_service
 from verigym.campaign.config import load_campaign_config
 from verigym.campaign.render import CAMPAIGN_CSV_COLUMNS
-from verigym.campaign.schemas import CampaignQualityPartition
+from verigym.campaign.schemas import CampaignInputConfig, CampaignQualityPartition
 from verigym.campaign.service import (
     CampaignService,
     _license_count,
     validate_evolving_plan_contract,
     validate_quality_comparison_partitions,
+)
+from verigym.campaign.service import (
+    _quality_row as project_quality_row,
 )
 from verigym.cli.app import app
 from verigym.core.errors import ConfigurationError
@@ -28,6 +31,7 @@ from verigym.experiments.schemas import ExperimentConfig, PlanItem
 from verigym.experiments.state import atomic_dump_json, load_jsonl_models
 from verigym.models.static import AND_GATE_GOOD_SOURCE, StaticModelClient
 from verigym.reporting.aggregate import ReportBuilder
+from verigym.reporting.schemas import QualityPartition, QualityRunValue
 from verigym.schemas.evolution import (
     EvolvingEvaluationReport,
     PairedVersionDifference,
@@ -245,6 +249,11 @@ def test_campaign_generates_complete_path_free_platform_matrix(tmp_path: Path) -
         "toy-v0",
         "toy-v1",
     }
+    chat_summary = next(
+        item for item in generated.report.evaluations if item.evaluation_mode == "chat"
+    )
+    assert chat_summary.model_client_id == "campaign-static-good"
+    assert chat_summary.model_id == "campaign-static-good"
     assert generated.report.offline_only
     assert generated.report.model_calls_during_reporting == 0
     assert generated.report.tool_calls_during_reporting == 0
@@ -400,6 +409,66 @@ def test_campaign_never_reuses_a_ppa_partition_for_different_profiles() -> None:
 
     separate = second.model_copy(update={"comparison_partition_id": "d" * 64})
     assert validate_quality_comparison_partitions([first, separate]) == [first, separate]
+
+
+def test_campaign_quality_summary_preserves_raw_candidate_and_reference_metrics() -> None:
+    identity = {
+        "suite_source_identity": "1" * 64,
+        "task_id": "toy-rtl/and-gate-basic",
+        "task_hash": "2" * 64,
+        "correctness_definition_hash": "3" * 64,
+        "declared_profile_id": "profile",
+        "declared_profile_hash": "4" * 64,
+        "resolved_profile_hash": "5" * 64,
+        "runtime_identity_hash": "6" * 64,
+        "image_id": None,
+        "area_unit": "um^2",
+        "metric_scope": "synthesis_area_timing",
+        "timing_unit": "ns",
+        "clock_period": 10.0,
+        "reference_candidate_hash": "7" * 64,
+    }
+    run = QualityRunValue(
+        plan_index=0,
+        run_id="run",
+        task_id="toy-rtl/and-gate-basic",
+        system_id="system",
+        eligible=True,
+        area=10.0,
+        reference_area=12.0,
+        area_ratio=1.2,
+        delay=2.0,
+        reference_delay=2.5,
+        delay_ratio=1.25,
+        worst_negative_slack=-0.5,
+        reference_worst_negative_slack=-0.25,
+        worst_negative_slack_delta=-0.25,
+    )
+    partition = QualityPartition(
+        partition_id=content_hash(identity),
+        **identity,
+        eligible_run_count=1,
+        ineligible_run_count=0,
+        runs=[run],
+    )
+    row = project_quality_row(
+        CampaignInputConfig(
+            id="quality",
+            kind="experiment",
+            evaluation_mode="agent",
+            experiment_root=Path("experiment"),
+        ),
+        partition,
+        [run],
+        version_id=None,
+    )
+
+    assert row.area_median == 10.0
+    assert row.reference_area_median == 12.0
+    assert row.delay_median == 2.0
+    assert row.reference_delay_median == 2.5
+    assert row.worst_negative_slack_median == -0.5
+    assert row.reference_worst_negative_slack_median == -0.25
 
 
 def test_license_unavailable_remains_verifier_infrastructure(tmp_path: Path) -> None:

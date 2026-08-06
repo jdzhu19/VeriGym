@@ -177,6 +177,7 @@ def _ordinary_summary(
             f"ordinary campaign input {entry.id!r} must contain exactly one frozen system"
         )
     system = manifest.system_identities[0]
+    model_descriptor = system.model_descriptor
     cost_sum, cost_unit = _cost(aggregate)
     return CampaignEvaluationSummary(
         input_id=entry.id,
@@ -189,7 +190,9 @@ def _ordinary_summary(
         task_set_hash=manifest.task_set_hash,
         system_id=system.system_id,
         agent_id=system.agent_id,
-        model_id=system.model_id,
+        model_client_id=system.model_id,
+        model_provider=model_descriptor.provider if model_descriptor is not None else None,
+        model_id=model_descriptor.model_id if model_descriptor is not None else system.model_id,
         compatibility_partition_ids=sorted(
             item.partition_id for item in aggregate.compatibility_aggregates
         ),
@@ -424,6 +427,7 @@ def _evolving_summary(
 ) -> CampaignEvaluationSummary:
     first = items[0]
     system_id = first.system.system_id
+    model_descriptor = first.system.model_descriptor
     compatibility = sorted(
         {
             group.compatibility_partition_id
@@ -442,7 +446,11 @@ def _evolving_summary(
         task_set_hash=loaded.manifest.task_set_hash,
         system_id=system_id,
         agent_id=first.system.agent_id,
-        model_id=first.system.model_id,
+        model_client_id=first.system.model_id,
+        model_provider=model_descriptor.provider if model_descriptor is not None else None,
+        model_id=(
+            model_descriptor.model_id if model_descriptor is not None else first.system.model_id
+        ),
         agent_version_id=metric.agent_version_id,
         compatibility_partition_ids=compatibility,
         planned_count=metric.planned,
@@ -516,8 +524,16 @@ def _quality_row(
         reference_candidate_hash=partition.reference_candidate_hash,
         eligible_run_count=sum(item.eligible for item in runs),
         ineligible_run_count=sum(not item.eligible for item in runs),
+        area_median=_median([item.area for item in runs]),
+        reference_area_median=_median([item.reference_area for item in runs]),
         area_ratio_median=_median([item.area_ratio for item in runs]),
+        delay_median=_median([item.delay for item in runs]),
+        reference_delay_median=_median([item.reference_delay for item in runs]),
         delay_ratio_median=_median([item.delay_ratio for item in runs]),
+        worst_negative_slack_median=_median([item.worst_negative_slack for item in runs]),
+        reference_worst_negative_slack_median=_median(
+            [item.reference_worst_negative_slack for item in runs]
+        ),
         worst_negative_slack_delta_median=_median(
             [item.worst_negative_slack_delta for item in runs]
         ),
