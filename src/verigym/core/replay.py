@@ -648,11 +648,14 @@ def _validate_stored_synthesis_artifacts(
     candidate = scorecard.quality.synthesis
     if candidate is None:
         raise ReplayError("profile-enabled scorecard has no candidate synthesis record")
-    artifact_root = run_dir / "artifacts" / "yosys" / "candidate"
+    backend_root = _resolve_synthesis_backend_artifact_root(run_dir, manifest, candidate)
+    artifact_root = backend_root / "candidate" if backend_root is not None else None
     for artifact in candidate.artifacts:
         if artifact.visibility != "public":
             raise ReplayError("candidate synthesis artifact has an invalid visibility")
         relative = normalize_relative_path(artifact.path)
+        if artifact_root is None:
+            raise ReplayError(f"stored candidate synthesis artifact is missing: {relative}")
         path = artifact_root / relative
         if not path.is_file():
             raise ReplayError(f"stored candidate synthesis artifact is missing: {relative}")
@@ -671,12 +674,12 @@ def _validate_stored_synthesis_artifacts(
     if scorecard.quality.reference_synthesis is not None:
         if scorecard.quality.reference_synthesis.artifacts:
             raise ReplayError("hidden reference synthesis artifacts were exported")
-    summary_path = run_dir / "artifacts" / "yosys" / "reference_summary.json"
+    summary_path = backend_root / "reference_summary.json" if backend_root is not None else None
     if manifest.reference_summary_hash is None:
-        if summary_path.exists():
+        if summary_path is not None and summary_path.exists():
             raise ReplayError("reference summary exists without a manifest hash")
         return
-    if not summary_path.is_file():
+    if summary_path is None or not summary_path.is_file():
         raise ReplayError("manifest reference summary is missing")
     summary_bytes = summary_path.read_bytes()
     if hash_bytes(summary_bytes) != manifest.reference_summary_hash:
@@ -696,6 +699,49 @@ def _validate_stored_synthesis_artifacts(
         or summary.get("reference_netlist_exported") is not False
     ):
         raise ReplayError("reference summary identity or visibility contract is invalid")
+
+
+def _resolve_synthesis_backend_artifact_root(
+    run_dir: Path,
+    manifest: RunManifest,
+    candidate: SynthesisMetrics,
+) -> Path | None:
+    """Resolve a tool-neutral backend namespace from sealed artifact structure."""
+
+    artifacts_root = run_dir / "artifacts"
+    backend_roots: list[Path] = []
+    for entry in sorted(artifacts_root.iterdir()):
+        candidate_root = entry / "candidate"
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        if candidate_root.is_symlink() or not candidate_root.is_dir():
+            continue
+        backend_roots.append(entry)
+
+    if candidate.artifacts:
+        relatives = [normalize_relative_path(artifact.path) for artifact in candidate.artifacts]
+        complete = [
+            root
+            for root in backend_roots
+            if all((root / "candidate" / relative).is_file() for relative in relatives)
+        ]
+        if len(complete) == 1:
+            return complete[0]
+        if len(complete) > 1:
+            raise ReplayError("stored synthesis backend artifact root is ambiguous")
+        if len(backend_roots) == 1:
+            return backend_roots[0]
+        first = relatives[0]
+        raise ReplayError(f"stored candidate synthesis artifact is missing: {first}")
+
+    if manifest.reference_summary_hash is not None:
+        summaries = [root for root in backend_roots if (root / "reference_summary.json").is_file()]
+        if len(summaries) == 1:
+            return summaries[0]
+        if len(summaries) > 1:
+            raise ReplayError("stored synthesis backend artifact root is ambiguous")
+        raise ReplayError("manifest reference summary is missing")
+    return None
 
 
 def _validate_replayed_quality(
