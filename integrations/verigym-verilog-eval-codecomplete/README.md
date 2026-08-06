@@ -1,6 +1,7 @@
 # VeriGym VerilogEval Code-Completion Plugin
 
-This independently installable package adds the official VerilogEval V2
+This independently installable package is maintained in VeriGym's `integrations/` monorepo
+directory and adds the official VerilogEval V2
 `dataset_code-complete-iccad2023` layout to VeriGym without modifying VeriGym core. It contains no
 benchmark tasks. Users supply a local checkout of
 [`NVlabs/verilog-eval`](https://github.com/NVlabs/verilog-eval), which is validated read-only and
@@ -9,10 +10,15 @@ bound to content, license, and Git identities.
 ## Install and discover
 
 ```bash
-python -m pip install -e /path/to/VeriGym -e .
+python -m pip install /path/to/verigym-0.1.0-py3-none-any.whl
+python -m pip install /path/to/verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl
 verigym doctor
 verigym suites inspect verilog-eval-code-complete
 ```
+
+For development from a VeriGym checkout, replace the two wheel paths with
+`python -m pip install -e . -e integrations/verigym-verilog-eval-codecomplete`. Core-only users do
+not need to install this package.
 
 ## Validate and run
 
@@ -52,6 +58,10 @@ pytest
 ```
 
 Set `VERIGYM_VERILOG_EVAL_CODE_COMPLETE_ROOT` to run the opt-in official-checkout conformance test.
+
+The root VeriGym CI builds the core and plugin wheels independently, installs them together in a
+clean virtual environment, and runs `scripts/run_synthetic_smoke.py` from outside both source
+package trees. The smoke uses a synthetic task and a deterministic agent with zero model calls.
 
 For a credential-free, explicitly non-scored end-to-end check against official task
 `Prob001_zero`, run:

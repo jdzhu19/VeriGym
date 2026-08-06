@@ -41,7 +41,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install -e '.[dev]'
+      - name: Install core and external-suite plugin
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pip install -e integrations/verigym-verilog-eval-codecomplete
       - name: Confirm pre-provisioned checkout
         env:
           VERIGYM_VERILOG_EVAL_ROOT: ${{ inputs.verilog_eval_root }}
@@ -49,7 +52,11 @@ jobs:
       - name: Real external-path conformance
         env:
           VERIGYM_VERILOG_EVAL_ROOT: ${{ inputs.verilog_eval_root }}
-        run: pytest -m external_benchmark
+          VERIGYM_VERILOG_EVAL_CODE_COMPLETE_ROOT: ${{ inputs.verilog_eval_root }}
+        run: |
+          pytest -m external_benchmark
+          pytest -m external_benchmark \
+            integrations/verigym-verilog-eval-codecomplete/tests/test_adapter.py::test_official_checkout_contract
 
   external-not-requested:
     if: ${{ inputs.verilog_eval_root == '' }}

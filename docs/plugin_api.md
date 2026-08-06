@@ -28,6 +28,19 @@ The fixture at [`examples/plugins/conformance/`](../examples/plugins/conformance
 installed beside the VeriGym wheel. It proves external suite, tool, and agent discovery plus
 package-resource loading.
 
+## Monorepo integrations and external plugins
+
+First-party optional integrations live under [`integrations/`](../integrations/) but retain their
+own `pyproject.toml`, distribution name, dependencies, entry points, tests, and release artifact.
+They are not imported by or bundled into the core wheel. The VerilogEval code-completion package is
+the reference real-suite integration; package CI builds its wheel independently, installs it beside
+the core wheel in a clean environment, and verifies discovery plus a zero-model synthetic run.
+
+Third-party authors may use the same structure in another repository. Repository location has no
+runtime meaning: compatibility is defined by the `verigym` version requirement, plugin API version,
+entry-point group, and conformance results. Consumers install only the integration needed by an
+experiment.
+
 Discovery grants no authority. Core task policy still controls visible tools and paths; the
 environment enforces hidden-asset separation, budgets, runtime containment, candidate freezing,
 and verifier execution. Artifact parsing never imports or invokes plugins. Plugin code executes

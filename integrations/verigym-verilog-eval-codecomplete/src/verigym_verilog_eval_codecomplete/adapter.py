@@ -60,7 +60,7 @@ SUITE_VERSION = "v2-code-complete-iccad2023-compat-1"
 
 
 class VerilogEvalCodeCompleteSuite(SuiteAdapter):
-    """Read-only adapter registered from an independently installed distribution."""
+    """Read-only adapter registered from an independently installable distribution."""
 
     descriptor = SuiteDescriptor(
         schema_version=SCHEMA_VERSION,
@@ -77,7 +77,7 @@ class VerilogEvalCodeCompleteSuite(SuiteAdapter):
         ],
         title="VerilogEval V2 code completion",
         description=(
-            "Out-of-tree adapter for the official VerilogEval V2 ICCAD 2023 code-completion layout."
+            "Installable adapter for the official VerilogEval V2 ICCAD 2023 code-completion layout."
         ),
         suite_version=SUITE_VERSION,
         license="MIT",

@@ -5,8 +5,10 @@ the VerilogEval adapter metadata, built-in profiles, and the educational toy Lib
 sdist additionally contains source, tests, documentation, Docker recipes, scripts, and the
 installable plugin-conformance fixture.
 
-The alpha release audit also builds and scans the separately installable `verigym-codex-cli`
-wheel and sdist. That integration remains a plugin package rather than part of the core wheel.
+First-party optional integrations under `integrations/` remain separate packages rather than part
+of the core wheel. Package CI builds `verigym-codex-cli` and
+`verigym-verilog-eval-codecomplete` independently and installs their wheels beside the core wheel.
+The alpha release audit additionally performs the Codex-specific credential and executable scan.
 
 Included fixtures are small, synthetic, and explicitly licensed. Packages must not contain an
 external VerilogEval checkout, commercial binaries, PDKs, proprietary cell libraries, model

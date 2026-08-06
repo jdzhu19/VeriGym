@@ -27,11 +27,22 @@ checkout:
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev,openai-compatible]' \
-  -e integrations/verigym-codex-cli
+python -m pip install -e '.[dev,openai-compatible]'
 python -c 'from pathlib import Path; import verigym; print(Path(verigym.__file__).resolve())'
 verigym doctor
 ```
+
+Optional integrations are separate packages maintained in this monorepo. Install only the ones an
+experiment needs:
+
+```bash
+python -m pip install -e integrations/verigym-codex-cli
+python -m pip install -e integrations/verigym-verilog-eval-codecomplete
+verigym suites inspect verilog-eval-code-complete
+```
+
+The VerilogEval package contains the adapter but no benchmark tasks; users provide the upstream
+checkout explicitly. See its [installation and source-validation guide](integrations/verigym-verilog-eval-codecomplete/README.md).
 
 `pytest` runs the ordinary no-tool suite. Select an opt-in marker explicitly after provisioning
 its dependency, for example `pytest -m requires_iverilog`; Docker and Yosys markers additionally

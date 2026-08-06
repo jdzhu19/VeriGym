@@ -17,13 +17,18 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: python -m pip install -e '.[dev,openai-compatible]'
+      - name: Install core and real suite integration
+        run: |
+          python -m pip install -e '.[dev,openai-compatible]'
+          python -m pip install -e integrations/verigym-verilog-eval-codecomplete
       - name: Format, lint, type, and patch hygiene
         run: |
           ruff format --check .
           ruff check .
           mypy --strict src/verigym
           mypy --strict integrations/verigym-codex-cli/src/verigym_codex_cli
+          mypy --strict \
+            integrations/verigym-verilog-eval-codecomplete/src/verigym_verilog_eval_codecomplete
           git diff --check
       - name: Persistent-schema drift
         run: python scripts/export_schemas.py --check
@@ -47,11 +52,15 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install without RTL or container tools
-        run: python -m pip install -e '.[dev,openai-compatible]'
+        run: |
+          python -m pip install -e '.[dev,openai-compatible]'
+          python -m pip install -e integrations/verigym-verilog-eval-codecomplete
       - name: Run ordinary no-daemon tests
-        run: >-
-          pytest
-          -m "not requires_iverilog and not docker and not yosys and not external_benchmark and not release_audit"
+        run: |
+          pytest \
+            -m "not requires_iverilog and not docker and not yosys and not external_benchmark and not release_audit"
+          pytest integrations/verigym-verilog-eval-codecomplete/tests \
+            -m "not external_benchmark"
 
   package:
     runs-on: ubuntu-24.04
@@ -70,6 +79,8 @@ jobs:
           python -m build
           python -m build integrations/verigym-codex-cli \
             --outdir integrations/verigym-codex-cli/dist
+          python -m build integrations/verigym-verilog-eval-codecomplete \
+            --outdir integrations/verigym-verilog-eval-codecomplete/dist
       - name: Scan package contents and metadata
         run: |
           python scripts/audit_distribution.py \
@@ -78,6 +89,28 @@ jobs:
           python scripts/audit_codex_cli_distribution.py \
             --wheel integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
             --sdist integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0.tar.gz
+          python - <<'PY'
+          from pathlib import PurePosixPath
+          from zipfile import ZipFile
+
+          wheel = (
+              "integrations/verigym-verilog-eval-codecomplete/dist/"
+              "verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl"
+          )
+          with ZipFile(wheel) as archive:
+              names = archive.namelist()
+              task_suffixes = ("_prompt.txt", "_ifc.txt", "_ref.sv", "_test.sv")
+              assert not any(name.endswith(task_suffixes) for name in names)
+              assert not any("/tests/" in f"/{name}" for name in names)
+              assert not any("/scripts/" in f"/{name}" for name in names)
+              entry_name = next(
+                  name for name in names if PurePosixPath(name).name == "entry_points.txt"
+              )
+              entries = archive.read(entry_name).decode("utf-8")
+              assert "[verigym.suites]" in entries
+              assert "verilog-eval-code-complete" in entries
+          print("VerilogEval plugin wheel contains adapter assets but no benchmark tasks")
+          PY
       - name: Install Icarus Verilog for installed API conformance
         run: |
           sudo apt-get update
@@ -91,12 +124,13 @@ jobs:
           python scripts/installed_conformance.py
           --wheel dist/verigym-0.1.0-py3-none-any.whl
           --output /tmp/installed-conformance.json
-      - name: Installed Codex CLI plugin entry points
+      - name: Installed integration entry points
         run: |
           python -m venv /tmp/verigym-codex-plugin-venv
           /tmp/verigym-codex-plugin-venv/bin/pip install \
             dist/verigym-0.1.0-py3-none-any.whl \
-            integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl
+            integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
+            integrations/verigym-verilog-eval-codecomplete/dist/verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl
           /tmp/verigym-codex-plugin-venv/bin/pip check
           cd /tmp
           /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
@@ -110,6 +144,10 @@ jobs:
               == "verigym-codex-cli"
           )
           assert registries.agents.origin("codex-cli-agent").package == "verigym-codex-cli"
+          assert (
+              registries.suites.origin("verilog-eval-code-complete").package
+              == "verigym-verilog-eval-codecomplete"
+          )
           try:
               registries.models.origin("codex-cli-exec-model")
           except PluginNotFoundError:
@@ -120,8 +158,14 @@ jobs:
               resolve_auth_mode("chatgpt_cli_session").resolved_auth_mode
               == "inherited_codex_login"
           )
-          print("installed Codex CLI entry points discovered")
+          print("installed integration entry points discovered")
           PY
+      - name: Installed VerilogEval plugin zero-model smoke
+        run: |
+          cd /tmp
+          /tmp/verigym-codex-plugin-venv/bin/python \
+            "$GITHUB_WORKSPACE/integrations/verigym-verilog-eval-codecomplete/scripts/run_synthetic_smoke.py" \
+            --output /tmp/verigym-verilog-eval-codecomplete-smoke
       - name: Installed repository RTL repair conformance
         run: |
           cd /tmp

@@ -5,13 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "verigym-verilog-eval-codecomplete"
 version = "0.1.0"
-description = "Out-of-tree VeriGym adapter for VerilogEval V2 code-completion tasks."
+description = "Installable VeriGym adapter for VerilogEval V2 code-completion tasks."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{name = "VeriGym contributors"}]
 dependencies = ["verigym>=0.1.0,<0.2"]
+
+[project.urls]
+Documentation = "https://github.com/jdzhu19/VeriGym/tree/main/integrations/verigym-verilog-eval-codecomplete#readme"
+Issues = "https://github.com/jdzhu19/VeriGym/issues"
+Repository = "https://github.com/jdzhu19/VeriGym"
 
 [project.optional-dependencies]
 dev = ["build>=1.2", "mypy>=1.10", "pytest>=8", "ruff>=0.6"]
