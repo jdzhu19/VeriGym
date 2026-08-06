@@ -12,6 +12,8 @@ SuiteAdapter ──> VeriTask ──> AgentProtocol ──> ToolPlugin
                      └──────────────> Verifier DAG ─┘
                                             │
                          Trace + ScoreCard + Evaluation Summary
+                                            │
+                              Offline Evaluation Campaign
 ```
 
 ## Evaluation Protocols
@@ -42,4 +44,6 @@ remain site-owned and are never packaged by VeriGym.
 Every run records task, suite, model, agent, runtime, tool-policy, profile, and source provenance.
 Replay operates on a frozen candidate without calling the model. Experiment reports preserve
 denominators and infrastructure failures instead of collapsing incompatible runs into a universal
-score.
+score. Campaign reporting validates and projects completed ChatEval, AgentEval, and
+EvolvingAgentEval experiments into one path-free summary; it does not execute those protocols or
+rank incompatible PPA partitions.

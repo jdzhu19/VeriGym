@@ -1,0 +1,765 @@
+{
+  "$defs": {
+    "BuildProvenance": {
+      "additionalProperties": false,
+      "description": "Secret-free identity for the source state that produced this package.",
+      "properties": {
+        "build_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Backend"
+        },
+        "build_source_date_epoch": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Source Date Epoch"
+        },
+        "dirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirty"
+        },
+        "installed_distribution_metadata_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installed Distribution Metadata Hash"
+        },
+        "package_name": {
+          "default": "verigym",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "provenance_method": {
+          "enum": [
+            "git_live_editable",
+            "embedded_build",
+            "embedded_source_archive",
+            "unknown"
+          ],
+          "title": "Provenance Method",
+          "type": "string"
+        },
+        "python_build_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Build Version"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_archive_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Archive Hash"
+        },
+        "source_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Commit"
+        },
+        "source_tree_file_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree File Count"
+        },
+        "source_tree_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Tree Hash"
+        },
+        "source_tree_path_policy": {
+          "title": "Source Tree Path Policy",
+          "type": "string"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "package_version",
+        "provenance_method",
+        "source_tree_path_policy"
+      ],
+      "title": "BuildProvenance",
+      "type": "object"
+    },
+    "CampaignEvaluationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "agent_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Id"
+        },
+        "compatibility_partition_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Compatibility Partition Ids",
+          "type": "array"
+        },
+        "evaluable_count": {
+          "minimum": 0,
+          "title": "Evaluable Count",
+          "type": "integer"
+        },
+        "evaluation_mode": {
+          "enum": [
+            "chat",
+            "agent",
+            "evolving_agent"
+          ],
+          "title": "Evaluation Mode",
+          "type": "string"
+        },
+        "experiment_id": {
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "infrastructure_failure_count": {
+          "minimum": 0,
+          "title": "Infrastructure Failure Count",
+          "type": "integer"
+        },
+        "input_id": {
+          "title": "Input Id",
+          "type": "string"
+        },
+        "license_unavailable_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Unavailable Count"
+        },
+        "macro_pass_at_1": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Pass At 1"
+        },
+        "mean_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Tool Calls"
+        },
+        "mean_total_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Total Tokens"
+        },
+        "mean_wall_time_s": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Wall Time S"
+        },
+        "model_cost_sum": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Cost Sum"
+        },
+        "model_cost_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Cost Unit"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "observed_model_api_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Model Api Calls"
+        },
+        "plan_hash": {
+          "title": "Plan Hash",
+          "type": "string"
+        },
+        "planned_count": {
+          "minimum": 0,
+          "title": "Planned Count",
+          "type": "integer"
+        },
+        "resolved_count": {
+          "minimum": 0,
+          "title": "Resolved Count",
+          "type": "integer"
+        },
+        "resolved_rate_evaluable": {
+          "$ref": "#/$defs/ExplicitRate"
+        },
+        "source_kind": {
+          "enum": [
+            "experiment",
+            "evolving_evaluation"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_report_hash": {
+          "title": "Source Report Hash",
+          "type": "string"
+        },
+        "suite_id": {
+          "title": "Suite Id",
+          "type": "string"
+        },
+        "system_id": {
+          "title": "System Id",
+          "type": "string"
+        },
+        "task_set_hash": {
+          "title": "Task Set Hash",
+          "type": "string"
+        },
+        "terminal_count": {
+          "minimum": 0,
+          "title": "Terminal Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_id",
+        "evaluation_mode",
+        "source_kind",
+        "source_report_hash",
+        "suite_id",
+        "experiment_id",
+        "plan_hash",
+        "task_set_hash",
+        "system_id",
+        "agent_id",
+        "compatibility_partition_ids",
+        "planned_count",
+        "terminal_count",
+        "evaluable_count",
+        "resolved_count",
+        "infrastructure_failure_count",
+        "resolved_rate_evaluable"
+      ],
+      "title": "CampaignEvaluationSummary",
+      "type": "object"
+    },
+    "CampaignModeCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_inputs": {
+          "minimum": 0,
+          "title": "Agent Inputs",
+          "type": "integer"
+        },
+        "chat_inputs": {
+          "minimum": 0,
+          "title": "Chat Inputs",
+          "type": "integer"
+        },
+        "complete_platform_matrix": {
+          "title": "Complete Platform Matrix",
+          "type": "boolean"
+        },
+        "evolving_agent_inputs": {
+          "minimum": 0,
+          "title": "Evolving Agent Inputs",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chat_inputs",
+        "agent_inputs",
+        "evolving_agent_inputs",
+        "complete_platform_matrix"
+      ],
+      "title": "CampaignModeCoverage",
+      "type": "object"
+    },
+    "CampaignQualityPartition": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Id"
+        },
+        "area_ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Ratio Median"
+        },
+        "area_unit": {
+          "title": "Area Unit",
+          "type": "string"
+        },
+        "clock_period": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clock Period"
+        },
+        "comparison_partition_id": {
+          "title": "Comparison Partition Id",
+          "type": "string"
+        },
+        "correctness_definition_hash": {
+          "title": "Correctness Definition Hash",
+          "type": "string"
+        },
+        "declared_profile_hash": {
+          "title": "Declared Profile Hash",
+          "type": "string"
+        },
+        "declared_profile_id": {
+          "title": "Declared Profile Id",
+          "type": "string"
+        },
+        "delay_ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio Median"
+        },
+        "eligible_run_count": {
+          "minimum": 0,
+          "title": "Eligible Run Count",
+          "type": "integer"
+        },
+        "evaluation_mode": {
+          "enum": [
+            "chat",
+            "agent",
+            "evolving_agent"
+          ],
+          "title": "Evaluation Mode",
+          "type": "string"
+        },
+        "image_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Id"
+        },
+        "ineligible_run_count": {
+          "minimum": 0,
+          "title": "Ineligible Run Count",
+          "type": "integer"
+        },
+        "input_id": {
+          "title": "Input Id",
+          "type": "string"
+        },
+        "metric_scope": {
+          "title": "Metric Scope",
+          "type": "string"
+        },
+        "reference_candidate_hash": {
+          "title": "Reference Candidate Hash",
+          "type": "string"
+        },
+        "resolved_profile_hash": {
+          "title": "Resolved Profile Hash",
+          "type": "string"
+        },
+        "runtime_identity_hash": {
+          "title": "Runtime Identity Hash",
+          "type": "string"
+        },
+        "suite_source_identity": {
+          "title": "Suite Source Identity",
+          "type": "string"
+        },
+        "task_hash": {
+          "title": "Task Hash",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
+        },
+        "worst_negative_slack_delta_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta Median"
+        }
+      },
+      "required": [
+        "input_id",
+        "evaluation_mode",
+        "comparison_partition_id",
+        "suite_source_identity",
+        "task_id",
+        "task_hash",
+        "correctness_definition_hash",
+        "declared_profile_id",
+        "declared_profile_hash",
+        "resolved_profile_hash",
+        "runtime_identity_hash",
+        "metric_scope",
+        "area_unit",
+        "reference_candidate_hash",
+        "eligible_run_count",
+        "ineligible_run_count"
+      ],
+      "title": "CampaignQualityPartition",
+      "type": "object"
+    },
+    "ExplicitRate": {
+      "additionalProperties": false,
+      "properties": {
+        "denominator": {
+          "minimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        },
+        "numerator": {
+          "minimum": 0,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "title": "ExplicitRate",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/campaign-report.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "build_provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuildProvenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "campaign_config_hash": {
+      "title": "Campaign Config Hash",
+      "type": "string"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "campaign_name": {
+      "title": "Campaign Name",
+      "type": "string"
+    },
+    "evaluations": {
+      "items": {
+        "$ref": "#/$defs/CampaignEvaluationSummary"
+      },
+      "title": "Evaluations",
+      "type": "array"
+    },
+    "input_set_hash": {
+      "title": "Input Set Hash",
+      "type": "string"
+    },
+    "mode_coverage": {
+      "$ref": "#/$defs/CampaignModeCoverage"
+    },
+    "model_calls_during_reporting": {
+      "const": 0,
+      "default": 0,
+      "title": "Model Calls During Reporting",
+      "type": "integer"
+    },
+    "offline_only": {
+      "const": true,
+      "default": true,
+      "title": "Offline Only",
+      "type": "boolean"
+    },
+    "quality_comparison_policy": {
+      "const": "Only rows with the same comparison_partition_id are comparable; profile, task, correctness, runtime, units, constraints, and reference identities remain partitioned. The campaign never ranks different partitions.",
+      "default": "Only rows with the same comparison_partition_id are comparable; profile, task, correctness, runtime, units, constraints, and reference identities remain partitioned. The campaign never ranks different partitions.",
+      "title": "Quality Comparison Policy",
+      "type": "string"
+    },
+    "quality_partitions": {
+      "items": {
+        "$ref": "#/$defs/CampaignQualityPartition"
+      },
+      "title": "Quality Partitions",
+      "type": "array"
+    },
+    "report_hash": {
+      "title": "Report Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tool_calls_during_reporting": {
+      "const": 0,
+      "default": 0,
+      "title": "Tool Calls During Reporting",
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "campaign_name",
+    "campaign_config_hash",
+    "input_set_hash",
+    "mode_coverage",
+    "evaluations",
+    "quality_partitions",
+    "report_hash"
+  ],
+  "title": "CampaignReport",
+  "type": "object"
+}

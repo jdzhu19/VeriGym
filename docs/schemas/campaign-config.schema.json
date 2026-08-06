@@ -1,0 +1,116 @@
+{
+  "$defs": {
+    "CampaignInputConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluation_mode": {
+          "enum": [
+            "chat",
+            "agent",
+            "evolving_agent"
+          ],
+          "title": "Evaluation Mode",
+          "type": "string"
+        },
+        "evolving_report": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evolving Report"
+        },
+        "experiment_root": {
+          "format": "path",
+          "title": "Experiment Root",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "experiment",
+            "evolving_evaluation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "evaluation_mode",
+        "experiment_root"
+      ],
+      "title": "CampaignInputConfig",
+      "type": "object"
+    },
+    "CampaignOutputConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "format": "path",
+          "title": "Root",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "title": "CampaignOutputConfig",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/campaign-config.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/CampaignInputConfig"
+      },
+      "maxItems": 64,
+      "minItems": 2,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "output": {
+      "$ref": "#/$defs/CampaignOutputConfig"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "inputs",
+    "output"
+  ],
+  "title": "CampaignConfig",
+  "type": "object"
+}

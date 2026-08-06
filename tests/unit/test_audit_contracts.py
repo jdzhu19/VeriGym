@@ -209,6 +209,7 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "docs/docker_runtime.md",
         "docs/yosys.md",
         "docs/experiments.md",
+        "docs/campaigns.md",
         "docs/batch_runner.md",
         "docs/reporting.md",
         "docs/repository_rtl_repair.md",

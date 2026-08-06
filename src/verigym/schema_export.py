@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
+from verigym.campaign.schemas import CampaignConfig, CampaignReport
 from verigym.experiments.schemas import (
     BatchEvent,
     ExperimentConfig,
@@ -157,6 +158,8 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "asset-signature-manifest": _model(AssetSignatureManifest),
     "batch-event": _model(BatchEvent),
     "build-provenance": _model(BuildProvenance),
+    "campaign-config": _model(CampaignConfig),
+    "campaign-report": _model(CampaignReport),
     "contamination-scan": _model(ContaminationScan),
     "contamination-scan-policy": _model(ContaminationScanPolicy),
     "contamination-scan-report": _model(ContaminationScanReport),

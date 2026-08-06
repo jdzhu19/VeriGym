@@ -70,6 +70,20 @@ use the versioned [`verigym.plugin_api`](docs/plugin_api.md) entry-point contrac
 conformance fixture proves external suite, tool, and agent discovery while core task policy and
 runtime controls continue to enforce paths, visibility, budgets, and hidden-data separation.
 
+## Cross-mode campaign summary
+
+Completed chat, agent, and evolving-agent experiments can be combined without rerunning any model
+or tool. A campaign validates the frozen input identities and writes one JSON/CSV/Markdown matrix:
+
+```bash
+cp examples/campaigns/rtllm-platform-matrix.example.yaml campaign.yaml
+verigym campaign validate --config campaign.yaml
+verigym campaign generate --config campaign.yaml
+```
+
+The report keeps correctness denominators, costs, usage, agent versions, and exact PPA profile
+partitions separate. See [cross-mode evaluation campaigns](docs/campaigns.md).
+
 ## Five-minute batch experiment
 
 Milestone 9 adds deterministic, resumable experiments while keeping every child as an ordinary
@@ -398,6 +412,7 @@ The repository-level environment supports deterministic export of bounded observ
 decomposed offline rewards, and immutable context-memory agent versions. See
 [the evolving-agent bridge guide](docs/evolving_agent_bridge.md). Reference images and Docker
 profiles are Linux-first. Quality reporting remains profile-relative educational synthesis
-area—not full PPA or signoff. Third-party repository benchmark adapters, OpenROAD, timing, power,
-formal expansion, commercial execution, distributed scheduling, built-in model-weight training or
-RL, and continuously evolving benchmark releases remain out of scope for this alpha.
+area and timing—not full PPA or signoff. Site-local commercial execution is supported through
+optional plugins; proprietary tools and licenses are never distributed. OpenROAD, power, formal
+expansion, distributed scheduling, built-in model-weight training or RL, and continuously evolving
+benchmark releases remain out of scope for this alpha.

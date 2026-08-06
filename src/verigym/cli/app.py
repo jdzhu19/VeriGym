@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from verigym.campaign.service import CampaignService
 from verigym.core.errors import VeriGymError
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
@@ -88,6 +89,7 @@ agents_app = typer.Typer(help="List and inspect agent-harness plugins.")
 models_app = typer.Typer(help="List and inspect model-client plugins.")
 profiles_app = typer.Typer(help="List, validate, and resolve immutable toolchain profiles.")
 report_app = typer.Typer(help="Offline reports and strict compatible-metric comparisons.")
+campaign_app = typer.Typer(help="Combine frozen chat, agent, and evolving evaluations offline.")
 trajectories_app = typer.Typer(help="Export and validate bounded observable trajectories.")
 evolve_app = typer.Typer(help="Prepare and compare immutable context-memory agent versions.")
 app.add_typer(suites_app, name="suites")
@@ -97,6 +99,7 @@ app.add_typer(agents_app, name="agents")
 app.add_typer(models_app, name="models")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(report_app, name="report")
+app.add_typer(campaign_app, name="campaign")
 app.add_typer(trajectories_app, name="trajectories")
 app.add_typer(evolve_app, name="evolve")
 console = Console()
@@ -1056,6 +1059,45 @@ def report_generate(
             group_by=tuple(group_by or ["system"]),
         )
         console.print(f"Report: {generated}")
+    except Exception as exc:
+        _fail(exc)
+
+
+@campaign_app.command("validate")
+def campaign_validate(
+    config_path: Path = typer.Option(
+        ...,
+        "--config",
+        exists=True,
+        dir_okay=False,
+    ),
+) -> None:
+    """Validate a campaign and all frozen inputs without writing reports."""
+
+    try:
+        report = CampaignService().build_from_path(config_path)
+        console.print_json(report.model_dump_json(indent=2))
+    except Exception as exc:
+        _fail(exc)
+
+
+@campaign_app.command("generate")
+def campaign_generate(
+    config_path: Path = typer.Option(
+        ...,
+        "--config",
+        exists=True,
+        dir_okay=False,
+    ),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    """Write deterministic campaign JSON, CSV, and Markdown reports offline."""
+
+    try:
+        generated = CampaignService().generate_from_path(config_path, output_dir=output)
+        console.print(f"Campaign JSON: {generated.json_path}")
+        console.print(f"Campaign CSV: {generated.csv_path}")
+        console.print(f"Campaign Markdown: {generated.markdown_path}")
     except Exception as exc:
         _fail(exc)
 

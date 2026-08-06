@@ -1,0 +1,21 @@
+schema_version: "1.0"
+name: "rtl-platform-evaluation-matrix"
+description: "Chat, agent, and evolving-agent results under frozen verifier contracts."
+
+inputs:
+  - id: "rtllm-chat"
+    kind: "experiment"
+    evaluation_mode: "chat"
+    experiment_root: "runs/experiments/rtllm-chat"
+  - id: "rtllm-agent"
+    kind: "experiment"
+    evaluation_mode: "agent"
+    experiment_root: "runs/experiments/rtllm-agent"
+  - id: "repo-rtl-evolving"
+    kind: "evolving_evaluation"
+    evaluation_mode: "evolving_agent"
+    experiment_root: "runs/experiments/repo-rtl-heldout-v0-v1"
+    evolving_report: "runs/evolution/evolving-evaluation.json"
+
+output:
+  root: ".verigym/campaigns/rtl-platform-evaluation-matrix"

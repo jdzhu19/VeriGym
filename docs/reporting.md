@@ -7,6 +7,10 @@ ordinary run directories. Discovery does not follow symlinks; JSON sizes/depth, 
 types, containment, cross-references, and duplicate records are validated. Invalid inputs are
 recorded and excluded rather than silently treated as benchmark failures.
 
+Use [cross-mode campaigns](campaigns.md) to combine separate chat, agent, and evolving-agent
+experiments into one path-free JSON/CSV/Markdown matrix while preserving these denominators and
+PPA compatibility partitions.
+
 Generate one format with:
 
 ```bash

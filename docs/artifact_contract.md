@@ -8,8 +8,8 @@ Persistent top-level objects include tasks; run configuration and manifests; plu
 tool-policy, runtime, and profile descriptors; model requests/responses and observed remote
 identity; observations, actions, episode/batch events, tool/verifier results; scorecards and
 synthesis metrics; sampling manifests and pass@k reports; experiment config, frozen plan, state,
-index, manifest, and aggregate reports; replay evidence; build provenance; and artifact-integrity
-manifests.
+index, manifest, and aggregate reports; campaign config and reports; replay evidence; build
+provenance; and artifact-integrity manifests.
 
 New completed runs contain `artifact_manifest.json`. It hashes bounded, normalized relative
 paths with role, visibility, size, and SHA-256 metadata. Experiment manifests bind parent files
