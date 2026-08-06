@@ -44,6 +44,11 @@ closed. The resulting memory is a distinct read-only prompt artifact; v0 and
 v1 otherwise retain identical model, reasoning, authentication, runtime,
 tool-policy, prompt-contract, package, image, and source identities.
 
+The built-in `react-context` agent provides the same versioned-context boundary for
+provider-compatible model clients. It requires a complete `AgentVersionManifest`; v0 remains
+memory-free, while v1 injects the validated `MemoryPack` into the system prompt as a hash-bound,
+read-only artifact. The ordinary `react` agent remains the unversioned compatibility baseline.
+
 `verigym evolve replay-context-update` validates the frozen training summary,
 memory, update, and version hashes without invoking the memory builder.
 Held-out v0/v1 runs use one sealed counterbalanced plan and are reported

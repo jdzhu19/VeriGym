@@ -36,7 +36,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
 
     from verigym.agents.api_repository import ApiRepositoryAgent
     from verigym.agents.api_repository_v2 import ProviderNeutralApiRepositoryAgent
-    from verigym.agents.react import ReferenceReActAgent
+    from verigym.agents.react import ReferenceReActAgent, VersionedContextReActAgent
     from verigym.agents.repository_scripted import (
         ScriptedRepositoryBadAgent,
         ScriptedRepositoryGoodAgent,
@@ -87,6 +87,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     registries.agents.register(ScriptedBadAgent(), origin=builtin_origin)
     registries.agents.register(SingleTurnAgent(), origin=builtin_origin)
     registries.agents.register(ReferenceReActAgent(), origin=builtin_origin)
+    registries.agents.register(VersionedContextReActAgent(), origin=builtin_origin)
     registries.agents.register(ApiRepositoryAgent(), origin=builtin_origin)
     registries.agents.register(ProviderNeutralApiRepositoryAgent(), origin=builtin_origin)
     registries.agents.register(ScriptedRepositoryGoodAgent(), origin=builtin_origin)

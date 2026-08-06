@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.agents.parsing import ModelOutputParseError, parse_react_action
 from verigym.core.episode import TerminationReason
+from verigym.core.hashing import canonical_json
 from verigym.core.model_gateway import ModelBudgetError
 from verigym.models.base import ModelClientError
-from verigym.prompts.policy import agent_configuration_hash
+from verigym.prompts.builder import PromptBuilder
+from verigym.prompts.policy import agent_configuration_hash, validate_prompt_text
 from verigym.schemas.agent import AgentAction, EpisodeResult, MessageAction, Observation
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import AgentDescriptor, InteractionMode
+from verigym.schemas.evolution import MemoryPack
 from verigym.schemas.model import ModelMessage
+from verigym.schemas.prompt import AgentPromptPolicySpec
 from verigym.schemas.score import EpisodeFailure
 
 
@@ -54,7 +60,14 @@ class ReferenceReActAgent(AgentAdapter):
         builder = self._context.prompt_builder
         assert gateway is not None and builder is not None
         if not self._started_prompt:
-            self._messages.extend(builder.initial_messages(self._context.task, observation))
+            initial = builder.initial_messages(self._context.task, observation)
+            task_context_limit = builder.descriptor.max_task_context_bytes
+            if (
+                task_context_limit is not None
+                and len(initial[-1].content.encode("utf-8")) > task_context_limit
+            ):
+                raise ValueError("ReAct task context exceeds its resolved byte bound")
+            self._messages.extend(initial)
             self._started_prompt = True
         else:
             self._messages.append(
@@ -64,6 +77,11 @@ class ReferenceReActAgent(AgentAdapter):
                 )
             )
             self._parser_feedback = None
+        if builder.descriptor.max_prompt_bytes is not None:
+            validate_prompt_text(
+                canonical_json([message.model_dump(mode="json") for message in self._messages]),
+                builder.descriptor,
+            )
         request = gateway.create_request(
             self._messages,
             max_output_tokens=self._context.task.budget.max_output_tokens,
@@ -127,3 +145,44 @@ class ReferenceReActAgent(AgentAdapter):
 
     def finish(self, result: EpisodeResult) -> None:
         return None
+
+
+class VersionedContextReActAgent(ReferenceReActAgent):
+    """Strict ReAct baseline with an immutable, hash-bound context-memory input."""
+
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id="verigym-react-context-v1",
+        prompt_contract_version="1.0.0",
+        task_context_policy="public_rtl_task_observation_v1",
+        base_instruction_policy="strict_json_react_with_read_only_context_v1",
+        content_visibility_policy="public_task_no_hidden_reference_v1",
+        max_prompt_bytes=256 * 1024,
+        max_task_context_bytes=128 * 1024,
+        versioned_context_allowed=True,
+    )
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="react-context",
+        version="0.1.0",
+        api_version=PLUGIN_API_VERSION,
+        provider="verigym",
+        capabilities=[
+            "agent_eval",
+            "strict_json_actions",
+            "bounded_invalid_actions",
+            "versioned_context_memory",
+        ],
+    )
+
+    def start(self, context: AgentContext) -> None:
+        policy = context.prompt_policy
+        if policy is None or policy.resolver_id != "agent_execution_prompt_policy_v1":
+            raise ValueError("react-context requires a resolved versioned prompt policy")
+        raw_memory = context.agent_options.get("memory_pack")
+        memory = MemoryPack.model_validate(raw_memory) if raw_memory is not None else None
+        builder = PromptBuilder(
+            InteractionMode.AGENT,
+            descriptor=policy,
+            memory_pack=memory,
+        )
+        super().start(replace(context, prompt_builder=builder))

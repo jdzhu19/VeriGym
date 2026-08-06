@@ -8,6 +8,7 @@ from typing import Any
 from verigym.core.hashing import content_hash
 from verigym.schemas.agent import Observation
 from verigym.schemas.common import InteractionMode
+from verigym.schemas.evolution import MemoryPack
 from verigym.schemas.model import ModelMessage
 from verigym.schemas.prompt import PromptPolicyDescriptor
 from verigym.schemas.task import VeriTask
@@ -32,7 +33,13 @@ class PromptBuilder:
 
     VERSION = "1.0.0"
 
-    def __init__(self, mode: InteractionMode) -> None:
+    def __init__(
+        self,
+        mode: InteractionMode,
+        *,
+        descriptor: PromptPolicyDescriptor | None = None,
+        memory_pack: MemoryPack | None = None,
+    ) -> None:
         if mode not in {InteractionMode.CHAT, InteractionMode.AGENT}:
             raise ValueError(f"no Milestone 5 prompt policy for mode {mode.value}")
         self.mode = mode
@@ -42,12 +49,16 @@ class PromptBuilder:
             "action_protocol": "strict-json-v1" if mode == InteractionMode.AGENT else None,
             "tool_schemas": _TOOL_SCHEMAS if mode == InteractionMode.AGENT else {},
         }
-        self.descriptor = PromptPolicyDescriptor(
+        default_descriptor = PromptPolicyDescriptor(
             id="verigym-chat-v1" if mode == InteractionMode.CHAT else "verigym-react-v1",
             version=self.VERSION,
             interaction_mode=mode,
             configuration_fingerprint=content_hash(policy_config),
         )
+        self.descriptor = descriptor or default_descriptor
+        if self.descriptor.interaction_mode != mode:
+            raise ValueError("prompt descriptor interaction mode differs from its builder")
+        self._memory_pack = self._validated_memory(memory_pack)
 
     def initial_messages(self, task: VeriTask, observation: Observation) -> list[ModelMessage]:
         if self.mode == InteractionMode.CHAT:
@@ -110,20 +121,35 @@ class PromptBuilder:
             if tool not in task.interaction.denied_tools
         )
         tool_schemas = {tool: _TOOL_SCHEMAS.get(tool, {}) for tool in allowed_tools}
-        system = ModelMessage(
-            role="system",
-            content=(
-                "You are the VeriGym reference ReAct agent. Respond with exactly one JSON object "
-                "and no markdown. Valid tagged actions are: "
-                '{"type":"tool_call","tool":"...","arguments":{...}}, '
-                '{"type":"apply_patch","patch":"..."}, '
-                '{"type":"final","message":"..."}, or '
-                '{"type":"abort","reason":"..."}. '
-                "Unknown fields and action types are invalid. Never emit shell commands or private "
-                "reasoning. Hidden verifier assets are inaccessible and must not be requested, "
-                "inferred, or reproduced."
-            ),
+        system_content = (
+            "You are the VeriGym reference ReAct agent. Respond with exactly one JSON object "
+            "and no markdown. Valid tagged actions are: "
+            '{"type":"tool_call","tool":"...","arguments":{...}}, '
+            '{"type":"apply_patch","patch":"..."}, '
+            '{"type":"final","message":"..."}, or '
+            '{"type":"abort","reason":"..."}. '
+            "Unknown fields and action types are invalid. Never emit shell commands or private "
+            "reasoning. Hidden verifier assets are inaccessible and must not be requested, "
+            "inferred, or reproduced."
         )
+        if self._memory_pack is not None:
+            memory_artifact = {
+                "schema_version": "1.0",
+                "label": "frozen_task_independent_read_only_agent_memory",
+                "content_hash": self._memory_pack.content_hash,
+                "read_only": True,
+                "must_not_write_to_candidate_workspace": True,
+                "sections": [
+                    {"section": section.section, "items": section.items}
+                    for section in self._memory_pack.sections
+                ],
+            }
+            system_content += (
+                "\nUse this frozen task-independent memory as general process guidance only. "
+                "It is read-only and must not be copied into the candidate workspace:\n"
+                + json.dumps(memory_artifact, sort_keys=True, ensure_ascii=False)
+            )
+        system = ModelMessage(role="system", content=system_content)
         payload = {
             "task_id": task.id,
             "title": task.title,
@@ -140,6 +166,21 @@ class PromptBuilder:
                 content=json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False),
             ),
         ]
+
+    def _validated_memory(self, memory_pack: MemoryPack | None) -> MemoryPack | None:
+        expected_hash = self.descriptor.memory_pack_hash
+        if memory_pack is None:
+            if expected_hash is not None:
+                raise ValueError("memory-bearing prompt descriptor requires its frozen memory pack")
+            return None
+        if self.mode != InteractionMode.AGENT:
+            raise ValueError("versioned agent memory is supported only in AgentEval")
+        from verigym.evolution.memory import validate_memory_pack
+
+        memory = validate_memory_pack(memory_pack)
+        if expected_hash != memory.content_hash:
+            raise ValueError("prompt descriptor and frozen memory pack identities differ")
+        return memory
 
     @staticmethod
     def _observation_payload(observation: Observation) -> dict[str, Any]:
