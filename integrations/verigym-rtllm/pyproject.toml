@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verigym-rtllm"
-version = "0.1.0"
-description = "Pinned external-source RTLLM suite adapter for VeriGym."
+version = "0.2.0"
+description = "Pinned external-source RTLLM counter-family suite adapter for VeriGym."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -22,7 +22,13 @@ rtllm = "verigym_rtllm:RTLLMSuite"
 where = ["src"]
 
 [tool.setuptools.package-data]
-verigym_rtllm = ["py.typed", "assets/workspace/README.md", "assets/workspace/rtl/*.v"]
+verigym_rtllm = [
+  "py.typed",
+  "assets/workspace/README.md",
+  "assets/workspace/rtl/*.v",
+  "assets/workspace_up_down/README.md",
+  "assets/workspace_up_down/rtl/*.v",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -299,12 +299,14 @@ pytest -m docker_yosys
 
 ## Optional RTLLM and Synopsys pilot
 
-The `verigym-rtllm` integration exposes a pinned external RTLLM counter task without redistributing
-the benchmark. Its chat and agent modes share a verifier-only VCS regression. A user-supplied
-`synopsys.dc.synth` profile can add correctness-gated area, delay, and WNS summaries:
+The `verigym-rtllm` integration exposes pinned external RTLLM `counter_12` and
+`up_down_counter` tasks without redistributing the benchmark. Their chat and agent modes share a
+verifier-only VCS regression. A user-supplied `synopsys.dc.synth` profile can add
+correctness-gated area, delay, and WNS summaries:
 
 ```bash
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_12
+verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_counter
 verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
   --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
   --toolchain-profile site-synopsys-dc \

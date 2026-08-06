@@ -1,4 +1,4 @@
-"""Pinned, external-source RTLLM counter task adapter."""
+"""Pinned, external-source RTLLM counter-family task adapter."""
 
 from __future__ import annotations
 
@@ -43,15 +43,22 @@ from verigym.plugin_api import (
     WorkspaceSpec,
 )
 
-ADAPTER_VERSION = "0.1.0"
+ADAPTER_VERSION = "0.2.0"
 SUITE_VERSION = "rtllm-41b2689-counter12-v1"
+UP_DOWN_SUITE_VERSION = "rtllm-41b2689-up-down-counter-v1"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 TASK_ROOT = Path("Control/Counter/counter_12")
+UP_DOWN_TASK_ROOT = Path("Control/Counter/up_down_counter")
 PASS_MARKER = "===========Your Design Passed==========="
 FAIL_MARKER = "===========Failed==========="
-_EXPECTED_HASHES = {
+UP_DOWN_PASS_MARKER = "=========== Your Design Passed ==========="
+UP_DOWN_FAIL_MARKER = "===========Failed==========="
+_COMMON_HASHES = {
     "LICENSE": "a32206bcfbf5d6bb23be8a876de424d8a8d2a0e30a9adc9f8e1b3139fada9176",
+}
+_EXPECTED_HASHES = {
+    **_COMMON_HASHES,
     "Control/Counter/counter_12/design_description.txt": (
         "7619e91759a69d54556766ecf5d370345a9445d279108aa38700258a9cbdfc0e"
     ),
@@ -65,6 +72,22 @@ _EXPECTED_HASHES = {
         "e3551f7d82fa522f9e9afe01a2c4ff35bd61143d395f490e17d340cb16a6ae04"
     ),
 }
+_UP_DOWN_EXPECTED_HASHES = {
+    **_COMMON_HASHES,
+    "Control/Counter/up_down_counter/design_description.txt": (
+        "c14e7e7b9c465d9b65a4e69ea437ca57c76fae5ef9dbd7711aff5765745efcaa"
+    ),
+    "Control/Counter/up_down_counter/makefile": (
+        "4ae77da544244cdc15e33b5380321b44e4729e3042c1d14df4ca82e526e7fb7e"
+    ),
+    "Control/Counter/up_down_counter/testbench.v": (
+        "d7fde8db2019384d00c5933ebad11757a37f2e21e49c0e778986f57739723f95"
+    ),
+    "Control/Counter/up_down_counter/verified_up_down_counter.v": (
+        "4af9a3fe6a61aefa2e6ba8df99bf10e2f1432a9c2cf460b8267d2ce14e739445"
+    ),
+}
+_SUPPORTED_VARIANTS = frozenset({"counter_12", "up_down_counter"})
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
 
@@ -121,8 +144,8 @@ class RTLLMSuite(SuiteAdapter):
             "synthesis_ready",
             "conformance",
         ],
-        title="RTLLM pinned pilot",
-        description="Pinned external-source RTLLM task for commercial-flow validation.",
+        title="RTLLM pinned counter-family pilot",
+        description="Pinned external-source RTLLM tasks for commercial-flow validation.",
         suite_version=SUITE_VERSION,
         license="MIT",
     )
@@ -130,61 +153,78 @@ class RTLLMSuite(SuiteAdapter):
     def __init__(self, config: SuiteSourceConfig | None = None) -> None:
         self._config = config
         self._workspace_root = Path(__file__).parent / "assets" / "workspace"
+        self._up_down_workspace_root = Path(__file__).parent / "assets" / "workspace_up_down"
         self._snapshot_cache: SuiteSourceSnapshot | None = None
 
     def with_source(self, config: SuiteSourceConfig) -> RTLLMSuite:
-        if config.variant not in {None, "counter_12"}:
-            raise ConfigurationError("the RTLLM pilot supports only variant 'counter_12'")
-        return RTLLMSuite(config.model_copy(update={"variant": "counter_12"}))
+        if config.variant not in {None, *_SUPPORTED_VARIANTS}:
+            supported = ", ".join(sorted(_SUPPORTED_VARIANTS))
+            raise ConfigurationError(f"the RTLLM pilot supports variants: {supported}")
+        return RTLLMSuite(config.model_copy(update={"variant": config.variant or "counter_12"}))
 
     def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
         adapter = self._adapter_for_optional_root(source_root)
         report = adapter.validate_source()
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
-        return [TaskRef(id="rtllm/counter_12", suite="rtllm", native_id="counter_12")]
+        variant = adapter._variant()
+        return [TaskRef(id=f"rtllm/{variant}", suite="rtllm", native_id=variant)]
 
     def load_task(self, ref: TaskRef) -> VeriTask:
-        if ref.suite != "rtllm" or ref.native_id != "counter_12":
+        variant = self._variant()
+        if ref.suite != "rtllm" or ref.native_id != variant:
             raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
+        up_down = variant == "up_down_counter"
+        task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
+        expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
+        suite_version = UP_DOWN_SUITE_VERSION if up_down else SUITE_VERSION
+        title = "RTLLM 16-bit up/down counter" if up_down else "RTLLM 12-state enabled counter"
+        candidate_top = "up_down_counter" if up_down else "counter_12"
+        testbench_top = "testbench" if up_down else "counter_12_tb"
+        pass_marker = UP_DOWN_PASS_MARKER if up_down else PASS_MARKER
+        fail_marker = UP_DOWN_FAIL_MARKER if up_down else FAIL_MARKER
+        candidate_path = f"rtl/{variant}.v"
         root = self._source_root()
         report = self.validate_source()
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
-        prompt = _read_exact(root, (TASK_ROOT / "design_description.txt").as_posix()).decode(
+        prompt = _read_exact(root, (task_root / "design_description.txt").as_posix()).decode(
             "utf-8"
         )
         snapshot = self._snapshot()
         hidden = AssetRef(
             kind="inline",
-            content_hash=_EXPECTED_HASHES["Control/Counter/counter_12/testbench.v"],
+            content_hash=expected_hashes[(task_root / "testbench.v").as_posix()],
             mount_path="verifier/testbench.v",
         )
         return VeriTask(
-            id="rtllm/counter_12",
+            id=f"rtllm/{variant}",
             suite="rtllm",
-            suite_version=SUITE_VERSION,
+            suite_version=suite_version,
             task_type=TaskType.GENERATION,
-            title="RTLLM 12-state enabled counter",
+            title=title,
             description=prompt,
             source=SourceSpec(
                 kind="benchmark",
                 uri=(
                     f"https://github.com/hkust-zhiyao/RTLLM/tree/{PINNED_COMMIT}/"
-                    "Control/Counter/counter_12"
+                    f"Control/Counter/{variant}"
                 ),
-                revision=SUITE_VERSION,
+                revision=suite_version,
                 commit=PINNED_COMMIT,
                 license="MIT",
                 attribution="RTLLM, supplied as an external pinned checkout.",
                 content_hash=snapshot.dataset_content_hash,
             ),
             workspace=WorkspaceSpec(
-                base=AssetRef(kind="directory", path="workspace"),
-                editable_globs=["rtl/counter_12.v"],
+                base=AssetRef(
+                    kind="directory",
+                    path="workspace_up_down" if up_down else "workspace",
+                ),
+                editable_globs=[candidate_path],
                 readonly_globs=["README.md"],
                 excluded_globs=["verifier", "verifier/**", "hidden", "hidden/**"],
-                entrypoints=["rtl/counter_12.v"],
+                entrypoints=[candidate_path],
                 hidden_assets=[hidden],
                 max_changed_files=1,
                 max_patch_lines=2_000,
@@ -205,7 +245,7 @@ class RTLLMSuite(SuiteAdapter):
                     include_readme=True,
                     include_entrypoints=False,
                 ),
-                final_submission=SubmissionPolicy(kind="file", path="rtl/counter_12.v"),
+                final_submission=SubmissionPolicy(kind="file", path=candidate_path),
             ),
             budget=BudgetSpec(
                 max_turns=20,
@@ -227,11 +267,11 @@ class RTLLMSuite(SuiteAdapter):
                         visibility=ToolVisibility.VERIFIER_ONLY,
                         timeout_s=180,
                         request={
-                            "sources": ["rtl/counter_12.v"],
+                            "sources": [candidate_path],
                             "testbench": "verifier/testbench.v",
-                            "top": "counter_12_tb",
-                            "pass_marker": PASS_MARKER,
-                            "fail_marker": FAIL_MARKER,
+                            "top": testbench_top,
+                            "pass_marker": pass_marker,
+                            "fail_marker": fail_marker,
                             "timeout_s": 180,
                         },
                     )
@@ -242,26 +282,33 @@ class RTLLMSuite(SuiteAdapter):
                 ppa_enabled=True,
             ),
             metadata={
-                "native_task_id": "Control/Counter/counter_12",
-                "candidate_top": "counter_12",
-                "testbench_top": "counter_12_tb",
+                "native_task_id": f"Control/Counter/{variant}",
+                "candidate_top": candidate_top,
+                "testbench_top": testbench_top,
                 "language": "verilog-2005",
                 "dataset_content_hash": snapshot.dataset_content_hash,
-                "adapter_version": ADAPTER_VERSION,
+                "adapter_version": "0.2.0" if up_down else "0.1.0",
                 "pinned_commit": PINNED_COMMIT,
             },
         )
 
     def resolve_assets(self, task: VeriTask) -> ResolvedTaskAssets:
-        if task.id != "rtllm/counter_12":
+        variant = self._variant()
+        if task.id != f"rtllm/{variant}":
             raise ConfigurationError(f"unknown RTLLM task: {task.id}")
+        up_down = variant == "up_down_counter"
+        task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         root = self._source_root()
         snapshot = self._snapshot()
         if task.source.content_hash != snapshot.dataset_content_hash:
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
-        testbench = _read_exact(root, (TASK_ROOT / "testbench.v").as_posix())
+        testbench = _read_exact(root, (task_root / "testbench.v").as_posix())
         return ResolvedTaskAssets(
-            visible_root=str(self._workspace_root.resolve(strict=True)),
+            visible_root=str(
+                (self._up_down_workspace_root if up_down else self._workspace_root).resolve(
+                    strict=True
+                )
+            ),
             hidden_assets=[
                 AssetRef(
                     kind="inline",
@@ -278,8 +325,13 @@ class RTLLMSuite(SuiteAdapter):
             root = adapter._source_root()
         except ConfigurationError as exc:
             return _invalid("source_configuration", str(exc))
+        expected_hashes = (
+            _UP_DOWN_EXPECTED_HASHES
+            if adapter._variant() == "up_down_counter"
+            else _EXPECTED_HASHES
+        )
         issues: list[ValidationIssue] = []
-        for relative, expected in sorted(_EXPECTED_HASHES.items()):
+        for relative, expected in sorted(expected_hashes.items()):
             try:
                 actual = _hash_bytes(_read_exact(root, relative))
             except (FileNotFoundError, OSError, ValueError) as exc:
@@ -323,40 +375,50 @@ class RTLLMSuite(SuiteAdapter):
         return ValidationReport(valid=not errors, errors=errors, issues=issues)
 
     def reference_solution(self, task: VeriTask) -> Candidate | None:
-        if task.id != "rtllm/counter_12":
+        variant = self._variant()
+        if task.id != f"rtllm/{variant}":
             return None
+        up_down = variant == "up_down_counter"
+        task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         source = _read_exact(
-            self._source_root(), (TASK_ROOT / "verified_counter_12.v").as_posix()
+            self._source_root(), (task_root / f"verified_{variant}.v").as_posix()
         ).decode("utf-8")
-        needle = "module verified_counter_12"
+        needle = f"module verified_{variant}" if not up_down else "module up_down_counter"
         if source.count(needle) != 1:
             raise ConfigurationError("RTLLM reference module normalization is no longer exact")
+        candidate_path = f"rtl/{variant}.v"
         return Candidate(
-            files={"rtl/counter_12.v": source.replace(needle, "module counter_12", 1)},
+            files={candidate_path: source.replace(needle, f"module {variant}", 1)},
             label="pinned-upstream-reference",
         )
 
     def conformance_cases(self) -> Iterable[ConformanceCase]:
         if self._config is None:
             return []
-        task = self.load_task(TaskRef(id="rtllm/counter_12", suite="rtllm", native_id="counter_12"))
+        variant = self._variant()
+        task = self.load_task(TaskRef(id=f"rtllm/{variant}", suite="rtllm", native_id=variant))
         reference = self.reference_solution(task)
         assert reference is not None
+        candidate_path = f"rtl/{variant}.v"
+        bad_source = (
+            "module up_down_counter(input clk, reset, up_down, output [15:0] count); "
+            "assign count = 16'b0; endmodule\n"
+            if variant == "up_down_counter"
+            else (
+                "module counter_12(input rst_n, clk, valid_count, "
+                "output [3:0] out); assign out = 4'b0; endmodule\n"
+            )
+        )
         return [
             ConformanceCase(
-                name="counter-12-reference",
+                name=f"{variant}-reference",
                 candidate=reference,
                 expected_resolved=True,
             ),
             ConformanceCase(
-                name="counter-12-stuck-zero",
+                name=f"{variant}-stuck-zero",
                 candidate=Candidate(
-                    files={
-                        "rtl/counter_12.v": (
-                            "module counter_12(input rst_n, clk, valid_count, "
-                            "output [3:0] out); assign out = 4'b0; endmodule\n"
-                        )
-                    },
+                    files={candidate_path: bad_source},
                     label="known-bad",
                 ),
                 expected_resolved=False,
@@ -395,10 +457,15 @@ class RTLLMSuite(SuiteAdapter):
         return self.with_source(
             SuiteSourceConfig(
                 source_root=source_root,
-                variant="counter_12",
+                variant=self._variant(),
                 strict_compatibility=strict,
             )
         )
+
+    def _variant(self) -> str:
+        if self._config is None:
+            return "counter_12"
+        return self._config.variant or "counter_12"
 
     def _source_root(self) -> Path:
         if self._config is None:
@@ -421,20 +488,24 @@ class RTLLMSuite(SuiteAdapter):
         report = self.validate_source()
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
+        variant = self._variant()
+        up_down = variant == "up_down_counter"
+        task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
+        expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
         dataset_hash = _canonical_hash(
-            {key: value for key, value in _EXPECTED_HASHES.items() if key != "LICENSE"}
+            {key: value for key, value in expected_hashes.items() if key != "LICENSE"}
         )
         commit = _git_commit(root)
         self._snapshot_cache = SuiteSourceSnapshot(
             source_root=str(root),
-            dataset_root=str((root / TASK_ROOT).resolve(strict=True)),
-            variant="counter_12",
-            native_layout="RTLLM/Control/Counter/counter_12",
+            dataset_root=str((root / task_root).resolve(strict=True)),
+            variant=variant,
+            native_layout=f"RTLLM/Control/Counter/{variant}",
             strict_compatibility=self._config.strict_compatibility if self._config else True,
             configuration_fingerprint=_canonical_hash(
                 {
                     "source_root": str(root),
-                    "variant": "counter_12",
+                    "variant": variant,
                     "strict_compatibility": (
                         self._config.strict_compatibility if self._config else True
                     ),
@@ -442,7 +513,7 @@ class RTLLMSuite(SuiteAdapter):
             ),
             dataset_content_hash=dataset_hash,
             license_id="MIT",
-            license_file_hash=_EXPECTED_HASHES["LICENSE"],
+            license_file_hash=expected_hashes["LICENSE"],
             git_commit=commit,
             git_remote=CANONICAL_REMOTE if commit is not None else None,
             git_metadata_available=commit is not None,

@@ -19,12 +19,13 @@ from verigym_rtllm import RTLLMSuite
     os.environ.get("VERIGYM_RUN_SYNOPSYS_TESTS") != "1",
     reason="set VERIGYM_RUN_SYNOPSYS_TESTS=1 for licensed site execution",
 )
-def test_pinned_reference_through_vcs_and_optional_dc(tmp_path: Path) -> None:
+@pytest.mark.parametrize("variant", ["counter_12", "up_down_counter"])
+def test_pinned_reference_through_vcs_and_optional_dc(tmp_path: Path, variant: str) -> None:
     source_value = os.environ.get("VERIGYM_RTLLM_SOURCE")
     if source_value is None:
         pytest.fail("VERIGYM_RTLLM_SOURCE is required")
     source = Path(source_value)
-    source_config = SuiteSourceConfig(source_root=source, variant="counter_12")
+    source_config = SuiteSourceConfig(source_root=source, variant=variant)
     suite = RTLLMSuite().with_source(source_config)
     assert suite.validate_source().valid
     task = suite.load_task(next(iter(suite.discover())))
@@ -35,16 +36,16 @@ def test_pinned_reference_through_vcs_and_optional_dc(tmp_path: Path) -> None:
     registries.models.register(
         StaticModelClient(
             name="rtllm-commercial-reference",
-            responses=[reference.files["rtl/counter_12.v"]],
+            responses=[reference.files[f"rtl/{variant}.v"]],
         )
     )
     profile_path = os.environ.get("VERIGYM_DC_PROFILE")
     profile_id: str | None = None
-    if profile_path is not None:
+    if profile_path is not None and variant == "counter_12":
         profile_id = registries.profiles.load_file(profile_path).id
     result = VeriGym(registries).run(
         RunConfig(
-            task_id="rtllm/counter_12",
+            task_id=f"rtllm/{variant}",
             suite_source=source_config,
             mode=InteractionMode.CHAT,
             agent="single-turn",
@@ -59,6 +60,6 @@ def test_pinned_reference_through_vcs_and_optional_dc(tmp_path: Path) -> None:
         item for item in result.scorecard.verifier_results if item.node_id == "vcs_regression"
     )
     assert vcs.status.value == "passed"
-    if profile_path is not None:
+    if profile_id is not None:
         assert result.scorecard.quality.ppa is not None
         assert result.scorecard.quality.ppa.eligible
