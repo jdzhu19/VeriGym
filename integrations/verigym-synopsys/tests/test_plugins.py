@@ -146,6 +146,8 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         )
         context = ToolContext(session=session, artifact_dir=tmp_path / "artifacts")
         command = plugin.build_command(request, context)
+        flow = session.read_file(".verigym_internal/dc/candidate/flow.tcl").decode()
+        assert "is_hierarchical == false" in flow
         session.write_file(
             ".verigym_internal/dc/candidate/out/metrics.kv",
             (
@@ -159,6 +161,10 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
                 f"constraints_sha256={sdc_hash}\n"
             ).encode(),
         )
+        session.write_file(
+            ".verigym_internal/dc/candidate/out/qor.rpt",
+            b"Leaf Cell Count: 17\n",
+        )
         result = plugin.parse_result(
             request,
             CompletedCommand(argv=command.argv, cwd=command.cwd, exit_code=0),
@@ -171,6 +177,8 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         assert synthesis["worst_negative_slack_raw"] == -0.125
         assert synthesis["num_cells"] == 17
         assert synthesis["timing_constraints_hash"] == sdc_hash
+        assert "qor.rpt" in result.artifacts
+        assert (tmp_path / "artifacts" / "qor.rpt").read_text() == "Leaf Cell Count: 17\n"
     finally:
         session.close()
         runtime.close()

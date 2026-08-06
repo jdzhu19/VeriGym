@@ -234,7 +234,13 @@ def _script(
         "write -format verilog -hierarchy -output out/netlist.v\n" if emit_netlist else ""
     )
     v2 = template_id == FLOW_TEMPLATE_ID
-    cell_metric = "set vg_num_cells [sizeof_collection [get_cells -hierarchical *]]\n" if v2 else ""
+    cell_collection = (
+        'set vg_mapped_cells [get_cells -hierarchical * -filter "is_hierarchical == false"]\n'
+        if v2
+        else ""
+    )
+    area_collection = "$vg_mapped_cells" if v2 else "[get_cells -hierarchical *]"
+    cell_metric = "set vg_num_cells [sizeof_collection $vg_mapped_cells]\n" if v2 else ""
     metric_sentinel = "VERIGYM_DC_METRICS_V2" if v2 else "VERIGYM_DC_METRICS_V1"
     cell_metric_output = 'puts $vg_metrics "num_cells=$vg_num_cells"\n' if v2 else ""
     qor_report = "report_qor > out/qor.rpt\n" if v2 else ""
@@ -257,8 +263,9 @@ def _script(
         'if {[sizeof_collection $vg_paths] != 1} { error "no maximum timing path" }\n'
         "set vg_clocks [get_clocks *]\n"
         'if {[sizeof_collection $vg_clocks] < 1} { error "no clock was defined by SDC" }\n'
+        f"{cell_collection}"
         "set vg_area 0.0\n"
-        "foreach_in_collection vg_cell [get_cells -hierarchical *] {\n"
+        f"foreach_in_collection vg_cell {area_collection} {{\n"
         "  set vg_cell_area [get_attribute $vg_cell area]\n"
         "  if {$vg_cell_area ne {}} { set vg_area [expr {$vg_area + $vg_cell_area}] }\n"
         "}\n"
