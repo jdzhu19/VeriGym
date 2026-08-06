@@ -9,8 +9,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from verigym.runtimes.base import RuntimeSession
-from verigym.schemas.common import ToolDescriptor
+from verigym.profiles.base import ResolvedToolchainProfile
+from verigym.runtimes.base import Runtime, RuntimeSession
+from verigym.schemas.common import ToolchainProfile, ToolDescriptor
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 
 
@@ -55,3 +56,48 @@ class ToolPlugin(ABC):
             raise ValueError(f"tool {self.descriptor.name} requires a runtime session")
         completed = context.session.execute(command)
         return self.parse_result(request, completed, context)
+
+
+class SynthesisBackendPlugin(ToolPlugin):
+    """Trusted extension point for profile-specific synthesis behavior."""
+
+    artifact_namespace: str
+
+    @abstractmethod
+    def validate_profile_contract(self, profile: ToolchainProfile) -> Any:
+        """Return a profile validation result without running synthesis."""
+
+    @abstractmethod
+    def resolve_profile(
+        self,
+        profile: ToolchainProfile,
+        runtime: Runtime,
+        *,
+        source_paths: list[str],
+        top_module: str,
+        reference_candidate_hash: str | None,
+        expected: ResolvedToolchainProfile | None = None,
+    ) -> ResolvedToolchainProfile:
+        """Bind the profile to exact tools, assets, runtime, and flow identity."""
+
+    @abstractmethod
+    def build_synthesis_request(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+        *,
+        run_label: str,
+    ) -> dict[str, Any]:
+        """Build one strict candidate or reference request."""
+
+    @abstractmethod
+    def stage_profile_assets(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+        staging: Path,
+    ) -> None:
+        """Copy only profile-approved assets into verifier-private staging."""
+
+
+__all__ = ["SynthesisBackendPlugin", "ToolContext", "ToolPlugin"]

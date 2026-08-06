@@ -42,6 +42,7 @@ from verigym.schemas.task import VeriTask
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.tools.base import SynthesisBackendPlugin
 
 
 @dataclass(frozen=True)
@@ -240,8 +241,14 @@ def replay_run(
         runtime.prepare(f"{manifest.run_id}-replay-{uuid.uuid4().hex[:8]}")
         try:
             replay_resolved_profile: ResolvedToolchainProfile | None = None
+            synthesis_backend: SynthesisBackendPlugin | None = None
             if stored_resolved_profile is not None:
                 assert stored_profile is not None
+                assert stored_profile.flow is not None
+                candidate_backend = service.registries.tools.get(stored_profile.flow.backend_plugin)
+                if not isinstance(candidate_backend, SynthesisBackendPlugin):
+                    raise ReplayError("stored profile backend is not a synthesis backend")
+                synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
                 replay_resolved_profile = resolve_toolchain_profile(
                     stored_profile,
@@ -252,6 +259,7 @@ def replay_run(
                         content_hash(reference) if reference is not None else None
                     ),
                     expected=stored_resolved_profile,
+                    backend=synthesis_backend,
                 )
             reverified = service._verify_candidate(
                 task=task,
@@ -262,6 +270,7 @@ def replay_run(
             )
             if replay_resolved_profile is not None:
                 assert stored_profile is not None
+                assert synthesis_backend is not None
                 by_id = {result.node_id: result for result in reverified}
                 correctness_passed = all(
                     by_id.get(node_id) is not None
@@ -276,7 +285,7 @@ def replay_run(
                     profile=stored_profile,
                     resolved=replay_resolved_profile,
                     artifact_root=run_dir / "artifacts" / "replay-verification",
-                    plugin=service.registries.tools.get("yosys.synth"),
+                    plugin=synthesis_backend,
                     correctness_passed=correctness_passed,
                 )
                 reverified.extend(synthesis.results)

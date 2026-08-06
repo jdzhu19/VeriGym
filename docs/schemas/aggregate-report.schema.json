@@ -806,6 +806,18 @@
           "title": "Area Unit",
           "type": "string"
         },
+        "clock_period": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clock Period"
+        },
         "correctness_definition_hash": {
           "title": "Correctness Definition Hash",
           "type": "string"
@@ -817,6 +829,42 @@
         "declared_profile_id": {
           "title": "Declared Profile Id",
           "type": "string"
+        },
+        "delay_ratio_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio Max"
+        },
+        "delay_ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio Median"
+        },
+        "delay_ratio_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio Min"
         },
         "eligible_run_count": {
           "minimum": 0,
@@ -846,6 +894,11 @@
           "minimum": 0,
           "title": "Ineligible Run Count",
           "type": "integer"
+        },
+        "metric_scope": {
+          "default": "synthesis_area_only",
+          "title": "Metric Scope",
+          "type": "string"
         },
         "partition_id": {
           "title": "Partition Id",
@@ -924,6 +977,54 @@
           },
           "title": "Task System Coverage",
           "type": "object"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
+        },
+        "worst_negative_slack_delta_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta Max"
+        },
+        "worst_negative_slack_delta_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta Median"
+        },
+        "worst_negative_slack_delta_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta Min"
         }
       },
       "required": [
@@ -972,6 +1073,30 @@
           "default": null,
           "title": "Area Ratio"
         },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay"
+        },
+        "delay_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Ratio"
+        },
         "eligible": {
           "title": "Eligible",
           "type": "boolean"
@@ -1000,6 +1125,30 @@
           "default": null,
           "title": "Reference Area"
         },
+        "reference_delay": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Delay"
+        },
+        "reference_worst_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Worst Negative Slack"
+        },
         "run_id": {
           "title": "Run Id",
           "type": "string"
@@ -1011,6 +1160,30 @@
         "task_id": {
           "title": "Task Id",
           "type": "string"
+        },
+        "worst_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack"
+        },
+        "worst_negative_slack_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta"
         }
       },
       "required": [

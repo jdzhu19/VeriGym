@@ -28,6 +28,21 @@ class AreaComparison(StrictModel):
     area_a_over_area_b: float
 
 
+class TimingComparison(StrictModel):
+    metric: Literal["delay", "worst_negative_slack"]
+    comparable: Literal[True] = True
+    run_a: str
+    run_b: str
+    value_a: float
+    value_b: float
+    unit: str
+    resolved_profile_hash: str
+    winner_run_id: str | None
+    relation: Literal["run_a_better", "run_b_better", "equal"]
+    value_a_over_value_b: float | None
+    value_a_minus_value_b: float
+
+
 def _load(run_dir: Path) -> tuple[RunManifest, ScoreCard, ResolvedToolchainProfile]:
     root = run_dir.expanduser().resolve()
     manifest_path = root / "run_manifest.json"
@@ -141,4 +156,64 @@ def compare_area(run_a: Path, run_b: Path) -> AreaComparison:
     )
 
 
-__all__ = ["AreaComparison", "compare_area"]
+def compare_timing(
+    run_a: Path,
+    run_b: Path,
+    *,
+    metric: Literal["delay", "worst_negative_slack"],
+) -> TimingComparison:
+    """Compare one timing metric after the ordinary exact-profile safeguards."""
+
+    compare_area(run_a, run_b)
+    _manifest_a, score_a, profile_a = _load(run_a)
+    _manifest_b, score_b, profile_b = _load(run_b)
+    ppa_a = score_a.quality.ppa
+    ppa_b = score_b.quality.ppa
+    assert ppa_a is not None and ppa_b is not None
+    mismatches: list[str] = []
+    if ppa_a.scope != "synthesis_area_timing" or ppa_b.scope != "synthesis_area_timing":
+        mismatches.append("timing comparison requires area/timing profiles")
+    if ppa_a.timing_unit is None or ppa_a.timing_unit != ppa_b.timing_unit:
+        mismatches.append("timing unit differs or is unavailable")
+    if ppa_a.clock_period is None or ppa_a.clock_period != ppa_b.clock_period:
+        mismatches.append("clock period differs or is unavailable")
+    if profile_a.timing_unit != profile_b.timing_unit:
+        mismatches.append("resolved timing units differ")
+    if metric == "delay":
+        value_a = ppa_a.delay
+        value_b = ppa_b.delay
+        smaller_is_better = True
+    else:
+        value_a = ppa_a.worst_negative_slack
+        value_b = ppa_b.worst_negative_slack
+        smaller_is_better = False
+    if value_a is None or value_b is None:
+        mismatches.append(f"{metric} is unavailable")
+    if mismatches:
+        raise ComparisonError("invalid comparison: " + "; ".join(mismatches))
+    assert value_a is not None and value_b is not None and ppa_a.timing_unit is not None
+    if value_a == value_b:
+        winner = None
+        relation = "equal"
+    elif (value_a < value_b) == smaller_is_better:
+        winner = score_a.run_id
+        relation = "run_a_better"
+    else:
+        winner = score_b.run_id
+        relation = "run_b_better"
+    return TimingComparison(
+        metric=metric,
+        run_a=score_a.run_id,
+        run_b=score_b.run_id,
+        value_a=value_a,
+        value_b=value_b,
+        unit=ppa_a.timing_unit,
+        resolved_profile_hash=ppa_a.resolved_profile_hash,
+        winner_run_id=winner,
+        relation=relation,  # type: ignore[arg-type]
+        value_a_over_value_b=value_a / value_b if value_b != 0 else None,
+        value_a_minus_value_b=value_a - value_b,
+    )
+
+
+__all__ = ["AreaComparison", "TimingComparison", "compare_area", "compare_timing"]

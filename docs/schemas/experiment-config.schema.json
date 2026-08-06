@@ -818,6 +818,19 @@
       "default": null,
       "title": "Profile"
     },
+    "profile_file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Profile File"
+    },
     "runs": {
       "$ref": "#/$defs/ExperimentRunsConfig"
     },

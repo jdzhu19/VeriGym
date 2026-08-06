@@ -135,6 +135,31 @@ def test_profile_registry_refuses_duplicates_and_missing_ids() -> None:
         ToolchainProfileRegistry().get("missing")
 
 
+def test_profile_file_loader_is_bounded_and_rejects_duplicate_json_keys(
+    tmp_path: Path,
+) -> None:
+    profile = _profile()
+    profile_file = tmp_path / "profile.json"
+    profile_file.write_text(profile.model_dump_json(), encoding="utf-8")
+    loaded = ToolchainProfileRegistry().load_file(profile_file)
+    assert loaded == profile
+
+    duplicate = tmp_path / "duplicate.json"
+    payload = profile.model_dump_json().replace(
+        f'"id":"{profile.id}"',
+        f'"id":"duplicate","id":"{profile.id}"',
+        1,
+    )
+    duplicate.write_text(payload, encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="duplicate toolchain-profile key"):
+        ToolchainProfileRegistry().load_file(duplicate)
+
+    link = tmp_path / "profile-link.json"
+    link.symlink_to(profile_file)
+    with pytest.raises(ConfigurationError, match="non-symlink"):
+        ToolchainProfileRegistry().load_file(link)
+
+
 def test_profile_rejects_malformed_hashes_and_changed_tool_contracts() -> None:
     payload = _profile().model_dump(mode="json")
     payload["libraries"][0]["content_hash"] = "not-a-sha256"

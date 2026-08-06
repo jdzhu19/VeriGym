@@ -232,8 +232,11 @@
           "$ref": "#/$defs/MetricSpec"
         },
         "scope": {
-          "const": "synthesis_area_only",
           "default": "synthesis_area_only",
+          "enum": [
+            "synthesis_area_only",
+            "synthesis_area_timing"
+          ],
           "title": "Scope",
           "type": "string"
         },
@@ -434,6 +437,11 @@
       "properties": {
         "abc_policy_id": {
           "title": "Abc Policy Id",
+          "type": "string"
+        },
+        "backend_plugin": {
+          "default": "yosys.synth",
+          "title": "Backend Plugin",
           "type": "string"
         },
         "default_sources": {

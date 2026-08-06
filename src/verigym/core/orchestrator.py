@@ -63,7 +63,7 @@ from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
-from verigym.tools.base import ToolContext
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 from verigym.version import __version__
 
 
@@ -139,6 +139,7 @@ class VeriGym:
         )
         synthesis_profile: ToolchainProfile | None = None
         resolved_profile: ResolvedToolchainProfile | None = None
+        synthesis_backend: SynthesisBackendPlugin | None = None
         try:
             runtime.prepare(run_id)
             if config.toolchain_profile is not None:
@@ -147,6 +148,12 @@ class VeriGym:
                     raise ConfigurationError(
                         f"profile {synthesis_profile.id!r} has no synthesis flow"
                     )
+                candidate_backend = self.registries.tools.get(synthesis_profile.flow.backend_plugin)
+                if not isinstance(candidate_backend, SynthesisBackendPlugin):
+                    raise ConfigurationError(
+                        f"tool {synthesis_profile.flow.backend_plugin!r} is not a synthesis backend"
+                    )
+                synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
                 reference_hash = content_hash(reference) if reference is not None else None
                 resolved_profile = resolve_toolchain_profile(
@@ -156,6 +163,7 @@ class VeriGym:
                     top_module=synthesis_profile.flow.top_module,
                     reference_candidate_hash=reference_hash,
                     expected=config.expected_resolved_profile,
+                    backend=synthesis_backend,
                 )
             # Agent and model registries are intentionally consulted only after profile
             # resolution, so a bad image/tool/asset can never trigger a model lookup.
@@ -702,6 +710,7 @@ class VeriGym:
                 not external_workspace_rejected
                 and synthesis_profile is not None
                 and resolved_profile is not None
+                and synthesis_backend is not None
             ):
                 by_id = {result.node_id: result for result in verifier_results}
                 correctness_passed = all(
@@ -717,11 +726,15 @@ class VeriGym:
                     profile=synthesis_profile,
                     resolved=resolved_profile,
                     artifact_root=layout.artifacts,
-                    plugin=self.registries.tools.get("yosys.synth"),
+                    plugin=synthesis_backend,
                     correctness_passed=correctness_passed,
                 )
                 verifier_results.extend(synthesis_evaluation.results)
-                reference_summary = layout.artifacts / "yosys" / "reference_summary.json"
+                reference_summary = (
+                    layout.artifacts
+                    / synthesis_backend.artifact_namespace
+                    / "reference_summary.json"
+                )
                 if reference_summary.is_file():
                     manifest.reference_summary_hash = hash_bytes(reference_summary.read_bytes())
             env.tracker.verifier_time_s = time.monotonic() - verifier_started

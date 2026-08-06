@@ -33,7 +33,7 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
     lines = [
         f"# VeriGym experiment report: {markdown_escape(aggregate.experiment_id)}",
         "",
-        "This report keeps correctness, coverage, cost, and profile-relative area separate. "
+        "This report keeps correctness, coverage, cost, and profile-relative quality separate. "
         "It does not define a universal VeriGym score.",
         "",
         "## Identity and compatibility scope",
@@ -366,15 +366,15 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
     lines.extend(
         [
             "",
-            "## Area-only quality partitions",
+            "## Synthesis quality partitions",
             "",
-            "Area is educational, profile-relative, correctness-gated, and non-signoff. "
-            "Partitions are never ranked against each other; timing and power are unavailable.",
+            "Area and optional timing are educational, profile-relative, correctness-gated, "
+            "and non-signoff. Partitions are never ranked against each other.",
             "",
         ]
     )
     if not aggregate.quality_partitions:
-        lines.append("No profile-enabled area results are present.")
+        lines.append("No profile-enabled synthesis-quality results are present.")
     for quality_partition in aggregate.quality_partitions:
         lines.extend(
             [
@@ -383,12 +383,30 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                 f"- Task: `{markdown_escape(quality_partition.task_id)}`",
                 f"- Resolved profile: `{markdown_escape(quality_partition.resolved_profile_hash)}`",
                 f"- Unit: `{markdown_escape(quality_partition.area_unit)}`",
+                f"- Scope: `{markdown_escape(quality_partition.metric_scope)}`",
                 f"- Eligible/ineligible: {quality_partition.eligible_run_count}/"
                 f"{quality_partition.ineligible_run_count}",
                 "- Area-ratio min/median/max: "
                 f"{_format_number(quality_partition.ratio_min)} / "
                 f"{_format_number(quality_partition.ratio_median)} / "
                 f"{_format_number(quality_partition.ratio_max)}",
+                *(
+                    [
+                        "- Timing unit/clock: "
+                        f"`{markdown_escape(quality_partition.timing_unit)}` / "
+                        f"{_format_number(quality_partition.clock_period)}",
+                        "- Delay-ratio min/median/max: "
+                        f"{_format_number(quality_partition.delay_ratio_min)} / "
+                        f"{_format_number(quality_partition.delay_ratio_median)} / "
+                        f"{_format_number(quality_partition.delay_ratio_max)}",
+                        "- WNS-delta min/median/max: "
+                        f"{_format_number(quality_partition.worst_negative_slack_delta_min)} / "
+                        f"{_format_number(quality_partition.worst_negative_slack_delta_median)} / "
+                        f"{_format_number(quality_partition.worst_negative_slack_delta_max)}",
+                    ]
+                    if quality_partition.metric_scope == "synthesis_area_timing"
+                    else []
+                ),
                 "",
             ]
         )

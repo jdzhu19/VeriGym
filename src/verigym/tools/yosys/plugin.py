@@ -6,17 +6,19 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
 from verigym.core.hashing import hash_bytes
 from verigym.core.workspace import normalize_relative_path
+from verigym.profiles.base import ResolvedToolchainProfile
+from verigym.runtimes.base import Runtime
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
-from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
+from verigym.schemas.common import ErrorCategory, ToolchainProfile, ToolDescriptor, ToolVisibility
 from verigym.schemas.synthesis import SynthesisArtifactRef, SynthesisMetrics
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
-from verigym.tools.base import ToolContext, ToolPlugin
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
 from verigym.tools.yosys.diagnostics import diagnostics_from_log
 from verigym.tools.yosys.identity import local_yosys_health
 from verigym.tools.yosys.parser import YosysStatParseError, parse_yosys_stat_json
@@ -50,7 +52,9 @@ def _descriptor(name: str) -> ToolDescriptor:
     )
 
 
-class YosysSynthesisTool(ToolPlugin):
+class YosysSynthesisTool(SynthesisBackendPlugin):
+    artifact_namespace = "yosys"
+
     def __init__(self, name: str = "yosys.synth") -> None:
         if name not in {"yosys.synth", "yosys.stat"}:
             raise ValueError(f"unsupported built-in Yosys capability: {name}")
@@ -59,6 +63,64 @@ class YosysSynthesisTool(ToolPlugin):
     def health_check(self, context: ToolContext | None = None) -> HealthCheckResult:
         del context
         return local_yosys_health()
+
+    def validate_profile_contract(self, profile: ToolchainProfile) -> Any:
+        from verigym.profiles.validation import validate_yosys_profile
+
+        return validate_yosys_profile(profile)
+
+    def resolve_profile(
+        self,
+        profile: ToolchainProfile,
+        runtime: Runtime,
+        *,
+        source_paths: list[str],
+        top_module: str,
+        reference_candidate_hash: str | None,
+        expected: ResolvedToolchainProfile | None = None,
+    ) -> ResolvedToolchainProfile:
+        from verigym.profiles.resolver import resolve_yosys_toolchain_profile
+
+        return resolve_yosys_toolchain_profile(
+            profile,
+            runtime,
+            source_paths=source_paths,
+            top_module=top_module,
+            reference_candidate_hash=reference_candidate_hash,
+            expected=expected,
+        )
+
+    def build_synthesis_request(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+        *,
+        run_label: str,
+    ) -> dict[str, Any]:
+        from verigym.profiles.resolver import synthesis_request_from_profile
+
+        if run_label not in {"candidate", "reference"}:
+            raise ValueError("synthesis run label must be candidate or reference")
+        label = cast(Literal["candidate", "reference"], run_label)
+        return synthesis_request_from_profile(profile, resolved, run_label=label)
+
+    def stage_profile_assets(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+        staging: Path,
+    ) -> None:
+        from verigym.profiles.validation import read_artifact_bytes
+
+        del resolved
+        libraries = [
+            item for item in profile.libraries if item.media_type == "application/x-liberty"
+        ]
+        if len(libraries) != 1:
+            raise ValueError("Yosys synthesis requires exactly one Liberty asset")
+        target = staging / ".verigym_profile" / "cells.lib"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(read_artifact_bytes(libraries[0]))
 
     def validate_request(self, request: dict[str, Any]) -> YosysSynthesisRequest:
         return YosysSynthesisRequest.model_validate(request)

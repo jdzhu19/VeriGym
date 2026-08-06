@@ -1,38 +1,35 @@
-# Future commercial synthesis profiles
+# Optional commercial-tool integrations
 
-Milestone 8 provides documentation and a non-executable template only. It does not implement a
-licensed-host runtime, vendor tool plugin, license integration, commercial execution, or signoff
-validation. VeriGym does not distribute proprietary executables, libraries, PDKs, vendor scripts,
-credentials, license files, or license-server addresses.
+VeriGym core defines tool, synthesis-backend, profile, artifact, and result contracts; it does not
+ship vendor software. The optional
+[`verigym-synopsys`](../integrations/verigym-synopsys/README.md) package proves the interface with
+two site-local plugins:
 
-The example at `examples/profiles/commercial-synthesis.example.yaml` shows the intended contract.
-A future site integration would provide, outside the repository:
+- `synopsys.vcs.simulate` runs a hash-bound hidden regression and classifies license, candidate,
+  timeout, parser, and runtime failures separately.
+- `synopsys.dc.synth` runs a generated DC flow and emits mapped area, maximum-path delay, and
+  worst-negative slack from an exact `.db`/SDC pair.
 
-- a site-owned profile ID/version with `site_specific` or `private` reproducibility scope;
-- executable/version checks and an isolation/runtime declaration;
-- hashes and re-resolution locators for user-owned scripts, Liberty files, and PDK inputs;
-- an allowlist containing only license-configuration environment-variable *names*;
-- a bounded, versioned machine-readable parser/output contract;
-- explicit metric units/semantics and a frozen reference strategy.
+The package contains no proprietary executable, `.db`, PDK, credential, license file, or license
+server address. Users install the commercial tools and create a site profile from assets they are
+authorized to use. `verigym-synopsys-prepare-profile` can locally convert a Liberty file with
+Library Compiler and emit a strict YAML profile containing hashes and re-resolution paths.
 
-Secret values must be supplied by the site's execution boundary at run time. They must never enter
-YAML, command arguments, manifests, traces, logs, diagnostics, hashes, or artifacts. A portable
-record may state that an allowlisted variable name was available, but it must not record its value.
-Private asset bytes should not be copied into public run bundles; retain only logical identity and
-cryptographic hash unless the owner explicitly configures a private artifact store.
+## Secrets and private assets
 
-Results are labeled site-specific/private. Absolute results are comparable only when the complete
-resolved profile identity matches. A matching profile ID is not enough if executable identity,
-script bytes, Liberty/PDK bytes, runtime, units, flow, or reference semantics differ. Cross-profile
-conversion or ranking is unsafe and must be refused.
+Profiles allow only license environment-variable *names*. Values are injected into an ephemeral
+runtime session, are redacted from tool output, and must never enter YAML, arguments, manifests,
+traces, diagnostics, hashes, or artifacts. Candidate artifacts may contain sanitized reports and
+netlists; reference RTL, reports, scripts, and netlists remain verifier-private, with only a bounded
+reference summary exported.
 
-Parsing a vendor report establishes only that the output satisfied the declared parser contract.
-It does not make a flow signoff-quality, validate constraints, prove library/PDK suitability, or
-certify the vendor tool. Timing, power, physical design, corners, derates, and signoff remain
-outside Milestone 8.
+## Comparability
 
-Before a future implementation can execute this template, it needs a separately reviewed runtime
-and threat model, secret transport, license-failure classification, tool-specific plugin and
-parser, immutable identity/resolution policy, artifact-retention policy, and opt-in tests at the
-owning site. The checked-in example deliberately contains placeholders and cannot be registered or
-executed.
+Commercial results are `site_specific` or `private`, never public or signoff. Comparisons require
+the same task/correctness identity and complete resolved profile hash, which binds tool version,
+runtime, DB, SDC, generated script, units, clock period, flow, and reference. Matching profile names
+alone is insufficient. Area, delay, and WNS stay separate; VeriGym does not combine them into an
+opaque score or claim cross-tool equivalence.
+
+Ordinary CI uses fake command results and parsers. Real VCS/DC tests are explicit, site-owned,
+license-gated checks and must not become dependencies of the ordinary test suite.

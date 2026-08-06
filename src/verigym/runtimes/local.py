@@ -30,6 +30,7 @@ class LocalRuntimeSession(RuntimeSession):
         self._temporary = tempfile.TemporaryDirectory(prefix=f"verigym-{spec.label}-")
         self._root = Path(self._temporary.name).resolve()
         self._max_output_bytes = spec.max_output_bytes
+        self._session_environment = dict(spec.environment)
         self._closed = False
         self._public_test_invocation_count = 0
         copy_tree_safely(Path(spec.source_dir), self._root)
@@ -89,7 +90,7 @@ class LocalRuntimeSession(RuntimeSession):
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
         }
-        for key, value in command.env.items():
+        for key, value in {**self._session_environment, **command.env}.items():
             if "\x00" in key or "\x00" in value or "=" in key:
                 raise PathPolicyError("invalid command environment entry")
             environment[key] = value

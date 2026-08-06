@@ -10,21 +10,19 @@ from pathlib import Path
 from typing import Any
 
 from verigym.core.errors import ConfigurationError
-from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.hashing import content_hash
 from verigym.core.loaders import dump_json
 from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
-from verigym.profiles.resolver import synthesis_request_from_profile
-from verigym.profiles.validation import read_artifact_bytes
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.base import SCHEMA_VERSION
-from verigym.schemas.common import ArtifactDescriptor, ErrorCategory, ToolchainProfile
+from verigym.schemas.common import ErrorCategory, ToolchainProfile
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import Candidate, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import ToolContext, ToolPlugin
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 
 
 @dataclass(frozen=True)
@@ -43,13 +41,6 @@ def _skipped(role: str, top: str, reason: str) -> SynthesisMetrics:
         failure_category="skipped",
         failure_message=reason,
     )
-
-
-def _liberty_descriptor(profile: ToolchainProfile) -> ArtifactDescriptor:
-    matches = [item for item in profile.libraries if item.media_type == "application/x-liberty"]
-    if len(matches) != 1:
-        raise ConfigurationError("resolved synthesis profile requires exactly one Liberty asset")
-    return matches[0]
 
 
 def _safe_source(root: Path, relative: str) -> bytes:
@@ -73,23 +64,18 @@ def _stage_candidate(
     staging: Path,
     source_root: Path,
     source_paths: list[str],
-    liberty: bytes,
 ) -> None:
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(_safe_source(source_root, normalized))
-    profile_asset = staging / ".verigym_profile" / "cells.lib"
-    profile_asset.parent.mkdir(parents=True, exist_ok=True)
-    profile_asset.write_bytes(liberty)
 
 
 def _stage_reference(
     staging: Path,
     reference: Candidate,
     source_paths: list[str],
-    liberty: bytes,
 ) -> None:
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
@@ -102,9 +88,18 @@ def _stage_reference(
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
-    profile_asset = staging / ".verigym_profile" / "cells.lib"
-    profile_asset.parent.mkdir(parents=True, exist_ok=True)
-    profile_asset.write_bytes(liberty)
+
+
+def _profile_environment(profile: ToolchainProfile) -> dict[str, str]:
+    environment: dict[str, str] = {}
+    for name in profile.environment_allowlist:
+        value = os.environ.get(name)
+        if value is None:
+            raise ConfigurationError(f"required profile environment variable {name!r} is unset")
+        if "\x00" in value:
+            raise ConfigurationError(f"profile environment variable {name!r} is invalid")
+        environment[name] = value
+    return environment
 
 
 def _result_from_tool(
@@ -121,7 +116,7 @@ def _result_from_tool(
             role="reference" if reference else "candidate",
             top="unknown",
             failure_category=ErrorCategory.PARSER_ERROR.value,
-            failure_message="Yosys plugin returned no typed synthesis metrics",
+            failure_message="synthesis backend returned no typed synthesis metrics",
         )
         return (
             VerifierResult(
@@ -160,10 +155,11 @@ def _result_from_tool(
 def _execute_one(
     *,
     runtime: Runtime,
-    plugin: ToolPlugin,
+    plugin: SynthesisBackendPlugin,
     source_staging: Path,
     artifact_dir: Path,
     request: dict[str, Any],
+    environment: dict[str, str],
     role: str,
     max_output_bytes: int,
 ) -> tuple[VerifierResult, SynthesisMetrics]:
@@ -174,6 +170,7 @@ def _execute_one(
                 source_dir=str(source_staging),
                 label="verifier",
                 max_output_bytes=max_output_bytes,
+                environment=environment,
             )
         )
         tool_result = plugin.execute(
@@ -197,7 +194,7 @@ def _execute_one(
         return (
             VerifierResult(
                 node_id=f"{role}_synthesis",
-                plugin="yosys.synth",
+                plugin=plugin.descriptor.name,
                 status=VerifierStatus.ERROR,
                 error_category=ErrorCategory.SANDBOX_ERROR,
                 message=str(exc),
@@ -219,7 +216,7 @@ def execute_synthesis_quality(
     profile: ToolchainProfile,
     resolved: ResolvedToolchainProfile,
     artifact_root: Path,
-    plugin: ToolPlugin,
+    plugin: SynthesisBackendPlugin,
     correctness_passed: bool,
 ) -> SynthesisEvaluation:
     top = resolved.top_module
@@ -230,14 +227,14 @@ def execute_synthesis_quality(
         skipped = [
             VerifierResult(
                 node_id="candidate_synthesis",
-                plugin="yosys.synth",
+                plugin=plugin.descriptor.name,
                 status=VerifierStatus.SKIPPED,
                 message=reason,
                 metadata={"synthesis": candidate.model_dump(mode="json")},
             ),
             VerifierResult(
                 node_id="reference_synthesis",
-                plugin="yosys.synth",
+                plugin=plugin.descriptor.name,
                 status=VerifierStatus.SKIPPED,
                 message=reason,
                 metadata={"synthesis": reference.model_dump(mode="json")},
@@ -256,7 +253,7 @@ def execute_synthesis_quality(
         reference = _skipped("reference", top, "reference_solution_missing")
         result = VerifierResult(
             node_id="reference_synthesis",
-            plugin="yosys.synth",
+            plugin=plugin.descriptor.name,
             status=VerifierStatus.ERROR,
             error_category=ErrorCategory.INVALID_REQUEST,
             message="profile requires a suite reference solution, but none is available",
@@ -268,28 +265,31 @@ def execute_synthesis_quality(
         reference = _skipped("reference", top, "reference_identity_mismatch")
         result = VerifierResult(
             node_id="reference_synthesis",
-            plugin="yosys.synth",
+            plugin=plugin.descriptor.name,
             status=VerifierStatus.ERROR,
             error_category=ErrorCategory.INVALID_REQUEST,
             message="suite reference identity differs from the resolved profile",
         )
         return SynthesisEvaluation([result], candidate, reference)
-    descriptor = _liberty_descriptor(profile)
-    liberty = read_artifact_bytes(descriptor)
-    if hash_bytes(liberty) != descriptor.content_hash:
-        raise ConfigurationError("Liberty asset changed after profile resolution")
-    yosys_root = artifact_root / "yosys"
-    candidate_artifacts = yosys_root / "candidate"
-    reference_summary_path = yosys_root / "reference_summary.json"
-    with tempfile.TemporaryDirectory(prefix="verigym-yosys-candidate-") as temporary:
+    environment = _profile_environment(profile)
+    backend_root = artifact_root / plugin.artifact_namespace
+    candidate_artifacts = backend_root / "candidate"
+    reference_summary_path = backend_root / "reference_summary.json"
+    with tempfile.TemporaryDirectory(prefix="verigym-synthesis-candidate-") as temporary:
         candidate_staging = Path(temporary)
-        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths, liberty)
+        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths)
+        plugin.stage_profile_assets(profile, resolved, candidate_staging)
         candidate_result, candidate_metrics = _execute_one(
             runtime=runtime,
             plugin=plugin,
             source_staging=candidate_staging,
             artifact_dir=candidate_artifacts,
-            request=synthesis_request_from_profile(profile, resolved, run_label="candidate"),
+            request=plugin.build_synthesis_request(
+                profile,
+                resolved,
+                run_label="candidate",
+            ),
+            environment=environment,
             role="candidate",
             max_output_bytes=task.budget.max_output_bytes_per_tool,
         )
@@ -299,7 +299,7 @@ def execute_synthesis_quality(
             candidate_result,
             VerifierResult(
                 node_id="reference_synthesis",
-                plugin="yosys.synth",
+                plugin=plugin.descriptor.name,
                 status=VerifierStatus.SKIPPED,
                 message="candidate_synthesis_did_not_pass",
                 metadata={"synthesis": reference_metrics.model_dump(mode="json")},
@@ -313,17 +313,23 @@ def execute_synthesis_quality(
         ]
         return SynthesisEvaluation(results, candidate_metrics, reference_metrics)
     with (
-        tempfile.TemporaryDirectory(prefix="verigym-yosys-reference-") as temporary,
-        tempfile.TemporaryDirectory(prefix="verigym-yosys-reference-artifacts-") as artifacts,
+        tempfile.TemporaryDirectory(prefix="verigym-synthesis-reference-") as temporary,
+        tempfile.TemporaryDirectory(prefix="verigym-reference-artifacts-") as artifacts,
     ):
         reference_staging = Path(temporary)
-        _stage_reference(reference_staging, reference_candidate, resolved.source_paths, liberty)
+        _stage_reference(reference_staging, reference_candidate, resolved.source_paths)
+        plugin.stage_profile_assets(profile, resolved, reference_staging)
         reference_result, reference_metrics = _execute_one(
             runtime=runtime,
             plugin=plugin,
             source_staging=reference_staging,
             artifact_dir=Path(artifacts),
-            request=synthesis_request_from_profile(profile, resolved, run_label="reference"),
+            request=plugin.build_synthesis_request(
+                profile,
+                resolved,
+                run_label="reference",
+            ),
+            environment=environment,
             role="reference",
             max_output_bytes=task.budget.max_output_bytes_per_tool,
         )
@@ -331,7 +337,7 @@ def execute_synthesis_quality(
             artifact.model_dump(mode="json") for artifact in reference_metrics.artifacts
         ]
     reference_metrics = reference_metrics.model_copy(update={"artifacts": []})
-    yosys_root.mkdir(parents=True, exist_ok=True)
+    backend_root.mkdir(parents=True, exist_ok=True)
     dump_json(
         reference_summary_path,
         {

@@ -41,6 +41,7 @@ from verigym.schemas.prompt import ToolPolicySnapshot
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import TaskRef, VeriTask
+from verigym.tools.base import SynthesisBackendPlugin
 from verigym.version import __version__
 
 
@@ -153,7 +154,12 @@ class ExperimentPlanner:
             raise ConfigurationError("suite source identity changed after plan construction")
         if config.profile is not None:
             profile = self.service.registries.profiles.get(config.profile)
-            validation = validate_profile(profile)
+            if profile.flow is None:
+                raise ConfigurationError(f"profile {profile.id!r} has no synthesis flow")
+            backend = self.service.registries.tools.get(profile.flow.backend_plugin)
+            if not isinstance(backend, SynthesisBackendPlugin):
+                raise ConfigurationError("planned profile backend is not a synthesis backend")
+            validation = validate_profile(profile, backend)
             if not validation.valid:
                 raise ConfigurationError("; ".join(validation.errors))
             declared_hash = content_hash(profile)
@@ -332,11 +338,16 @@ class ExperimentPlanner:
         if config.profile is None:
             return {}
         profile = self.service.registries.profiles.get(config.profile)
-        validation = validate_profile(profile)
-        if not validation.valid:
-            raise ConfigurationError("; ".join(validation.errors))
         if profile.flow is None:
             raise ConfigurationError(f"profile {profile.id!r} has no synthesis flow")
+        candidate_backend = self.service.registries.tools.get(profile.flow.backend_plugin)
+        if not isinstance(candidate_backend, SynthesisBackendPlugin):
+            raise ConfigurationError(
+                f"tool {profile.flow.backend_plugin!r} is not a synthesis backend"
+            )
+        validation = validate_profile(profile, candidate_backend)
+        if not validation.valid:
+            raise ConfigurationError("; ".join(validation.errors))
         resolved: dict[str, ResolvedToolchainProfile] = {}
         for task in tasks:
             reference = suite.reference_solution(task)
@@ -348,6 +359,7 @@ class ExperimentPlanner:
                 reference_candidate_hash=(
                     content_hash(reference) if reference is not None else None
                 ),
+                backend=candidate_backend,
             )
         return resolved
 

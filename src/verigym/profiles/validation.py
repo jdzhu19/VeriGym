@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib.resources import files
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import Field
 
@@ -11,6 +12,9 @@ from verigym.core.hashing import hash_bytes
 from verigym.schemas.base import StrictModel
 from verigym.schemas.common import ArtifactDescriptor, ToolchainProfile
 from verigym.tools.yosys.script_builder import FLOW_TEMPLATE_HASH, FLOW_TEMPLATE_ID
+
+if TYPE_CHECKING:
+    from verigym.tools.base import SynthesisBackendPlugin
 
 
 class ProfileValidationResult(StrictModel):
@@ -44,7 +48,7 @@ def read_artifact_bytes(descriptor: ArtifactDescriptor) -> bytes:
     raise ValueError(f"artifact {descriptor.name!r} is not a readable external asset")
 
 
-def validate_profile(profile: ToolchainProfile) -> ProfileValidationResult:
+def validate_yosys_profile(profile: ToolchainProfile) -> ProfileValidationResult:
     errors: list[str] = []
     warnings: list[str] = []
     if profile.flow is None or profile.metrics is None or profile.reference is None:
@@ -122,4 +126,30 @@ def validate_profile(profile: ToolchainProfile) -> ProfileValidationResult:
     return ProfileValidationResult(valid=not errors, errors=errors, warnings=warnings)
 
 
-__all__ = ["ProfileValidationResult", "read_artifact_bytes", "validate_profile"]
+def validate_profile(
+    profile: ToolchainProfile,
+    backend: SynthesisBackendPlugin | None = None,
+) -> ProfileValidationResult:
+    """Validate through the selected backend while preserving the Yosys default."""
+
+    if backend is not None:
+        result = backend.validate_profile_contract(profile)
+        if not isinstance(result, ProfileValidationResult):
+            raise TypeError("synthesis backend returned an invalid profile validation result")
+        return result
+    if profile.flow is None or profile.flow.backend_plugin == "yosys.synth":
+        return validate_yosys_profile(profile)
+    return ProfileValidationResult(
+        valid=False,
+        errors=[
+            f"profile backend {profile.flow.backend_plugin!r} must be installed for validation"
+        ],
+    )
+
+
+__all__ = [
+    "ProfileValidationResult",
+    "read_artifact_bytes",
+    "validate_profile",
+    "validate_yosys_profile",
+]

@@ -484,6 +484,18 @@
           "default": null,
           "title": "Area Unit"
         },
+        "clock_period": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clock Period"
+        },
         "delay": {
           "anyOf": [
             {
@@ -600,16 +612,43 @@
           "default": null,
           "title": "Reference Power"
         },
+        "reference_worst_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Worst Negative Slack"
+        },
         "resolved_profile_hash": {
           "default": "",
           "title": "Resolved Profile Hash",
           "type": "string"
         },
         "scope": {
-          "const": "synthesis_area_only",
           "default": "synthesis_area_only",
+          "enum": [
+            "synthesis_area_only",
+            "synthesis_area_timing"
+          ],
           "title": "Scope",
           "type": "string"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
         },
         "total_negative_slack": {
           "anyOf": [
@@ -641,6 +680,18 @@
           ],
           "default": null,
           "title": "Worst Negative Slack"
+        },
+        "worst_negative_slack_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Delta"
         }
       },
       "required": [
@@ -896,6 +947,30 @@
           "title": "Cells By Type",
           "type": "object"
         },
+        "clock_period": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clock Period"
+        },
+        "critical_path_delay_raw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Critical Path Delay Raw"
+        },
         "failure_category": {
           "anyOf": [
             {
@@ -1085,6 +1160,30 @@
           "title": "Synthesis Ok",
           "type": "boolean"
         },
+        "timing_constraints_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Constraints Hash"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
+        },
         "tool_identity": {
           "additionalProperties": true,
           "title": "Tool Identity",
@@ -1107,6 +1206,18 @@
           },
           "title": "Warnings",
           "type": "array"
+        },
+        "worst_negative_slack_raw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack Raw"
         }
       },
       "required": [

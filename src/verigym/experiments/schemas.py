@@ -251,6 +251,7 @@ class ExperimentConfig(StrictModel):
     systems: list[ExperimentSystemConfig] = Field(min_length=1, max_length=128)
     runtime: ExperimentRuntimeConfig = Field(default_factory=ExperimentRuntimeConfig)
     profile: str | None = None
+    profile_file: Path | None = None
     execution: ExperimentExecutionConfig = Field(default_factory=ExperimentExecutionConfig)
     output: ExperimentOutputConfig
 
@@ -268,6 +269,8 @@ class ExperimentConfig(StrictModel):
         ids = [system.id for system in self.systems]
         if len(ids) != len(set(ids)):
             raise ValueError("experiment system IDs must be unique")
+        if self.profile_file is not None and self.profile is None:
+            raise ValueError("profile_file requires a profile ID")
         return self
 
     def identity_payload(self) -> dict[str, Any]:

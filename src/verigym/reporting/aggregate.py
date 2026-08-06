@@ -211,7 +211,15 @@ class ReportBuilder:
                 "resolved_population": "valid evaluable child artifacts",
                 "efficiency_population": "resolved runs",
                 "cost_currency_policy": "unknown currency is never summed",
-                "quality_scope": "profile-relative synthesis area only",
+                "quality_scope": (
+                    "profile-relative synthesis area and timing"
+                    if any(
+                        run.scorecard.quality.ppa is not None
+                        and run.scorecard.quality.ppa.scope == "synthesis_area_timing"
+                        for run in runs
+                    )
+                    else "profile-relative synthesis area only"
+                ),
                 "universal_score": None,
                 "parent_integrity_status": inputs.parent_integrity_status,
                 "legacy_unverified_run_count": sum(
@@ -1012,7 +1020,7 @@ def _sampling(
 
 def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
     grouped: dict[str, list[ValidatedRun]] = defaultdict(list)
-    identities: dict[str, dict[str, str | None]] = {}
+    identities: dict[str, dict[str, Any]] = {}
     for run in runs:
         ppa = run.scorecard.quality.ppa
         manifest = run.manifest
@@ -1047,6 +1055,9 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                 manifest.runtime.image.resolved_image_id if manifest.runtime.image else None
             ),
             "area_unit": ppa.area_unit,
+            "metric_scope": ppa.scope,
+            "timing_unit": ppa.timing_unit,
+            "clock_period": ppa.clock_period,
             "reference_candidate_hash": manifest.reference_candidate_hash,
         }
         if any(
@@ -1069,6 +1080,8 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
         reason_counts: Counter[str] = Counter()
         run_values: list[QualityRunValue] = []
         ratios: list[float] = []
+        delay_ratios: list[float] = []
+        slack_deltas: list[float] = []
         coverage: Counter[str] = Counter()
         for run in members:
             ppa = run.scorecard.quality.ppa
@@ -1082,6 +1095,10 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
             )
             if ppa.area_ratio is not None:
                 ratios.append(ppa.area_ratio)
+            if ppa.delay_ratio is not None:
+                delay_ratios.append(ppa.delay_ratio)
+            if ppa.worst_negative_slack_delta is not None:
+                slack_deltas.append(ppa.worst_negative_slack_delta)
             system = run.plan_item.system.system_id if run.plan_item else _fallback_system(run)
             coverage[f"{run.manifest.task_id}|{system}"] += 1
             run_values.append(
@@ -1095,6 +1112,12 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                     area=raw_area,
                     reference_area=raw_reference,
                     area_ratio=ppa.area_ratio,
+                    delay=ppa.delay,
+                    reference_delay=ppa.reference_delay,
+                    delay_ratio=ppa.delay_ratio,
+                    worst_negative_slack=ppa.worst_negative_slack,
+                    reference_worst_negative_slack=(ppa.reference_worst_negative_slack),
+                    worst_negative_slack_delta=ppa.worst_negative_slack_delta,
                 )
             )
         partitions.append(
@@ -1109,7 +1132,14 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                 resolved_profile_hash=str(identity["resolved_profile_hash"]),
                 runtime_identity_hash=str(identity["runtime_identity_hash"]),
                 image_id=identity["image_id"],
+                metric_scope=str(identity["metric_scope"]),
                 area_unit=str(identity["area_unit"]),
+                timing_unit=identity["timing_unit"],
+                clock_period=(
+                    float(identity["clock_period"])
+                    if identity["clock_period"] is not None
+                    else None
+                ),
                 reference_candidate_hash=str(identity["reference_candidate_hash"]),
                 eligible_run_count=sum(value.eligible for value in run_values),
                 ineligible_run_count=sum(not value.eligible for value in run_values),
@@ -1118,6 +1148,14 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                 ratio_min=min(ratios) if ratios else None,
                 ratio_median=statistics.median(ratios) if ratios else None,
                 ratio_max=max(ratios) if ratios else None,
+                delay_ratio_min=min(delay_ratios) if delay_ratios else None,
+                delay_ratio_median=(statistics.median(delay_ratios) if delay_ratios else None),
+                delay_ratio_max=max(delay_ratios) if delay_ratios else None,
+                worst_negative_slack_delta_min=(min(slack_deltas) if slack_deltas else None),
+                worst_negative_slack_delta_median=(
+                    statistics.median(slack_deltas) if slack_deltas else None
+                ),
+                worst_negative_slack_delta_max=(max(slack_deltas) if slack_deltas else None),
                 runs=run_values,
             )
         )

@@ -38,6 +38,8 @@ experiment needs:
 ```bash
 python -m pip install -e integrations/verigym-codex-cli
 python -m pip install -e integrations/verigym-verilog-eval-codecomplete
+python -m pip install -e integrations/verigym-rtllm
+python -m pip install -e integrations/verigym-synopsys
 verigym suites inspect verilog-eval-code-complete
 ```
 
@@ -265,8 +267,8 @@ verigym report compare runs/<left-run> runs/<right-run>
 ```
 
 The scorecard reports `reference_area / candidate_area`, so values above one mean the candidate
-uses less mapped area than the reference under that exact profile. Delay, frequency, power, WNS,
-and TNS remain JSON `null`. A declared profile identifies the intended contract; its resolved hash
+uses less mapped area than the reference under that exact profile. This Yosys profile keeps timing
+and power JSON `null`. A declared profile identifies the intended contract; its resolved hash
 also covers the exact image, tools, Liberty bytes, generated script, flow, units, and reference
 semantics. Results from different profile IDs or resolved hashes are deliberately incomparable.
 
@@ -280,6 +282,24 @@ VERIGYM_RUN_DOCKER_YOSYS_TESTS=1 \
 VERIGYM_DOCKER_YOSYS_IMAGE=verigym/open-rtl-tools:iverilog12-yosys067 \
 pytest -m docker_yosys
 ```
+
+## Optional RTLLM and Synopsys pilot
+
+The `verigym-rtllm` integration exposes a pinned external RTLLM counter task without redistributing
+the benchmark. Its chat and agent modes share a verifier-only VCS regression. A user-supplied
+`synopsys.dc.synth` profile can add correctness-gated area, delay, and WNS summaries:
+
+```bash
+verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_12
+verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
+  --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
+  --toolchain-profile site-synopsys-dc \
+  --toolchain-profile-file /private/profiles/dc.yaml --output runs/
+```
+
+Both integrations are separate installable packages. No benchmark files, commercial binaries,
+libraries, or license values are present in the core distribution. See the
+[commercial-tool integration policy](docs/commercial_tools.md).
 
 ## External VerilogEval V2
 

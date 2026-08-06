@@ -16,11 +16,12 @@ from verigym.profiles.base import (
     ResolvedToolchainProfile,
     ResolvedToolIdentity,
 )
-from verigym.profiles.validation import read_artifact_bytes, validate_profile
+from verigym.profiles.validation import read_artifact_bytes, validate_yosys_profile
 from verigym.runtimes.base import Runtime
 from verigym.schemas.common import ArtifactDescriptor, ToolchainProfile
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.tool import CommandSpec, CompletedCommand
+from verigym.tools.base import SynthesisBackendPlugin
 from verigym.tools.yosys.identity import (
     extract_abc_version,
     extract_yosys_git_hash,
@@ -297,7 +298,7 @@ def _resolve_assets(profile: ToolchainProfile) -> list[ResolvedArtifactIdentity]
     return sorted(resolved, key=lambda item: item.logical_id)
 
 
-def resolve_toolchain_profile(
+def resolve_yosys_toolchain_profile(
     profile: ToolchainProfile,
     runtime: Runtime,
     *,
@@ -306,7 +307,7 @@ def resolve_toolchain_profile(
     reference_candidate_hash: str | None,
     expected: ResolvedToolchainProfile | None = None,
 ) -> ResolvedToolchainProfile:
-    validation = validate_profile(profile)
+    validation = validate_yosys_profile(profile)
     if not validation.valid:
         raise ConfigurationError("; ".join(validation.errors))
     assert profile.flow is not None
@@ -404,6 +405,41 @@ def resolve_toolchain_profile(
     return resolved
 
 
+def resolve_toolchain_profile(
+    profile: ToolchainProfile,
+    runtime: Runtime,
+    *,
+    source_paths: list[str],
+    top_module: str,
+    reference_candidate_hash: str | None,
+    expected: ResolvedToolchainProfile | None = None,
+    backend: SynthesisBackendPlugin | None = None,
+) -> ResolvedToolchainProfile:
+    """Resolve through an installed backend, defaulting to the built-in Yosys flow."""
+
+    if backend is not None:
+        return backend.resolve_profile(
+            profile,
+            runtime,
+            source_paths=source_paths,
+            top_module=top_module,
+            reference_candidate_hash=reference_candidate_hash,
+            expected=expected,
+        )
+    if profile.flow is not None and profile.flow.backend_plugin != "yosys.synth":
+        raise ConfigurationError(
+            f"profile backend {profile.flow.backend_plugin!r} was not supplied for resolution"
+        )
+    return resolve_yosys_toolchain_profile(
+        profile,
+        runtime,
+        source_paths=source_paths,
+        top_module=top_module,
+        reference_candidate_hash=reference_candidate_hash,
+        expected=expected,
+    )
+
+
 def synthesis_request_from_profile(
     profile: ToolchainProfile,
     resolved: ResolvedToolchainProfile,
@@ -442,4 +478,8 @@ def synthesis_request_from_profile(
     return request.model_dump(mode="json")
 
 
-__all__ = ["resolve_toolchain_profile", "synthesis_request_from_profile"]
+__all__ = [
+    "resolve_toolchain_profile",
+    "resolve_yosys_toolchain_profile",
+    "synthesis_request_from_profile",
+]

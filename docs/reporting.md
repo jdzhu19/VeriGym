@@ -69,15 +69,15 @@ invalidates canonical pass@k and yields `null` with a reason. Macro mean/median 
 task/system/base-seed groups only and reports valid, invalid, and missing group counts. Best-of-N
 is reported only for a complete canonical group.
 
-## Area-only quality
+## Profile-relative synthesis quality
 
-Quality remains educational synthesis area only. A ranked value requires an evaluable, functionally
+Quality remains educational and non-signoff. A ranked value requires an evaluable, functionally
 resolved candidate plus successful candidate/reference synthesis. Partitions bind exact
 suite/release/source, task/hash, correctness definition, declared profile ID/hash, resolved profile
-hash, runtime/image, area unit, and reference candidate. Raw synthesis area may remain diagnostic
-for an ineligible run, but ranked area/reference/ratio remains null. Different partitions are never
-ranked together; `verigym report compare` retains the strict Milestone 8 refusal behavior. Timing,
-power, delay, frequency, WNS, and TNS remain unavailable. There is no universal “VeriGym Score.”
+hash, runtime/image, metric scope, units, clock period, and reference candidate. Raw synthesis
+metrics may remain diagnostic for an ineligible run, but ranked values remain null. Area/timing
+profiles report area, delay, and WNS independently; power, frequency, and TNS remain unavailable.
+Different partitions are never ranked together. There is no universal “VeriGym Score.”
 
 Different releases and correctness definitions receive compatibility identities and warnings; they
 must be read as separate coverage scopes. Per-system groups report task coverage so unequal task
@@ -95,7 +95,9 @@ interaction_mode, system_id, model_id, agent_id, base_seed, sample_index, child_
 runtime_id, isolation_level, image_id, declared_profile_id, declared_profile_hash,
 resolved_profile_hash, status, resolved, evaluable, infrastructure_error, failure_category,
 termination_reason, compile_status, tests_passed, tests_total, ppa_eligible, area, area_unit,
-reference_area, area_ratio, wall_time_s, model_input_tokens, model_output_tokens, total_tokens,
+reference_area, area_ratio, delay, timing_unit, clock_period, reference_delay, delay_ratio,
+worst_negative_slack, reference_worst_negative_slack, worst_negative_slack_delta,
+wall_time_s, model_input_tokens, model_output_tokens, total_tokens,
 model_cost, cost_currency, turns, tool_calls, failed_tool_calls, changed_files, diff_lines,
 warning_count, artifact_validation_status
 ```

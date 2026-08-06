@@ -56,7 +56,11 @@ def build_scorecard(
     resolved = functional_resolved and not infrastructure_error
     compile_result = next((r for r in results if "compile" in r.plugin), None)
     run_result = next(
-        (r for r in results if r.plugin in {"iverilog.run", "verilog_eval.v2.regression"}),
+        (
+            r
+            for r in results
+            if r.plugin in {"iverilog.run", "verilog_eval.v2.regression", "synopsys.vcs.simulate"}
+        ),
         None,
     )
     tests_passed = sum(r.tests_passed or 0 for r in results if r.tests_total is not None)
@@ -80,6 +84,7 @@ def build_scorecard(
         )
     quality = QualityMetrics(ppa=None, synthesis=None, reference_synthesis=None)
     if resolved_profile is not None:
+        timing_scope = resolved_profile.metric_scope == "synthesis_area_timing"
         reasons: list[str] = []
         if not functional_resolved:
             reasons.append("correctness_gate_failed")
@@ -121,6 +126,24 @@ def build_scorecard(
             reasons.append("reference_area_unit_mismatch")
         if resolved_profile.reference_candidate_hash is None:
             reasons.append("reference_identity_missing")
+        if timing_scope:
+            if candidate_synthesis is None or candidate_synthesis.critical_path_delay_raw is None:
+                reasons.append("candidate_delay_missing")
+            if candidate_synthesis is None or candidate_synthesis.worst_negative_slack_raw is None:
+                reasons.append("candidate_wns_missing")
+            if reference_synthesis is None or reference_synthesis.critical_path_delay_raw is None:
+                reasons.append("reference_delay_missing")
+            if reference_synthesis is None or reference_synthesis.worst_negative_slack_raw is None:
+                reasons.append("reference_wns_missing")
+            for role, metrics in (
+                ("candidate", candidate_synthesis),
+                ("reference", reference_synthesis),
+            ):
+                if metrics is not None and metrics.synthesis_ok:
+                    if metrics.timing_unit != resolved_profile.timing_unit:
+                        reasons.append(f"{role}_timing_unit_mismatch")
+                    if metrics.clock_period is None:
+                        reasons.append(f"{role}_clock_period_missing")
         reasons = list(dict.fromkeys(reasons))
         eligible = not reasons
         candidate_area = (
@@ -138,30 +161,68 @@ def build_scorecard(
             if reference_area is not None and candidate_area is not None
             else None
         )
+        candidate_delay = (
+            candidate_synthesis.critical_path_delay_raw
+            if eligible and timing_scope and candidate_synthesis is not None
+            else None
+        )
+        reference_delay = (
+            reference_synthesis.critical_path_delay_raw
+            if eligible and timing_scope and reference_synthesis is not None
+            else None
+        )
+        delay_ratio = (
+            reference_delay / candidate_delay
+            if reference_delay is not None and candidate_delay is not None
+            else None
+        )
+        candidate_wns = (
+            candidate_synthesis.worst_negative_slack_raw
+            if eligible and timing_scope and candidate_synthesis is not None
+            else None
+        )
+        reference_wns = (
+            reference_synthesis.worst_negative_slack_raw
+            if eligible and timing_scope and reference_synthesis is not None
+            else None
+        )
         quality = QualityMetrics(
             ppa=PPAMetrics(
                 profile_id=resolved_profile.profile_id,
                 profile_version=resolved_profile.profile_version,
                 resolved_profile_hash=resolved_profile.resolved_profile_hash,
-                scope="synthesis_area_only",
+                scope=resolved_profile.metric_scope,
                 eligible=eligible,
                 ineligible_reasons=reasons,
                 area=candidate_area,
                 area_unit=resolved_profile.area_unit,
                 reference_area=reference_area,
                 area_ratio=ratio,
-                delay=None,
+                delay=candidate_delay,
                 frequency=None,
                 power=None,
-                worst_negative_slack=None,
+                worst_negative_slack=candidate_wns,
                 total_negative_slack=None,
+                timing_unit=resolved_profile.timing_unit if eligible and timing_scope else None,
+                clock_period=(
+                    candidate_synthesis.clock_period
+                    if eligible and timing_scope and candidate_synthesis is not None
+                    else None
+                ),
+                reference_delay=reference_delay,
+                reference_worst_negative_slack=reference_wns,
+                delay_ratio=delay_ratio,
+                worst_negative_slack_delta=(
+                    candidate_wns - reference_wns
+                    if candidate_wns is not None and reference_wns is not None
+                    else None
+                ),
             ),
             synthesis=candidate_synthesis,
             reference_synthesis=reference_synthesis,
         )
-        warnings.append(
-            "Synthesis quality is educational, profile-relative, area-only, and non-signoff."
-        )
+        scope_label = "area and timing" if timing_scope else "area-only"
+        warnings.append(f"Synthesis quality is profile-relative, {scope_label}, and non-signoff.")
     return ScoreCard(
         run_id=run_id,
         task_id=task.id,

@@ -266,6 +266,7 @@ class SynthesisFlowSpec(StrictModel):
     top_module: str
     hierarchy_check: bool = True
     flatten: bool = True
+    backend_plugin: str = "yosys.synth"
     template_id: str
     abc_policy_id: str
     liberty_mapping: bool = True
@@ -276,6 +277,13 @@ class SynthesisFlowSpec(StrictModel):
         "suite_reference_solution"
     )
 
+    @field_validator("backend_plugin")
+    @classmethod
+    def validate_backend_plugin(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", value):
+            raise ValueError("synthesis backend plugin must be a stable lowercase slug")
+        return value
+
 
 class MetricSpec(StrictModel):
     enabled: bool
@@ -285,7 +293,7 @@ class MetricSpec(StrictModel):
 
 
 class MetricContract(StrictModel):
-    scope: Literal["synthesis_area_only"] = "synthesis_area_only"
+    scope: Literal["synthesis_area_only", "synthesis_area_timing"] = "synthesis_area_only"
     area: MetricSpec
     delay: MetricSpec = Field(default_factory=lambda: MetricSpec(enabled=False))
     frequency: MetricSpec = Field(default_factory=lambda: MetricSpec(enabled=False))
@@ -296,20 +304,37 @@ class MetricContract(StrictModel):
     signoff: bool = False
 
     @model_validator(mode="after")
-    def enforce_area_only_contract(self) -> MetricContract:
-        unavailable = (
-            self.delay,
-            self.frequency,
-            self.power,
-            self.worst_negative_slack,
-            self.total_negative_slack,
-        )
-        if any(metric.enabled for metric in unavailable):
-            raise ValueError("Milestone 8 profiles may enable mapped area only")
+    def enforce_metric_contract(self) -> MetricContract:
         if self.area.enabled and (not self.area.source or not self.area.unit):
             raise ValueError("enabled area requires an explicit source and unit")
+        for name, metric in (
+            ("delay", self.delay),
+            ("frequency", self.frequency),
+            ("power", self.power),
+            ("worst_negative_slack", self.worst_negative_slack),
+            ("total_negative_slack", self.total_negative_slack),
+        ):
+            if metric.enabled and (not metric.source or not metric.unit):
+                raise ValueError(f"enabled {name} requires an explicit source and unit")
+        if self.scope == "synthesis_area_only":
+            unavailable = (
+                self.delay,
+                self.frequency,
+                self.power,
+                self.worst_negative_slack,
+                self.total_negative_slack,
+            )
+            if any(metric.enabled for metric in unavailable):
+                raise ValueError("area-only profiles cannot enable timing or power metrics")
+        else:
+            if not (self.area.enabled and self.delay.enabled and self.worst_negative_slack.enabled):
+                raise ValueError(
+                    "area-timing profiles require area, delay, and worst-negative slack"
+                )
+            if self.frequency.enabled or self.power.enabled or self.total_negative_slack.enabled:
+                raise ValueError("the area-timing scope does not enable frequency, power, or TNS")
         if self.signoff:
-            raise ValueError("Milestone 8 profiles cannot claim signoff")
+            raise ValueError("VeriGym synthesis profiles cannot claim signoff")
         return self
 
 

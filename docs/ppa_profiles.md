@@ -1,10 +1,13 @@
-# Synthesis-area profiles and comparison
+# Synthesis quality profiles and comparison
 
-A `ToolchainProfile` is the contract that gives a synthesis number meaning. Milestone 8 supports
-one metric scope, `synthesis_area_only`; it does not implement full PPA. The built-in
+A `ToolchainProfile` is the contract that gives a synthesis number meaning. The built-in
 `open-yosys-toy-area-v1` profile uses an Apache-2.0 educational Liberty library with an abstract
 `toy_area_unit`. Its values are profile-relative teaching metrics, not silicon estimates or
 signoff results.
+
+Optional backends can implement `synthesis_area_timing`. The Synopsys DC integration reports area,
+maximum-path delay, and worst-negative slack under an exact DB, SDC, clock period, generated script,
+and tool identity. It does not report power, physical design, frequency, TNS, or signoff quality.
 
 ## Synthesis metrics are not ranked PPA
 
@@ -22,8 +25,9 @@ can exist when synthesis is attempted, including on a path that is later ineligi
 
 An incorrect candidate has `ppa.eligible=false` and ranked `area`, `reference_area`, and
 `area_ratio` all remain `null`, even if raw synthesis diagnostics exist. Runs without a synthesis
-profile preserve the Milestones 0–7 all-`null` PPA behavior. Delay, frequency, power,
-worst-negative slack, and total-negative slack remain `null` for every Milestone 8 run.
+profile preserve the all-`null` PPA behavior. Area-only profiles keep delay, frequency, power,
+worst-negative slack, and total-negative slack `null`. Area/timing profiles additionally require
+finite delay and WNS for both candidate and reference with the same timing unit and clock period.
 
 Generic cell count is not area: cell types have different costs, mapping choices matter, and an
 unmapped generic cell has no profile-defined physical area. Only Yosys's Liberty-based area under
@@ -65,7 +69,8 @@ Therefore `1.0` means equal mapped area, greater than `1.0` favors the candidate
 
 ## Strict comparison and replay
 
-`verigym report compare LEFT RIGHT` emits a ranking only when both scorecards are eligible and
+`verigym report compare LEFT RIGHT --metric area|delay|worst_negative_slack` emits a ranking only
+when both scorecards are eligible and
 their task, metric scope/unit, reference strategy, profile ID/version, declared hash, and resolved
 hash match. It refuses incompatible inputs with a configuration error naming the differing
 fields. A shared profile ID alone is insufficient.

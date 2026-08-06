@@ -67,8 +67,9 @@ class ResolvedToolchainProfile(StrictModel):
     generated_script_hash: str
     top_module: str
     source_paths: list[str]
-    metric_scope: Literal["synthesis_area_only"]
+    metric_scope: Literal["synthesis_area_only", "synthesis_area_timing"]
     area_unit: str
+    timing_unit: str | None = None
     reference_strategy: str
     reference_candidate_hash: str | None = None
     artifact_visibility_policy: str = "candidate_public_reference_summary_only"

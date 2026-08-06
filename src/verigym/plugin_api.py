@@ -12,11 +12,20 @@ from verigym.core.external_process_identity import (
     validate_external_process_request_identity,
 )
 from verigym.models.base import ModelClient, ModelClientError
+from verigym.profiles.base import (
+    ResolvedArtifactIdentity,
+    ResolvedRuntimeIdentity,
+    ResolvedToolchainProfile,
+    ResolvedToolIdentity,
+)
+from verigym.profiles.validation import ProfileValidationResult
 from verigym.prompts.policy import validate_prompt_text
+from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAction, Observation
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     AgentDescriptor,
+    ArtifactDescriptor,
     AssetRef,
     ErrorCategory,
     InteractionMode,
@@ -54,6 +63,7 @@ from verigym.schemas.options import JsonScalar, JsonValue, validate_plugin_optio
 from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
+from verigym.schemas.synthesis import SynthesisArtifactRef, SynthesisDiagnostic, SynthesisMetrics
 from verigym.schemas.task import (
     BudgetSpec,
     Candidate,
@@ -73,7 +83,7 @@ from verigym.schemas.task import (
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import ToolContext, ToolPlugin
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
 
 __all__ = [
     "AgentAction",
@@ -83,6 +93,7 @@ __all__ = [
     "AgentPromptPolicySpec",
     "AgentTerminationError",
     "AssetRef",
+    "ArtifactDescriptor",
     "BudgetSpec",
     "Candidate",
     "CommandSpec",
@@ -123,8 +134,14 @@ __all__ = [
     "ProviderRequestIdentity",
     "PLUGIN_API_VERSION",
     "PromptPolicyDescriptor",
+    "ProfileValidationResult",
+    "ResolvedArtifactIdentity",
+    "ResolvedRuntimeIdentity",
     "ResolvedTaskAssets",
     "RuntimeRequirement",
+    "ResolvedToolchainProfile",
+    "ResolvedToolIdentity",
+    "Runtime",
     "SCHEMA_VERSION",
     "ScoringSpec",
     "SourceSpec",
@@ -134,6 +151,10 @@ __all__ = [
     "SuiteDescriptor",
     "SuiteSourceConfig",
     "SuiteSourceSnapshot",
+    "SynthesisBackendPlugin",
+    "SynthesisArtifactRef",
+    "SynthesisDiagnostic",
+    "SynthesisMetrics",
     "TaskRef",
     "TaskType",
     "ToolContext",
@@ -143,6 +164,7 @@ __all__ = [
     "ToolResult",
     "ToolchainProfile",
     "ToolVisibility",
+    "RuntimeSession",
     "TerminationReason",
     "ValidationIssue",
     "ValidationReport",

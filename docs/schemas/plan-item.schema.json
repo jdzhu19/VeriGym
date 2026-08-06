@@ -1500,7 +1500,10 @@
           "type": "string"
         },
         "metric_scope": {
-          "const": "synthesis_area_only",
+          "enum": [
+            "synthesis_area_only",
+            "synthesis_area_timing"
+          ],
           "title": "Metric Scope",
           "type": "string"
         },
@@ -1566,6 +1569,18 @@
           },
           "title": "Source Paths",
           "type": "array"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
         },
         "tool_identities": {
           "items": {

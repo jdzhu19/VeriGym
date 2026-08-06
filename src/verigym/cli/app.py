@@ -41,19 +41,20 @@ from verigym.evolution.versions import (
 from verigym.experiments.config import load_experiment_config
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
+from verigym.experiments.schemas import ExperimentConfig
 from verigym.experiments.state import (
     atomic_dump_json,
     load_json_model,
     load_jsonl_models,
 )
-from verigym.profiles.comparison import compare_area
+from verigym.profiles.comparison import compare_area, compare_timing
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
 from verigym.provenance import get_build_provenance
-from verigym.registry.collections import build_registries
+from verigym.registry.collections import Registries, build_registries
 from verigym.reporting.service import ReportService
 from verigym.runtimes.docker.diagnostics import diagnose_docker
-from verigym.schemas.common import InteractionMode
+from verigym.schemas.common import InteractionMode, ToolchainProfile
 from verigym.schemas.evolution import (
     AgentUpdateManifest,
     AgentVersionManifest,
@@ -70,6 +71,7 @@ from verigym.schemas.run import RunConfig
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.sampling import SampleSetResult
 from verigym.schemas.suite import SuiteSourceConfig
+from verigym.tools.base import SynthesisBackendPlugin
 from verigym.tools.yosys.identity import local_abc_health
 from verigym.version import __version__
 
@@ -109,6 +111,29 @@ def _fail(exc: Exception) -> None:
         code = 5
     console.print(f"[red]error:[/red] {exc}")
     raise typer.Exit(code=code) from exc
+
+
+def _load_profile_file(
+    registries: Registries,
+    path: Path | None,
+    *,
+    expected_id: str | None = None,
+) -> ToolchainProfile | None:
+    if path is None:
+        return None
+    profile = registries.profiles.load_file(path)
+    if expected_id is not None and profile.id != expected_id:
+        raise ValueError(f"profile file declares {profile.id!r}, expected {expected_id!r}")
+    return profile
+
+
+def _synthesis_backend(registries: Registries, profile: ToolchainProfile) -> SynthesisBackendPlugin:
+    if profile.flow is None:
+        raise ValueError(f"profile {profile.id!r} has no synthesis flow")
+    candidate = registries.tools.get(profile.flow.backend_plugin)
+    if not isinstance(candidate, SynthesisBackendPlugin):
+        raise ValueError(f"tool {profile.flow.backend_plugin!r} is not a synthesis backend")
+    return candidate
 
 
 def _source_config(
@@ -245,11 +270,23 @@ def doctor(
         "--toolchain-profile",
         help="Validate and, with --docker-image, resolve this profile without a model call.",
     ),
+    toolchain_profile_file: Path | None = typer.Option(
+        None,
+        "--toolchain-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load one site-specific profile before validation.",
+    ),
 ) -> None:
     """Report package, runtime, and tool health without printing secrets."""
 
     try:
         registries = build_registries()
+        _load_profile_file(
+            registries,
+            toolchain_profile_file,
+            expected_id=toolchain_profile,
+        )
     except typer.Exit:
         raise
     except Exception as exc:
@@ -315,7 +352,7 @@ def doctor(
     abc = local_abc_health()
     table.add_row("tool:yosys-abc", "ok" if abc.healthy else "missing", abc.message)
     for profile_id, profile in registries.profiles.items():
-        validation = validate_profile(profile)
+        validation = validate_profile(profile, _synthesis_backend(registries, profile))
         table.add_row(
             f"profile:{profile_id}",
             "ok" if validation.valid else "invalid",
@@ -348,6 +385,7 @@ def doctor(
                         reference_candidate_hash=(
                             content_hash(reference) if reference is not None else None
                         ),
+                        backend=_synthesis_backend(registries, profile),
                     )
                     table.add_row(
                         f"profile-resolution:{toolchain_profile}",
@@ -477,6 +515,13 @@ def run_task(
         "--toolchain-profile",
         help="Opt in to an immutable synthesis-quality profile.",
     ),
+    toolchain_profile_file: Path | None = typer.Option(
+        None,
+        "--toolchain-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load a site-specific synthesis profile from YAML or JSON.",
+    ),
     seed: int = typer.Option(0, "--seed"),
     output: Path = typer.Option(Path("runs"), "--output"),
 ) -> None:
@@ -544,7 +589,13 @@ def run_task(
             seed=seed,
             output=output,
         )
-        service = VeriGym()
+        registries = build_registries()
+        _load_profile_file(
+            registries,
+            toolchain_profile_file,
+            expected_id=toolchain_profile,
+        )
+        service = VeriGym(registries)
         if samples > 1 or pass_k:
             sample_result = service.run_samples(
                 config,
@@ -635,7 +686,27 @@ def batch(
         _fail(ValueError("resume does not permit a plan-changing fail-fast override"))
     try:
         supplied = load_experiment_config(config_path) if config_path is not None else None
-        runner = BatchRunner()
+        effective_config = supplied
+        if effective_config is None and resume_path is not None:
+            effective_config = load_json_model(
+                resume_path / "experiment_config.json",
+                ExperimentConfig,
+            )
+
+        def service_factory() -> VeriGym:
+            registries = build_registries()
+            if effective_config is not None:
+                _load_profile_file(
+                    registries,
+                    effective_config.profile_file,
+                    expected_id=effective_config.profile,
+                )
+            return VeriGym(registries)
+
+        runner = BatchRunner(
+            planner=ExperimentPlanner(service_factory()),
+            service_factory=service_factory,
+        )
         if resume_path is not None:
             result = runner.resume(resume_path, supplied_config=supplied)
         else:
@@ -655,7 +726,7 @@ def batch(
                     ),
                 }
             )
-            plan = ExperimentPlanner().build(normalized)
+            plan = runner.planner.build(normalized)
             if dry_run:
                 console.print_json(plan.model_dump_json(indent=2))
                 console.print(f"Planned child runs: {len(plan.items)}")
@@ -859,19 +930,29 @@ def profiles_list() -> None:
 
 
 @profiles_app.command("show")
-def profiles_show(profile_id: str) -> None:
+def profiles_show(
+    profile_id: str,
+    profile_file: Path | None = typer.Option(None, "--file", exists=True, dir_okay=False),
+) -> None:
     try:
-        profile = build_registries().profiles.get(profile_id)
+        registries = build_registries()
+        _load_profile_file(registries, profile_file, expected_id=profile_id)
+        profile = registries.profiles.get(profile_id)
         console.print_json(profile.model_dump_json(indent=2))
     except Exception as exc:
         _fail(exc)
 
 
 @profiles_app.command("validate")
-def profiles_validate(profile_id: str) -> None:
+def profiles_validate(
+    profile_id: str,
+    profile_file: Path | None = typer.Option(None, "--file", exists=True, dir_okay=False),
+) -> None:
     try:
-        profile = build_registries().profiles.get(profile_id)
-        result = validate_profile(profile)
+        registries = build_registries()
+        _load_profile_file(registries, profile_file, expected_id=profile_id)
+        profile = registries.profiles.get(profile_id)
+        result = validate_profile(profile, _synthesis_backend(registries, profile))
         console.print_json(result.model_dump_json(indent=2))
         if not result.valid:
             raise typer.Exit(code=2)
@@ -891,12 +972,14 @@ def profiles_resolve(
         "--task",
         help="Task contract used for source/top/reference identity resolution.",
     ),
+    profile_file: Path | None = typer.Option(None, "--file", exists=True, dir_okay=False),
 ) -> None:
     """Resolve exact tools/assets/runtime state; never invokes an agent or model."""
 
     runtime = None
     try:
         registries = build_registries()
+        _load_profile_file(registries, profile_file, expected_id=profile_id)
         profile = registries.profiles.get(profile_id)
         selected_task = task_id or str(profile.metadata.get("acceptance_task", ""))
         if not selected_task:
@@ -920,6 +1003,7 @@ def profiles_resolve(
             source_paths=list(task.workspace.entrypoints),
             top_module=profile.flow.top_module if profile.flow is not None else "",
             reference_candidate_hash=content_hash(reference) if reference is not None else None,
+            backend=_synthesis_backend(registries, profile),
         )
         console.print_json(resolved.model_dump_json(indent=2))
     except Exception as exc:
@@ -933,13 +1017,16 @@ def profiles_resolve(
 def report_compare(
     run_a: Path = typer.Argument(..., exists=True, file_okay=False),
     run_b: Path = typer.Argument(..., exists=True, file_okay=False),
-    metric: Literal["area"] = typer.Option("area", "--metric"),
+    metric: Literal["area", "delay", "worst_negative_slack"] = typer.Option("area", "--metric"),
 ) -> None:
-    """Rank two runs only when their full resolved area contracts match."""
+    """Rank two runs only when their full resolved metric contracts match."""
 
-    del metric
     try:
-        result = compare_area(run_a, run_b)
+        result = (
+            compare_area(run_a, run_b)
+            if metric == "area"
+            else compare_timing(run_a, run_b, metric=metric)
+        )
         console.print_json(result.model_dump_json(indent=2))
     except Exception as exc:
         _fail(exc)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 
@@ -40,6 +40,11 @@ class SynthesisMetrics(StrictModel):
     mapped_area_raw: float | None = None
     mapped_area_unit: str | None = None
     mapped_area_source_hash: str | None = None
+    critical_path_delay_raw: float | None = None
+    worst_negative_slack_raw: float | None = None
+    timing_unit: str | None = None
+    clock_period: float | None = None
+    timing_constraints_hash: str | None = None
     warnings: list[SynthesisDiagnostic] = Field(default_factory=list)
     unsupported_constructs: list[SynthesisDiagnostic] = Field(default_factory=list)
     tool_identity: dict[str, Any] = Field(default_factory=dict)
@@ -62,6 +67,32 @@ class SynthesisMetrics(StrictModel):
         if value is not None and (not math.isfinite(value) or value <= 0):
             raise ValueError("mapped area must be finite and positive")
         return value
+
+    @field_validator("critical_path_delay_raw", "clock_period")
+    @classmethod
+    def validate_positive_timing(cls, value: float | None) -> float | None:
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            raise ValueError("delay and clock period must be finite and positive")
+        return value
+
+    @field_validator("worst_negative_slack_raw")
+    @classmethod
+    def validate_slack(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("worst-negative slack must be finite")
+        return value
+
+    @model_validator(mode="after")
+    def validate_timing_identity(self) -> SynthesisMetrics:
+        values = (
+            self.critical_path_delay_raw,
+            self.worst_negative_slack_raw,
+            self.clock_period,
+        )
+        if any(value is not None for value in values):
+            if not self.timing_unit or not self.timing_constraints_hash:
+                raise ValueError("timing metrics require a unit and constraints hash")
+        return self
 
 
 __all__ = ["SynthesisArtifactRef", "SynthesisDiagnostic", "SynthesisMetrics"]
