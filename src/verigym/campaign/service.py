@@ -28,6 +28,7 @@ from verigym.experiments.state import atomic_write_text, load_json_model, load_j
 from verigym.prompts.policy import prompt_contract_identity_hash
 from verigym.provenance import get_build_provenance
 from verigym.reporting.aggregate import ReportBuilder
+from verigym.reporting.loader import ValidatedRun, load_report_inputs
 from verigym.reporting.schemas import (
     AggregateReport,
     ExplicitRate,
@@ -52,6 +53,7 @@ class _LoadedExperiment:
     manifest: ExperimentManifest
     plan_items: list[PlanItem]
     aggregate: AggregateReport
+    valid_runs: list[ValidatedRun]
 
 
 def _reject_symlink_components(path: Path) -> None:
@@ -102,6 +104,7 @@ def _load_experiment(root: Path) -> _LoadedExperiment:
         root,
         group_by=("system", "interaction_mode", "task"),
     )
+    inputs = load_report_inputs(root)
     if aggregate.source_kind != "experiment":
         raise ValueError("campaign inputs must be immutable experiment roots")
     if aggregate.experiment_id != manifest.experiment_id:
@@ -118,6 +121,7 @@ def _load_experiment(root: Path) -> _LoadedExperiment:
         manifest=manifest,
         plan_items=plan_items,
         aggregate=aggregate,
+        valid_runs=inputs.valid_runs,
     )
 
 
@@ -445,6 +449,24 @@ def _evolving_summary(
             if group.dimensions.get("system") == system_id
         }
     )
+    plan_indices = {item.plan_index for item in items}
+    resolved_runs = [
+        run
+        for run in loaded.valid_runs
+        if run.plan_index in plan_indices and run.scorecard.resolved
+    ]
+
+    def mean_score_value(*names: str) -> float | None:
+        values: list[float] = []
+        for run in resolved_runs:
+            efficiency = run.scorecard.efficiency
+            for name in names:
+                value = getattr(efficiency, name)
+                if value is not None:
+                    values.append(float(value))
+                    break
+        return statistics.fmean(values) if values else None
+
     return CampaignEvaluationSummary(
         input_id=entry.id,
         evaluation_mode="evolving_agent",
@@ -470,10 +492,14 @@ def _evolving_summary(
         infrastructure_failure_count=metric.infrastructure_failures,
         resolved_rate_evaluable=_rate(metric.resolved, metric.evaluable),
         macro_pass_at_1=metric.macro_pass_at_1,
-        mean_total_tokens=metric.mean_tokens,
-        mean_tool_calls=metric.mean_public_tool_calls,
-        mean_wall_time_s=metric.mean_wall_time_s,
-        observed_model_api_calls=None,
+        mean_total_tokens=mean_score_value("external_total_tokens", "total_tokens"),
+        mean_tool_calls=mean_score_value("external_tool_call_count", "tool_calls"),
+        mean_wall_time_s=mean_score_value("wall_time_s"),
+        observed_model_api_calls=sum(
+            run.scorecard.efficiency.model_calls
+            for run in loaded.valid_runs
+            if run.plan_index in plan_indices
+        ),
         model_cost_sum=None,
         model_cost_unit=None,
         license_unavailable_count=None,

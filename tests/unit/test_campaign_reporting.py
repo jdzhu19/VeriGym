@@ -251,6 +251,11 @@ def test_campaign_generates_complete_path_free_platform_matrix(tmp_path: Path) -
         "toy-v0",
         "toy-v1",
     }
+    evolving_summaries = [
+        item for item in generated.report.evaluations if item.evaluation_mode == "evolving_agent"
+    ]
+    assert all(item.mean_tool_calls is not None for item in evolving_summaries)
+    assert all(item.observed_model_api_calls == 0 for item in evolving_summaries)
     chat_summary = next(
         item for item in generated.report.evaluations if item.evaluation_mode == "chat"
     )
