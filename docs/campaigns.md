@@ -26,6 +26,9 @@ Generation writes three deterministic artifacts:
 - `campaign_report.csv`: evaluation rows plus exact PPA-partition rows;
 - `campaign_report.md`: a paper-oriented capability and result matrix.
 
+See the [real commercial-toolchain campaign smoke](audits/real_campaign_smoke.md) for a bounded
+chat/agent/evolving example and its committed JSON, CSV, and Markdown outputs.
+
 Correctness always retains explicit planned/evaluable/resolved denominators. License failures stay
 in verifier/tool infrastructure accounting and are never converted into model failures. Cost is
 summed only inside one explicit currency or provider-unit partition. Evaluation rows distinguish

@@ -210,6 +210,7 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "docs/yosys.md",
         "docs/experiments.md",
         "docs/campaigns.md",
+        "docs/audits/real_campaign_smoke.md",
         "docs/batch_runner.md",
         "docs/reporting.md",
         "docs/repository_rtl_repair.md",
