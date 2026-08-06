@@ -17,10 +17,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install core and real suite integration
+      - name: Install core and optional integrations
         run: |
           python -m pip install -e '.[dev,openai-compatible]'
           python -m pip install -e integrations/verigym-verilog-eval-codecomplete
+          python -m pip install -e integrations/verigym-rtllm
+          python -m pip install -e integrations/verigym-synopsys
       - name: Format, lint, type, and patch hygiene
         run: |
           ruff format --check .
@@ -29,6 +31,8 @@ jobs:
           mypy --strict integrations/verigym-codex-cli/src/verigym_codex_cli
           mypy --strict \
             integrations/verigym-verilog-eval-codecomplete/src/verigym_verilog_eval_codecomplete
+          mypy --strict integrations/verigym-rtllm/src/verigym_rtllm
+          mypy --strict integrations/verigym-synopsys/src/verigym_synopsys
           git diff --check
       - name: Persistent-schema drift
         run: python scripts/export_schemas.py --check
@@ -55,12 +59,18 @@ jobs:
         run: |
           python -m pip install -e '.[dev,openai-compatible]'
           python -m pip install -e integrations/verigym-verilog-eval-codecomplete
+          python -m pip install -e integrations/verigym-rtllm
+          python -m pip install -e integrations/verigym-synopsys
       - name: Run ordinary no-daemon tests
         run: |
           pytest \
             -m "not requires_iverilog and not docker and not yosys and not external_benchmark and not release_audit"
           pytest integrations/verigym-verilog-eval-codecomplete/tests \
             -m "not external_benchmark"
+          pytest -c integrations/verigym-rtllm/pyproject.toml \
+            integrations/verigym-rtllm/tests -m "not commercial"
+          pytest -c integrations/verigym-synopsys/pyproject.toml \
+            integrations/verigym-synopsys/tests -m "not commercial"
 
   package:
     runs-on: ubuntu-24.04
@@ -81,6 +91,10 @@ jobs:
             --outdir integrations/verigym-codex-cli/dist
           python -m build integrations/verigym-verilog-eval-codecomplete \
             --outdir integrations/verigym-verilog-eval-codecomplete/dist
+          python -m build integrations/verigym-rtllm \
+            --outdir integrations/verigym-rtllm/dist
+          python -m build integrations/verigym-synopsys \
+            --outdir integrations/verigym-synopsys/dist
       - name: Scan package contents and metadata
         run: |
           python scripts/audit_distribution.py \
@@ -89,6 +103,14 @@ jobs:
           python scripts/audit_codex_cli_distribution.py \
             --wheel integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
             --sdist integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0.tar.gz
+          python scripts/audit_optional_plugin_distribution.py \
+            --policy rtllm \
+            --wheel integrations/verigym-rtllm/dist/verigym_rtllm-0.1.0-py3-none-any.whl \
+            --sdist integrations/verigym-rtllm/dist/verigym_rtllm-0.1.0.tar.gz
+          python scripts/audit_optional_plugin_distribution.py \
+            --policy synopsys \
+            --wheel integrations/verigym-synopsys/dist/verigym_synopsys-0.1.0-py3-none-any.whl \
+            --sdist integrations/verigym-synopsys/dist/verigym_synopsys-0.1.0.tar.gz
           python - <<'PY'
           from pathlib import PurePosixPath
           from zipfile import ZipFile
@@ -130,7 +152,9 @@ jobs:
           /tmp/verigym-codex-plugin-venv/bin/pip install \
             dist/verigym-0.1.0-py3-none-any.whl \
             integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
-            integrations/verigym-verilog-eval-codecomplete/dist/verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl
+            integrations/verigym-verilog-eval-codecomplete/dist/verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl \
+            integrations/verigym-rtllm/dist/verigym_rtllm-0.1.0-py3-none-any.whl \
+            integrations/verigym-synopsys/dist/verigym_synopsys-0.1.0-py3-none-any.whl
           /tmp/verigym-codex-plugin-venv/bin/pip check
           cd /tmp
           /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
@@ -147,6 +171,15 @@ jobs:
           assert (
               registries.suites.origin("verilog-eval-code-complete").package
               == "verigym-verilog-eval-codecomplete"
+          )
+          assert registries.suites.origin("rtllm").package == "verigym-rtllm"
+          assert (
+              registries.tools.origin("synopsys.vcs.simulate").package
+              == "verigym-synopsys"
+          )
+          assert (
+              registries.tools.origin("synopsys.dc.synth").package
+              == "verigym-synopsys"
           )
           try:
               registries.models.origin("codex-cli-exec-model")
