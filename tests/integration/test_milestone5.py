@@ -427,6 +427,7 @@ def test_provider_backed_chat_run_replays_request_bindings(tmp_path) -> None:
         provider_id="provider-replay",
         model_id="provider-replay-model",
         api_key="test-only-key",
+        thinking_mode="disabled",
         transport=ReplayIdentityProvider(),
     )
     result = service(model).run(
@@ -441,6 +442,8 @@ def test_provider_backed_chat_run_replays_request_bindings(tmp_path) -> None:
     assert request is not None
     assert request.prompt_policy_hash == result.manifest.prompt_policy_hash
     assert request.agent_configuration_hash == result.manifest.agent_configuration_hash
+    assert result.manifest.model is not None
+    assert result.manifest.model.configuration["thinking_mode"] == "disabled"
     assert replay_run(result.run_dir).scorecard.resolved
 
 

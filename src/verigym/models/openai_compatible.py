@@ -6,7 +6,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from verigym.core.hashing import content_hash
@@ -27,6 +27,8 @@ from verigym.schemas.model import (
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_CLIENT_OPTION_KEYS = frozenset({"thinking_mode"})
+ThinkingMode = Literal["disabled", "enabled"]
 
 
 class _ProtocolViolation(ValueError):
@@ -162,6 +164,7 @@ class OpenAICompatibleModelClient(ModelClient):
         request_timeout_s: float = 90.0,
         max_response_bytes: int = 4 * 1024 * 1024,
         require_exact_model_id: bool = False,
+        thinking_mode: ThinkingMode | None = None,
         transport: OpenAICompatibleTransport | None = None,
     ) -> None:
         if not _SAFE_NAME.fullmatch(client_id):
@@ -172,6 +175,8 @@ class OpenAICompatibleModelClient(ModelClient):
             raise _configuration_error("base URL environment name is invalid")
         if api_key_env is not None and not _SAFE_NAME.fullmatch(api_key_env):
             raise _configuration_error("credential environment name is invalid")
+        if thinking_mode not in {None, "disabled", "enabled"}:
+            raise _configuration_error("thinking mode must be 'disabled' or 'enabled'")
         environment_base_url = os.environ.get(base_url_env) if base_url_env else None
         if base_url is not None and environment_base_url and base_url != environment_base_url:
             raise _configuration_error("resolved base URL differs from its environment source")
@@ -188,6 +193,7 @@ class OpenAICompatibleModelClient(ModelClient):
         self._request_timeout_s = request_timeout_s
         self._max_response_bytes = max_response_bytes
         self._require_exact_model_id = require_exact_model_id
+        self._thinking_mode = thinking_mode
         self._transport = transport or HttpxOpenAITransport()
         safe_configuration = {
             "base_url": self._base_url,
@@ -206,6 +212,8 @@ class OpenAICompatibleModelClient(ModelClient):
             "require_exact_model_id": require_exact_model_id,
             "protocol": "openai_compatible",
         }
+        if thinking_mode is not None:
+            safe_configuration["thinking_mode"] = thinking_mode
         self.descriptor = ModelDescriptor(
             schema_version=SCHEMA_VERSION,
             name=client_id,
@@ -231,6 +239,14 @@ class OpenAICompatibleModelClient(ModelClient):
         self, configuration: ModelRunConfig | None = None
     ) -> OpenAICompatibleModelClient:
         config = configuration or ModelRunConfig()
+        unknown_options = sorted(set(config.client_options) - _CLIENT_OPTION_KEYS)
+        if unknown_options:
+            raise _configuration_error(
+                "unsupported OpenAI-compatible client options: " + ", ".join(unknown_options)
+            )
+        thinking_mode = config.client_options.get("thinking_mode", self._thinking_mode)
+        if thinking_mode not in {None, "disabled", "enabled"}:
+            raise _configuration_error("thinking_mode must be 'disabled' or 'enabled'")
         base_url_env = config.base_url_env or self._base_url_env
         base_url = config.base_url or self._base_url
         if base_url is None and base_url_env is not None:
@@ -249,6 +265,7 @@ class OpenAICompatibleModelClient(ModelClient):
             request_timeout_s=config.request_timeout_s,
             max_response_bytes=config.max_response_bytes,
             require_exact_model_id=config.require_exact_model_id,
+            thinking_mode=cast(ThinkingMode | None, thinking_mode),
             transport=self._transport,
         )
 
@@ -257,6 +274,14 @@ class OpenAICompatibleModelClient(ModelClient):
             return None
         parsed = urlsplit(self._base_url)
         metadata = request.metadata
+        request_parameters: dict[str, Any] = {
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+            "max_output_tokens": request.max_output_tokens,
+            "stop": request.stop,
+        }
+        if self._thinking_mode is not None:
+            request_parameters["thinking_mode"] = self._thinking_mode
         return ProviderRequestIdentity(
             provider_id=self._provider_id,
             protocol="openai_compatible",
@@ -264,14 +289,7 @@ class OpenAICompatibleModelClient(ModelClient):
             endpoint_origin=urlunsplit((parsed.scheme, parsed.netloc, "", "", "")),
             normalized_base_url=self._base_url,
             base_url_hash=content_hash(self._base_url),
-            request_parameters_hash=content_hash(
-                {
-                    "temperature": request.temperature,
-                    "top_p": request.top_p,
-                    "max_output_tokens": request.max_output_tokens,
-                    "stop": request.stop,
-                }
-            ),
+            request_parameters_hash=content_hash(request_parameters),
             prompt_payload_hash=content_hash(
                 [message.model_dump(mode="json") for message in request.messages]
             ),
@@ -317,6 +335,8 @@ class OpenAICompatibleModelClient(ModelClient):
             payload["top_p"] = request.top_p
         if request.stop:
             payload["stop"] = request.stop
+        if self._thinking_mode is not None:
+            payload["thinking"] = {"type": self._thinking_mode}
         try:
             data = self._transport.create_chat_completion(
                 url=f"{self._base_url}/chat/completions",

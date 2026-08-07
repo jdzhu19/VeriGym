@@ -72,3 +72,38 @@ def test_one_synthetic_task_runs_and_reports_native_metrics(
     assert partitions[0]["metrics"]["exact_match"]["mean"] == 100.0
     assert "Benchmark-native metric partitions" in reports.markdown_path.read_text(encoding="utf-8")
     assert "edit_similarity" in reports.csv_path.read_text(encoding="utf-8").splitlines()[0]
+
+
+def test_instructional_line_completion_is_explicit_and_keeps_raw_user_prompt(
+    synthetic_source: Path,
+    tmp_path: Path,
+) -> None:
+    registries = build_registries(discover_external=False)
+    registries.suites.register(RtlRepoSuite())
+    registries.tools.register(RtlRepoScoreTool())
+    registries.models.register(
+        StaticModelClient(
+            name="rtl-repo-static-instructional",
+            responses=["assign y = a & b;"],
+        )
+    )
+    result = VeriGym(registries).run(
+        RunConfig(
+            task_id=f"rtl-repo/{VARIANT}/test-000000",
+            mode=InteractionMode.CHAT,
+            agent="single-turn",
+            agent_options={"line_completion_prompt": "instructional-v1"},
+            model="rtl-repo-static-instructional",
+            suite_source=SuiteSourceConfig(source_root=synthetic_source, variant=VARIANT),
+            runtime="local",
+            output=tmp_path / "instructional-run",
+        )
+    )
+    trace = read_trace(result.run_dir / "trace.jsonl", expected_run_id=result.manifest.run_id)
+    request_event = next(event for event in trace if event.event_type == "model_request")
+    messages = request_event.payload["request"]["messages"]
+
+    assert result.scorecard.resolved
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert "Return exactly the single source-code line" in messages[0]["content"]
+    assert messages[1]["content"].startswith("// Repo Name: verigym/synthetic-rtl\n")

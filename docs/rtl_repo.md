@@ -54,6 +54,30 @@ verigym run \
   --output runs/
 ```
 
+The 50-token bound is part of the official compatibility profile. If an OpenAI-compatible
+provider enables hidden reasoning by default and counts it against that bound, disable it
+explicitly instead of increasing the benchmark budget:
+
+```bash
+verigym run ... --model-option 'thinking_mode="disabled"'
+```
+
+The generic client accepts only `enabled` or `disabled`, records the choice in the configuration
+fingerprint and provider-request identity, and rejects unknown request-body extensions.
+
+Raw completion models should receive the official user prompt without another instruction. For a
+chat-oriented model that otherwise explains the prefix, opt in to the versioned single-line system
+instruction while keeping the official prompt as the unchanged user message:
+
+```bash
+verigym run ... \
+  --agent-option 'line_completion_prompt="instructional-v1"' \
+  --model-option 'thinking_mode="disabled"'
+```
+
+Both options are explicit in the run configuration and identity. Do not aggregate this
+instructional ChatEval profile with raw-completion runs as if their prompt harnesses were equal.
+
 AgentEval exposes the same prompt and hidden verifier while allowing a workspace-writing agent to
 edit only `completion.txt`. It does not enable benchmark tools, general shell access, or network
 access. External agent-harness calls and tools remain separately accounted from direct API calls.

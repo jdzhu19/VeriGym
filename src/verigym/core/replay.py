@@ -406,6 +406,11 @@ def _validate_provider_request_identities(
             "max_output_tokens": request.get("max_output_tokens"),
             "stop": request.get("stop"),
         }
+        thinking_mode = configuration.get("thinking_mode")
+        if thinking_mode is not None:
+            if thinking_mode not in {"disabled", "enabled"}:
+                raise ReplayError("provider request has an invalid thinking-mode identity")
+            parameters["thinking_mode"] = thinking_mode
         if identity.request_parameters_hash != content_hash(parameters):
             raise ReplayError("provider request parameter hash cannot be reproduced")
 

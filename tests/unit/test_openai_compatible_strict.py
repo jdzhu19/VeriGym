@@ -128,6 +128,41 @@ def test_base_url_and_key_can_be_resolved_only_from_named_environment(
     assert client.descriptor.configuration["credential_env_name"] == "FAKE_API_KEY"
 
 
+def test_thinking_mode_extension_is_explicit_hashed_and_forwarded() -> None:
+    transport = FakeProvider(_response())
+    root = OpenAICompatibleModelClient(
+        base_url="https://provider.example.test/v1",
+        provider_id="fake-provider",
+        model_id="exact-model",
+        api_key="fake-unit-key",
+        transport=transport,
+    )
+    default_identity = root.request_identity(_request())
+    client = root.clone_for_run(ModelRunConfig(client_options={"thinking_mode": "disabled"}))
+    disabled_identity = client.request_identity(_request())
+
+    assert default_identity is not None
+    assert disabled_identity is not None
+    assert default_identity.request_parameters_hash != disabled_identity.request_parameters_hash
+    assert client.descriptor.configuration["thinking_mode"] == "disabled"
+    client.generate(_request())
+    assert transport.calls[-1]["payload"]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"thinking_mode": "automatic"},
+        {"provider_payload": {"thinking": {"type": "disabled"}}},
+    ],
+)
+def test_openai_compatible_client_options_fail_closed(options: dict[str, Any]) -> None:
+    root = OpenAICompatibleModelClient(transport=FakeProvider(_response()))
+    with pytest.raises(ModelClientError) as raised:
+        root.clone_for_run(ModelRunConfig(client_options=options))
+    assert raised.value.info.category == ModelErrorCategory.CONFIGURATION
+
+
 @pytest.mark.parametrize(
     ("outcome", "category"),
     [
