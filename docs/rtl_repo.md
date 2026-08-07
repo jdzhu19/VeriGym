@@ -54,6 +54,10 @@ verigym run \
   --output runs/
 ```
 
+AgentEval exposes the same prompt and hidden verifier while allowing a workspace-writing agent to
+edit only `completion.txt`. It does not enable benchmark tools, general shell access, or network
+access. External agent-harness calls and tools remain separately accounted from direct API calls.
+
 The harness selects the first nonempty, non-`//` line, matching upstream post-processing.
 Correctness is the upstream whitespace-token Exact Match. The verifier also records upstream
 character Edit Similarity on a 0–100 scale. Reports aggregate these as benchmark-native metrics

@@ -37,7 +37,8 @@ def test_discovers_and_normalizes_official_parquet_shape(synthetic_source: Path)
     assert len(refs) == 3
     assert task.description == expected_prompt
     assert task.task_type.value == "completion"
-    assert task.interaction.supported_modes == [InteractionMode.CHAT]
+    assert task.interaction.supported_modes == [InteractionMode.CHAT, InteractionMode.AGENT]
+    assert "agent_eval" in suite.descriptor.capabilities
     assert task.interaction.allowed_tools == []
     assert task.interaction.final_submission.kind == "line"
     assert task.budget.max_output_tokens == 50

@@ -3,7 +3,8 @@
 This optional distribution adapts the official
 [RTL-Repo](https://github.com/AUCOHL/RTL-Repo) Hugging Face Parquet layout to VeriGym. It keeps
 the benchmark's repository-context, next-line-completion prompt and reports its native Exact
-Match and Edit Similarity metrics. It does not turn RTL-Repo into a compile or simulation task.
+Match and Edit Similarity metrics. Both ChatEval and AgentEval use the same single-line candidate
+contract. It does not turn RTL-Repo into a compile or simulation task.
 
 Install from the VeriGym checkout:
 

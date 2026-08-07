@@ -72,6 +72,7 @@ class RtlRepoSuite(SuiteAdapter):
             "exact_match",
             "edit_similarity",
             "chat_eval",
+            "agent_eval",
             "conformance",
         ],
         title="RTL-Repo repository-context completion",
@@ -326,7 +327,7 @@ class RtlRepoSuite(SuiteAdapter):
                 max_patch_lines=2,
             ),
             interaction=InteractionSpec(
-                supported_modes=[InteractionMode.CHAT],
+                supported_modes=[InteractionMode.CHAT, InteractionMode.AGENT],
                 default_mode=InteractionMode.CHAT,
                 allowed_tools=[],
                 allow_general_shell=False,
