@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from verigym.core.episode import BudgetTracker, TerminationReason
@@ -223,6 +224,14 @@ def build_scorecard(
         )
         scope_label = "area and timing" if timing_scope else "area-only"
         warnings.append(f"Synthesis quality is profile-relative, {scope_label}, and non-signoff.")
+    edit_similarity_values = [
+        value
+        for result in results
+        if isinstance((value := result.metadata.get("edit_similarity")), (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    ]
+    edit_similarity = float(edit_similarity_values[0]) if len(edit_similarity_values) == 1 else None
     return ScoreCard(
         run_id=run_id,
         task_id=task.id,
@@ -296,6 +305,7 @@ def build_scorecard(
             deleted_lines=diff.deleted_lines,
             total_diff_lines=diff.added_lines + diff.deleted_lines,
             changes_outside_expected_files=diff.changes_outside_expected_files,
+            edit_similarity=edit_similarity,
         ),
         reproducibility=ReproducibilityMetrics(
             task_hash=task_hash,

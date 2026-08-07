@@ -9,6 +9,7 @@ from verigym.agents.parsing import (
     ModelOutputParseError,
     parse_react_action,
     parse_single_turn_rtl,
+    postprocess_single_line_completion,
 )
 from verigym.core.episode import BudgetTracker
 from verigym.prompts.builder import PromptBuilder
@@ -87,6 +88,18 @@ def test_single_turn_parser_accepts_only_controlled_rtl_forms(text: str, expecte
 def test_single_turn_parser_rejects_empty_or_ambiguous_output(text: str) -> None:
     with pytest.raises(ModelOutputParseError):
         parse_single_turn_rtl(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("// explanation\n\n  assign y = a;\nignored", "  assign y = a;\n"),
+        ("// first\n// last", "// last\n"),
+        ("", "\n"),
+    ],
+)
+def test_single_line_completion_matches_upstream_postprocessing(text: str, expected: str) -> None:
+    assert postprocess_single_line_completion(text) == expected
 
 
 def test_react_parser_is_strict_and_does_not_repair_free_form_output() -> None:

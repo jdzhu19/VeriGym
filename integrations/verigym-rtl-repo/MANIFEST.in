@@ -1,0 +1,2 @@
+recursive-include src/verigym_rtl_repo/assets *
+include src/verigym_rtl_repo/py.typed

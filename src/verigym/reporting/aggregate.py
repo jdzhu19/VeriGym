@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
@@ -237,6 +238,7 @@ class ReportBuilder:
                 "codex_cli_identity_partitions": _codex_cli_partitions(runs),
                 "api_agent_identity_partitions": _api_agent_partitions(runs),
                 "repository_repair": _repository_repair_summary(inputs, runs),
+                "benchmark_metric_partitions": _benchmark_metric_partitions(runs),
                 "repository_action_protocol": _repository_action_protocol_summary(runs),
                 "model_process_accounting": _model_process_accounting(inputs, runs),
                 "codex_cli_comparison_policy": (
@@ -263,6 +265,86 @@ class ReportBuilder:
             },
         )
         return AggregateReport.model_validate(aggregate.model_dump(mode="json"))
+
+
+def _benchmark_metric_partitions(runs: list[ValidatedRun]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        for result in run.scorecard.verifier_results:
+            profile = result.metadata.get("benchmark_metric_profile")
+            split = result.metadata.get("benchmark_split")
+            metrics = result.metadata.get("benchmark_metrics")
+            units = result.metadata.get("benchmark_metric_units")
+            if not isinstance(profile, str) or not isinstance(split, str):
+                continue
+            if not isinstance(metrics, dict) or not isinstance(units, dict):
+                continue
+            valid_metrics: dict[str, tuple[float, str]] = {}
+            for name, raw_value in sorted(metrics.items()):
+                unit = units.get(name)
+                if (
+                    isinstance(name, str)
+                    and isinstance(unit, str)
+                    and isinstance(raw_value, (int, float))
+                    and not isinstance(raw_value, bool)
+                    and math.isfinite(float(raw_value))
+                ):
+                    valid_metrics[name] = (float(raw_value), unit)
+            if not valid_metrics:
+                continue
+            dimensions = {
+                "suite": run.manifest.suite,
+                "suite_version": run.manifest.suite_version,
+                "dataset_content_hash": (
+                    run.manifest.suite_source.dataset_content_hash
+                    if run.manifest.suite_source is not None
+                    else None
+                ),
+                "profile_id": profile,
+                "split": split,
+                "metric_units": {
+                    name: unit for name, (_value, unit) in sorted(valid_metrics.items())
+                },
+            }
+            partition_id = content_hash(dimensions)
+            partition = grouped.setdefault(
+                partition_id,
+                {
+                    "partition_id": partition_id,
+                    "dimensions": dimensions,
+                    "run_ids": set(),
+                    "values": defaultdict(list),
+                    "units": {},
+                },
+            )
+            partition["run_ids"].add(run.manifest.run_id)
+            for name, (value, unit) in sorted(valid_metrics.items()):
+                partition["values"][name].append(value)
+                partition["units"][name] = unit
+    output: list[dict[str, Any]] = []
+    for partition_id in sorted(grouped):
+        partition = grouped[partition_id]
+        summaries = {}
+        for name in sorted(partition["values"]):
+            values = partition["values"][name]
+            summaries[name] = {
+                "unit": partition["units"][name],
+                "known_value_count": len(values),
+                "mean": statistics.fmean(values),
+                "median": statistics.median(values),
+                "min": min(values),
+                "max": max(values),
+            }
+        output.append(
+            {
+                "partition_id": partition_id,
+                "dimensions": partition["dimensions"],
+                "run_count": len(partition["run_ids"]),
+                "metrics": summaries,
+                "universal_score": False,
+            }
+        )
+    return output
 
 
 def _repository_repair_summary(

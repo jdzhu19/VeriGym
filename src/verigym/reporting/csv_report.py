@@ -69,6 +69,7 @@ CSV_COLUMNS = [
     "failed_tool_calls",
     "changed_files",
     "diff_lines",
+    "edit_similarity",
     "warning_count",
     "artifact_validation_status",
 ]
@@ -403,6 +404,7 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "external_cost_currency": score.efficiency.external_cost_currency,
         "changed_files": len(score.patch.changed_files),
         "diff_lines": score.patch.total_diff_lines,
+        "edit_similarity": score.patch.edit_similarity,
         "warning_count": len(score.warnings),
         "artifact_validation_status": "valid",
         "repository_manifest_hash": (

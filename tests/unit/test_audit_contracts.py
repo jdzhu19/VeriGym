@@ -206,6 +206,7 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "docs/ppa_profiles.md",
         "docs/commercial_tools.md",
         "docs/verilog_eval.md",
+        "docs/rtl_repo.md",
         "docs/docker_runtime.md",
         "docs/yosys.md",
         "docs/experiments.md",

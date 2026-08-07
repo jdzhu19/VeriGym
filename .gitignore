@@ -12,6 +12,7 @@ build/
 runs/
 verigym.yaml
 release_audit/
+.artifacts/
 
 # Local secrets and configuration
 .env

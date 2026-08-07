@@ -40,7 +40,7 @@ class ObservationPolicy(StrictModel):
 
 
 class SubmissionPolicy(StrictModel):
-    kind: Literal["workspace", "patch", "file"] = "workspace"
+    kind: Literal["workspace", "patch", "file", "line"] = "workspace"
     path: str | None = None
 
 

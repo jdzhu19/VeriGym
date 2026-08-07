@@ -53,6 +53,19 @@ def parse_single_turn_rtl(text: str) -> str:
     return candidate + "\n"
 
 
+def postprocess_single_line_completion(text: str) -> str:
+    """Match RTL-Repo's first nonempty, non-comment line extraction."""
+
+    last_comment_line = ""
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        if not line.strip().startswith("//"):
+            return line + "\n"
+        last_comment_line = line
+    return last_comment_line + "\n"
+
+
 def parse_react_action(text: str) -> AgentAction:
     """Parse one exact JSON action; never recover or rewrite malformed input."""
 
@@ -78,4 +91,9 @@ def parse_react_action(text: str) -> AgentAction:
     return action
 
 
-__all__ = ["ModelOutputParseError", "parse_react_action", "parse_single_turn_rtl"]
+__all__ = [
+    "ModelOutputParseError",
+    "parse_react_action",
+    "parse_single_turn_rtl",
+    "postprocess_single_line_completion",
+]

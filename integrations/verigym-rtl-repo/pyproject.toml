@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-rtl-repo"
+version = "0.1.0"
+description = "Installable VeriGym adapter for the official RTL-Repo dataset."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "VeriGym contributors"}]
+dependencies = [
+  "pyarrow>=16,<24",
+  "verigym>=0.1.0,<0.2",
+]
+
+[project.urls]
+Documentation = "https://github.com/jdzhu19/VeriGym/blob/main/docs/rtl_repo.md"
+Issues = "https://github.com/jdzhu19/VeriGym/issues"
+Repository = "https://github.com/jdzhu19/VeriGym"
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "mypy>=1.10", "pytest>=8", "ruff>=0.6"]
+
+[project.entry-points."verigym.suites"]
+rtl-repo = "verigym_rtl_repo:RtlRepoSuite"
+
+[project.entry-points."verigym.tools"]
+rtl-repo-score = "verigym_rtl_repo:RtlRepoScoreTool"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_rtl_repo = ["assets/**/*", "py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "external_benchmark: requires a user-supplied official RTL-Repo Parquet snapshot",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["verigym_rtl_repo"]

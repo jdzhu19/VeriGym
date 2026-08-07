@@ -428,7 +428,8 @@
           "enum": [
             "workspace",
             "patch",
-            "file"
+            "file",
+            "line"
           ],
           "title": "Kind",
           "type": "string"

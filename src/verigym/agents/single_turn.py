@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
-from verigym.agents.parsing import ModelOutputParseError, parse_single_turn_rtl
+from verigym.agents.parsing import (
+    ModelOutputParseError,
+    parse_single_turn_rtl,
+    postprocess_single_line_completion,
+)
 from verigym.core.episode import TerminationReason
 from verigym.core.model_gateway import ModelBudgetError
 from verigym.models.base import ModelClientError
@@ -90,7 +94,11 @@ class SingleTurnAgent(AgentAdapter):
                 ),
             ) from exc
         try:
-            source = parse_single_turn_rtl(response.text)
+            source = (
+                postprocess_single_line_completion(response.text)
+                if self._context.task.interaction.final_submission.kind == "line"
+                else parse_single_turn_rtl(response.text)
+            )
         except ModelOutputParseError as exc:
             gateway.emit_action_rejected(
                 request.request_id,
@@ -117,7 +125,7 @@ class SingleTurnAgent(AgentAdapter):
                 ),
             )
         action = FinalSubmissionAction(
-            message="Single-turn RTL candidate submitted.",
+            message="Single-turn candidate submitted.",
             files={entrypoints[0]: source},
         )
         gateway.emit_parsed_action(request.request_id, action.model_dump(mode="json"))

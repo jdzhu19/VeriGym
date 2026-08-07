@@ -37,14 +37,17 @@ experiment needs:
 
 ```bash
 python -m pip install -e integrations/verigym-codex-cli
+python -m pip install -e integrations/verigym-rtl-repo
 python -m pip install -e integrations/verigym-verilog-eval-codecomplete
 python -m pip install -e integrations/verigym-rtllm
 python -m pip install -e integrations/verigym-synopsys
 verigym suites inspect verilog-eval-code-complete
 ```
 
-The VerilogEval package contains the adapter but no benchmark tasks; users provide the upstream
-checkout explicitly. See its [installation and source-validation guide](integrations/verigym-verilog-eval-codecomplete/README.md).
+The VerilogEval and RTL-Repo packages contain adapters but no benchmark tasks; users provide the
+upstream data explicitly. See the
+[VerilogEval source guide](integrations/verigym-verilog-eval-codecomplete/README.md) and
+[RTL-Repo adapter guide](docs/rtl_repo.md).
 
 `pytest` runs the ordinary no-tool suite. Select an opt-in marker explicitly after provisioning
 its dependency, for example `pytest -m requires_iverilog`; Docker and Yosys markers additionally

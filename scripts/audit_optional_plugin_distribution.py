@@ -46,6 +46,18 @@ class Policy:
 
 
 _POLICIES = {
+    "rtl_repo": Policy(
+        distribution="verigym-rtl-repo",
+        version="0.1.0",
+        module="verigym_rtl_repo",
+        entry_markers=(
+            "[verigym.suites]",
+            "rtl-repo = verigym_rtl_repo:RtlRepoSuite",
+            "[verigym.tools]",
+            "rtl-repo-score = verigym_rtl_repo:RtlRepoScoreTool",
+        ),
+        forbidden_member_suffixes=frozenset({".arrow", ".parquet"}),
+    ),
     "rtllm": Policy(
         distribution="verigym-rtllm",
         version="0.2.0",

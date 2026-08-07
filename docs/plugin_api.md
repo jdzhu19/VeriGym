@@ -32,10 +32,10 @@ package-resource loading.
 
 First-party optional integrations live under [`integrations/`](../integrations/) but retain their
 own `pyproject.toml`, distribution name, dependencies, entry points, tests, and release artifact.
-They are not imported by or bundled into the core wheel. The VerilogEval and RTLLM packages
-demonstrate external-source suites. The Synopsys package demonstrates verifier and synthesis-
-backend tools without bundling vendor assets. Each package can be built and installed independently
-beside the core wheel.
+They are not imported by or bundled into the core wheel. The VerilogEval, RTL-Repo, and RTLLM
+packages demonstrate external-source suites; RTL-Repo also supplies a verifier-only native-metric
+tool. The Synopsys package demonstrates verifier and synthesis-backend tools without bundling
+vendor assets. Each package can be built and installed independently beside the core wheel.
 
 Third-party authors may use the same structure in another repository. Repository location has no
 runtime meaning: compatibility is defined by the `verigym` version requirement, plugin API version,

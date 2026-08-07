@@ -81,15 +81,20 @@ class PromptBuilder:
         )
 
     def _chat_messages(self, task: VeriTask, observation: Observation) -> list[ModelMessage]:
+        line_completion = task.interaction.final_submission.kind == "line"
+        if line_completion:
+            return [ModelMessage(role="user", content=task.description)]
+        system_content = (
+            "You are completing a bounded RTL generation task. Return exactly one candidate "
+            "for the declared entrypoint, either as raw Verilog/SystemVerilog source or as "
+            "one fenced verilog/systemverilog block. Do not include multiple candidate "
+            "blocks. Inaccessible hidden verifier assets must not be requested, inferred, "
+            "or reproduced."
+        )
+        accepted_formats = ["raw RTL source", "one fenced verilog block"]
         system = ModelMessage(
             role="system",
-            content=(
-                "You are completing a bounded RTL generation task. Return exactly one candidate "
-                "for the declared entrypoint, either as raw Verilog/SystemVerilog source or as one "
-                "fenced verilog/systemverilog block. Do not include multiple candidate blocks. "
-                "Inaccessible hidden verifier assets must not be requested, inferred, or "
-                "reproduced."
-            ),
+            content=system_content,
         )
         payload = {
             "task_id": task.id,
@@ -98,7 +103,8 @@ class PromptBuilder:
             "entrypoints": sorted(task.workspace.entrypoints),
             "submission": {
                 "kind": task.interaction.final_submission.kind,
-                "accepted_formats": ["raw RTL source", "one fenced verilog block"],
+                "content_format": "rtl_source",
+                "accepted_formats": accepted_formats,
             },
             "visible_files": sorted(observation.visible_files),
             "selected_files": {

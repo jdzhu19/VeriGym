@@ -200,6 +200,40 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             ]
         )
     repository = aggregate.metadata.get("repository_repair")
+    benchmark_partitions = aggregate.metadata.get("benchmark_metric_partitions")
+    if isinstance(benchmark_partitions, list) and benchmark_partitions:
+        lines.extend(
+            [
+                "",
+                "## Benchmark-native metric partitions",
+                "",
+                "Native metrics are reported only within an exact suite-version, dataset, "
+                "profile, split, and unit partition; they are not a universal VeriGym score.",
+                "",
+                "| Suite | Version | Dataset | Profile | Split | Runs | Metric | Mean | Unit |",
+                "| --- | --- | --- | --- | --- | ---: | --- | ---: | --- |",
+            ]
+        )
+        for partition in benchmark_partitions:
+            if not isinstance(partition, dict):
+                continue
+            dimensions = partition.get("dimensions")
+            metrics = partition.get("metrics")
+            if not isinstance(dimensions, dict) or not isinstance(metrics, dict):
+                continue
+            for metric_name, summary in sorted(metrics.items()):
+                if not isinstance(summary, dict):
+                    continue
+                lines.append(
+                    f"| {markdown_escape(dimensions.get('suite', ''))} | "
+                    f"{markdown_escape(dimensions.get('suite_version', ''))} | "
+                    f"{markdown_escape(str(dimensions.get('dataset_content_hash') or '')[:12])} | "
+                    f"{markdown_escape(dimensions.get('profile_id', ''))} | "
+                    f"{markdown_escape(dimensions.get('split', ''))} | "
+                    f"{partition.get('run_count', 0)} | {markdown_escape(metric_name)} | "
+                    f"{_format_number(summary.get('mean'))} | "
+                    f"{markdown_escape(summary.get('unit', ''))} |"
+                )
     if isinstance(repository, dict):
         public = repository.get("public_tests")
         public = public if isinstance(public, dict) else {}
