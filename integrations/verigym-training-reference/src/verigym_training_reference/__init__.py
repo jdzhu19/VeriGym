@@ -9,11 +9,13 @@ from .pipeline import (
     resolve_model_root,
     validate_training_bundle,
 )
+from .policy_versions import register_training_policy_version
 from .reward_oracle import TrainingRewardOracle
 from .schemas import (
     ModelSnapshotIdentity,
     OnlineRewardResult,
     SftMessage,
+    TrainingPolicyVersionManifest,
     TrainingReferenceBundleManifest,
     TrainingReferenceConfig,
     VerifiedSftDatasetManifest,
@@ -27,6 +29,7 @@ __all__ = [
     "SftMessage",
     "TrainingReferenceBundleManifest",
     "TrainingReferenceConfig",
+    "TrainingPolicyVersionManifest",
     "TrainingRewardOracle",
     "TrlRewardAdapter",
     "VerifiedSftDatasetManifest",
@@ -37,6 +40,7 @@ __all__ = [
     "load_training_config",
     "prepare_training_bundle",
     "register_checkpoint",
+    "register_training_policy_version",
     "resolve_model_root",
     "validate_training_bundle",
 ]

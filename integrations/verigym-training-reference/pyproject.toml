@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verigym-training-reference"
-version = "0.2.0"
+version = "0.3.0"
 description = "Framework-neutral external training reference pipeline for VeriGym."
 readme = "README.md"
 requires-python = ">=3.11"

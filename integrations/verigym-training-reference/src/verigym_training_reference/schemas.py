@@ -12,6 +12,8 @@ from verigym.schemas.options import JsonValue
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+_PORTABLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _FORBIDDEN_CONFIGURATION_KEY = re.compile(
     r"(?:token|key|secret|password|credential|authorization|cookie|proxy)",
     re.IGNORECASE,
@@ -28,6 +30,19 @@ def _safe_text(value: str) -> str:
     if not value or value != value.strip() or any(ord(character) < 32 for character in value):
         raise ValueError("identity text must be non-empty printable text")
     return value
+
+
+def _configuration_entries(value: JsonValue, prefix: str = "") -> list[tuple[str, JsonValue]]:
+    entries: list[tuple[str, JsonValue]] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            nested = f"{prefix}.{key}" if prefix else key
+            entries.append((nested, item))
+            entries.extend(_configuration_entries(item, nested))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            entries.extend(_configuration_entries(item, f"{prefix}[{index}]"))
+    return entries
 
 
 class TrainingReferenceConfig(StrictModel):
@@ -304,12 +319,135 @@ class VerifiedSftDatasetManifest(StrictModel):
         return self
 
 
+class TrainingPolicyVersionManifest(StrictModel):
+    """Executable external-policy identity with exact training lineage."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_training_policy_version_v1"] = "verigym_training_policy_version_v1"
+    policy_version_id: str
+    weight_version: int | None = Field(default=None, ge=0)
+    parent_version_hash: str | None = None
+    update_type: Literal["base", "verified_sft", "verigym_grpo"]
+    model_id: str
+    base_model_snapshot_hash: str
+    artifact_kind: Literal["model_snapshot", "lora_adapter"]
+    artifact_hash: str
+    training_data_hash: str | None = None
+    reward_manifest_hash: str | None = None
+    trainer_report_hash: str | None = None
+    trainer_identity_hash: str | None = None
+    source_commit: str
+    framework_commits: dict[str, str] = Field(default_factory=dict)
+    loading_configuration: dict[str, JsonValue]
+    executable: Literal[True] = True
+    hidden_assets_loaded: Literal[False] = False
+    reference_solution_loaded: Literal[False] = False
+    credential_values_included: Literal[False] = False
+    raw_host_paths_included: Literal[False] = False
+    version_hash: str
+
+    @field_validator("policy_version_id")
+    @classmethod
+    def validate_policy_version_id(cls, value: str) -> str:
+        if not _PORTABLE_ID.fullmatch(value):
+            raise ValueError("policy version IDs must be short portable identifiers")
+        return value
+
+    @field_validator("model_id")
+    @classmethod
+    def validate_policy_model_id(cls, value: str) -> str:
+        value = _safe_text(value)
+        if len(value) > 256 or "\\" in value or value.startswith("/"):
+            raise ValueError("model_id must be portable")
+        return value
+
+    @field_validator(
+        "parent_version_hash",
+        "base_model_snapshot_hash",
+        "artifact_hash",
+        "training_data_hash",
+        "reward_manifest_hash",
+        "trainer_report_hash",
+        "trainer_identity_hash",
+        "version_hash",
+    )
+    @classmethod
+    def validate_policy_hashes(cls, value: str | None) -> str | None:
+        return _hash(value) if value is not None else None
+
+    @field_validator("source_commit")
+    @classmethod
+    def validate_source_commit(cls, value: str) -> str:
+        if not _GIT_COMMIT.fullmatch(value):
+            raise ValueError("source_commit must be a lowercase full Git commit")
+        return value
+
+    @field_validator("framework_commits")
+    @classmethod
+    def validate_framework_commits(cls, values: dict[str, str]) -> dict[str, str]:
+        for name, value in values.items():
+            if not _PORTABLE_ID.fullmatch(name) or not _GIT_COMMIT.fullmatch(value):
+                raise ValueError("framework commits require portable names and full Git commits")
+        return dict(sorted(values.items()))
+
+    @model_validator(mode="after")
+    def validate_policy_lineage(self) -> TrainingPolicyVersionManifest:
+        entries = _configuration_entries(self.loading_configuration)
+        forbidden = sorted(key for key, _ in entries if _FORBIDDEN_CONFIGURATION_KEY.search(key))
+        if forbidden:
+            raise ValueError("loading configuration contains credential-like keys")
+        if any(
+            isinstance(value, str) and (value.startswith(("/", "\\")) or ":\\" in value)
+            for _, value in entries
+        ):
+            raise ValueError("loading configuration contains a raw host path")
+        if self.update_type == "base":
+            if (
+                self.weight_version is not None
+                or self.parent_version_hash is not None
+                or self.artifact_kind != "model_snapshot"
+                or any(
+                    value is not None
+                    for value in (
+                        self.training_data_hash,
+                        self.reward_manifest_hash,
+                        self.trainer_report_hash,
+                        self.trainer_identity_hash,
+                    )
+                )
+            ):
+                raise ValueError("base policy versions cannot contain training lineage")
+        elif self.update_type == "verified_sft":
+            if (
+                self.weight_version != 0
+                or self.parent_version_hash is None
+                or self.artifact_kind != "lora_adapter"
+                or self.training_data_hash is None
+                or self.trainer_report_hash is None
+                or self.trainer_identity_hash is None
+                or self.reward_manifest_hash is not None
+            ):
+                raise ValueError("verified SFT versions require complete SFT lineage")
+        elif (
+            self.weight_version is None
+            or self.parent_version_hash is None
+            or self.artifact_kind != "lora_adapter"
+            or self.training_data_hash is None
+            or self.reward_manifest_hash is None
+            or self.trainer_report_hash is None
+            or self.trainer_identity_hash is None
+        ):
+            raise ValueError("GRPO versions require complete reward and trainer lineage")
+        return self
+
+
 __all__ = [
     "ModelSnapshotIdentity",
     "OnlineRewardResult",
     "SftMessage",
     "TrainingReferenceBundleManifest",
     "TrainingReferenceConfig",
+    "TrainingPolicyVersionManifest",
     "VerifiedSftDatasetManifest",
     "VerifiedSftExample",
 ]

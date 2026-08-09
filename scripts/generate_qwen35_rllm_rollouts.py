@@ -32,6 +32,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--public-input", type=Path, required=True)
     parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument("--policy-version", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--group-size", type=int, default=4)
     parser.add_argument("--plan-tokens", type=int, default=96)
@@ -105,6 +106,44 @@ def _read_public_input(path: Path) -> tuple[dict[str, Any], str]:
     if not isinstance(expected, str) or _canonical_hash(identity) != expected:
         raise SystemExit("public input identity differs from its record hash")
     return value, _sha256_bytes(payload)
+
+
+def _read_policy_version(path: Path, adapter: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_INPUT_BYTES:
+        raise SystemExit("policy version must be a small regular file")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SystemExit("policy version is not valid JSON") from exc
+    if (
+        not isinstance(value, dict)
+        or value.get("format_id") != "verigym_training_policy_version_v1"
+    ):
+        raise SystemExit("unsupported policy version format")
+    expected = value.get("version_hash")
+    identity = dict(value)
+    identity.pop("version_hash", None)
+    if not isinstance(expected, str) or _canonical_hash(identity) != expected:
+        raise SystemExit("policy version identity differs from its version hash")
+    weight_version = value.get("weight_version")
+    configuration = value.get("loading_configuration")
+    if not isinstance(weight_version, int) or weight_version < 0:
+        raise SystemExit("rollout generation requires a trained policy weight version")
+    if not isinstance(configuration, dict):
+        raise SystemExit("policy version has no loading configuration")
+    if (
+        value.get("artifact_kind") != "lora_adapter"
+        or value.get("executable") is not True
+        or value.get("hidden_assets_loaded") is not False
+        or value.get("reference_solution_loaded") is not False
+        or value.get("credential_values_included") is not False
+        or value.get("raw_host_paths_included") is not False
+    ):
+        raise SystemExit("policy version is not eligible for public rollout generation")
+    actual_weights = _sha256(adapter / "adapter_model.safetensors")
+    if configuration.get("adapter_weights_sha256") != actual_weights:
+        raise SystemExit("adapter weights differ from the registered policy version")
+    return value
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -208,6 +247,8 @@ def _task_material(public_input: dict[str, Any]) -> str:
 def _record(
     public_input: dict[str, Any],
     *,
+    group_id: str,
+    policy_version: dict[str, Any],
     sample_index: int,
     plan: tuple[str, list[int], list[int], list[float]],
     solution: tuple[str, list[int], list[int], list[float]],
@@ -215,9 +256,10 @@ def _record(
     plan_text, plan_prompt, plan_ids, plan_logprobs = plan
     solution_text, solution_prompt, solution_ids, solution_logprobs = solution
     candidate, extraction = _candidate(solution_text)
-    group_id = _sha256_bytes(f"{public_input['record_hash']}:qwen35-rllm-group-v1".encode())
+    weight_version = policy_version["weight_version"]
+    version_hash = policy_version["version_hash"]
     trajectory = Trajectory(
-        name="verigym_rtl_multiturn_v1",
+        name="verigym_rtl_multiturn_v2",
         task=public_input["task_id"],
         input={"public_input_hash": public_input["record_hash"]},
         output=candidate,
@@ -233,7 +275,13 @@ def _record(
                 response_ids=plan_ids,
                 logprobs=plan_logprobs,
                 model_response=plan_text,
-                metadata={"trainable": False, "turn": 0},
+                weight_version=weight_version,
+                metadata={
+                    "trainable": False,
+                    "turn": 0,
+                    "policy_version_hash": version_hash,
+                    "weight_version": weight_version,
+                },
             ),
             Step(
                 input="emit_complete_rtl",
@@ -245,22 +293,43 @@ def _record(
                 response_ids=solution_ids,
                 logprobs=solution_logprobs,
                 model_response=solution_text,
-                metadata={"trainable": True, "turn": 1, "candidate_extraction": extraction},
+                weight_version=weight_version,
+                metadata={
+                    "trainable": True,
+                    "turn": 1,
+                    "candidate_extraction": extraction,
+                    "policy_version_hash": version_hash,
+                    "weight_version": weight_version,
+                },
             ),
         ],
-        metadata={"group_id": group_id, "sample_index": sample_index, "trainable_step": 1},
+        metadata={
+            "group_id": group_id,
+            "sample_index": sample_index,
+            "trainable_step": 1,
+            "policy_version_hash": version_hash,
+            "weight_version": weight_version,
+        },
     )
     episode = Episode(
         task=public_input["task_id"],
         termination_reason="candidate_submitted",
         is_correct=False,
         trajectories=[trajectory],
-        metadata={"group_id": group_id, "sample_index": sample_index, "verifier_pending": True},
+        metadata={
+            "group_id": group_id,
+            "sample_index": sample_index,
+            "verifier_pending": True,
+            "policy_version_hash": version_hash,
+            "weight_version": weight_version,
+        },
     )
     base = {
         "schema_version": "1.0",
-        "format_id": "verigym_rllm_rollout_unscored_v1",
+        "format_id": "verigym_rllm_rollout_unscored_v2",
         "group_id": group_id,
+        "policy_version_hash": version_hash,
+        "weight_version": weight_version,
         "sample_index": sample_index,
         "task_id": public_input["task_id"],
         "public_input_hash": public_input["record_hash"],
@@ -286,7 +355,21 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
     public_input, public_file_hash = _read_public_input(arguments.public_input)
     model_root = _safe_directory(arguments.model_root, "model root")
     adapter = _safe_directory(arguments.adapter, "adapter")
+    policy_version = _read_policy_version(arguments.policy_version, adapter)
     output = _new_directory(arguments.output)
+
+    group_id = _canonical_hash(
+        {
+            "format_id": "verigym_rllm_rollout_group_v2",
+            "public_input_hash": public_input["record_hash"],
+            "policy_version_hash": policy_version["version_hash"],
+            "weight_version": policy_version["weight_version"],
+            "group_size": arguments.group_size,
+            "temperature": arguments.temperature,
+            "top_p": arguments.top_p,
+            "seed": arguments.seed,
+        }
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(model_root, local_files_only=True)
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -346,6 +429,8 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         records.append(
             _record(
                 public_input,
+                group_id=group_id,
+                policy_version=policy_version,
                 sample_index=index,
                 plan=plan,
                 solution=solution,
@@ -357,7 +442,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
     _atomic_jsonl(rollout_path, records)
     base_manifest = {
         "schema_version": "1.0",
-        "format_id": "verigym_rllm_rollout_dataset_unscored_v1",
+        "format_id": "verigym_rllm_rollout_dataset_unscored_v2",
         "record_count": len(records),
         "record_hashes": [record["record_hash"] for record in records],
         "group_ids": sorted({record["group_id"] for record in records}),
@@ -365,6 +450,9 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         "rollout_file_sha256": _sha256(rollout_path),
         "public_input_file_sha256": public_file_hash,
         "public_input_hash": public_input["record_hash"],
+        "policy_version_hash": policy_version["version_hash"],
+        "policy_version_id": policy_version["policy_version_id"],
+        "weight_version": policy_version["weight_version"],
         "base_model_config_sha256": _sha256(model_root / "config.json"),
         "adapter_config_sha256": _sha256(adapter / "adapter_config.json"),
         "adapter_weights_sha256": _sha256(adapter / "adapter_model.safetensors"),

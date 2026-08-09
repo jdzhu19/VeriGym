@@ -60,6 +60,25 @@ Every expensive script requires an explicit `VERIGYM_RUN_*` opt-in. The smoke fa
 infrastructure-invalid outcomes and on groups without reward variance. It validates the data and
 optimizer boundary; it does not qualify verl's full Ray/vLLM rollout stack.
 
+Register each executable policy before sampling it:
+
+```bash
+verigym-training-reference register-policy-version \
+  --output /campaign/versions/policy-v1.json \
+  --policy-version-id qwen35-9b-rtl-policy-v1 --weight-version 1 \
+  --update-type verigym_grpo --model-id Qwen/Qwen3.5-9B \
+  --model-root /models/Qwen3.5-9B --artifact /campaign/checkpoints/policy-v1 \
+  --parent /campaign/versions/policy-v0.json \
+  --training-manifest /campaign/trajectories/iteration-000/rollout-manifest.json \
+  --reward-manifest /campaign/rewards/iteration-000/reward-manifest.json \
+  --training-report /campaign/checkpoints/policy-v1/training-report.json \
+  --source-commit <40-character-git-commit>
+```
+
+Pass that manifest to rollout generation with `--policy-version`, and to GRPO with
+`--input-policy-version`. Adapter bytes, policy hash, and rLLM `weight_version` must agree across
+the complete rollout/reward/update chain.
+
 After training, register a LoRA adapter or checkpoint as provenance:
 
 ```bash

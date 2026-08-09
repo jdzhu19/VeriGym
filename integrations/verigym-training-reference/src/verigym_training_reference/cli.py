@@ -22,6 +22,7 @@ from .pipeline import (
     resolve_model_root,
     validate_training_bundle,
 )
+from .policy_versions import register_training_policy_version
 from .reward_oracle import TrainingRewardOracle
 from .sft_exporter import export_verified_solution_sft
 
@@ -87,6 +88,28 @@ def _parser() -> argparse.ArgumentParser:
     )
     export_sft.add_argument("--sampling-root", type=Path, required=True)
     export_sft.add_argument("--output", type=Path, required=True)
+
+    policy = subparsers.add_parser(
+        "register-policy-version",
+        help="register a base, verified-SFT, or VeriGym-GRPO executable policy version",
+    )
+    policy.add_argument("--output", type=Path, required=True)
+    policy.add_argument("--policy-version-id", required=True)
+    policy.add_argument("--weight-version", type=int)
+    policy.add_argument(
+        "--update-type",
+        choices=("base", "verified_sft", "verigym_grpo"),
+        required=True,
+    )
+    policy.add_argument("--model-id", required=True)
+    policy.add_argument("--model-root", type=Path, required=True)
+    policy.add_argument("--source-commit", required=True)
+    policy.add_argument("--artifact", type=Path)
+    policy.add_argument("--parent", type=Path)
+    policy.add_argument("--training-manifest", type=Path)
+    policy.add_argument("--reward-manifest", type=Path)
+    policy.add_argument("--training-report", type=Path)
+    policy.add_argument("--loading-format", default="peft_lora_safetensors")
     return parser
 
 
@@ -183,6 +206,29 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "task_ids": sft_manifest.task_ids,
             "source_model_ids": sft_manifest.source_model_ids,
             "manifest_hash": sft_manifest.manifest_hash,
+        }
+    if arguments.command == "register-policy-version":
+        policy_version = register_training_policy_version(
+            output=arguments.output,
+            policy_version_id=arguments.policy_version_id,
+            weight_version=arguments.weight_version,
+            update_type=arguments.update_type,
+            model_id=arguments.model_id,
+            model_root=arguments.model_root,
+            source_commit=arguments.source_commit,
+            loading_configuration={"format": arguments.loading_format},
+            artifact=arguments.artifact,
+            parent_manifest=arguments.parent,
+            training_manifest=arguments.training_manifest,
+            reward_manifest=arguments.reward_manifest,
+            training_report=arguments.training_report,
+        )
+        return {
+            "status": "registered",
+            "policy_version_id": policy_version.policy_version_id,
+            "weight_version": policy_version.weight_version,
+            "version_hash": policy_version.version_hash,
+            "artifact_hash": policy_version.artifact_hash,
         }
     raise AssertionError(f"unhandled command: {arguments.command}")
 

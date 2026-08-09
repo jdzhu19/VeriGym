@@ -108,6 +108,24 @@ the evaluator-owned output while the scored JSONL exports only a scalar outcome 
 Finally, `scripts/train_qwen35_verl_grpo.py` calls verl's outcome-GRPO advantage and clipped policy
 loss implementations and writes a content-hashed LoRA adapter.
 
+For iterative experiments, keep evaluator source separate from weight-bearing artifacts:
+
+```text
+campaign/
+  versions/       base.json, policy-v0.json, policy-v1.json
+  trajectories/   iteration-000/, iteration-001/
+  rewards/        iteration-000/, iteration-001/
+  checkpoints/    policy-v0/, policy-v1/, policy-v2/
+  campaign-manifest.json
+```
+
+Use `verigym-training-reference register-policy-version` for the base snapshot, verified-SFT
+adapter (`weight_version=0`), and every GRPO successor. Rollout generation requires the registered
+input manifest and records its version hash and weight version in each rLLM step. Reward scoring
+preserves this binding, and GRPO refuses trajectories or adapter bytes that do not match it. This
+makes `policy-vN -> fresh rollout -> VeriGym reward -> policy-vN+1` auditable without embedding
+trainer checkpoints in the repository.
+
 The supplied `configs/accelerate/qwen35_4gpu_fsdp.yaml` is a four-GPU 3090 smoke configuration.
 Change the world size and rollout group together for another machine. These scripts demonstrate a
 real optimizer update; production Ray/vLLM rollout throughput, checkpoint recovery, and longer

@@ -92,11 +92,24 @@ def _read_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest_path = resolved / "rollout-manifest.json"
     rollout_path = resolved / "rollouts.unscored.jsonl"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_identity = dict(manifest)
+    expected_manifest_hash = manifest_identity.pop("manifest_hash", None)
+    if (
+        not isinstance(expected_manifest_hash, str)
+        or _canonical_hash(manifest_identity) != expected_manifest_hash
+    ):
+        raise SystemExit("rollout manifest identity differs from its manifest hash")
     lines = rollout_path.read_bytes()
     if not 0 < len(lines) <= _MAX_RECORD_BYTES * 16:
         raise SystemExit("rollout JSONL is empty or oversized")
     if _hash(lines) != manifest.get("rollout_file_sha256"):
         raise SystemExit("rollout JSONL differs from its manifest")
+    if manifest.get("format_id") != "verigym_rllm_rollout_dataset_unscored_v2":
+        raise SystemExit("unsupported rollout dataset format")
+    policy_hash = manifest.get("policy_version_hash")
+    weight_version = manifest.get("weight_version")
+    if not isinstance(policy_hash, str) or not isinstance(weight_version, int):
+        raise SystemExit("rollout manifest omits its policy version binding")
     records = [json.loads(line) for line in lines.decode().splitlines()]
     if len(records) != manifest.get("record_count"):
         raise SystemExit("rollout record count differs from its manifest")
@@ -105,6 +118,26 @@ def _read_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         record_hash = actual.pop("record_hash", None)
         if record_hash != expected or _canonical_hash(actual) != expected:
             raise SystemExit("rollout record identity differs from its manifest")
+        episode = record.get("episode")
+        if not isinstance(episode, dict):
+            raise SystemExit("rollout record omits its rLLM episode")
+        trajectories = episode.get("trajectories")
+        if not isinstance(trajectories, list) or len(trajectories) != 1:
+            raise SystemExit("rollout record must contain one rLLM trajectory")
+        steps = trajectories[0].get("steps")
+        if not isinstance(steps, list) or len(steps) < 2:
+            raise SystemExit("rollout record must contain multiple rLLM steps")
+        if (
+            record.get("policy_version_hash") != policy_hash
+            or record.get("weight_version") != weight_version
+            or episode.get("metadata", {}).get("policy_version_hash") != policy_hash
+            or episode.get("metadata", {}).get("weight_version") != weight_version
+            or any(step.get("weight_version") != weight_version for step in steps)
+            or any(
+                step.get("metadata", {}).get("policy_version_hash") != policy_hash for step in steps
+            )
+        ):
+            raise SystemExit("rollout record policy binding differs from its manifest")
     return manifest, records
 
 
@@ -248,7 +281,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         trajectory["steps"][1]["reward"] = reward or 0.0
         base = {
             **{key: value for key, value in record.items() if key != "record_hash"},
-            "format_id": "verigym_rllm_rollout_scored_v1",
+            "format_id": "verigym_rllm_rollout_scored_v2",
             "episode": episode,
             "reward": reward,
             "reward_profile_id": "verigym_resolved_sparse_v1",
@@ -268,13 +301,16 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
     valid_rewards = [record["reward"] for record in scored if record["infrastructure_valid"]]
     base_manifest = {
         "schema_version": "1.0",
-        "format_id": "verigym_rllm_rollout_dataset_scored_v1",
+        "format_id": "verigym_rllm_rollout_dataset_scored_v2",
         "record_count": len(scored),
         "record_hashes": [record["record_hash"] for record in scored],
         "input_manifest_hash": input_manifest["manifest_hash"],
         "scored_file_sha256": _hash(scored_path.read_bytes()),
         "group_ids": input_manifest["group_ids"],
         "task_ids": [task.id],
+        "policy_version_hash": input_manifest["policy_version_hash"],
+        "policy_version_id": input_manifest["policy_version_id"],
+        "weight_version": input_manifest["weight_version"],
         "task_hash": content_hash(task),
         "source_hash": task.source.content_hash or snapshot.content_hash,
         "reward_profile_id": "verigym_resolved_sparse_v1",

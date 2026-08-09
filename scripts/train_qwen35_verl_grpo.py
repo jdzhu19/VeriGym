@@ -50,6 +50,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollouts", type=Path, required=True)
     parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument("--input-policy-version", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--clip-range", type=float, default=0.2)
@@ -92,6 +93,43 @@ def _new_directory(path: Path) -> Path:
     return expanded.resolve(strict=True)
 
 
+def _load_policy_version(path: Path, adapter: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 4 * 1024 * 1024:
+        raise SystemExit("input policy version must be a small regular file")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SystemExit("input policy version is not valid JSON") from exc
+    if (
+        not isinstance(value, dict)
+        or value.get("format_id") != "verigym_training_policy_version_v1"
+    ):
+        raise SystemExit("unsupported input policy version format")
+    expected = value.get("version_hash")
+    identity = dict(value)
+    identity.pop("version_hash", None)
+    if not isinstance(expected, str) or _canonical_hash(identity) != expected:
+        raise SystemExit("input policy version identity differs from its version hash")
+    weight_version = value.get("weight_version")
+    configuration = value.get("loading_configuration")
+    if not isinstance(weight_version, int) or not isinstance(configuration, dict):
+        raise SystemExit("GRPO input must be a registered trained policy")
+    if (
+        value.get("artifact_kind") != "lora_adapter"
+        or value.get("executable") is not True
+        or value.get("hidden_assets_loaded") is not False
+        or value.get("reference_solution_loaded") is not False
+        or value.get("credential_values_included") is not False
+        or value.get("raw_host_paths_included") is not False
+    ):
+        raise SystemExit("input policy version is not eligible for GRPO")
+    if configuration.get("adapter_weights_sha256") != _sha256(
+        adapter / "adapter_model.safetensors"
+    ):
+        raise SystemExit("input adapter differs from its registered policy version")
+    return value
+
+
 def _load_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest_path = root / "reward-manifest.json"
     data_path = root / "rollouts.scored.jsonl"
@@ -101,8 +139,15 @@ def _load_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not 0 < len(payload) <= _MAX_DATASET_BYTES:
         raise SystemExit("scored rollout JSONL is empty or oversized")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_identity = dict(manifest)
+    expected_manifest_hash = manifest_identity.pop("manifest_hash", None)
     if (
-        manifest.get("format_id") != "verigym_rllm_rollout_dataset_scored_v1"
+        not isinstance(expected_manifest_hash, str)
+        or _canonical_hash(manifest_identity) != expected_manifest_hash
+    ):
+        raise SystemExit("reward manifest identity differs from its manifest hash")
+    if (
+        manifest.get("format_id") != "verigym_rllm_rollout_dataset_scored_v2"
         or manifest.get("infrastructure_invalid_count") != 0
         or manifest.get("hidden_assets_exported_to_trainer") is not False
         or manifest.get("reference_solution_exported_to_trainer") is not False
@@ -122,6 +167,11 @@ def _load_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         episode = Episode.model_validate(record.get("episode"))
         if len(episode.trajectories) != 1 or len(episode.trajectories[0].steps) < 2:
             raise SystemExit("GRPO requires a multi-turn rLLM trajectory")
+        if any(
+            step.weight_version != manifest.get("weight_version")
+            for step in episode.trajectories[0].steps
+        ):
+            raise SystemExit("rLLM step weight versions differ from the reward manifest")
     rewards = [float(record["reward"]) for record in records]
     if len(set(rewards)) < 2:
         raise SystemExit("GRPO smoke requires nonzero within-group reward variance")
@@ -237,9 +287,15 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
     rollout_root = _safe_directory(arguments.rollouts, "rollout root")
     model_root = _safe_directory(arguments.model_root, "model root")
     adapter = _safe_directory(arguments.adapter, "adapter")
+    policy_version = _load_policy_version(arguments.input_policy_version, adapter)
     rllm_root = _safe_directory(arguments.rllm_root, "rLLM root")
     verl_root = _safe_directory(arguments.verl_root, "verl root")
     manifest, records = _load_records(rollout_root)
+    if (
+        manifest.get("policy_version_hash") != policy_version["version_hash"]
+        or manifest.get("weight_version") != policy_version["weight_version"]
+    ):
+        raise SystemExit("reward trajectories were not sampled by the input policy version")
     advantage_tensors, scalar_advantages = _advantages(records)
     items = _items(records, advantage_tensors)
     if len(items) != accelerator.num_processes:
@@ -365,6 +421,11 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
             "total_parameters": total_parameters,
             "trainable_fraction": trainable_parameters / total_parameters,
             "rollout_manifest_hash": manifest["manifest_hash"],
+            "input_policy_version_hash": policy_version["version_hash"],
+            "input_policy_version_id": policy_version["policy_version_id"],
+            "input_weight_version": policy_version["weight_version"],
+            "output_weight_version": policy_version["weight_version"] + 1,
+            "rollout_policy_binding_verified": True,
             "rollout_manifest_sha256": _sha256(rollout_root / "reward-manifest.json"),
             "parent_adapter_weights_sha256": _sha256(adapter / "adapter_model.safetensors"),
             "base_model_config_sha256": _sha256(model_root / "config.json"),
