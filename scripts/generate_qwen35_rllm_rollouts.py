@@ -365,6 +365,8 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
             "policy_version_hash": policy_version["version_hash"],
             "weight_version": policy_version["weight_version"],
             "group_size": arguments.group_size,
+            "plan_tokens": arguments.plan_tokens,
+            "solution_tokens": arguments.solution_tokens,
             "temperature": arguments.temperature,
             "top_p": arguments.top_p,
             "seed": arguments.seed,
