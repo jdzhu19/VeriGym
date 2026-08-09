@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import ModuleType
 
@@ -18,3 +19,13 @@ def test_multi_gpu_request_preserves_device_list_for_docker_csv_parser() -> None
     module = _script()
 
     assert module._docker_gpu_request("0,1,2,3") == '"device=0,1,2,3"'
+
+
+def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None:
+    path = Path("configs/training/qwen35_rllm_verl_online_smoke_v1.json")
+    campaign = json.loads(path.read_text(encoding="utf-8"))
+    online_stage = next(stage for stage in campaign["stages"] if stage["stage_id"] == "online-grpo")
+
+    assert "hydra.run.dir=${VERIGYM_CAMPAIGN_WORKSPACE}/hydra" in online_stage["argv"]
+    assert "hydra.output_subdir=null" in online_stage["argv"]
+    assert "hydra.job.chdir=False" in online_stage["argv"]
