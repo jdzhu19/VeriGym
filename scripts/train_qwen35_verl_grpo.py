@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import time
 import warnings
+from collections import defaultdict
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -146,14 +147,25 @@ def _load_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         or _canonical_hash(manifest_identity) != expected_manifest_hash
     ):
         raise SystemExit("reward manifest identity differs from its manifest hash")
+    format_id = manifest.get("format_id")
     if (
-        manifest.get("format_id") != "verigym_rllm_rollout_dataset_scored_v2"
+        format_id
+        not in {
+            "verigym_rllm_rollout_dataset_scored_v2",
+            "verigym_rllm_rollout_dataset_scored_multi_v1",
+        }
         or manifest.get("infrastructure_invalid_count") != 0
         or manifest.get("hidden_assets_exported_to_trainer") is not False
         or manifest.get("reference_solution_exported_to_trainer") is not False
         or _sha256(data_path) != manifest.get("scored_file_sha256")
     ):
         raise SystemExit("reward manifest is not eligible for GRPO")
+    if format_id == "verigym_rllm_rollout_dataset_scored_multi_v1" and (
+        manifest.get("credential_values_exported_to_trainer") is not False
+        or manifest.get("raw_host_paths_exported_to_trainer") is not False
+        or manifest.get("each_group_has_reward_variance") is not True
+    ):
+        raise SystemExit("multi-group reward manifest violates the trainer export policy")
     records = [json.loads(line) for line in payload.decode().splitlines()]
     if len(records) != manifest.get("record_count"):
         raise SystemExit("reward record count differs from its manifest")
@@ -172,11 +184,23 @@ def _load_records(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             for step in episode.trajectories[0].steps
         ):
             raise SystemExit("rLLM step weight versions differ from the reward manifest")
-    rewards = [float(record["reward"]) for record in records]
-    if len(set(rewards)) < 2:
-        raise SystemExit("GRPO smoke requires nonzero within-group reward variance")
-    if len(set(record["group_id"] for record in records)) != 1:
-        raise SystemExit("GRPO smoke requires one rollout group")
+        if record.get("policy_version_hash") != manifest.get("policy_version_hash") or record.get(
+            "weight_version"
+        ) != manifest.get("weight_version"):
+            raise SystemExit("GRPO record policy binding differs from its reward manifest")
+    grouped_rewards: defaultdict[str, list[float]] = defaultdict(list)
+    for record in records:
+        grouped_rewards[record["group_id"]].append(float(record["reward"]))
+    if any(len(set(rewards)) < 2 for rewards in grouped_rewards.values()):
+        raise SystemExit("GRPO requires nonzero reward variance within every group")
+    if set(grouped_rewards) != set(manifest.get("group_ids", [])):
+        raise SystemExit("GRPO record groups differ from the reward manifest")
+    if {record.get("task_id") for record in records} != set(manifest.get("task_ids", [])):
+        raise SystemExit("GRPO record tasks differ from the reward manifest")
+    if format_id.endswith("multi_v1") and len(grouped_rewards) < 2:
+        raise SystemExit("multi-group GRPO requires at least two groups")
+    if format_id.endswith("scored_v2") and len(grouped_rewards) != 1:
+        raise SystemExit("single-group GRPO requires exactly one group")
     return manifest, records
 
 
@@ -298,8 +322,12 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("reward trajectories were not sampled by the input policy version")
     advantage_tensors, scalar_advantages = _advantages(records)
     items = _items(records, advantage_tensors)
-    if len(items) != accelerator.num_processes:
-        raise SystemExit("GRPO smoke requires group size equal to the distributed world size")
+    group_counts: defaultdict[str, int] = defaultdict(int)
+    for record in records:
+        group_counts[record["group_id"]] += 1
+    if any(count != accelerator.num_processes for count in group_counts.values()):
+        raise SystemExit("every GRPO group size must equal the distributed world size")
+    optimizer_steps = len(group_counts)
     if accelerator.is_main_process:
         output = _new_directory(arguments.output)
     else:
@@ -341,41 +369,47 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("FSDP rank has no nonempty trainable parameter shard")
 
     started = time.monotonic()
-    optimizer.zero_grad(set_to_none=True)
     model.train()
-    batch = next(iter(loader))
-    response_start = int(batch.pop("response_start").item())
-    old_logprobs = batch.pop("old_logprobs")
-    advantages = batch.pop("advantages")
-    response_mask = batch.pop("response_mask")
-    response_length = old_logprobs.shape[1]
-    result = model(**batch, logits_to_keep=response_length + 1)
-    token_logits = result.logits[:, :-1]
-    targets = batch["input_ids"][:, response_start : response_start + response_length]
-    logprobs = torch.log_softmax(token_logits.float(), dim=-1)
-    current_logprobs = torch.gather(logprobs, dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        policy_loss, clip_fraction, approximate_kl, lower_clip_fraction = compute_policy_loss(
-            old_logprobs,
-            current_logprobs,
-            advantages,
-            response_mask,
-            cliprange=arguments.clip_range,
-            loss_agg_mode="token-mean",
+    gathered_metric_steps: list[list[list[float]]] = []
+    completed_steps = 0
+    for batch in loader:
+        optimizer.zero_grad(set_to_none=True)
+        response_start = int(batch.pop("response_start").item())
+        old_logprobs = batch.pop("old_logprobs")
+        advantages = batch.pop("advantages")
+        response_mask = batch.pop("response_mask")
+        response_length = old_logprobs.shape[1]
+        result = model(**batch, logits_to_keep=response_length + 1)
+        token_logits = result.logits[:, :-1]
+        targets = batch["input_ids"][:, response_start : response_start + response_length]
+        logprobs = torch.log_softmax(token_logits.float(), dim=-1)
+        current_logprobs = torch.gather(logprobs, dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            policy_loss, clip_fraction, approximate_kl, lower_clip_fraction = compute_policy_loss(
+                old_logprobs,
+                current_logprobs,
+                advantages,
+                response_mask,
+                cliprange=arguments.clip_range,
+                loss_agg_mode="token-mean",
+            )
+        if not torch.isfinite(policy_loss):
+            raise RuntimeError("GRPO policy loss is not finite")
+        accelerator.backward(policy_loss)
+        accelerator.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        metrics = torch.tensor(
+            [policy_loss.detach(), clip_fraction, approximate_kl, lower_clip_fraction],
+            device=accelerator.device,
+            dtype=torch.float32,
         )
-    if not torch.isfinite(policy_loss):
-        raise RuntimeError("GRPO policy loss is not finite")
-    accelerator.backward(policy_loss)
-    accelerator.clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
+        gathered_metrics = accelerator.gather(metrics).reshape(accelerator.num_processes, 4)
+        gathered_metric_steps.append(gathered_metrics.tolist())
+        completed_steps += 1
     duration_s = time.monotonic() - started
-    metrics = torch.tensor(
-        [policy_loss.detach(), clip_fraction, approximate_kl, lower_clip_fraction],
-        device=accelerator.device,
-        dtype=torch.float32,
-    )
-    gathered_metrics = accelerator.gather(metrics).reshape(accelerator.num_processes, 4)
+    if completed_steps != optimizer_steps:
+        raise RuntimeError("distributed loader did not consume exactly one step per GRPO group")
     local_delta = torch.stack(
         [
             (parameter.detach() - initial).abs().max().to(torch.float32)
@@ -406,8 +440,15 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         report = {
             "schema_version": "1.0",
             "status": "completed",
-            "training_kind": "rllm_verigym_verl_grpo_lora_smoke",
-            "optimizer_steps": 1,
+            "training_kind": (
+                "rllm_verigym_verl_multigroup_grpo_lora_smoke"
+                if optimizer_steps > 1
+                else "rllm_verigym_verl_grpo_lora_smoke"
+            ),
+            "optimizer_steps": optimizer_steps,
+            "group_count": len(group_counts),
+            "group_ids": list(group_counts),
+            "task_ids": manifest["task_ids"],
             "world_size": accelerator.num_processes,
             "mixed_precision": accelerator.mixed_precision,
             "seed": arguments.seed,
@@ -415,7 +456,9 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
             "clip_range": arguments.clip_range,
             "rewards": [float(record["reward"]) for record in records],
             "grpo_scalar_advantages": scalar_advantages,
-            "rank_metrics_policy_loss_clipfrac_kl_lower_clipfrac": gathered_metrics.tolist(),
+            "optimizer_step_rank_metrics_policy_loss_clipfrac_kl_lower_clipfrac": (
+                gathered_metric_steps
+            ),
             "maximum_trainable_parameter_update": maximum_update,
             "trainable_parameters": trainable_parameters,
             "total_parameters": total_parameters,
