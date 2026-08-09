@@ -73,6 +73,12 @@ def _mount(path: Path, mode: str) -> str:
     return f"{path}:{path}:{mode}"
 
 
+def _docker_gpu_request(gpu_ids: str) -> str:
+    # Docker parses --gpus with its CSV reader. Literal quotes keep a multi-ID
+    # device value together when argv is passed directly rather than by a shell.
+    return f'"device={gpu_ids}"'
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     if not _GPU_IDS.fullmatch(arguments.gpu_ids):
@@ -214,7 +220,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--user",
         f"{os.getuid()}:{os.getgid()}",
         "--gpus",
-        f"device={arguments.gpu_ids}",
+        _docker_gpu_request(arguments.gpu_ids),
         "--workdir",
         str(repository),
     ]
