@@ -170,6 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "VERIGYM_ONLINE_VERIFIER_OUTPUT": str(verifier_output),
         "VERIGYM_RLLM_COMMIT": _git_head(rllm_root),
         "VERIGYM_SOURCE_COMMIT": _git_head(repository),
+        "VERIGYM_TRAINING_IMAGE_ID": arguments.expected_image_id,
         "VERIGYM_VERL_COMMIT": _git_head(verl_root),
         "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
         "VLLM_ATTENTION_BACKEND": "FLASH_ATTN",

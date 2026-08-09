@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import hydra
+import torch
 from omegaconf import DictConfig
 from rllm.data.dataset import DatasetRegistry
 from rllm.trainer.agent_trainer import AgentTrainer
@@ -30,7 +31,7 @@ def _canonical_hash(value: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _load_task_manifest() -> list[dict[str, Any]]:
+def _load_task_manifest() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     path_value = os.environ.get(_MANIFEST_ENV)
     if not path_value:
         raise RuntimeError(f"{_MANIFEST_ENV} is required")
@@ -58,7 +59,7 @@ def _load_task_manifest() -> list[dict[str, Any]]:
         tasks.append(public)
     if not tasks or len({task["task_id"] for task in tasks}) != len(tasks):
         raise RuntimeError("online task manifest must contain unique tasks")
-    return tasks
+    return tasks, value
 
 
 def _commit(environment_name: str) -> str:
@@ -70,7 +71,9 @@ def _commit(environment_name: str) -> str:
     return value
 
 
-def _completion_report(config: DictConfig, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+def _completion_report(
+    config: DictConfig, tasks: list[dict[str, Any]], task_manifest: dict[str, Any]
+) -> dict[str, Any]:
     report_value = os.environ.get(_REPORT_ENV)
     output_value = os.environ.get(_OUTPUT_ENV)
     if not report_value or not output_value:
@@ -100,6 +103,10 @@ def _completion_report(config: DictConfig, tasks: list[dict[str, Any]]) -> dict[
         "schema_version": "1.0",
         "format_id": "verigym_rllm_verl_online_smoke_report_v1",
         "status": "completed",
+        "task_manifest_hash": task_manifest["manifest_hash"],
+        "input_policy_version_id": task_manifest["input_policy_version_id"],
+        "input_policy_version_hash": task_manifest["input_policy_version_hash"],
+        "input_weight_version": task_manifest["input_weight_version"],
         "task_ids": sorted(task["task_id"] for task in tasks),
         "rollout_count": len(scorecards),
         "resolved_count": sum(card.get("resolved") is True for card in scorecards),
@@ -115,6 +122,12 @@ def _completion_report(config: DictConfig, tasks: list[dict[str, Any]]) -> dict[
         "rllm_commit": _commit("VERIGYM_RLLM_COMMIT"),
         "verl_commit": _commit("VERIGYM_VERL_COMMIT"),
         "verigym_commit": _commit("VERIGYM_SOURCE_COMMIT"),
+        "training_container_image_id": os.environ["VERIGYM_TRAINING_IMAGE_ID"],
+        "cuda_runtime": torch.version.cuda,
+        "gpu_count": torch.cuda.device_count(),
+        "gpu_names": [
+            torch.cuda.get_device_name(index) for index in range(torch.cuda.device_count())
+        ],
         "software": {
             name: importlib.metadata.version(name)
             for name in ["ray", "rllm", "torch", "transformers", "verl", "vllm"]
@@ -141,7 +154,7 @@ def _completion_report(config: DictConfig, tasks: list[dict[str, Any]]) -> dict[
     version_base=None,
 )
 def main(config: DictConfig) -> None:
-    tasks = _load_task_manifest()
+    tasks, task_manifest = _load_task_manifest()
     output_value = os.environ.get(_OUTPUT_ENV)
     broker_value = os.environ.get(_BROKER_ENV)
     if not output_value or not broker_value:
@@ -167,7 +180,7 @@ def main(config: DictConfig) -> None:
         backend="verl",
     )
     trainer.train()
-    print(json.dumps(_completion_report(config, tasks), indent=2, sort_keys=True))
+    print(json.dumps(_completion_report(config, tasks, task_manifest), indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
