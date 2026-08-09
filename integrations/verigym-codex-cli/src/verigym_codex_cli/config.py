@@ -46,7 +46,8 @@ _AGENT_OPTIONS = {
     "agent_version_manifest_json",
     "memory_pack",
 }
-_AUTHORIZED_REASONING_EFFORT = "xhigh"
+_CONFORMANCE_REASONING_EFFORT = "xhigh"
+_WORKSPACE_REASONING_EFFORTS = frozenset({"xhigh", "max"})
 _READONLY_PROMPT_CONTRACT = "codex_cli_readonly_verilog_task_context_v1"
 _WORKSPACE_PROMPT_CONTRACT = "codex_cli_workspace_verilog_task_context_v1"
 ReasoningEffortSource = Literal["verigym_explicit_cli_override"]
@@ -190,7 +191,11 @@ def readonly_agent_settings(
     return _settings(
         integration_track="codex_cli_readonly_single_turn_agent",
         model_id=model_id,
-        reasoning_effort=_reasoning_effort(options),
+        reasoning_effort=_reasoning_effort(
+            options,
+            allowed=frozenset({_CONFORMANCE_REASONING_EFFORT}),
+            integration="read-only conformance",
+        ),
         sandbox=sandbox,
         sandbox_backend="codex_cli_default",
         sandbox_backend_source="codex_cli_default",
@@ -249,13 +254,21 @@ def agent_settings(
     agent_version_id, agent_version_hash, memory_pack = _versioned_context(
         options,
         model_id=model_id,
-        reasoning_effort=_reasoning_effort(options),
+        reasoning_effort=_reasoning_effort(
+            options,
+            allowed=_WORKSPACE_REASONING_EFFORTS,
+            integration="workspace agent",
+        ),
         auth_semantic_id=auth_resolution.auth_semantic_id,
     )
     return _settings(
         integration_track="codex_cli_external_agent",
         model_id=model_id,
-        reasoning_effort=_reasoning_effort(options),
+        reasoning_effort=_reasoning_effort(
+            options,
+            allowed=_WORKSPACE_REASONING_EFFORTS,
+            integration="workspace agent",
+        ),
         sandbox=sandbox,
         sandbox_backend="codex_cli_default",
         sandbox_backend_source="codex_cli_default",
@@ -491,14 +504,20 @@ def _model_id(value: str | None) -> str:
     return clean
 
 
-def _reasoning_effort(values: Mapping[str, JsonValue]) -> str:
+def _reasoning_effort(
+    values: Mapping[str, JsonValue],
+    *,
+    allowed: frozenset[str],
+    integration: str,
+) -> str:
     effort = _string(
         values,
         "reasoning_effort",
-        _AUTHORIZED_REASONING_EFFORT,
+        _CONFORMANCE_REASONING_EFFORT,
     )
-    if effort != _AUTHORIZED_REASONING_EFFORT:
-        raise ValueError("this Codex CLI conformance integration requires reasoning_effort='xhigh'")
+    if effort not in allowed:
+        expected = ", ".join(repr(value) for value in sorted(allowed))
+        raise ValueError(f"Codex CLI {integration} requires reasoning_effort in {{{expected}}}")
     return effort
 
 

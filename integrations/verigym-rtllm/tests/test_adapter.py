@@ -23,11 +23,23 @@ def test_descriptor_exposes_platform_modes() -> None:
 
 
 def test_counter_family_variants_are_explicit(tmp_path: Path) -> None:
-    for variant in ("counter_12", "up_down_counter"):
+    for variant in (
+        "counter_12",
+        "up_down_counter",
+        "up_down_counter_iverilog_training",
+    ):
         configured = RTLLMSuite().with_source(
             SuiteSourceConfig(source_root=tmp_path, variant=variant)
         )
         assert configured.validate_source().valid is False
+
+
+def test_icarus_training_variant_maps_to_upstream_task(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant="up_down_counter_iverilog_training")
+    )
+
+    assert configured._base_variant() == "up_down_counter"
 
 
 def test_variant_is_strict(tmp_path: Path) -> None:

@@ -99,8 +99,27 @@ def test_both_tracks_own_xhigh_as_the_final_cli_config_override(
     )
 
 
-@pytest.mark.parametrize("unsupported", ["max", "high", "none", "xhigh "])
-def test_unauthorized_reasoning_effort_fails_before_model_process(
+def test_workspace_agent_accepts_max_as_the_final_cli_config_override(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    _executable, _log, _scenario = fake_codex
+    _identity, capabilities = runtime_capabilities()
+    settings = agent_settings(
+        _agent_options(reasoning_effort="max"),
+        capabilities,
+        task_wall_time_s=300,
+    )
+
+    arguments = build_exec_arguments(capabilities, settings)
+
+    assert arguments[-3:] == [capabilities.config_flag, 'model_reasoning_effort="max"', "-"]
+    assert settings.requested_reasoning_effort == "max"
+    assert settings.effective_reasoning_effort == "max"
+    assert settings.inherited_reasoning_effort_allowed is False
+
+
+@pytest.mark.parametrize("unsupported", ["high", "none", "xhigh "])
+def test_unsupported_reasoning_effort_fails_before_model_process(
     fake_codex: tuple[Path, Path, object],
     unsupported: str,
 ) -> None:
@@ -117,6 +136,23 @@ def test_unauthorized_reasoning_effort_fails_before_model_process(
     with pytest.raises(ValueError):
         agent_settings(
             _agent_options(reasoning_effort=unsupported),
+            capabilities,
+            task_wall_time_s=300,
+        )
+
+    assert (log.read_text(encoding="utf-8") if log.exists() else "") == before
+
+
+def test_readonly_conformance_rejects_max_before_model_process(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    _executable, log, _scenario = fake_codex
+    _identity, capabilities = runtime_capabilities()
+    before = log.read_text(encoding="utf-8") if log.exists() else ""
+
+    with pytest.raises(ValueError):
+        readonly_agent_settings(
+            _readonly_options(reasoning_effort="max"),
             capabilities,
             task_wall_time_s=300,
         )

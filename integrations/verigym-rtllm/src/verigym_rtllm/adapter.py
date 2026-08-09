@@ -43,9 +43,10 @@ from verigym.plugin_api import (
     WorkspaceSpec,
 )
 
-ADAPTER_VERSION = "0.2.0"
+ADAPTER_VERSION = "0.3.0"
 SUITE_VERSION = "rtllm-41b2689-counter12-v1"
 UP_DOWN_SUITE_VERSION = "rtllm-41b2689-up-down-counter-v1"
+UP_DOWN_ICARUS_TRAINING_SUITE_VERSION = "rtllm-41b2689-up-down-counter-icarus-training-v1"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 TASK_ROOT = Path("Control/Counter/counter_12")
@@ -87,7 +88,8 @@ _UP_DOWN_EXPECTED_HASHES = {
         "4af9a3fe6a61aefa2e6ba8df99bf10e2f1432a9c2cf460b8267d2ce14e739445"
     ),
 }
-_SUPPORTED_VARIANTS = frozenset({"counter_12", "up_down_counter"})
+_UP_DOWN_ICARUS_TRAINING_VARIANT = "up_down_counter_iverilog_training"
+_SUPPORTED_VARIANTS = frozenset({"counter_12", "up_down_counter", _UP_DOWN_ICARUS_TRAINING_VARIANT})
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
 
@@ -141,6 +143,7 @@ class RTLLMSuite(SuiteAdapter):
             "chat",
             "agent",
             "commercial_verification",
+            "open_source_training_verification",
             "synthesis_ready",
             "conformance",
         ],
@@ -174,16 +177,24 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if ref.suite != "rtllm" or ref.native_id != variant:
             raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
-        up_down = variant == "up_down_counter"
+        base_variant = self._base_variant()
+        up_down = base_variant == "up_down_counter"
+        icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
-        suite_version = UP_DOWN_SUITE_VERSION if up_down else SUITE_VERSION
+        suite_version = (
+            UP_DOWN_ICARUS_TRAINING_SUITE_VERSION
+            if icarus_training
+            else UP_DOWN_SUITE_VERSION
+            if up_down
+            else SUITE_VERSION
+        )
         title = "RTLLM 16-bit up/down counter" if up_down else "RTLLM 12-state enabled counter"
         candidate_top = "up_down_counter" if up_down else "counter_12"
         testbench_top = "testbench" if up_down else "counter_12_tb"
         pass_marker = UP_DOWN_PASS_MARKER if up_down else PASS_MARKER
         fail_marker = UP_DOWN_FAIL_MARKER if up_down else FAIL_MARKER
-        candidate_path = f"rtl/{variant}.v"
+        candidate_path = f"rtl/{base_variant}.v"
         root = self._source_root()
         report = self.validate_source()
         if not report.valid:
@@ -208,7 +219,7 @@ class RTLLMSuite(SuiteAdapter):
                 kind="benchmark",
                 uri=(
                     f"https://github.com/hkust-zhiyao/RTLLM/tree/{PINNED_COMMIT}/"
-                    f"Control/Counter/{variant}"
+                    f"Control/Counter/{base_variant}"
                 ),
                 revision=suite_version,
                 commit=PINNED_COMMIT,
@@ -258,37 +269,78 @@ class RTLLMSuite(SuiteAdapter):
                 max_workspace_bytes=2_000_000,
             ),
             verifier=VerifierGraph(
-                nodes=[
-                    VerifierNode(
-                        id="vcs_regression",
-                        plugin="synopsys.vcs.simulate",
-                        gate=True,
-                        required=True,
-                        visibility=ToolVisibility.VERIFIER_ONLY,
-                        timeout_s=180,
-                        request={
-                            "sources": [candidate_path],
-                            "testbench": "verifier/testbench.v",
-                            "top": testbench_top,
-                            "pass_marker": pass_marker,
-                            "fail_marker": fail_marker,
-                            "timeout_s": 180,
-                        },
-                    )
-                ]
+                nodes=(
+                    [
+                        VerifierNode(
+                            id="compile_hidden",
+                            plugin="iverilog.compile",
+                            gate=True,
+                            required=True,
+                            visibility=ToolVisibility.VERIFIER_ONLY,
+                            timeout_s=30,
+                            request={
+                                "sources": [candidate_path, "verifier/testbench.v"],
+                                "top": testbench_top,
+                                "output": ".verigym_internal/compile_hidden/simv",
+                                "language": "2012",
+                                "timeout_s": 30,
+                            },
+                        ),
+                        VerifierNode(
+                            id="run_hidden",
+                            plugin="iverilog.run",
+                            depends_on=["compile_hidden"],
+                            gate=True,
+                            required=True,
+                            visibility=ToolVisibility.VERIFIER_ONLY,
+                            timeout_s=30,
+                            request={
+                                "executable_from": "compile_hidden",
+                                "pass_marker": pass_marker,
+                                "fail_marker": fail_marker,
+                                "timeout_s": 30,
+                            },
+                        ),
+                    ]
+                    if icarus_training
+                    else [
+                        VerifierNode(
+                            id="vcs_regression",
+                            plugin="synopsys.vcs.simulate",
+                            gate=True,
+                            required=True,
+                            visibility=ToolVisibility.VERIFIER_ONLY,
+                            timeout_s=180,
+                            request={
+                                "sources": [candidate_path],
+                                "testbench": "verifier/testbench.v",
+                                "top": testbench_top,
+                                "pass_marker": pass_marker,
+                                "fail_marker": fail_marker,
+                                "timeout_s": 180,
+                            },
+                        )
+                    ]
+                )
             ),
             scoring=ScoringSpec(
-                correctness_required_nodes=["vcs_regression"],
-                ppa_enabled=True,
+                correctness_required_nodes=(
+                    ["compile_hidden", "run_hidden"] if icarus_training else ["vcs_regression"]
+                ),
+                ppa_enabled=not icarus_training,
             ),
             metadata={
-                "native_task_id": f"Control/Counter/{variant}",
+                "native_task_id": f"Control/Counter/{base_variant}",
+                "official_task_id": f"rtllm/{base_variant}",
                 "candidate_top": candidate_top,
                 "testbench_top": testbench_top,
                 "language": "verilog-2005",
                 "dataset_content_hash": snapshot.dataset_content_hash,
-                "adapter_version": "0.2.0" if up_down else "0.1.0",
+                "adapter_version": ADAPTER_VERSION,
                 "pinned_commit": PINNED_COMMIT,
+                "evaluation_profile": (
+                    "icarus-training-long-context-v1" if icarus_training else "vcs-benchmark-v1"
+                ),
             },
         )
 
@@ -296,7 +348,7 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if task.id != f"rtllm/{variant}":
             raise ConfigurationError(f"unknown RTLLM task: {task.id}")
-        up_down = variant == "up_down_counter"
+        up_down = self._base_variant() == "up_down_counter"
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         root = self._source_root()
         snapshot = self._snapshot()
@@ -378,17 +430,18 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if task.id != f"rtllm/{variant}":
             return None
-        up_down = variant == "up_down_counter"
+        base_variant = self._base_variant()
+        up_down = base_variant == "up_down_counter"
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         source = _read_exact(
-            self._source_root(), (task_root / f"verified_{variant}.v").as_posix()
+            self._source_root(), (task_root / f"verified_{base_variant}.v").as_posix()
         ).decode("utf-8")
-        needle = f"module verified_{variant}" if not up_down else "module up_down_counter"
+        needle = f"module verified_{base_variant}" if not up_down else "module up_down_counter"
         if source.count(needle) != 1:
             raise ConfigurationError("RTLLM reference module normalization is no longer exact")
-        candidate_path = f"rtl/{variant}.v"
+        candidate_path = f"rtl/{base_variant}.v"
         return Candidate(
-            files={candidate_path: source.replace(needle, f"module {variant}", 1)},
+            files={candidate_path: source.replace(needle, f"module {base_variant}", 1)},
             label="pinned-upstream-reference",
         )
 
@@ -396,14 +449,15 @@ class RTLLMSuite(SuiteAdapter):
         if self._config is None:
             return []
         variant = self._variant()
+        base_variant = self._base_variant()
         task = self.load_task(TaskRef(id=f"rtllm/{variant}", suite="rtllm", native_id=variant))
         reference = self.reference_solution(task)
         assert reference is not None
-        candidate_path = f"rtl/{variant}.v"
+        candidate_path = f"rtl/{base_variant}.v"
         bad_source = (
             "module up_down_counter(input clk, reset, up_down, output [15:0] count); "
             "assign count = 16'b0; endmodule\n"
-            if variant == "up_down_counter"
+            if base_variant == "up_down_counter"
             else (
                 "module counter_12(input rst_n, clk, valid_count, "
                 "output [3:0] out); assign out = 4'b0; endmodule\n"
@@ -431,6 +485,38 @@ class RTLLMSuite(SuiteAdapter):
         return self._snapshot().model_copy(deep=True)
 
     def toolchain_profile(self, runtime: Runtime, tools: Any) -> ToolchainProfile | None:
+        if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT:
+            image = runtime.descriptor.image
+            if image is None:
+                compiler = tools.get("iverilog.compile").health_check()
+                runner = tools.get("iverilog.run").health_check()
+                compiler_version = compiler.version
+                runner_version = runner.version
+                compatibility = (
+                    "available" if compiler.healthy and runner.healthy else "unavailable"
+                )
+            else:
+                compiler_version = image.iverilog_version
+                runner_version = image.vvp_version
+                compatibility = image.compatibility_status or "unverified_tool_version"
+            return ToolchainProfile(
+                id="rtllm-icarus-training-v1",
+                version="1.0.0",
+                description=(
+                    "Pinned Icarus training verifier for RTLLM sampling; scores are not VCS "
+                    "benchmark results."
+                ),
+                tools=[
+                    ToolRequirement(name="iverilog", version=compiler_version),
+                    ToolRequirement(name="vvp", version=runner_version),
+                ],
+                runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+                container_image=image.requested_reference if image is not None else None,
+                container_digest=image.resolved_image_id if image is not None else None,
+                deterministic=True,
+                reproducibility_scope="public",
+                compatibility_status=compatibility,
+            )
         health = tools.get("synopsys.vcs.simulate").health_check()
         return ToolchainProfile(
             id="rtllm-vcs-site",
@@ -467,6 +553,12 @@ class RTLLMSuite(SuiteAdapter):
             return "counter_12"
         return self._config.variant or "counter_12"
 
+    def _base_variant(self) -> str:
+        variant = self._variant()
+        if variant == _UP_DOWN_ICARUS_TRAINING_VARIANT:
+            return "up_down_counter"
+        return variant
+
     def _source_root(self) -> Path:
         if self._config is None:
             raise ConfigurationError("RTLLM requires an explicit external checkout path")
@@ -489,7 +581,8 @@ class RTLLMSuite(SuiteAdapter):
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
         variant = self._variant()
-        up_down = variant == "up_down_counter"
+        base_variant = self._base_variant()
+        up_down = base_variant == "up_down_counter"
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
         dataset_hash = _canonical_hash(
@@ -500,7 +593,7 @@ class RTLLMSuite(SuiteAdapter):
             source_root=str(root),
             dataset_root=str((root / task_root).resolve(strict=True)),
             variant=variant,
-            native_layout=f"RTLLM/Control/Counter/{variant}",
+            native_layout=f"RTLLM/Control/Counter/{base_variant}",
             strict_compatibility=self._config.strict_compatibility if self._config else True,
             configuration_fingerprint=_canonical_hash(
                 {

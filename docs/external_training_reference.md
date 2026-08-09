@@ -85,3 +85,30 @@ learning signal.
 
 The [Qwen3.5-9B/VCS reference smoke](audits/external_training_reference_smoke.md) records the first
 real model-snapshot preflight, sealed handoff replay, and online reward-oracle result.
+
+## Codex distillation and rLLM/verl path
+
+The bounded reference path keeps model sampling, verifier execution, and training in separate
+processes:
+
+```text
+Codex public-task sample -> isolated VeriGym verifier -> verified chat JSONL -> Qwen LoRA SFT
+Qwen rLLM trajectory     -> isolated VeriGym verifier -> sparse reward      -> verl GRPO
+```
+
+Use `scripts/export_public_task_input.py` to create a public-only task record. Strong-model samples
+can be produced with `scripts/run_codex_solution_sampler.py` and sealed with
+`verigym-training-reference export-sft`; run `scripts/train_qwen35_verified_sft.py` from an
+Accelerate environment for the warm-start step.
+
+For the RL boundary, `scripts/generate_qwen35_rllm_rollouts.py` serializes official rLLM
+`Episode`, `Trajectory`, and `Step` objects, including old-policy token log probabilities. Then
+`scripts/score_rllm_rollouts.py` evaluates each candidate. It retains full verifier artifacts under
+the evaluator-owned output while the scored JSONL exports only a scalar outcome and hashes.
+Finally, `scripts/train_qwen35_verl_grpo.py` calls verl's outcome-GRPO advantage and clipped policy
+loss implementations and writes a content-hashed LoRA adapter.
+
+The supplied `configs/accelerate/qwen35_4gpu_fsdp.yaml` is a four-GPU 3090 smoke configuration.
+Change the world size and rollout group together for another machine. These scripts demonstrate a
+real optimizer update; production Ray/vLLM rollout throughput, checkpoint recovery, and longer
+campaign convergence remain separate qualification work.

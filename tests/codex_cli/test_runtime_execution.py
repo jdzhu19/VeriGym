@@ -258,10 +258,11 @@ class PolicyRejectedMemoryRuntimeBridge(MemoryRuntimeBridge):
 
 
 @pytest.mark.parametrize(
-    ("track", "workspace_mode"),
+    ("track", "workspace_mode", "reasoning_effort"),
     [
-        ("readonly", "fresh_empty"),
-        ("agent", "visible_task_workspace"),
+        ("readonly", "fresh_empty", "xhigh"),
+        ("agent", "visible_task_workspace", "xhigh"),
+        ("agent", "visible_task_workspace", "max"),
     ],
 )
 def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
@@ -269,6 +270,7 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
     tmp_path: Path,
     track: Literal["readonly", "agent"],
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"],
+    reasoning_effort: Literal["xhigh", "max"],
 ) -> None:
     _executable_path, log, _scenario = fake_codex
     executable, capabilities = runtime_capabilities()
@@ -276,7 +278,7 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
         "model_id": "fake-model",
         "sandbox": "read-only" if track == "readonly" else "workspace-write",
         "approval_policy": "never",
-        "reasoning_effort": "xhigh",
+        "reasoning_effort": reasoning_effort,
         "max_process_time_s": 300,
     }
     settings = (
@@ -313,7 +315,7 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
     assert request.network_policy == "none"
     assert request.mount_policy == "task_workspace_only"
     assert request.requested_model_id == "fake-model"
-    assert request.requested_reasoning_effort == "xhigh"
+    assert request.requested_reasoning_effort == reasoning_effort
     assert request.timeout_s == 300
     assert request.container_environment_names == []
     records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]

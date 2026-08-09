@@ -233,13 +233,16 @@ def main():
                 "item": {"type": "file_read", "path": "/etc/passwd"},
             }
         )
-    if scenario == "agent_bwrap":
+    if scenario in {"agent_bwrap", "agent_bwrap_unsafe_command"}:
+        command = "printf test"
+        if scenario == "agent_bwrap_unsafe_command":
+            command = "/bin/bash -lc \"sed -n '1p' rtl/and_gate.v\nsed -n '1p' README.md\""
         _emit(
             {
                 "type": "item.started",
                 "item": {
                     "type": "command_execution",
-                    "command": "printf test",
+                    "command": command,
                     "status": "running",
                 },
             }
@@ -249,7 +252,7 @@ def main():
                 "type": "item.completed",
                 "item": {
                     "type": "command_execution",
-                    "command": "printf test",
+                    "command": command,
                     "status": "failed",
                     "exit_code": 1,
                     "aggregated_output": (

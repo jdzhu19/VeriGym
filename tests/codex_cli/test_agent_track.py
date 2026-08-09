@@ -191,6 +191,22 @@ def test_bwrap_backend_failure_is_observable_infrastructure(
     assert policy["changed_paths"] == []
 
 
+def test_bwrap_backend_failure_precedes_command_policy_validation(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("agent_bwrap_unsafe_command")
+
+    result = _run(tmp_path / "runs")
+
+    assert result.scorecard.status == "error"
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "sandbox_backend_unavailable"
+    assert result.scorecard.failure.infrastructure is True
+    assert "unquoted line break" not in result.scorecard.failure.message
+
+
 @pytest.mark.parametrize(
     "scenario_name",
     [

@@ -146,3 +146,11 @@ launches Codex or its tool bridge. Service/auth/transport/parser failures are in
 outcomes, while hidden-test
 failures after a structurally successful episode are ordinary benchmark outcomes for the frozen
 candidate, not integration failures. They remain unrepaired.
+
+## Training-sampling configuration
+
+The immutable conformance smoke remains fixed at `xhigh`. The workspace-writing agent additionally
+accepts an explicit `reasoning_effort: "max"` for separately identified strong-Agent trajectory
+sampling. Reports and exported trajectories must partition these runs by requested/effective
+reasoning effort and exact model ID; they must not be pooled with the historical conformance
+baseline. The read-only track continues to reject `max`.

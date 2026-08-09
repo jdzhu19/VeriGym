@@ -48,7 +48,7 @@ class Policy:
 _POLICIES = {
     "training_reference": Policy(
         distribution="verigym-training-reference",
-        version="0.1.0",
+        version="0.2.0",
         module="verigym_training_reference",
         entry_markers=(
             "[console_scripts]",
@@ -70,7 +70,7 @@ _POLICIES = {
     ),
     "rtllm": Policy(
         distribution="verigym-rtllm",
-        version="0.2.0",
+        version="0.3.0",
         module="verigym_rtllm",
         entry_markers=("[verigym.suites]", "rtllm = verigym_rtllm:RTLLMSuite"),
         forbidden_member_names=frozenset(

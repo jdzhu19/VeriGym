@@ -260,7 +260,27 @@ class CodexCliAgentAdapter(AgentAdapter):
                 infrastructure=True,
             )
         if failure is None:
-            if process.timed_out or process.stdout_truncated or process.stderr_truncated:
+            backend_category = sandbox_backend_failure(process.stdout, process.stderr)
+            if backend_category is not None:
+                try:
+                    parsed = _parse_agent_process(process, workspace)
+                except EventParseError:
+                    parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
+                failure = _agent_failure(
+                    TerminationReason.MODEL_ERROR,
+                    backend_category,
+                    "Codex CLI workspace sandbox backend was unavailable",
+                    infrastructure=True,
+                )
+                event_policy = {
+                    "schema_version": "1.0",
+                    "policy_id": settings.tool_use_policy,
+                    "policy_passed": False,
+                    "evaluation_complete": False,
+                    "failure_category": backend_category,
+                    "failure_message": "Codex CLI workspace sandbox backend was unavailable",
+                }
+            elif process.timed_out or process.stdout_truncated or process.stderr_truncated:
                 parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
                 failure = _process_failure(process, parsed, runtime_result)
             else:

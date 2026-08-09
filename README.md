@@ -49,6 +49,10 @@ upstream data explicitly. See the
 [VerilogEval source guide](integrations/verigym-verilog-eval-codecomplete/README.md) and
 [RTL-Repo adapter guide](docs/rtl_repo.md).
 
+The optional [external training reference](docs/external_training_reference.md) covers
+verifier-filtered strong-model SFT and a bounded rLLM/VeriGym/verl GRPO path. Training frameworks,
+GPU runtimes, model weights, and credentials remain outside the evaluator package.
+
 `pytest` runs the ordinary no-tool suite. Select an opt-in marker explicitly after provisioning
 its dependency, for example `pytest -m requires_iverilog`; Docker and Yosys markers additionally
 require the environment guards shown below.

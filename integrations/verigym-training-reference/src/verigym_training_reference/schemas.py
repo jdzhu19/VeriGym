@@ -197,9 +197,119 @@ class OnlineRewardResult(StrictModel):
         return _hash(value)
 
 
+class SftMessage(StrictModel):
+    """One portable chat-template message."""
+
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class VerifiedSftExample(StrictModel):
+    """Verifier-filtered solution-distillation example."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_verified_solution_sft_v1"] = "verigym_verified_solution_sft_v1"
+    sample_id: str
+    task_id: str
+    official_task_id: str
+    task_hash: str
+    source_hash: str
+    verifier_hash: str
+    candidate_path: str
+    candidate_sha256: str
+    verigym_candidate_hash: str
+    source_model_id: str
+    source_reasoning_effort: Literal["xhigh", "max"]
+    model_call_hash: str
+    public_input_hash: str
+    messages: list[SftMessage] = Field(min_length=2)
+    verifier_resolved: Literal[True] = True
+    infrastructure_valid: Literal[True] = True
+    hidden_assets_exported: Literal[False] = False
+    reference_solution_exported: Literal[False] = False
+    private_reasoning_exported: Literal[False] = False
+    example_hash: str
+
+    @field_validator(
+        "sample_id",
+        "task_hash",
+        "source_hash",
+        "verifier_hash",
+        "candidate_sha256",
+        "verigym_candidate_hash",
+        "model_call_hash",
+        "public_input_hash",
+        "example_hash",
+    )
+    @classmethod
+    def validate_sft_hashes(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def messages_end_in_assistant(self) -> VerifiedSftExample:
+        if self.messages[-1].role != "assistant":
+            raise ValueError("SFT examples must end with an assistant message")
+        if not any(message.role == "user" for message in self.messages[:-1]):
+            raise ValueError("SFT examples require a user message")
+        return self
+
+
+class VerifiedSftDatasetManifest(StrictModel):
+    """Sealed manifest for verifier-filtered solution SFT data."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_verified_solution_sft_dataset_v1"] = (
+        "verigym_verified_solution_sft_dataset_v1"
+    )
+    record_count: int = Field(ge=1)
+    task_ids: list[str] = Field(min_length=1)
+    source_model_ids: list[str] = Field(min_length=1)
+    source_reasoning_efforts: list[Literal["xhigh", "max"]] = Field(min_length=1)
+    example_hashes: list[str] = Field(min_length=1)
+    file_hashes: dict[str, str]
+    only_resolved_samples: Literal[True] = True
+    infrastructure_invalid_excluded: Literal[True] = True
+    hidden_assets_exported: Literal[False] = False
+    reference_solutions_exported: Literal[False] = False
+    private_reasoning_exported: Literal[False] = False
+    raw_host_paths_exported: Literal[False] = False
+    credential_values_exported: Literal[False] = False
+    manifest_hash: str
+
+    @field_validator("example_hashes")
+    @classmethod
+    def validate_example_hashes(cls, values: list[str]) -> list[str]:
+        return [_hash(value) for value in values]
+
+    @field_validator("file_hashes")
+    @classmethod
+    def validate_sft_file_hashes(cls, values: dict[str, str]) -> dict[str, str]:
+        return {key: _hash(value) for key, value in sorted(values.items())}
+
+    @field_validator("manifest_hash")
+    @classmethod
+    def validate_sft_manifest_hash(cls, value: str) -> str:
+        return _hash(value)
+
+    @model_validator(mode="after")
+    def dataset_is_canonical(self) -> VerifiedSftDatasetManifest:
+        if len(self.example_hashes) != self.record_count:
+            raise ValueError("SFT example count differs from record_count")
+        if self.task_ids != sorted(set(self.task_ids)):
+            raise ValueError("SFT task IDs must be sorted and unique")
+        if self.source_model_ids != sorted(set(self.source_model_ids)):
+            raise ValueError("SFT source model IDs must be sorted and unique")
+        if self.source_reasoning_efforts != sorted(set(self.source_reasoning_efforts)):
+            raise ValueError("SFT reasoning efforts must be sorted and unique")
+        return self
+
+
 __all__ = [
     "ModelSnapshotIdentity",
     "OnlineRewardResult",
+    "SftMessage",
     "TrainingReferenceBundleManifest",
     "TrainingReferenceConfig",
+    "VerifiedSftDatasetManifest",
+    "VerifiedSftExample",
 ]

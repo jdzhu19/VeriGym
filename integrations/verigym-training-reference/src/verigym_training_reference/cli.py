@@ -23,6 +23,7 @@ from .pipeline import (
     validate_training_bundle,
 )
 from .reward_oracle import TrainingRewardOracle
+from .sft_exporter import export_verified_solution_sft
 
 _MAX_CANDIDATE_BYTES = 4 * 1024 * 1024
 
@@ -79,6 +80,13 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--toolchain-profile")
     score.add_argument("--suite-source-root", type=Path)
     score.add_argument("--suite-variant")
+
+    export_sft = subparsers.add_parser(
+        "export-sft",
+        help="export a verifier-filtered Codex solution sample as portable chat JSONL",
+    )
+    export_sft.add_argument("--sampling-root", type=Path, required=True)
+    export_sft.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -165,6 +173,16 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "scalar_reward": result.scalar_reward,
             "infrastructure_valid": result.infrastructure_valid,
             "result_hash": result.result_hash,
+        }
+    if arguments.command == "export-sft":
+        sft_manifest = export_verified_solution_sft(arguments.sampling_root, arguments.output)
+        return {
+            "status": "exported",
+            "format_id": sft_manifest.format_id,
+            "record_count": sft_manifest.record_count,
+            "task_ids": sft_manifest.task_ids,
+            "source_model_ids": sft_manifest.source_model_ids,
+            "manifest_hash": sft_manifest.manifest_hash,
         }
     raise AssertionError(f"unhandled command: {arguments.command}")
 

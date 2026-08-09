@@ -29,8 +29,8 @@ _SAFE_USAGE_KEYS = {
     "total_token_count",
 }
 _SAFE_REASONING_IDENTITIES = {
-    "requested_reasoning_effort": {"xhigh"},
-    "effective_reasoning_effort": {"xhigh"},
+    "requested_reasoning_effort": {"max", "xhigh"},
+    "effective_reasoning_effort": {"max", "xhigh"},
     "reasoning_effort_source": {"verigym_explicit_cli_override"},
 }
 _SAFE_SECURITY_BOOLEAN_KEYS = {

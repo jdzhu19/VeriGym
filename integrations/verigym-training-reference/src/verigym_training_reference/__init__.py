@@ -13,18 +13,24 @@ from .reward_oracle import TrainingRewardOracle
 from .schemas import (
     ModelSnapshotIdentity,
     OnlineRewardResult,
+    SftMessage,
     TrainingReferenceBundleManifest,
     TrainingReferenceConfig,
+    VerifiedSftDatasetManifest,
+    VerifiedSftExample,
 )
 from .trl_adapter import TrlRewardAdapter, build_trl_dataset_rows
 
 __all__ = [
     "ModelSnapshotIdentity",
     "OnlineRewardResult",
+    "SftMessage",
     "TrainingReferenceBundleManifest",
     "TrainingReferenceConfig",
     "TrainingRewardOracle",
     "TrlRewardAdapter",
+    "VerifiedSftDatasetManifest",
+    "VerifiedSftExample",
     "build_trl_dataset_rows",
     "exclusion_counts",
     "inspect_model_snapshot",

@@ -12,12 +12,19 @@ python -m pip install -e ./integrations/verigym-rtllm
 python -m pip install -e ./integrations/verigym-synopsys
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_12
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_counter
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant up_down_counter_iverilog_training
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
 prompt, hidden VCS testbench, and normalized reference are loaded from the external checkout after
 hash validation. Both chat and agent modes use the same verifier graph. A separate user-supplied
 Design Compiler profile can enable hash-bound area/timing evaluation after VCS correctness passes.
+
+`up_down_counter_iverilog_training` is an explicitly separate long-context sampling profile. It
+keeps the 900-second task budget and checks candidates with the pinned Icarus 12 Docker image. Its
+task metadata links back to `rtllm/up_down_counter`; its results must not be reported as VCS
+benchmark scores.
 
 RTLLM is MIT-licensed. Synopsys tools and licenses are neither included nor required by ordinary
 VeriGym CI; commercial execution is site-local and opt-in.

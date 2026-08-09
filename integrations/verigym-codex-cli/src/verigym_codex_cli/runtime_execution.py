@@ -47,8 +47,11 @@ def resolve_runtime_process_invocation_spec(
         "codex_cli_external_agent",
     }:
         raise ValueError("runtime-owned execution requires a supported integration track")
-    if settings.requested_reasoning_effort != "xhigh":
-        raise ValueError("runtime-owned execution requires reasoning effort xhigh")
+    allowed_efforts = (
+        {"xhigh", "max"} if settings.integration_track == "codex_cli_external_agent" else {"xhigh"}
+    )
+    if settings.requested_reasoning_effort not in allowed_efforts:
+        raise ValueError("runtime-owned execution received an unsupported reasoning effort")
     if settings.resolved_auth_mode != "inherited_codex_login":
         raise ValueError("Docker runtime execution requires inherited Codex login")
     read_only_mounts = list(getattr(bridge, "read_only_mounts", []))
@@ -83,7 +86,7 @@ def resolve_runtime_process_invocation_spec(
         workspace_mode=workspace_mode,
         logical_workspace_root="/workspace",
         requested_model_id=settings.model_id,
-        requested_reasoning_effort=cast(Literal["xhigh"], settings.requested_reasoning_effort),
+        requested_reasoning_effort=settings.requested_reasoning_effort,
         executable_path_identity="verified_host_codex_cli",
         executable_name=executable.name,
         executable_sha256=executable.sha256,
