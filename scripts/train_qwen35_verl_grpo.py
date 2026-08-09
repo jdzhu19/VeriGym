@@ -47,7 +47,7 @@ class _RolloutDataset(Dataset[dict[str, torch.Tensor]]):
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="One-step rLLM/VeriGym/verl GRPO smoke.")
+    parser = argparse.ArgumentParser(description="Bounded rLLM/VeriGym/verl GRPO update.")
     parser.add_argument("--rollouts", type=Path, required=True)
     parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument("--adapter", type=Path, required=True)

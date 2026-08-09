@@ -105,8 +105,11 @@ For the RL boundary, `scripts/generate_qwen35_rllm_rollouts.py` serializes offic
 `Episode`, `Trajectory`, and `Step` objects, including old-policy token log probabilities. Then
 `scripts/score_rllm_rollouts.py` evaluates each candidate. It retains full verifier artifacts under
 the evaluator-owned output while the scored JSONL exports only a scalar outcome and hashes.
-Finally, `scripts/train_qwen35_verl_grpo.py` calls verl's outcome-GRPO advantage and clipped policy
-loss implementations and writes a content-hashed LoRA adapter.
+For multi-task updates, `scripts/merge_rllm_reward_groups.py` accepts only groups from one policy
+version with valid infrastructure and nonzero reward variance in every group. Finally,
+`scripts/train_qwen35_verl_grpo.py` calls verl's outcome-GRPO advantage and clipped policy loss
+implementations and writes a content-hashed LoRA adapter. Each group maps to one distributed
+optimizer step.
 
 For iterative experiments, keep evaluator source separate from weight-bearing artifacts:
 

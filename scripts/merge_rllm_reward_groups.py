@@ -112,11 +112,13 @@ def _read_group(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if len(records) != manifest.get("record_count") or len(manifest.get("group_ids", [])) != 1:
         raise SystemExit("each merge input must contain exactly one complete reward group")
     policy_hash = manifest.get("policy_version_hash")
+    policy_id = manifest.get("policy_version_id")
     weight_version = manifest.get("weight_version")
     group_id = manifest["group_ids"][0]
     task_ids = manifest.get("task_ids")
     if (
         not isinstance(policy_hash, str)
+        or not isinstance(policy_id, str)
         or not isinstance(weight_version, int)
         or not isinstance(group_id, str)
         or not isinstance(task_ids, list)

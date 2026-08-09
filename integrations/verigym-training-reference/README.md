@@ -53,8 +53,10 @@ The repository also includes opt-in scripts for a small but real two-stage train
    log probabilities from a local Qwen3.5 adapter.
 2. `score_rllm_rollouts.py` submits candidates to isolated VeriGym Docker runs and exports only
    sparse rewards and artifact identities.
-3. `train_qwen35_verl_grpo.py` uses verl's GRPO advantage and clipped policy loss for one 4-GPU
-   FSDP LoRA update.
+3. `merge_rllm_reward_groups.py` optionally combines compatible task groups after checking policy
+   identity, infrastructure validity, and per-group reward variance.
+4. `train_qwen35_verl_grpo.py` uses verl's GRPO advantage and clipped policy loss for bounded
+   4-GPU FSDP LoRA updates. Each group produces one distributed optimizer step.
 
 Every expensive script requires an explicit `VERIGYM_RUN_*` opt-in. The smoke fails closed on
 infrastructure-invalid outcomes and on groups without reward variance. It validates the data and
@@ -99,3 +101,5 @@ See `docs/external_training_reference.md` for the complete boundary and rollout 
 
 The [weight-bound online iteration](../../docs/audits/qwen35_online_rl_iteration_v2.md) records a
 fresh policy-v1 rollout, VeriGym reward group, and four-GPU policy-v2 update.
+The [multi-task online campaign](../../docs/audits/qwen35_multitask_online_rl_v4.md) records two
+fresh cross-suite iterations from policy-v2 through policy-v4.
