@@ -416,9 +416,12 @@ tasks without reusing the Milestone 11 task identities.
 
 The repository-level environment supports deterministic export of bounded observable trajectories,
 decomposed offline rewards, and immutable context-memory agent versions. See
-[the evolving-agent bridge guide](docs/evolving_agent_bridge.md). Reference images and Docker
+[the evolving-agent bridge guide](docs/evolving_agent_bridge.md). The independently installable
+[external training reference](docs/external_training_reference.md) demonstrates a sealed training
+handoff, an online completion-to-reward oracle, and checkpoint provenance without embedding an RL
+framework in the evaluator. Reference images and Docker
 profiles are Linux-first. Quality reporting remains profile-relative educational synthesis
 area and timing—not full PPA or signoff. Site-local commercial execution is supported through
 optional plugins; proprietary tools and licenses are never distributed. OpenROAD, power,
-property checking beyond RTL equivalence, distributed scheduling, built-in model-weight training
-or RL, and continuously evolving benchmark releases remain out of scope for this alpha.
+property checking beyond RTL equivalence, distributed scheduling, built-in model-weight training,
+and continuously evolving benchmark releases remain out of scope for this alpha.

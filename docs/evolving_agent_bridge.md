@@ -67,3 +67,7 @@ agent-version identities. Milestone 10B does not implement or validate an RL
 optimization algorithm. External trainer, checkpoint, and adapter manifests
 record hashes, provenance, license, compatibility, and secret-free loading
 metadata; weight-bearing imports remain non-executable in M10B.
+
+The later [external training reference pipeline](external_training_reference.md) is an optional,
+independently installable consumer of this boundary. It adds a training-only split gate and an
+online reward oracle while keeping trainer frameworks and model weights outside the evaluator.

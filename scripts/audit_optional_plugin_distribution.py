@@ -46,6 +46,16 @@ class Policy:
 
 
 _POLICIES = {
+    "training_reference": Policy(
+        distribution="verigym-training-reference",
+        version="0.1.0",
+        module="verigym_training_reference",
+        entry_markers=(
+            "[console_scripts]",
+            "verigym-training-reference = verigym_training_reference.cli:main",
+        ),
+        forbidden_member_suffixes=frozenset({".bin", ".ckpt", ".pt", ".safetensors"}),
+    ),
     "rtl_repo": Policy(
         distribution="verigym-rtl-repo",
         version="0.1.0",

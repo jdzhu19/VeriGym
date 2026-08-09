@@ -1,0 +1,19 @@
+{
+  "adapter_type": "lora",
+  "algorithm": "grpo",
+  "framework": "trl",
+  "hyperparameters": {
+    "bf16": true,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 1e-06,
+    "max_completion_length": 2048,
+    "max_prompt_length": 4096,
+    "num_generations": 4,
+    "per_device_train_batch_size": 1
+  },
+  "model_id": "Qwen/Qwen3.5-9B",
+  "model_root_env": "VERIGYM_TRAINING_MODEL_ROOT",
+  "reward_profile_id": "repo_rtl_sparse_v1",
+  "schema_version": "1.0",
+  "trainer_output_root_env": "VERIGYM_TRAINING_OUTPUT_ROOT"
+}
