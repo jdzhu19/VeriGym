@@ -29,3 +29,11 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
     assert "hydra.run.dir=${VERIGYM_CAMPAIGN_WORKSPACE}/hydra" in online_stage["argv"]
     assert "hydra.output_subdir=null" in online_stage["argv"]
     assert "hydra.job.chdir=False" in online_stage["argv"]
+
+
+def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
+    source = Path("scripts/run_qwen35_online_container.py").read_text(encoding="utf-8")
+
+    assert '"CUPY_CACHE_DIR": str(container_cache / "cupy")' in source
+    assert "VeriGym trainer:{workspace}" in source
+    assert '"HOME":' not in source

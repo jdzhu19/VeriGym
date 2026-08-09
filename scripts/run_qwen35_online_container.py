@@ -126,7 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     group_path = container_identity / "group"
     passwd_path.write_text(
         "root:x:0:0:root:/root:/bin/bash\n"
-        f"verigym:x:{os.getuid()}:{os.getgid()}:VeriGym trainer:/nonexistent:/usr/sbin/nologin\n",
+        f"verigym:x:{os.getuid()}:{os.getgid()}:VeriGym trainer:{workspace}:"
+        "/usr/sbin/nologin\n",
         encoding="utf-8",
     )
     group_path.write_text(f"root:x:0:\nverigym:x:{os.getgid()}:verigym\n", encoding="utf-8")
@@ -171,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         trainer_args = trainer_args[1:]
     container_environment = {
         "CUDA_CACHE_PATH": str(container_cache / "cuda"),
+        "CUPY_CACHE_DIR": str(container_cache / "cupy"),
         "HF_HOME": str(hf_home),
         "HF_HUB_OFFLINE": "1",
         "HYDRA_FULL_ERROR": "1",
