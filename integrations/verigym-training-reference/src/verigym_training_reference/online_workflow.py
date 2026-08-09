@@ -184,7 +184,7 @@ class VeriGymRtlWorkflow(Workflow):  # type: ignore[misc]
                     action=Action(action=plan_text),
                     reward=0.0,
                     model_output=plan,
-                    metadata={"turn": 0, "trainable": False},
+                    metadata={"turn": 0, "trainable": True},
                 ),
                 Step(
                     chat_completions=[
