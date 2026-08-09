@@ -99,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     container_cache = workspace / "container-cache"
     container_config = workspace / "container-config"
     container_data = workspace / "container-data"
+    container_identity = workspace / "container-identity"
     ray_tmp = workspace / "ray"
     rllm_home = workspace / "rllm-home"
     hf_home = workspace / "hf-home"
@@ -109,11 +110,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         container_cache,
         container_config,
         container_data,
+        container_identity,
         ray_tmp,
         rllm_home,
         hf_home,
     ]:
         path.mkdir(parents=True, exist_ok=True)
+    passwd_path = container_identity / "passwd"
+    group_path = container_identity / "group"
+    passwd_path.write_text(
+        "root:x:0:0:root:/root:/bin/bash\n"
+        f"verigym:x:{os.getuid()}:{os.getgid()}:VeriGym trainer:/nonexistent:/usr/sbin/nologin\n",
+        encoding="utf-8",
+    )
+    group_path.write_text(f"root:x:0:\nverigym:x:{os.getgid()}:verigym\n", encoding="utf-8")
     broker_report = workspace / "online-verifier-broker-report.json"
     completion_report = workspace / "online-completion-report.json"
 
@@ -168,6 +178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "RLLM_HOME": str(rllm_home),
         "TMPDIR": str(process_tmp),
         "TORCH_HOME": str(container_cache / "torch"),
+        "TORCHINDUCTOR_CACHE_DIR": str(container_cache / "inductor"),
         "TRANSFORMERS_OFFLINE": "1",
         "TRITON_CACHE_DIR": str(container_cache / "triton"),
         "VERIGYM_ONLINE_BROKER_ROOT": str(broker_root),
@@ -212,6 +223,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     for path in [repository, rllm_root, verl_root, model_root, adapter_root, container_venv]:
         command.extend(["--volume", _mount(path, "ro")])
     command.extend(["--volume", _mount(workspace, "rw")])
+    command.extend(["--volume", f"{passwd_path}:/etc/passwd:ro"])
+    command.extend(["--volume", f"{group_path}:/etc/group:ro"])
     command.extend(
         [
             arguments.image,
