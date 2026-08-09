@@ -96,7 +96,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     broker_root = workspace / "verifier-broker"
     verifier_output = workspace / "verifier-runs"
     process_tmp = workspace / "process-tmp"
-    container_home = workspace / "container-home"
+    container_cache = workspace / "container-cache"
+    container_config = workspace / "container-config"
+    container_data = workspace / "container-data"
     ray_tmp = workspace / "ray"
     rllm_home = workspace / "rllm-home"
     hf_home = workspace / "hf-home"
@@ -104,7 +106,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         broker_root,
         verifier_output,
         process_tmp,
-        container_home,
+        container_cache,
+        container_config,
+        container_data,
         ray_tmp,
         rllm_home,
         hf_home,
@@ -150,7 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if trainer_args and trainer_args[0] == "--":
         trainer_args = trainer_args[1:]
     container_environment = {
-        "HOME": str(container_home),
+        "CUDA_CACHE_PATH": str(container_cache / "cuda"),
         "HF_HOME": str(hf_home),
         "HF_HUB_OFFLINE": "1",
         "HYDRA_FULL_ERROR": "1",
@@ -163,7 +167,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "RAY_TMPDIR": str(ray_tmp),
         "RLLM_HOME": str(rllm_home),
         "TMPDIR": str(process_tmp),
+        "TORCH_HOME": str(container_cache / "torch"),
         "TRANSFORMERS_OFFLINE": "1",
+        "TRITON_CACHE_DIR": str(container_cache / "triton"),
         "VERIGYM_ONLINE_BROKER_ROOT": str(broker_root),
         "VERIGYM_ONLINE_COMPLETION_REPORT": str(completion_report),
         "VERIGYM_ONLINE_TASK_MANIFEST": str(task_manifest),
@@ -177,6 +183,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "VLLM_ENGINE_ITERATION_TIMEOUT_S": "3600",
         "VLLM_GDN_PREFILL_BACKEND": "triton",
         "VLLM_USE_V1": "1",
+        "XDG_CACHE_HOME": str(container_cache),
+        "XDG_CONFIG_HOME": str(container_config),
+        "XDG_DATA_HOME": str(container_data),
         "PYTORCH_ALLOC_CONF": "expandable_segments:False",
     }
     command = [
