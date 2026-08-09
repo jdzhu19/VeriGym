@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 _GPU_IDS = re.compile(r"^[0-9]+(?:,[0-9]+)*$")
+_CONTAINER_WORKSPACE = Path("/verigym-campaign")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -79,6 +80,18 @@ def _docker_gpu_request(gpu_ids: str) -> str:
     return f'"device={gpu_ids}"'
 
 
+def _container_workspace_path(path: Path, workspace: Path) -> Path:
+    try:
+        relative = path.relative_to(workspace)
+    except ValueError as error:
+        raise RuntimeError("trainer artifact path is outside the campaign workspace") from error
+    return _CONTAINER_WORKSPACE / relative
+
+
+def _containerize_argument(value: str, workspace: Path) -> str:
+    return value.replace(str(workspace), str(_CONTAINER_WORKSPACE))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     if not _GPU_IDS.fullmatch(arguments.gpu_ids):
@@ -98,6 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     workspace = arguments.campaign_workspace.resolve(strict=True)
     if not workspace.is_dir():
         raise RuntimeError("campaign workspace is unavailable")
+    container_task_manifest = _container_workspace_path(task_manifest, workspace)
 
     broker_root = workspace / "verifier-broker"
     verifier_output = workspace / "verifier-runs"
@@ -126,7 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     group_path = container_identity / "group"
     passwd_path.write_text(
         "root:x:0:0:root:/root:/bin/bash\n"
-        f"verigym:x:{os.getuid()}:{os.getgid()}:VeriGym trainer:{workspace}:"
+        f"verigym:x:{os.getuid()}:{os.getgid()}:VeriGym trainer:{_CONTAINER_WORKSPACE}:"
         "/usr/sbin/nologin\n",
         encoding="utf-8",
     )
@@ -170,10 +184,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     trainer_args = arguments.trainer_args
     if trainer_args and trainer_args[0] == "--":
         trainer_args = trainer_args[1:]
+    trainer_args = [_containerize_argument(value, workspace) for value in trainer_args]
     container_environment = {
-        "CUDA_CACHE_PATH": str(container_cache / "cuda"),
-        "CUPY_CACHE_DIR": str(container_cache / "cupy"),
-        "HF_HOME": str(hf_home),
+        "CUDA_CACHE_PATH": str(_container_workspace_path(container_cache / "cuda", workspace)),
+        "CUPY_CACHE_DIR": str(_container_workspace_path(container_cache / "cupy", workspace)),
+        "HF_HOME": str(_container_workspace_path(hf_home, workspace)),
         "HF_HUB_OFFLINE": "1",
         "HYDRA_FULL_ERROR": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -182,17 +197,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{repository / 'integrations/verigym-training-reference/src'}:"
             f"{rllm_root}:{verl_root}"
         ),
-        "RAY_TMPDIR": str(ray_tmp),
-        "RLLM_HOME": str(rllm_home),
-        "TMPDIR": str(process_tmp),
-        "TORCH_HOME": str(container_cache / "torch"),
-        "TORCHINDUCTOR_CACHE_DIR": str(container_cache / "inductor"),
+        "RAY_TMPDIR": str(_container_workspace_path(ray_tmp, workspace)),
+        "RLLM_HOME": str(_container_workspace_path(rllm_home, workspace)),
+        "TMPDIR": str(_container_workspace_path(process_tmp, workspace)),
+        "TORCH_HOME": str(_container_workspace_path(container_cache / "torch", workspace)),
+        "TORCHINDUCTOR_CACHE_DIR": str(
+            _container_workspace_path(container_cache / "inductor", workspace)
+        ),
         "TRANSFORMERS_OFFLINE": "1",
-        "TRITON_CACHE_DIR": str(container_cache / "triton"),
-        "VERIGYM_ONLINE_BROKER_ROOT": str(broker_root),
-        "VERIGYM_ONLINE_COMPLETION_REPORT": str(completion_report),
-        "VERIGYM_ONLINE_TASK_MANIFEST": str(task_manifest),
-        "VERIGYM_ONLINE_VERIFIER_OUTPUT": str(verifier_output),
+        "TRITON_CACHE_DIR": str(_container_workspace_path(container_cache / "triton", workspace)),
+        "VERIGYM_ONLINE_BROKER_ROOT": str(_container_workspace_path(broker_root, workspace)),
+        "VERIGYM_ONLINE_COMPLETION_REPORT": str(
+            _container_workspace_path(completion_report, workspace)
+        ),
+        "VERIGYM_ONLINE_TASK_MANIFEST": str(container_task_manifest),
+        "VERIGYM_ONLINE_VERIFIER_OUTPUT": str(
+            _container_workspace_path(verifier_output, workspace)
+        ),
         "VERIGYM_RLLM_COMMIT": _git_head(rllm_root),
         "VERIGYM_SOURCE_COMMIT": _git_head(repository),
         "VERIGYM_TRAINING_IMAGE_ID": arguments.expected_image_id,
@@ -202,9 +223,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "VLLM_ENGINE_ITERATION_TIMEOUT_S": "3600",
         "VLLM_GDN_PREFILL_BACKEND": "triton",
         "VLLM_USE_V1": "1",
-        "XDG_CACHE_HOME": str(container_cache),
-        "XDG_CONFIG_HOME": str(container_config),
-        "XDG_DATA_HOME": str(container_data),
+        "XDG_CACHE_HOME": str(_container_workspace_path(container_cache, workspace)),
+        "XDG_CONFIG_HOME": str(_container_workspace_path(container_config, workspace)),
+        "XDG_DATA_HOME": str(_container_workspace_path(container_data, workspace)),
         "PYTORCH_ALLOC_CONF": "expandable_segments:False",
     }
     command = [
@@ -230,7 +251,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.extend(["--env", f"{name}={value}"])
     for path in [repository, rllm_root, verl_root, model_root, adapter_root, container_venv]:
         command.extend(["--volume", _mount(path, "ro")])
-    command.extend(["--volume", _mount(workspace, "rw")])
+    command.extend(["--volume", f"{workspace}:{_CONTAINER_WORKSPACE}:rw"])
     command.extend(["--volume", f"{passwd_path}:/etc/passwd:ro"])
     command.extend(["--volume", f"{group_path}:/etc/group:ro"])
     command.extend(

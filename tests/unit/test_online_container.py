@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _script() -> ModuleType:
     path = Path("scripts/run_qwen35_online_container.py").resolve(strict=True)
@@ -34,6 +36,20 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
 def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     source = Path("scripts/run_qwen35_online_container.py").read_text(encoding="utf-8")
 
-    assert '"CUPY_CACHE_DIR": str(container_cache / "cupy")' in source
-    assert "VeriGym trainer:{workspace}" in source
+    assert '"CUPY_CACHE_DIR": str(_container_workspace_path(container_cache / "cupy"' in source
+    assert "VeriGym trainer:{_CONTAINER_WORKSPACE}" in source
     assert '"HOME":' not in source
+
+
+def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:
+    module = _script()
+    artifact = tmp_path / "ray" / "session"
+
+    assert module._container_workspace_path(artifact, tmp_path) == Path(
+        "/verigym-campaign/ray/session"
+    )
+    assert module._containerize_argument(f"trainer.dir={tmp_path}/checkpoints", tmp_path) == (
+        "trainer.dir=/verigym-campaign/checkpoints"
+    )
+    with pytest.raises(RuntimeError, match="outside the campaign workspace"):
+        module._container_workspace_path(tmp_path.parent / "outside", tmp_path)
