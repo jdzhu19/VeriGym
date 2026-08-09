@@ -18,7 +18,10 @@ from verigym.schemas.options import JsonValue
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
-_SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SAFE_TASK_ID = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+    r"(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})+$"
+)
 
 ContentClass = Literal[
     "public_task",

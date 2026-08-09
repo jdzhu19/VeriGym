@@ -133,3 +133,7 @@ The supplied `configs/accelerate/qwen35_4gpu_fsdp.yaml` is a four-GPU 3090 smoke
 Change the world size and rollout group together for another machine. These scripts demonstrate a
 real optimizer update; production Ray/vLLM rollout throughput, checkpoint recovery, and longer
 campaign convergence remain separate qualification work.
+
+For held-out policy comparison, resumable command DAGs, and the optional official Ray/vLLM
+rLLM + verl loop, see [Online RTL Training](online_training.md). These control-plane features keep
+evaluation-only tasks separate from reward-bearing training trajectories.

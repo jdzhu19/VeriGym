@@ -1,0 +1,19 @@
+{
+  "split_id": "qwen35-rtl-heldout-v1",
+  "suite_id": "verilog-eval-code-complete",
+  "variant": "v2-code-complete-iccad2023",
+  "task_ids": [
+    "Prob014_andgate",
+    "Prob024_hadd",
+    "Prob030_popcount255",
+    "Prob035_count1to10",
+    "Prob045_edgedetect2",
+    "Prob068_countbcd",
+    "Prob071_always_casez",
+    "Prob080_timer",
+    "Prob086_lfsr5",
+    "Prob107_fsm1s",
+    "Prob128_fsm_ps2",
+    "Prob143_fsm_onehot"
+  ]
+}

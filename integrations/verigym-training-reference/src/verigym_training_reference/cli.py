@@ -14,6 +14,7 @@ from verigym.core.errors import ConfigurationError
 from verigym.experiments.state import atomic_dump_json
 from verigym.schemas.options import JsonValue
 
+from .campaign import load_campaign_spec, run_training_campaign
 from .pipeline import (
     exclusion_counts,
     load_training_config,
@@ -110,6 +111,14 @@ def _parser() -> argparse.ArgumentParser:
     policy.add_argument("--reward-manifest", type=Path)
     policy.add_argument("--training-report", type=Path)
     policy.add_argument("--loading-format", default="peft_lora_safetensors")
+
+    campaign = subparsers.add_parser(
+        "run-campaign",
+        help="execute or resume a shell-free, hash-bound external training campaign",
+    )
+    campaign.add_argument("--config", type=Path, required=True)
+    campaign.add_argument("--workspace", type=Path, required=True)
+    campaign.add_argument("--repository", type=Path, required=True)
     return parser
 
 
@@ -230,6 +239,13 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "version_hash": policy_version.version_hash,
             "artifact_hash": policy_version.artifact_hash,
         }
+    if arguments.command == "run-campaign":
+        report = run_training_campaign(
+            spec=load_campaign_spec(arguments.config),
+            workspace=arguments.workspace,
+            repository=arguments.repository,
+        )
+        return report
     raise AssertionError(f"unhandled command: {arguments.command}")
 
 

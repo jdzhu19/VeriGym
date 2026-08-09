@@ -23,6 +23,10 @@ The bundle contains aligned eligible `training` episodes and offline rewards, a 
 the core external-trainer manifest, a secret-free trainer configuration, and a metadata-bound
 model snapshot. Local model paths and weight contents are not copied into the bundle.
 
+The package also provides `run-campaign`, a shell-free resumable DAG runner for rollout,
+verification, selection, training, checkpoint registration, and evaluation stages. Stage receipts
+bind commands to artifact hashes and reject mutated outputs on resume.
+
 Verifier-filtered strong-model solutions can be exported separately for SFT:
 
 ```bash
@@ -103,3 +107,11 @@ The [weight-bound online iteration](../../docs/audits/qwen35_online_rl_iteration
 fresh policy-v1 rollout, VeriGym reward group, and four-GPU policy-v2 update.
 The [multi-task online campaign](../../docs/audits/qwen35_multitask_online_rl_v4.md) records two
 fresh cross-suite iterations from policy-v2 through policy-v4.
+
+An opt-in full-stack example is defined in
+`configs/training/qwen35_rllm_verl_online_smoke_v1.json`. It uses `VeriGymRtlWorkflow` with the
+official rLLM `AgentTrainer`, Ray/vLLM rollouts, and verl GRPO. rLLM, verl, vLLM, and GPU
+dependencies remain external requirements; ordinary package tests do not import or require them.
+The trainer container has no network, verifier source mount, or Docker socket. Candidate scoring is
+performed by a host-side, hash-bound broker so verifier-owned assets remain outside the policy
+process.
