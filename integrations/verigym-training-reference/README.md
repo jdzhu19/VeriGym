@@ -96,3 +96,6 @@ verigym-training-reference register-checkpoint \
 ```
 
 See `docs/external_training_reference.md` for the complete boundary and rollout guidance.
+
+The [weight-bound online iteration](../../docs/audits/qwen35_online_rl_iteration_v2.md) records a
+fresh policy-v1 rollout, VeriGym reward group, and four-GPU policy-v2 update.

@@ -459,6 +459,8 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
         "adapter_config_sha256": _sha256(adapter / "adapter_config.json"),
         "adapter_weights_sha256": _sha256(adapter / "adapter_model.safetensors"),
         "group_size": arguments.group_size,
+        "plan_tokens": arguments.plan_tokens,
+        "solution_tokens": arguments.solution_tokens,
         "temperature": arguments.temperature,
         "top_p": arguments.top_p,
         "seed": arguments.seed,
