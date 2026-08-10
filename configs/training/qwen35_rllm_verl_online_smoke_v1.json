@@ -115,13 +115,15 @@
         "++actor_rollout_ref.actor.fsdp_config.fsdp_size=4",
         "++actor_rollout_ref.actor.fsdp_config.reshard_after_forward=True",
         "++actor_rollout_ref.ref.fsdp_config.reshard_after_forward=True",
-        "++actor_rollout_ref.actor.fsdp_config.offload_policy=True",
+        "++actor_rollout_ref.actor.fsdp_config.offload_policy=False",
         "++actor_rollout_ref.ref.fsdp_config.offload_policy=True",
         "actor_rollout_ref.actor.fsdp_config.param_offload=True",
         "actor_rollout_ref.actor.fsdp_config.optimizer_offload=True",
         "actor_rollout_ref.ref.fsdp_config.param_offload=True",
         "actor_rollout_ref.rollout.name=vllm",
         "actor_rollout_ref.rollout.mode=async",
+        "actor_rollout_ref.rollout.load_format=safetensors",
+        "actor_rollout_ref.rollout.layered_summon=True",
         "actor_rollout_ref.rollout.tensor_model_parallel_size=2",
         "actor_rollout_ref.rollout.n=4",
         "actor_rollout_ref.rollout.temperature=1.0",
@@ -182,7 +184,8 @@
         "ValueError: There is no module or parameter named 'model' in Qwen3_5ForConditionalGeneration",
         "pthread_create failed: Resource temporarily unavailable",
         "CUDA out of memory",
-        "AssertionError: Weight model.embed_tokens.weight"
+        "AssertionError: Weight model.embed_tokens.weight",
+        "RuntimeError: Attempted to set the storage of a tensor on device"
       ]
     }
   ]

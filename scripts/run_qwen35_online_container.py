@@ -11,6 +11,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from types import FrameType
 
 _GPU_IDS = re.compile(r"^[0-9]+(?:,[0-9]+)*$")
 _CONTAINER_WORKSPACE = Path("/verigym-campaign")
@@ -276,12 +277,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         ]
     )
     trainer_code = 1
+    termination_requested = False
+
+    def request_shutdown(signum: int, _frame: FrameType | None) -> None:
+        nonlocal termination_requested
+        termination_requested = True
+        raise SystemExit(128 + signum)
+
+    previous_handlers = {
+        signum: signal.signal(signum, request_shutdown)
+        for signum in (signal.SIGINT, signal.SIGTERM)
+    }
     try:
         trainer_code = subprocess.run(command, cwd=repository, shell=False).returncode
     finally:
+        for signum in previous_handlers:
+            signal.signal(signum, signal.SIG_IGN)
         (broker_root / "STOP").write_text("stop\n", encoding="utf-8")
         try:
-            broker_code = broker.wait(timeout=15)
+            if termination_requested:
+                broker_code = broker.wait(timeout=3)
+            else:
+                broker_code = broker.wait(timeout=15)
         except subprocess.TimeoutExpired:
             os.killpg(broker.pid, signal.SIGTERM)
             try:
@@ -289,6 +306,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             except subprocess.TimeoutExpired:
                 os.killpg(broker.pid, signal.SIGKILL)
                 broker_code = broker.wait(timeout=5)
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
     if trainer_code != 0:
         return trainer_code
     if broker_code != 0 or not broker_report.is_file() or not completion_report.is_file():

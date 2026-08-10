@@ -9,6 +9,7 @@ import re
 import signal
 import stat
 import subprocess
+import tempfile
 import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -271,6 +272,21 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=10)
 
 
+def _dump_heartbeat(path: Path, value: dict[str, object]) -> None:
+    """Atomically publish ephemeral liveness state without forcing a disk journal commit."""
+
+    payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def _receipt_matches(receipt: dict[str, object], workspace: Path, stage_hash: str) -> bool:
     if receipt.get("status") != "completed" or receipt.get("stage_hash") != stage_hash:
         return False
@@ -364,7 +380,7 @@ def _execute_stage(
                     _terminate_process_group(process)
                     break
                 if now >= next_heartbeat:
-                    atomic_dump_json(
+                    _dump_heartbeat(
                         state_path,
                         {
                             "format_id": "verigym_training_campaign_stage_state_v1",
