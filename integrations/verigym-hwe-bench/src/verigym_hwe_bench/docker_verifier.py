@@ -19,7 +19,7 @@ from verigym.plugin_api import (
     hash_bytes,
 )
 
-from .models import HweInstance, ImageLockEntry
+from .models import HweInstance, ImageLockEntry, base_commit_marker
 
 _START = "HWE_BENCH_RESULTS_START"
 _END = "HWE_BENCH_RESULTS_END"
@@ -31,15 +31,23 @@ set -euo pipefail
 cd __REPOSITORY_HOME__
 git reset --hard >/dev/null
 git clean -fdx >/dev/null
-test -f /home/ibex_base_commit.txt
-test "$(cat /home/ibex_base_commit.txt)" = "__BASE_COMMIT__"
-git checkout "$(cat /home/ibex_base_commit.txt)" >/dev/null
+test -f __BASE_COMMIT_MARKER__
+test "$(cat __BASE_COMMIT_MARKER__)" = "__BASE_COMMIT__"
+git checkout "$(cat __BASE_COMMIT_MARKER__)" >/dev/null
 if [[ -s /home/verigym-candidate.patch ]]; then
   git apply --check /home/verigym-candidate.patch
   git apply /home/verigym-candidate.patch
 fi
 bash /home/verigym-tb-script.sh
 """
+
+
+def _render_runner(entry: ImageLockEntry) -> str:
+    return (
+        _RUNNER.replace("__REPOSITORY_HOME__", entry.repository_home)
+        .replace("__BASE_COMMIT_MARKER__", base_commit_marker(entry.repository_home))
+        .replace("__BASE_COMMIT__", entry.base_commit)
+    )
 
 
 def _run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
@@ -157,9 +165,7 @@ class DockerHweVerifier:
             patch_path.write_text(patch, encoding="utf-8", newline="")
             script_path.write_text(instance.tb_script, encoding="utf-8", newline="")
             runner_path.write_text(
-                _RUNNER.replace("__REPOSITORY_HOME__", entry.repository_home).replace(
-                    "__BASE_COMMIT__", entry.base_commit
-                ),
+                _render_runner(entry),
                 encoding="utf-8",
                 newline="",
             )

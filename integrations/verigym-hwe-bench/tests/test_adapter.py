@@ -51,12 +51,14 @@ def _source(tmp_path: Path) -> tuple[Path, HweInstance]:
     repository_hash = hash_directory(repository)
     image_id = f"sha256:{'2' * 64}"
     digest = f"sha256:{'3' * 64}"
+    runtime_base_commit = "a" * 40
     task_bundle_hash = content_hash(
         {
             "instance": instance,
             "repository_hash": repository_hash,
             "image_id": image_id,
             "manifest_digest": digest,
+            "runtime_base_commit": runtime_base_commit,
         }
     )
     entry = ImageLockEntry(
@@ -66,7 +68,7 @@ def _source(tmp_path: Path) -> tuple[Path, HweInstance]:
         manifest_digest=digest,
         image_id=image_id,
         repository_home="/home/ibex",
-        base_commit=instance.base_commit,
+        base_commit=runtime_base_commit,
         repository_hash=repository_hash,
         reference_repository_hash="4" * 64,
         reference_candidate_hash=content_hash(reference),

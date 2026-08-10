@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,9 +21,13 @@ from verigym.plugin_api import (
     hash_directory,
 )
 
-from .models import HweInstance, ImageLock, ImageLockEntry
+from .models import HweInstance, ImageLock, ImageLockEntry, base_commit_marker
 
-_REPOSITORY_HOMES = {"lowRISC/ibex": "/home/ibex"}
+_REPOSITORY_HOMES = {
+    "lowRISC/ibex": "/home/ibex",
+    "openhwgroup/cva6": "/home/cva6",
+}
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -151,17 +157,59 @@ def _extract_repository(*, image_id: str, repository_home: str, destination: Pat
     metadata = destination / ".git"
     if metadata.exists():
         shutil.rmtree(metadata)
+    _materialize_internal_file_symlinks(destination)
     # VeriGym candidates are content patches, not mode patches. Normalize the extracted Docker
     # tree before hashing so safe workspace copies reproduce an empty candidate exactly.
     for path in sorted(destination.rglob("*")):
-        if path.is_symlink():
-            raise ConfigurationError("selected HWE-Bench base repository contains a symlink")
+        mode = path.lstat().st_mode
+        if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            raise ConfigurationError(
+                "selected HWE-Bench base repository contains a special filesystem entry"
+            )
         os.chmod(path, 0o755 if path.is_dir() else 0o644)
 
 
-def _check_image_baseline(*, image_id: str, repository_home: str, base_commit: str) -> None:
-    if repository_home != "/home/ibex":
-        raise ConfigurationError("initial executable HWE-Bench profile currently supports Ibex")
+def _materialize_internal_file_symlinks(repository: Path) -> None:
+    """Replace bounded internal file links with ordinary files for safe agent workspaces."""
+
+    root = repository.resolve(strict=True)
+    for path in sorted(repository.rglob("*")):
+        if not path.is_symlink():
+            continue
+        raw_target = os.readlink(path)
+        unresolved = Path(raw_target)
+        target = (unresolved if unresolved.is_absolute() else path.parent / unresolved).resolve(
+            strict=False
+        )
+        if not target.is_relative_to(root):
+            raise ConfigurationError(
+                "selected HWE-Bench base repository contains an escaping symlink"
+            )
+        try:
+            target = path.resolve(strict=True)
+        except FileNotFoundError:
+            # Some upstream repositories intentionally retain dangling source-tree links. Keep
+            # their tracked Git blob as a plain file so the safe workspace remains deterministic.
+            path.unlink()
+            path.write_bytes(os.fsencode(raw_target))
+            continue
+        except (OSError, RuntimeError) as exc:
+            raise ConfigurationError(
+                "selected HWE-Bench base repository contains a broken symlink"
+            ) from exc
+        if not stat.S_ISREG(target.stat().st_mode):
+            raise ConfigurationError(
+                "selected HWE-Bench base repository contains a non-file symlink"
+            )
+        content = target.read_bytes()
+        path.unlink()
+        path.write_bytes(content)
+
+
+def _image_baseline(*, image_id: str, repository_home: str, base_commit: str) -> str:
+    """Read the runtime baseline and bind a synthetic baseline to the official PR base."""
+
+    marker = base_commit_marker(repository_home)
     checked = _command(
         [
             "docker",
@@ -176,13 +224,40 @@ def _check_image_baseline(*, image_id: str, repository_home: str, base_commit: s
             "--entrypoint",
             "/bin/cat",
             image_id,
-            "/home/ibex_base_commit.txt",
+            marker,
         ],
         timeout_s=60,
     )
     observed = checked.stdout.decode("utf-8", errors="replace").strip()
-    if checked.returncode != 0 or observed != base_commit:
-        raise ConfigurationError("selected HWE-Bench image has an unexpected base commit")
+    if checked.returncode != 0 or not _COMMIT.fullmatch(observed):
+        raise ConfigurationError("selected HWE-Bench image lacks a valid runtime base commit")
+    if observed == base_commit:
+        return observed
+    provenance_path = f"{repository_home}/.baseline_commit"
+    provenance = _command(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--entrypoint",
+            "/bin/cat",
+            image_id,
+            provenance_path,
+        ],
+        timeout_s=60,
+    )
+    prepared_from = provenance.stdout.decode("utf-8", errors="replace").strip()
+    if provenance.returncode != 0 or prepared_from != base_commit:
+        raise ConfigurationError(
+            "selected HWE-Bench synthetic runtime baseline is not bound to the official base"
+        )
+    return observed
 
 
 def prepare_source(
@@ -234,7 +309,7 @@ def prepare_source(
             if len(set(digest_values)) != 1:
                 raise ConfigurationError("selected image does not resolve to one manifest digest")
             manifest_digest = digest_values[0]
-            _check_image_baseline(
+            runtime_base_commit = _image_baseline(
                 image_id=image_id,
                 repository_home=repository_home,
                 base_commit=instance.base_commit,
@@ -299,14 +374,15 @@ def prepare_source(
                     label="official-reference-conformance-only",
                 )
                 reference_repository_hash = hash_directory(reference_repository)
-            task_bundle_hash = content_hash(
-                {
-                    "instance": instance,
-                    "repository_hash": repository_hash,
-                    "image_id": image_id,
-                    "manifest_digest": manifest_digest,
-                }
-            )
+            task_bundle_identity: dict[str, object] = {
+                "instance": instance,
+                "repository_hash": repository_hash,
+                "image_id": image_id,
+                "manifest_digest": manifest_digest,
+            }
+            if runtime_base_commit != instance.base_commit:
+                task_bundle_identity["runtime_base_commit"] = runtime_base_commit
+            task_bundle_hash = content_hash(task_bundle_identity)
             entries.append(
                 ImageLockEntry(
                     instance_id=instance.instance_id,
@@ -315,7 +391,7 @@ def prepare_source(
                     manifest_digest=manifest_digest,
                     image_id=image_id,
                     repository_home=repository_home,
-                    base_commit=instance.base_commit,
+                    base_commit=runtime_base_commit,
                     repository_hash=repository_hash,
                     reference_repository_hash=reference_repository_hash,
                     reference_candidate_hash=content_hash(reference_candidate),

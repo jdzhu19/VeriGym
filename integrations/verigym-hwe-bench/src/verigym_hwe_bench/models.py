@@ -12,6 +12,15 @@ _IMAGE_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_REPOSITORY_HOME = re.compile(r"^/home/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def base_commit_marker(repository_home: str) -> str:
+    """Return the official per-repository HWE-Bench base-commit marker path."""
+
+    if not _REPOSITORY_HOME.fullmatch(repository_home):
+        raise ValueError("repository home must be a canonical single-component /home path")
+    return f"{repository_home}_base_commit.txt"
 
 
 class HweInstance(StrictModel):
@@ -129,8 +138,7 @@ class ImageLockEntry(StrictModel):
 
     @model_validator(mode="after")
     def bind_identity(self) -> ImageLockEntry:
-        if not self.repository_home.startswith("/home/") or ".." in self.repository_home.split("/"):
-            raise ValueError("repository home must be a canonical /home path")
+        base_commit_marker(self.repository_home)
         if not self.image_reference.startswith("ghcr.io/pku-liang/"):
             raise ValueError("initial HWE-Bench profile accepts only the official GHCR namespace")
         return self
@@ -165,4 +173,4 @@ class ImageLock(StrictModel):
         return self
 
 
-__all__ = ["HweInstance", "ImageLock", "ImageLockEntry"]
+__all__ = ["HweInstance", "ImageLock", "ImageLockEntry", "base_commit_marker"]

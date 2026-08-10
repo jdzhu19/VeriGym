@@ -74,7 +74,7 @@ def load_catalog(root: Path) -> Catalog:
         raise ConfigurationError("HWE-Bench image lock and selected records disagree")
     for instance_id, instance in instances.items():
         entry = entries[instance_id]
-        if entry.slug != instance.slug or entry.base_commit != instance.base_commit:
+        if entry.slug != instance.slug:
             raise ConfigurationError("HWE-Bench image lock identity differs from its record")
         workspace = resolved / "workspaces" / entry.slug
         repository = workspace / "repository"
@@ -88,14 +88,15 @@ def load_catalog(root: Path) -> Catalog:
             or hash_bytes(license_file.read_bytes()) != entry.license_file_hash
         ):
             raise ConfigurationError(f"prepared repository license changed: {entry.slug}")
-        expected_bundle = content_hash(
-            {
-                "instance": instance,
-                "repository_hash": entry.repository_hash,
-                "image_id": entry.image_id,
-                "manifest_digest": entry.manifest_digest,
-            }
-        )
+        bundle_identity: dict[str, object] = {
+            "instance": instance,
+            "repository_hash": entry.repository_hash,
+            "image_id": entry.image_id,
+            "manifest_digest": entry.manifest_digest,
+        }
+        if entry.base_commit != instance.base_commit:
+            bundle_identity["runtime_base_commit"] = entry.base_commit
+        expected_bundle = content_hash(bundle_identity)
         if expected_bundle != entry.task_bundle_hash:
             raise ConfigurationError(f"prepared task bundle identity changed: {entry.slug}")
     source_hash = content_hash(

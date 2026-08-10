@@ -143,8 +143,8 @@ Docker role separation, candidate artifacts, and replay semantics.
 The optional `verigym-hwe-bench` package is the first real-repository slice. It prepares only
 explicitly selected official HWE-Bench PRs, keeps golden patches and testbench scripts outside the
 package and agent workspace, and verifies candidates with a digest-locked per-PR image. The
-initial executable profile covers Ibex; it never bulk-pulls the approximately 417 published
-images. See [HWE-Bench integration](docs/hwe_bench.md).
+executable slice covers Ibex and CVA6; it never bulk-pulls the approximately 417 published images.
+See [HWE-Bench integration](docs/hwe_bench.md).
 
 ## Run the toy RTL task
 

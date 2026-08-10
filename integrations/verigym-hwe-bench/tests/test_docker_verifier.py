@@ -8,7 +8,7 @@ import pytest
 from verigym.plugin_api import ToolVisibility, VerifierNode, VerifierStatus, hash_directory
 
 from verigym_hwe_bench import docker_verifier
-from verigym_hwe_bench.docker_verifier import DockerHweVerifier
+from verigym_hwe_bench.docker_verifier import DockerHweVerifier, _render_runner
 from verigym_hwe_bench.models import HweInstance, ImageLockEntry
 
 
@@ -91,3 +91,31 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     assert result.tests_passed == result.tests_total == 1
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
     assert "SECRET_RUNTIME_OUTPUT" not in persisted
+
+
+def test_runner_uses_repository_specific_base_commit_marker(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "LICENSE").write_text("Apache-2.0\n", encoding="utf-8")
+    entry = ImageLockEntry(
+        instance_id="openhwgroup/cva6:pr-2170",
+        slug="openhwgroup__cva6__pr-2170",
+        image_reference="ghcr.io/pku-liang/openhwgroup_m_cva6:pr-2170",
+        manifest_digest=f"sha256:{'3' * 64}",
+        image_id=f"sha256:{'2' * 64}",
+        repository_home="/home/cva6",
+        base_commit="1" * 40,
+        repository_hash=hash_directory(repository),
+        reference_repository_hash="4" * 64,
+        reference_candidate_hash="5" * 64,
+        reference_patch_hash="6" * 64,
+        verifier_payload_hash="7" * 64,
+        task_bundle_hash="8" * 64,
+        license_file_hash="9" * 64,
+    )
+
+    runner = _render_runner(entry)
+
+    assert "cd /home/cva6" in runner
+    assert "/home/cva6_base_commit.txt" in runner
+    assert "/home/ibex_base_commit.txt" not in runner
