@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,9 @@ def test_campaign_executes_and_resumes_hash_bound_stages(tmp_path: Path) -> None
     resumed = run_training_campaign(spec=_spec(), workspace=tmp_path, repository=tmp_path)
     assert resumed["report_hash"] == report["report_hash"]
     assert receipt.read_bytes() == before
+    state = json.loads((tmp_path / ".campaign" / "states" / "rollout.json").read_text())
+    assert state["status"] == "completed"
+    assert state["exit_code"] == 0
 
 
 def test_campaign_rejects_mutated_completed_output(tmp_path: Path) -> None:
@@ -104,3 +108,26 @@ def test_campaign_rejects_cycles_and_credential_environment() -> None:
                 _stage("b", "b.json", ["a"]),
             ],
         )
+
+
+def test_campaign_records_failed_stage_without_waiting_for_stage_timeout(tmp_path: Path) -> None:
+    stage = CampaignStageSpec(
+        stage_id="fail-fast",
+        argv=[sys.executable, "-c", "raise SystemExit(7)"],
+        expected_outputs=["never-created.json"],
+        working_directory="workspace",
+        timeout_s=60,
+    )
+    spec = TrainingCampaignSpec(
+        format_id="verigym_external_training_campaign_v1",
+        campaign_id="fail-fast-fixture",
+        stages=[stage],
+    )
+
+    started = time.monotonic()
+    with pytest.raises(ConfigurationError, match="stage command failed"):
+        run_training_campaign(spec=spec, workspace=tmp_path, repository=tmp_path)
+    assert time.monotonic() - started < 5
+    state = json.loads((tmp_path / ".campaign" / "states" / "fail-fast.json").read_text())
+    assert state["status"] == "failed"
+    assert state["exit_code"] == 7

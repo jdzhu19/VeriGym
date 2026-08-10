@@ -16,6 +16,9 @@ from omegaconf import DictConfig
 from rllm.data.dataset import DatasetRegistry
 from rllm.trainer.agent_trainer import AgentTrainer
 from verigym_training_reference.online_workflow import VeriGymRtlWorkflow
+from verigym_training_reference.qwen35_verl_compat import (
+    QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE,
+)
 
 from verigym.core.hashing import content_hash
 from verigym.experiments.state import atomic_dump_json
@@ -136,6 +139,7 @@ def _completion_report(
         "official_verl_ray_trainer_used": True,
         "vllm_rollout_servers_used": True,
         "online_weight_synchronization_completed": True,
+        "qwen35_causal_adapter_compatibility_used": True,
         "verigym_sparse_reward_used": True,
         "hidden_assets_loaded_by_model": False,
         "reference_solutions_loaded_by_model": False,
@@ -154,6 +158,8 @@ def _completion_report(
     version_base=None,
 )
 def main(config: DictConfig) -> None:
+    if not QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE:
+        raise RuntimeError("Qwen3.5 causal adapter compatibility hook did not activate")
     tasks, task_manifest = _load_task_manifest()
     output_value = os.environ.get(_OUTPUT_ENV)
     broker_value = os.environ.get(_BROKER_ENV)

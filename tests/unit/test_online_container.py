@@ -32,10 +32,15 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
     assert "hydra.output_subdir=null" in online_stage["argv"]
     assert "hydra.job.chdir=False" in online_stage["argv"]
     assert "actor_rollout_ref.actor.ppo_mini_batch_size=2" in online_stage["argv"]
-    assert "++actor_rollout_ref.model.override_config.attn_implementation=sdpa" in online_stage[
-        "argv"
-    ]
+    assert (
+        "++actor_rollout_ref.model.override_config.attn_implementation=sdpa" in online_stage["argv"]
+    )
     assert "rllm.sdk.proxy.admin_token=EMPTY" in online_stage["argv"]
+    assert (
+        "actor_rollout_ref.model.external_lib=verigym_training_reference.qwen35_verl_compat"
+        in online_stage["argv"]
+    )
+    assert not any("gdn_prefill_backend" in value for value in online_stage["argv"])
 
 
 def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
@@ -44,6 +49,8 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     assert '"CUPY_CACHE_DIR": str(_container_workspace_path(container_cache / "cupy"' in source
     assert "VeriGym trainer:{_CONTAINER_WORKSPACE}" in source
     assert '"HOME":' not in source
+    assert '"OMP_NUM_THREADS": "1"' in source
+    assert "broker.wait(timeout=15)" in source
 
 
 def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:

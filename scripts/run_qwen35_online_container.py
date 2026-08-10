@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import signal
 import subprocess
 import time
 from collections.abc import Sequence
@@ -171,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         cwd=repository,
         env=broker_environment,
         shell=False,
+        start_new_session=True,
     )
     deadline = time.monotonic() + 30
     while not (broker_root / "requests").is_dir() or not (broker_root / "responses").is_dir():
@@ -191,6 +193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "HF_HOME": str(_container_workspace_path(hf_home, workspace)),
         "HF_HUB_OFFLINE": "1",
         "HYDRA_FULL_ERROR": "1",
+        "MAX_JOBS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": (
             f"{repository / 'src'}:"
@@ -198,12 +205,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{rllm_root}:{verl_root}"
         ),
         "RAY_TMPDIR": str(_container_workspace_path(ray_tmp, workspace)),
+        "RAYON_NUM_THREADS": "1",
         "RLLM_HOME": str(_container_workspace_path(rllm_home, workspace)),
         "TMPDIR": str(_container_workspace_path(process_tmp, workspace)),
         "TORCH_HOME": str(_container_workspace_path(container_cache / "torch", workspace)),
         "TORCHINDUCTOR_CACHE_DIR": str(
             _container_workspace_path(container_cache / "inductor", workspace)
         ),
+        "TOKENIZERS_PARALLELISM": "false",
         "TRANSFORMERS_OFFLINE": "1",
         "TRITON_CACHE_DIR": str(_container_workspace_path(container_cache / "triton", workspace)),
         "VERIGYM_ONLINE_BROKER_ROOT": str(_container_workspace_path(broker_root, workspace)),
@@ -268,10 +277,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         (broker_root / "STOP").write_text("stop\n", encoding="utf-8")
         try:
-            broker_code = broker.wait(timeout=300)
+            broker_code = broker.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            broker.terminate()
-            broker_code = broker.wait(timeout=30)
+            os.killpg(broker.pid, signal.SIGTERM)
+            try:
+                broker_code = broker.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(broker.pid, signal.SIGKILL)
+                broker_code = broker.wait(timeout=5)
     if trainer_code != 0:
         return trainer_code
     if broker_code != 0 or not broker_report.is_file() or not completion_report.is_file():

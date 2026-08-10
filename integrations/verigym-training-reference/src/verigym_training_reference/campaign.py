@@ -246,6 +246,8 @@ def _execute_stage(
 ) -> StageExecution:
     logs = workspace / ".campaign" / "logs" / stage.stage_id
     logs.mkdir(parents=True, exist_ok=True)
+    state_path = workspace / ".campaign" / "states" / f"{stage.stage_id}.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     context = {
         **host_environment,
         "VERIGYM_CAMPAIGN_WORKSPACE": str(workspace),
@@ -285,16 +287,53 @@ def _execute_stage(
                 text=True,
                 start_new_session=True,
             )
-            try:
-                final_code = process.wait(timeout=stage.timeout_s)
-            except subprocess.TimeoutExpired:
-                final_code = None
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=10)
+            deadline = time.monotonic() + stage.timeout_s
+            next_heartbeat = 0.0
+            timed_out = False
+            while True:
+                now = time.monotonic()
+                polled_code = process.poll()
+                if polled_code is not None:
+                    final_code = polled_code
+                    break
+                if now >= deadline:
+                    timed_out = True
+                    final_code = None
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=10)
+                    break
+                if now >= next_heartbeat:
+                    atomic_dump_json(
+                        state_path,
+                        {
+                            "format_id": "verigym_training_campaign_stage_state_v1",
+                            "stage_id": stage.stage_id,
+                            "status": "running",
+                            "attempt": attempt,
+                            "pid": process.pid,
+                            "elapsed_s": now - started,
+                            "updated_at_unix_s": time.time(),
+                        },
+                    )
+                    next_heartbeat = now + 5.0
+                time.sleep(min(1.0, max(0.05, deadline - now)))
+            atomic_dump_json(
+                state_path,
+                {
+                    "format_id": "verigym_training_campaign_stage_state_v1",
+                    "stage_id": stage.stage_id,
+                    "status": "timed_out" if timed_out else "exited",
+                    "attempt": attempt,
+                    "pid": process.pid,
+                    "exit_code": final_code,
+                    "elapsed_s": time.monotonic() - started,
+                    "updated_at_unix_s": time.time(),
+                },
+            )
         success = final_code == 0
         retryable = final_code is None or final_code in stage.retry_exit_codes
         if success:
@@ -312,6 +351,18 @@ def _execute_stage(
                 "outputs": {},
             }
             receipt = {**base, "receipt_hash": content_hash(base)}
+            atomic_dump_json(
+                state_path,
+                {
+                    "format_id": "verigym_training_campaign_stage_state_v1",
+                    "stage_id": stage.stage_id,
+                    "status": "failed",
+                    "attempt": attempt,
+                    "exit_code": final_code,
+                    "elapsed_s": time.monotonic() - started,
+                    "updated_at_unix_s": time.time(),
+                },
+            )
             return StageExecution(stage.stage_id, receipt, False, "stage command failed")
 
     outputs: dict[str, object] = {}
@@ -330,6 +381,19 @@ def _execute_stage(
                 "outputs": outputs,
             }
             receipt = {**base, "receipt_hash": content_hash(base)}
+            atomic_dump_json(
+                state_path,
+                {
+                    "format_id": "verigym_training_campaign_stage_state_v1",
+                    "stage_id": stage.stage_id,
+                    "status": "failed",
+                    "attempt": attempt,
+                    "exit_code": final_code,
+                    "error": f"missing output: {relative}",
+                    "elapsed_s": time.monotonic() - started,
+                    "updated_at_unix_s": time.time(),
+                },
+            )
             return StageExecution(stage.stage_id, receipt, False, f"missing output: {relative}")
         outputs[relative] = _artifact_identity(path)
     base = {
@@ -344,6 +408,18 @@ def _execute_stage(
         "outputs": outputs,
     }
     receipt = {**base, "receipt_hash": content_hash(base)}
+    atomic_dump_json(
+        state_path,
+        {
+            "format_id": "verigym_training_campaign_stage_state_v1",
+            "stage_id": stage.stage_id,
+            "status": "completed",
+            "attempt": attempt,
+            "exit_code": final_code,
+            "elapsed_s": time.monotonic() - started,
+            "updated_at_unix_s": time.time(),
+        },
+    )
     return StageExecution(stage.stage_id, receipt, True)
 
 
