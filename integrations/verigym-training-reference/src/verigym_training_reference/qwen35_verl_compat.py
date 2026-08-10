@@ -38,4 +38,15 @@ def activate_qwen35_causal_adapter_compatibility() -> bool:
     return _remove_qwen35_image_mappings(AutoModelForImageTextToText)
 
 
+def map_qwen35_causal_weight_name_for_vllm(name: str) -> str:
+    """Map causal Qwen3.5 weight names onto vLLM's image-text wrapper."""
+
+    if name.startswith("base_model.model.model."):
+        suffix = name.removeprefix("base_model.model.model.")
+        return f"base_model.model.model.language_model.{suffix}"
+    if name.startswith(("model.", "lm_head.")):
+        return f"language_model.{name}"
+    return name
+
+
 QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE = activate_qwen35_causal_adapter_compatibility()

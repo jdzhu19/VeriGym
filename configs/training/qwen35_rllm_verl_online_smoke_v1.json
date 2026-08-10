@@ -133,6 +133,7 @@
         "actor_rollout_ref.rollout.enable_prefix_caching=False",
         "actor_rollout_ref.rollout.free_cache_engine=False",
         "actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=4096",
+        "++actor_rollout_ref.rollout.engine_kwargs.vllm.worker_extension_cls=verigym_training_reference.qwen35_vllm_worker.VeriGymQwen35WorkerExtension",
         "++actor_rollout_ref.rollout.max_model_len=3072",
         "actor_rollout_ref.rollout.max_num_batched_tokens=4096",
         "actor_rollout_ref.rollout.val_kwargs.n=1",
@@ -176,7 +177,13 @@
       ],
       "gpu_ids": [0, 1, 2, 3],
       "timeout_s": 14400,
-      "max_attempts": 1
+      "max_attempts": 1,
+      "fatal_log_markers": [
+        "ValueError: There is no module or parameter named 'model' in Qwen3_5ForConditionalGeneration",
+        "pthread_create failed: Resource temporarily unavailable",
+        "CUDA out of memory",
+        "AssertionError: Weight model.embed_tokens.weight"
+      ]
     }
   ]
 }

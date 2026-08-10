@@ -131,3 +131,36 @@ def test_campaign_records_failed_stage_without_waiting_for_stage_timeout(tmp_pat
     state = json.loads((tmp_path / ".campaign" / "states" / "fail-fast.json").read_text())
     assert state["status"] == "failed"
     assert state["exit_code"] == 7
+
+
+def test_campaign_terminates_stage_when_fatal_log_marker_appears(tmp_path: Path) -> None:
+    marker = "fatal worker fixture"
+    stage = CampaignStageSpec(
+        stage_id="fatal-log",
+        argv=[
+            sys.executable,
+            "-c",
+            f"import time; print({marker!r}, flush=True); time.sleep(60)",
+        ],
+        expected_outputs=["never-created.json"],
+        working_directory="workspace",
+        timeout_s=60,
+        fatal_log_markers=[marker],
+    )
+    spec = TrainingCampaignSpec(
+        format_id="verigym_external_training_campaign_v1",
+        campaign_id="fatal-log-fixture",
+        stages=[stage],
+    )
+
+    started = time.monotonic()
+    with pytest.raises(ConfigurationError, match="fatal log marker detected"):
+        run_training_campaign(spec=spec, workspace=tmp_path, repository=tmp_path)
+    assert time.monotonic() - started < 5
+    state = json.loads((tmp_path / ".campaign" / "states" / "fatal-log.json").read_text())
+    receipt = json.loads((tmp_path / ".campaign" / "receipts" / "fatal-log.json").read_text())
+    assert state["status"] == "failed"
+    assert state["failure_reason"] == "fatal_log_marker"
+    assert state["fatal_log_marker"] == marker
+    assert receipt["failure_reason"] == "fatal_log_marker"
+    assert receipt["fatal_log_marker"] == marker

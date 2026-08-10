@@ -53,6 +53,7 @@ class CampaignStageSpec(StrictModel):
     timeout_s: int = Field(default=3600, ge=1, le=604_800)
     max_attempts: int = Field(default=1, ge=1, le=20)
     retry_exit_codes: list[int] = Field(default_factory=list, max_length=32)
+    fatal_log_markers: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("stage_id")
     @classmethod
@@ -77,6 +78,18 @@ class CampaignStageSpec(StrictModel):
     def validate_gpu_ids(cls, values: list[int]) -> list[int]:
         if len(values) != len(set(values)) or any(value < 0 for value in values):
             raise ValueError("campaign GPU IDs must be unique nonnegative integers")
+        return values
+
+    @field_validator("fatal_log_markers")
+    @classmethod
+    def validate_fatal_log_markers(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("campaign fatal log markers must be unique")
+        invalid = (
+            not value or len(value) > 256 or "\n" in value or "\x00" in value for value in values
+        )
+        if any(invalid):
+            raise ValueError("campaign fatal log markers must be 1-256 single-line characters")
         return values
 
     @field_validator("environment")
@@ -221,6 +234,43 @@ def _safe_environment(stage: CampaignStageSpec, host: Mapping[str, str]) -> dict
     return environment
 
 
+def _find_new_fatal_log_marker(
+    paths: tuple[Path, ...],
+    markers: tuple[bytes, ...],
+    offsets: dict[Path, int],
+    tails: dict[Path, bytes],
+) -> bytes | None:
+    if not markers:
+        return None
+    tail_size = max(len(marker) for marker in markers) - 1
+    for path in paths:
+        with path.open("rb") as stream:
+            stream.seek(offsets.get(path, 0))
+            chunk = stream.read()
+            offsets[path] = stream.tell()
+        value = tails.get(path, b"") + chunk
+        for marker in markers:
+            if marker in value:
+                return marker
+        tails[path] = value[-tail_size:] if tail_size else b""
+    return None
+
+
+def _terminate_process_group(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=10)
+
+
 def _receipt_matches(receipt: dict[str, object], workspace: Path, stage_hash: str) -> bool:
     if receipt.get("status") != "completed" or receipt.get("stage_hash") != stage_hash:
         return False
@@ -271,6 +321,7 @@ def _execute_stage(
     started = time.monotonic()
     final_code: int | None = None
     for attempt in range(1, stage.max_attempts + 1):
+        fatal_marker: str | None = None
         stdout_path = logs / f"attempt-{attempt:02d}.stdout.log"
         stderr_path = logs / f"attempt-{attempt:02d}.stderr.log"
         with (
@@ -290,21 +341,27 @@ def _execute_stage(
             deadline = time.monotonic() + stage.timeout_s
             next_heartbeat = 0.0
             timed_out = False
+            encoded_markers = tuple(value.encode("utf-8") for value in stage.fatal_log_markers)
+            log_offsets: dict[Path, int] = {}
+            log_tails: dict[Path, bytes] = {}
             while True:
                 now = time.monotonic()
                 polled_code = process.poll()
                 if polled_code is not None:
                     final_code = polled_code
                     break
+                matched = _find_new_fatal_log_marker(
+                    (stdout_path, stderr_path), encoded_markers, log_offsets, log_tails
+                )
+                if matched is not None:
+                    fatal_marker = matched.decode("utf-8")
+                    _terminate_process_group(process)
+                    final_code = process.returncode
+                    break
                 if now >= deadline:
                     timed_out = True
                     final_code = None
-                    os.killpg(process.pid, signal.SIGTERM)
-                    try:
-                        process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait(timeout=10)
+                    _terminate_process_group(process)
                     break
                 if now >= next_heartbeat:
                     atomic_dump_json(
@@ -326,10 +383,13 @@ def _execute_stage(
                 {
                     "format_id": "verigym_training_campaign_stage_state_v1",
                     "stage_id": stage.stage_id,
-                    "status": "timed_out" if timed_out else "exited",
+                    "status": (
+                        "fatal_log" if fatal_marker else "timed_out" if timed_out else "exited"
+                    ),
                     "attempt": attempt,
                     "pid": process.pid,
                     "exit_code": final_code,
+                    **({"fatal_log_marker": fatal_marker} if fatal_marker else {}),
                     "elapsed_s": time.monotonic() - started,
                     "updated_at_unix_s": time.time(),
                 },
@@ -349,6 +409,8 @@ def _execute_stage(
                 "exit_code": final_code,
                 "duration_s": time.monotonic() - started,
                 "outputs": {},
+                **({"failure_reason": "fatal_log_marker"} if fatal_marker else {}),
+                **({"fatal_log_marker": fatal_marker} if fatal_marker else {}),
             }
             receipt = {**base, "receipt_hash": content_hash(base)}
             atomic_dump_json(
@@ -359,11 +421,14 @@ def _execute_stage(
                     "status": "failed",
                     "attempt": attempt,
                     "exit_code": final_code,
+                    **({"failure_reason": "fatal_log_marker"} if fatal_marker else {}),
+                    **({"fatal_log_marker": fatal_marker} if fatal_marker else {}),
                     "elapsed_s": time.monotonic() - started,
                     "updated_at_unix_s": time.time(),
                 },
             )
-            return StageExecution(stage.stage_id, receipt, False, "stage command failed")
+            error = "fatal log marker detected" if fatal_marker else "stage command failed"
+            return StageExecution(stage.stage_id, receipt, False, error)
 
     outputs: dict[str, object] = {}
     for relative in stage.expected_outputs:
