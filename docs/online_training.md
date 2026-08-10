@@ -36,6 +36,12 @@ verigym-training-reference run-campaign \
   --workspace "$CAMPAIGN_ROOT" --repository "$PWD"
 ```
 
+Set `VERIGYM_OUTPUT_POLICY_ID` to the portable successor identity before launching. After the
+online stage succeeds, the campaign writes `registered-policy/adapter/`, a hashed reward manifest,
+and `registered-policy/policy-version.json`. The compact policy is registered as the exact
+successor of `VERIGYM_INPUT_POLICY_VERSION`; the large resumable FSDP checkpoint remains a trainer
+artifact and is not needed for evaluation.
+
 ## Full rLLM + verl smoke
 
 The online smoke uses rLLM `AgentTrainer`, Ray, asynchronous vLLM rollout servers, verl GRPO, and a
@@ -48,7 +54,8 @@ raises a retryable workflow error rather than producing reward zero.
 
 The committed campaign is deliberately bounded to two training tasks, four rollouts per task, four
 GPUs, and one optimizer update. It loads the registered input LoRA, saves a resumable verl
-checkpoint, and emits `online-completion-report.json`. That report qualifies interoperability and
+checkpoint, emits `online-completion-report.json`, and registers the changed LoRA as a compact
+successor policy. The completion report qualifies interoperability and
 weight synchronization only when at least one rollout group has reward variance; it is not a
 convergence or benchmark claim. The pinned compatibility pair is rLLM `v0.3.0-pre` with verl
 `v0.7.1`, which includes the upstream Qwen3.5 FSDP2/vLLM path.

@@ -15,6 +15,7 @@ from verigym.experiments.state import atomic_dump_json
 from verigym.schemas.options import JsonValue
 
 from .campaign import load_campaign_spec, run_training_campaign
+from .online_policy import export_online_policy_version
 from .pipeline import (
     exclusion_counts,
     load_training_config,
@@ -111,6 +112,20 @@ def _parser() -> argparse.ArgumentParser:
     policy.add_argument("--reward-manifest", type=Path)
     policy.add_argument("--training-report", type=Path)
     policy.add_argument("--loading-format", default="peft_lora_safetensors")
+
+    online_policy = subparsers.add_parser(
+        "export-online-policy",
+        help="export and register a compact policy from an online rLLM/verl checkpoint",
+    )
+    online_policy.add_argument("--completion-report", type=Path, required=True)
+    online_policy.add_argument("--broker-report", type=Path, required=True)
+    online_policy.add_argument("--task-manifest", type=Path, required=True)
+    online_policy.add_argument("--checkpoint-root", type=Path, required=True)
+    online_policy.add_argument("--parent-policy", type=Path, required=True)
+    online_policy.add_argument("--model-root", type=Path, required=True)
+    online_policy.add_argument("--output", type=Path, required=True)
+    online_policy.add_argument("--policy-version-id", required=True)
+    online_policy.add_argument("--learning-rate", type=float, required=True)
 
     campaign = subparsers.add_parser(
         "run-campaign",
@@ -231,6 +246,25 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             training_manifest=arguments.training_manifest,
             reward_manifest=arguments.reward_manifest,
             training_report=arguments.training_report,
+        )
+        return {
+            "status": "registered",
+            "policy_version_id": policy_version.policy_version_id,
+            "weight_version": policy_version.weight_version,
+            "version_hash": policy_version.version_hash,
+            "artifact_hash": policy_version.artifact_hash,
+        }
+    if arguments.command == "export-online-policy":
+        policy_version = export_online_policy_version(
+            completion_report=arguments.completion_report,
+            broker_report=arguments.broker_report,
+            task_manifest=arguments.task_manifest,
+            checkpoint_root=arguments.checkpoint_root,
+            parent_manifest=arguments.parent_policy,
+            model_root=arguments.model_root,
+            output=arguments.output,
+            policy_version_id=arguments.policy_version_id,
+            learning_rate=arguments.learning_rate,
         )
         return {
             "status": "registered",

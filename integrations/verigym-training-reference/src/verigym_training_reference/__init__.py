@@ -11,6 +11,7 @@ from .heldout import (
     freeze_heldout_evaluation,
     summarize_heldout_results,
 )
+from .online_policy import export_online_policy_version
 from .pipeline import (
     exclusion_counts,
     inspect_model_snapshot,
@@ -50,6 +51,7 @@ __all__ = [
     "build_trl_dataset_rows",
     "build_public_input_record",
     "exclusion_counts",
+    "export_online_policy_version",
     "freeze_heldout_evaluation",
     "inspect_model_snapshot",
     "load_campaign_spec",

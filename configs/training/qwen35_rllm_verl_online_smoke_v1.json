@@ -188,6 +188,36 @@
         "RuntimeError: Attempted to set the storage of a tensor on device",
         "IndexError: list index out of range"
       ]
+    },
+    {
+      "stage_id": "register-output-policy",
+      "depends_on": ["online-grpo"],
+      "argv": [
+        "${VERIGYM_HOST_PYTHON}",
+        "-m",
+        "verigym_training_reference.cli",
+        "export-online-policy",
+        "--completion-report",
+        "${VERIGYM_CAMPAIGN_WORKSPACE}/online-completion-report.json",
+        "--broker-report",
+        "${VERIGYM_CAMPAIGN_WORKSPACE}/online-verifier-broker-report.json",
+        "--task-manifest",
+        "${VERIGYM_CAMPAIGN_WORKSPACE}/online-tasks.json",
+        "--checkpoint-root",
+        "${VERIGYM_CAMPAIGN_WORKSPACE}/checkpoints",
+        "--parent-policy",
+        "${VERIGYM_INPUT_POLICY_VERSION}",
+        "--model-root",
+        "${VERIGYM_MODEL_ROOT}",
+        "--output",
+        "${VERIGYM_CAMPAIGN_WORKSPACE}/registered-policy",
+        "--policy-version-id",
+        "${VERIGYM_OUTPUT_POLICY_ID}",
+        "--learning-rate",
+        "1e-6"
+      ],
+      "expected_outputs": ["registered-policy"],
+      "timeout_s": 300
     }
   ]
 }
