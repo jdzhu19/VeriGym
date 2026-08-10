@@ -36,6 +36,10 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
         "++actor_rollout_ref.model.override_config.attn_implementation=sdpa" in online_stage["argv"]
     )
     assert "rllm.sdk.proxy.admin_token=EMPTY" in online_stage["argv"]
+    assert "actor_rollout_ref.rollout.max_num_seqs=32" in online_stage["argv"]
+    assert "data.dataloader_num_workers=0" in online_stage["argv"]
+    assert "ray_kwargs.ray_init.num_cpus=16" in online_stage["argv"]
+    assert "reward.num_workers=1" in online_stage["argv"]
     assert (
         "actor_rollout_ref.model.external_lib=verigym_training_reference.qwen35_verl_compat"
         in online_stage["argv"]
@@ -51,6 +55,8 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     assert '"HOME":' not in source
     assert '"OMP_NUM_THREADS": "1"' in source
     assert "broker.wait(timeout=15)" in source
+    assert '"--pids-limit",\n        "8192"' in source
+    assert '"nproc=8192:8192"' in source
 
 
 def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:
