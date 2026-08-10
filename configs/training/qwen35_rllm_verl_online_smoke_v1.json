@@ -185,7 +185,8 @@
         "pthread_create failed: Resource temporarily unavailable",
         "CUDA out of memory",
         "AssertionError: Weight model.embed_tokens.weight",
-        "RuntimeError: Attempted to set the storage of a tensor on device"
+        "RuntimeError: Attempted to set the storage of a tensor on device",
+        "IndexError: list index out of range"
       ]
     }
   ]

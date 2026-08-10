@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 from typing import Any
 
 
@@ -47,6 +47,19 @@ def map_qwen35_causal_weight_name_for_vllm(name: str) -> str:
     if name.startswith(("model.", "lm_head.")):
         return f"language_model.{name}"
     return name
+
+
+def expand_qwen35_gdn_lora_slices(
+    lora_a: list[Any], lora_b: list[Any], output_sizes: Sequence[int]
+) -> tuple[list[Any], list[Any]]:
+    """Expand HF's combined QKV LoRA into vLLM's Q, K, V, and Z slices."""
+
+    if len(lora_a) != 2 or len(lora_b) != 2 or len(output_sizes) != 4:
+        raise RuntimeError("unexpected Qwen3.5 GDN LoRA slice layout")
+    qkv_b, z_b = lora_b
+    q_b, k_b, v_b = qkv_b.split(list(output_sizes[:3]), dim=0)
+    qkv_a, z_a = lora_a
+    return [qkv_a, qkv_a, qkv_a, z_a], [q_b, k_b, v_b, z_b]
 
 
 QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE = activate_qwen35_causal_adapter_compatibility()
