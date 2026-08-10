@@ -13,6 +13,7 @@ from verigym_codex_cli.events import EventParseError, parse_event_stream
 from verigym_codex_cli.process import CodexCliProcessRunner, resolve_executable
 from verigym_codex_cli.security import (
     CodexPolicyError,
+    _validate_runtime_isolated_command,
     assert_instruction_isolation,
     assert_safe_workspace_tree,
     compare_workspace_snapshots,
@@ -460,6 +461,39 @@ def test_three_historical_secondary_violations_remain_policy_failures(
 def test_git_remains_forbidden_without_dev_null_masking_the_reason() -> None:
     with pytest.raises(CodexPolicyError, match="network-capable"):
         _validate_logical_track_b_command("git diff -- rtl/TopModule.sv")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/usr/bin/bash -lc 'git -C repository status --short --branch'",
+        "/usr/bin/bash -lc 'for t in verilator iverilog; do command -v \"$t\" || true; done'",
+        "/usr/bin/bash -lc \"awk 'length($0)>100 {print FNR}' repository/rtl/core.sv\"",
+        (
+            "/usr/bin/bash -lc \"python3 - <<'PY'\n"
+            "from pathlib import Path\n"
+            "print(Path('repository/rtl/core.sv').read_text())\n"
+            'PY"'
+        ),
+    ],
+)
+def test_runtime_isolated_repository_commands_are_accepted(command: str) -> None:
+    _validate_runtime_isolated_command(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/usr/bin/bash -lc 'curl https://example.invalid'",
+        "/usr/bin/bash -lc 'git -C repository fetch origin'",
+        "/usr/bin/bash -lc 'cat /verigym-public/hidden.json'",
+        "/usr/bin/bash -lc 'cat .verigym_internal/state.json'",
+        "/usr/bin/bash -lc 'cat $(find repository -name core.sv)'",
+    ],
+)
+def test_runtime_isolated_repository_commands_reject_external_boundaries(command: str) -> None:
+    with pytest.raises(CodexPolicyError):
+        _validate_runtime_isolated_command(command)
 
 
 def test_strict_single_target_quoted_heredoc_is_accepted() -> None:

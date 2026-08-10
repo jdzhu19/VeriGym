@@ -52,6 +52,22 @@ _COMMAND_SEPARATORS = {"&&", "||", ";", "|", "&"}
 _REDIRECTION_OPERATORS = {"<", ">", "<<", ">>", "<<<", "<>", ">&", "<&"}
 _OPAQUE_LINE_BREAK = "\ue000"
 _MAX_HEREDOC_BODY_BYTES = 2_000_000
+_MAX_RUNTIME_COMMAND_BYTES = 1024 * 1024
+_RUNTIME_FORBIDDEN_PATH_MARKERS = (
+    "/verigym-public",
+    ".verigym_internal",
+    "/var/run/docker.sock",
+)
+_RUNTIME_NETWORK_EXECUTABLES = _NETWORK_COMMANDS - {"git"}
+_RUNTIME_NETWORK_GIT_SUBCOMMANDS = {
+    "clone",
+    "fetch",
+    "lfs",
+    "ls-remote",
+    "pull",
+    "push",
+    "submodule",
+}
 _SANDBOX_BACKEND_MARKERS = (
     "bwrap: creating new namespace failed",
     "kernel does not allow non-root user namespaces",
@@ -253,6 +269,79 @@ def validate_external_events(
         if event.category == "tool_call":
             tool = str(event.payload.get("tool") or "unknown")
             raise CodexPolicyError(f"external network, MCP, or unknown tool is forbidden: {tool}")
+
+
+def validate_runtime_isolated_external_events(
+    parsed: ParsedEventStream,
+    workspace: Path,
+) -> None:
+    """Validate events whose shell already ran inside the sealed Docker agent boundary.
+
+    The outer runtime, rather than a brittle shell allowlist, confines commands to a non-root,
+    network-none container with only the visible workspace mounted writable. Event paths and
+    host-side tools still fail closed, and explicit network commands remain policy violations.
+    """
+
+    logical_root = PurePosixPath(workspace.as_posix())
+    if not logical_root.is_absolute() or ".." in logical_root.parts:
+        raise CodexPolicyError("runtime logical workspace root is invalid")
+    for event in parsed.events:
+        if event.category in {"file_read", "file_write"}:
+            path = event.payload.get("path")
+            if isinstance(path, str) and path:
+                _validate_event_path(path, workspace, logical_workspace=True)
+        if event.category == "patch_applied":
+            paths = event.payload.get("paths")
+            if isinstance(paths, list):
+                for path in paths:
+                    if isinstance(path, str) and path:
+                        _validate_event_path(path, workspace, logical_workspace=True)
+        if event.category in {"command_started", "command_completed"}:
+            command = event.payload.get("command")
+            if isinstance(command, str) and command:
+                _validate_runtime_isolated_command(command)
+        if event.category == "tool_call":
+            tool = str(event.payload.get("tool") or "unknown")
+            raise CodexPolicyError(f"external network, MCP, or unknown tool is forbidden: {tool}")
+
+
+def _validate_runtime_isolated_command(command: str) -> None:
+    if "\x00" in command or "\r" in command:
+        raise CodexPolicyError("runtime-isolated command contains an unsupported control byte")
+    if len(command.encode("utf-8")) > _MAX_RUNTIME_COMMAND_BYTES:
+        raise CodexPolicyError("runtime-isolated command exceeds the size bound")
+    lowered = command.lower()
+    if any(marker in lowered for marker in _RUNTIME_FORBIDDEN_PATH_MARKERS):
+        raise CodexPolicyError("runtime-isolated command names a protected mount or path")
+    if any(marker in lowered for marker in ("$home", "${home", "$(", "`", "<(", ">(")):
+        raise CodexPolicyError("runtime-isolated command uses an opaque path or command expansion")
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise CodexPolicyError("runtime-isolated command cannot be safely tokenized") from exc
+    if tokens and PurePosixPath(tokens[0]).name in _SHELL_COMMANDS:
+        if len(tokens) != 3 or tokens[1] not in {"-c", "-lc"}:
+            raise CodexPolicyError("runtime-isolated shell command has an opaque invocation")
+        try:
+            tokens = shlex.split(tokens[2], posix=True)
+        except ValueError as exc:
+            raise CodexPolicyError(
+                "runtime-isolated shell payload cannot be safely tokenized"
+            ) from exc
+    for index, token in enumerate(tokens):
+        name = PurePosixPath(token).name
+        if name in _RUNTIME_NETWORK_EXECUTABLES:
+            raise CodexPolicyError("network-capable external command is forbidden")
+        if name != "git":
+            continue
+        cursor = index + 1
+        while cursor < len(tokens) and tokens[cursor].startswith("-"):
+            if tokens[cursor] == "-C":
+                cursor += 2
+            else:
+                cursor += 1
+        if cursor < len(tokens) and tokens[cursor] in _RUNTIME_NETWORK_GIT_SUBCOMMANDS:
+            raise CodexPolicyError("network-capable git subcommand is forbidden")
 
 
 def _validate_event_path(raw: str, root: Path, *, logical_workspace: bool) -> None:

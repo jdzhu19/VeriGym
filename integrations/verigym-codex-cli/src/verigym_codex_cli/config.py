@@ -316,6 +316,7 @@ def settings_for_execution_backend(
             "sandbox_policy": "outer_runtime_delegated",
             "sandbox_backend": "verigym_docker_outer_runtime",
             "sandbox_backend_source": "verigym_runtime_effective_controls",
+            "tool_use_policy": "docker_runtime_isolated_workspace_policy_v3",
         }
     )
     return replace(
@@ -323,6 +324,7 @@ def settings_for_execution_backend(
         sandbox_policy="outer_runtime_delegated",
         sandbox_backend="verigym_docker_outer_runtime",
         sandbox_backend_source="verigym_runtime_effective_controls",
+        tool_use_policy="docker_runtime_isolated_workspace_policy_v3",
         configuration_fingerprint=fingerprint,
     )
 

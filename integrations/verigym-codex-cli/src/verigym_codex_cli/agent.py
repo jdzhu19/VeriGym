@@ -62,6 +62,7 @@ from .security import (
     sandbox_backend_failure,
     snapshot_visible_workspace,
     validate_external_events,
+    validate_runtime_isolated_external_events,
 )
 from .util import redact_text
 
@@ -286,12 +287,17 @@ class CodexCliAgentAdapter(AgentAdapter):
             else:
                 try:
                     parsed = _parse_agent_process(process, workspace)
-                    validate_external_events(
-                        parsed,
-                        Path(bridge.logical_workspace_root),
-                        logical_workspace=runtime_delegated,
-                        editable_globs=bridge.editable_globs,
-                    )
+                    if runtime_delegated:
+                        validate_runtime_isolated_external_events(
+                            parsed,
+                            Path(bridge.logical_workspace_root),
+                        )
+                    else:
+                        validate_external_events(
+                            parsed,
+                            workspace,
+                            editable_globs=bridge.editable_globs,
+                        )
                     event_policy = {
                         "schema_version": "1.0",
                         "policy_id": settings.tool_use_policy,

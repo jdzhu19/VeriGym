@@ -290,6 +290,8 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
         settings,
         "docker_outer_runtime_delegated",
     )
+    if track == "agent":
+        assert settings.tool_use_policy == "docker_runtime_isolated_workspace_policy_v3"
     bridge = RuntimeBridge(tmp_path)
     outcome = execute_runtime_process(
         bridge=bridge,

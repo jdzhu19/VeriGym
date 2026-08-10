@@ -57,6 +57,12 @@ these controls. A separate immutable Icarus 12 image performs candidate verifica
 freeze. Runtime artifacts record both role image IDs, effective controls, logical paths, process
 limits, and verified cleanup.
 
+Workspace-writing runs under `docker_runtime_isolated_workspace_policy_v3`. Repository-local
+shell, Python, and Git inspection are allowed because the outer runtime, rather than a narrow
+single-file command allowlist, enforces containment. Host-side tools, direct public-asset access,
+command substitution, network executables, and network-capable Git subcommands remain rejected.
+The host-local compatibility path retains the stricter static command policy.
+
 ## Capability and identity evidence
 
 Set a binary, run the zero-model-call doctor, and reuse its sealed report:
