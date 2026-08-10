@@ -39,6 +39,7 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
     assert "actor_rollout_ref.rollout.max_num_seqs=32" in online_stage["argv"]
     assert "actor_rollout_ref.rollout.load_format=safetensors" in online_stage["argv"]
     assert "actor_rollout_ref.rollout.layered_summon=True" in online_stage["argv"]
+    assert "actor_rollout_ref.rollout.free_cache_engine=True" in online_stage["argv"]
     assert "++actor_rollout_ref.actor.fsdp_config.offload_policy=False" in online_stage["argv"]
     assert (
         "actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=4096"
