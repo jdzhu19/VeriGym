@@ -11,6 +11,13 @@ from verigym.core.external_process_identity import (
     resolve_external_process_invocation_spec,
     validate_external_process_request_identity,
 )
+from verigym.core.hashing import content_hash, hash_bytes, hash_directory
+from verigym.core.repository_candidate import (
+    build_repository_patch,
+    freeze_repository_candidate,
+    verify_frozen_repository_candidate,
+)
+from verigym.core.workspace import copy_tree_safely
 from verigym.models.base import ModelClient, ModelClientError
 from verigym.profiles.base import (
     ResolvedArtifactIdentity,
@@ -21,7 +28,14 @@ from verigym.profiles.base import (
 from verigym.profiles.validation import ProfileValidationResult
 from verigym.prompts.policy import validate_prompt_text
 from verigym.runtimes.base import Runtime, RuntimeSession
-from verigym.schemas.agent import AgentAction, EpisodeResult, FinalSubmissionAction, Observation
+from verigym.schemas.agent import (
+    AgentAction,
+    ApplyPatchAction,
+    EpisodeResult,
+    FinalSubmissionAction,
+    Observation,
+    ToolCallAction,
+)
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     AgentDescriptor,
@@ -61,6 +75,7 @@ from verigym.schemas.model import (
 )
 from verigym.schemas.options import JsonScalar, JsonValue, validate_plugin_options
 from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
+from verigym.schemas.repository import RepositoryCandidateRecord, RepositoryWorkspaceContract
 from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.synthesis import SynthesisArtifactRef, SynthesisDiagnostic, SynthesisMetrics
@@ -81,7 +96,7 @@ from verigym.schemas.task import (
     WorkspaceSpec,
 )
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
-from verigym.schemas.verifier import VerifierGraph, VerifierNode
+from verigym.schemas.verifier import VerifierGraph, VerifierNode, VerifierResult, VerifierStatus
 from verigym.suites.base import SuiteAdapter
 from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
 
@@ -92,6 +107,7 @@ __all__ = [
     "AgentDescriptor",
     "AgentPromptPolicySpec",
     "AgentTerminationError",
+    "ApplyPatchAction",
     "AssetRef",
     "ArtifactDescriptor",
     "BudgetSpec",
@@ -138,6 +154,8 @@ __all__ = [
     "ResolvedArtifactIdentity",
     "ResolvedRuntimeIdentity",
     "ResolvedTaskAssets",
+    "RepositoryCandidateRecord",
+    "RepositoryWorkspaceContract",
     "RuntimeRequirement",
     "ResolvedToolchainProfile",
     "ResolvedToolIdentity",
@@ -162,6 +180,7 @@ __all__ = [
     "ToolPlugin",
     "ToolRequirement",
     "ToolResult",
+    "ToolCallAction",
     "ToolchainProfile",
     "ToolVisibility",
     "RuntimeSession",
@@ -171,11 +190,20 @@ __all__ = [
     "VeriTask",
     "VerifierGraph",
     "VerifierNode",
+    "VerifierResult",
+    "VerifierStatus",
     "WorkspaceSpec",
     "validate_plugin_options",
     "validate_prompt_text",
+    "build_repository_patch",
+    "freeze_repository_candidate",
+    "verify_frozen_repository_candidate",
     "bind_external_process_payload",
     "build_external_process_request",
+    "content_hash",
+    "copy_tree_safely",
+    "hash_bytes",
+    "hash_directory",
     "preview_external_process_identity",
     "resolve_external_process_invocation_spec",
     "validate_external_process_request_identity",

@@ -60,7 +60,13 @@ def build_scorecard(
         (
             r
             for r in results
-            if r.plugin in {"iverilog.run", "verilog_eval.v2.regression", "synopsys.vcs.simulate"}
+            if r.plugin
+            in {
+                "hwe_bench.simulate",
+                "iverilog.run",
+                "synopsys.vcs.simulate",
+                "verilog_eval.v2.regression",
+            }
         ),
         None,
     )

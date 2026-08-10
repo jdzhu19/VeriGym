@@ -63,6 +63,7 @@ from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.suites.base import SuiteAdapter
 from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 from verigym.version import __version__
 
@@ -699,6 +700,7 @@ class VeriGym:
                 ]
             else:
                 verifier_results = self._verify_candidate(
+                    suite=suite,
                     task=task,
                     assets=assets,
                     runtime=runtime,
@@ -883,6 +885,7 @@ class VeriGym:
     def _verify_candidate(
         self,
         *,
+        suite: SuiteAdapter | None = None,
         task: VeriTask,
         assets: ResolvedTaskAssets,
         runtime: Runtime,
@@ -890,6 +893,27 @@ class VeriGym:
         artifact_root: Path,
         agent_session: RuntimeSession | None = None,
     ) -> list[VerifierResult]:
+        if suite is not None:
+            managed = suite.verify_candidate(
+                task=task,
+                candidate_dir=candidate_dir,
+                artifact_root=artifact_root,
+            )
+            if managed is not None:
+                expected = {node.id: node for node in task.verifier.nodes}
+                if len(managed) != len(expected) or {result.node_id for result in managed} != set(
+                    expected
+                ):
+                    raise ConfigurationError(
+                        "suite-managed verifier results do not match the frozen verifier graph"
+                    )
+                for result in managed:
+                    node = expected[result.node_id]
+                    if result.plugin != node.plugin or result.request != node.request:
+                        raise ConfigurationError(
+                            "suite-managed verifier result identity differs from its frozen node"
+                        )
+                return managed
         verifier_session: RuntimeSession | None = None
         protected_hashes: dict[str, str] = {}
         with tempfile.TemporaryDirectory(prefix="verigym-verifier-staging-") as temporary:

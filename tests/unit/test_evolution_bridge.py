@@ -1075,6 +1075,25 @@ def test_trajectory_export_is_deterministic_recomputable_and_tamper_evident(
     assert '"scalar_profile_id":"repo_rtl_sparse_v1"' in reward_text
 
     trajectories = load_jsonl_models(first / "trajectories.jsonl", EpisodeTrajectory)
+    verifier_invocations = [
+        event
+        for event in trajectories[0].events
+        if event.event_type == "tool_invocation" and event.payload.get("tool_role") == "verifier"
+    ]
+    verifier_results = [
+        event
+        for event in trajectories[0].events
+        if event.event_type == "tool_result" and event.payload.get("tool_role") == "verifier"
+    ]
+    assert {event.payload["tool_name"] for event in verifier_invocations} == {
+        "iverilog.compile",
+        "iverilog.run",
+    }
+    assert {event.payload["tool_name"] for event in verifier_results} == {
+        "iverilog.compile",
+        "iverilog.run",
+    }
+    assert all("message" not in event.payload for event in verifier_results)
     summary = prepare_training_summary(
         trajectories,
         split_manifest_hash=split.manifest_hash,

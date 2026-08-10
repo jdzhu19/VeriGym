@@ -74,6 +74,7 @@ def qualify_reference_candidates(
                     candidate_root=candidate_root,
                 )
                 results = service._verify_candidate(
+                    suite=suite,
                     task=task,
                     assets=assets,
                     runtime=runtime,

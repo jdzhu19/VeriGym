@@ -23,6 +23,7 @@ from verigym.schemas.task import (
 if TYPE_CHECKING:
     from verigym.runtimes.base import Runtime
     from verigym.schemas.repository import RepositoryCandidateRecord
+    from verigym.schemas.verifier import VerifierResult
 
 
 class SuiteAdapter(ABC):
@@ -90,3 +91,20 @@ class SuiteAdapter(ABC):
 
         del task, candidate_dir, run_root, record
         raise ConfigurationError("suite does not implement repository candidate replay")
+
+    def verify_candidate(
+        self,
+        *,
+        task: VeriTask,
+        candidate_dir: Path,
+        artifact_root: Path,
+    ) -> list[VerifierResult] | None:
+        """Optionally execute a suite-owned, trusted verifier implementation.
+
+        Returning ``None`` selects VeriGym's ordinary verifier DAG executor. This hook is for
+        external benchmarks whose immutable verification environment cannot be represented by a
+        normal tool plugin and runtime session, such as one-container-per-instance benchmarks.
+        """
+
+        del task, candidate_dir, artifact_root
+        return None

@@ -9,6 +9,8 @@ First-party optional integrations under `integrations/` remain separate packages
 of the core wheel. Package CI builds `verigym-codex-cli` and
 `verigym-verilog-eval-codecomplete` independently and installs their wheels beside the core wheel.
 The alpha release audit additionally performs the Codex-specific credential and executable scan.
+The `verigym-hwe-bench` wheel contains only adapter code: prepared JSONL records, golden patches,
+testbench scripts, extracted repositories, OCI archives, and per-PR images are forbidden members.
 
 Included fixtures are small, synthetic, and explicitly licensed. Packages must not contain an
 external VerilogEval checkout, commercial binaries, PDKs, proprietary cell libraries, model

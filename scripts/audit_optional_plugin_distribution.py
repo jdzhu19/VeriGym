@@ -46,6 +46,23 @@ class Policy:
 
 
 _POLICIES = {
+    "hwe_bench": Policy(
+        distribution="verigym-hwe-bench",
+        version="0.1.0",
+        module="verigym_hwe_bench",
+        entry_markers=(
+            "[console_scripts]",
+            "verigym-hwe-bench = verigym_hwe_bench.cli:main",
+            "[verigym.agents]",
+            "hwe-bench-probe = verigym_hwe_bench:HweBenchProbeAgent",
+            "[verigym.suites]",
+            "hwe-bench = verigym_hwe_bench:HweBenchSuite",
+        ),
+        forbidden_member_names=frozenset({"image-lock.json", "instances.jsonl"}),
+        forbidden_member_suffixes=frozenset(
+            {".img", ".jsonl", ".oci", ".patch", ".sv", ".tar", ".v"}
+        ),
+    ),
     "training_reference": Policy(
         distribution="verigym-training-reference",
         version="0.3.0",

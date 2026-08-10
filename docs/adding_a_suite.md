@@ -12,3 +12,8 @@ Add conformance tests for discovery ordering, hashes, known-good and known-bad c
 separation, source mutation, replay, and licensing. External datasets remain user-supplied unless
 redistribution is explicitly documented. The conformance plugin provides a minimal first-party
 example; it is not a production benchmark.
+
+Prefer normal verifier-only tool plugins. Use the optional suite-managed verifier hook only for
+an upstream one-image-per-instance contract, bind immutable environment identities into the task
+request, and return exactly one result per frozen node. Preparation and image pulls must remain
+explicit commands; suite discovery and ordinary no-daemon tests stay offline.

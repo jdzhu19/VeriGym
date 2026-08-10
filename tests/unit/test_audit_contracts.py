@@ -207,12 +207,14 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
         "docs/commercial_tools.md",
         "docs/verilog_eval.md",
         "docs/rtl_repo.md",
+        "docs/hwe_bench.md",
         "docs/external_training_reference.md",
         "docs/docker_runtime.md",
         "docs/yosys.md",
         "docs/experiments.md",
         "docs/campaigns.md",
         "docs/audits/real_campaign_smoke.md",
+        "docs/audits/hwe_bench_ibex_1735_smoke.md",
         "docs/batch_runner.md",
         "docs/reporting.md",
         "docs/repository_rtl_repair.md",
@@ -222,6 +224,7 @@ def test_required_documentation_and_adrs_exist_and_examples_compile() -> None:
     ]
     required.extend(f"docs/adr/{number:04d}-" for number in range(1, 11))
     required.append("docs/adr/0013-repository-level-rtl-repair.md")
+    required.append("docs/adr/0016-suite-managed-external-verifiers.md")
     files = [path.as_posix() for path in Path(".").rglob("*") if path.is_file()]
     for expected in required:
         assert any(item == expected or item.startswith(expected) for item in files), expected

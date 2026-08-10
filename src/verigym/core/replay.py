@@ -262,6 +262,7 @@ def replay_run(
                     backend=synthesis_backend,
                 )
             reverified = service._verify_candidate(
+                suite=suite,
                 task=task,
                 assets=assets,
                 runtime=runtime,

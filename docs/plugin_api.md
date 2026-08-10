@@ -19,6 +19,12 @@ workspace, interaction, and toolchain-profile contracts entirely from `verigym.p
 They must not import `verigym.schemas.*`, `verigym.core.*`, or built-in suite implementation
 modules. This keeps plugins on the versioned author-facing surface rather than internal code.
 
+A trusted external suite may override `SuiteAdapter.verify_candidate()` when an upstream
+benchmark requires a per-instance environment that cannot be represented by the ordinary tool
+DAG runtime. Returning `None` keeps the default executor. Returning results claims the complete
+graph: node IDs, plugin IDs, and frozen requests must match one-to-one. The hook runs only after
+candidate freeze and must enforce its own image, isolation, output, timeout, and artifact policy.
+
 Every descriptor has a stable lowercase ID, package version, provider, and plugin API version.
 VeriGym records distribution/version/entry-point origins. One broken or incompatible entry point
 is rejected with a bounded diagnostic without disabling unrelated plugins; duplicate IDs remain

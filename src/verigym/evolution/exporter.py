@@ -327,6 +327,34 @@ def _trace_events(run: ValidatedRun, run_dir: Path, task: VeriTask) -> list[Traj
                     "source_event_sequence": source.sequence,
                 },
             )
+        elif source.event_type == "verifier_node_result":
+            tool = str(payload.get("plugin", "unknown"))
+            node_id = str(payload.get("node_id", "unknown"))
+            _event(
+                events,
+                "tool_invocation",
+                "workspace_metadata",
+                {
+                    "tool_name": tool,
+                    "node_id": node_id,
+                    "tool_role": "verifier",
+                    "source_event_sequence": source.sequence,
+                },
+            )
+            _event(
+                events,
+                "tool_result",
+                "score_summary",
+                {
+                    "tool_name": tool,
+                    "node_id": node_id,
+                    "tool_role": "verifier",
+                    "success": payload.get("status") == "passed",
+                    "status": str(payload.get("status", "unknown")),
+                    "category": str(payload.get("error_category", "unknown")),
+                    "source_event_sequence": source.sequence,
+                },
+            )
     patch = run.manifest.repository_candidate.patch if run.manifest.repository_candidate else None
     delta = WorkspaceDeltaRecord(
         changed_files=run.scorecard.patch.changed_files[:256],
