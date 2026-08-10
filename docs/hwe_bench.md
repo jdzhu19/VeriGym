@@ -38,6 +38,10 @@ The smoke performs a zero-model no-op run expected to fail, then the official re
 to pass. This is two verifier executions for one case, not a campaign. Trace export records general
 file tools and the normalized `hwe_bench.simulate` result without hidden contents.
 
+See the [zero-model qualification](audits/hwe_bench_ibex_1735_smoke.md) and the
+[single-sample Codex audit](audits/hwe_bench_ibex_1735_codex_luna_max.md) for bounded evidence and
+result hashes. Neither audit is a full benchmark campaign.
+
 ## Expansion path
 
 Add repository profiles independently for CVA6, Caliptra, Rocket Chip, XiangShan, and OpenTitan.
