@@ -37,6 +37,10 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
     )
     assert "rllm.sdk.proxy.admin_token=EMPTY" in online_stage["argv"]
     assert "actor_rollout_ref.rollout.max_num_seqs=32" in online_stage["argv"]
+    assert (
+        "actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=4096"
+        in online_stage["argv"]
+    )
     assert "data.dataloader_num_workers=0" in online_stage["argv"]
     assert "+ray_init.num_cpus=16" in online_stage["argv"]
     assert not any(argument.startswith("ray_kwargs.ray_init.") for argument in online_stage["argv"])
