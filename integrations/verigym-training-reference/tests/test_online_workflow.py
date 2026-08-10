@@ -24,6 +24,15 @@ def _script(name: str) -> ModuleType:
     return module
 
 
+def test_online_workflow_activates_grpo_group_bridge_inside_ray_worker() -> None:
+    source = (
+        Path(__file__).parents[1] / "src" / "verigym_training_reference" / "online_workflow.py"
+    ).read_text(encoding="utf-8")
+
+    assert "activate_rllm_verl_grpo_group_compatibility()" in source
+    assert "GRPO group bridge is unavailable in the Ray worker" in source
+
+
 def test_extract_rtl_candidate_prefers_explicit_tags() -> None:
     candidate, method = extract_rtl_candidate(
         "analysis```verilog\nmodule Wrong; endmodule\n```"

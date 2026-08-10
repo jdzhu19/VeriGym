@@ -24,6 +24,7 @@ from rllm.workflows.workflow import (  # type: ignore[import-not-found]
     Workflow,
 )
 
+from .rllm_grpo_compat import activate_rllm_verl_grpo_group_compatibility
 from .rtl import extract_rtl_candidate
 
 
@@ -61,6 +62,8 @@ class VeriGymRtlWorkflow(Workflow):  # type: ignore[misc]
         solution_tokens: int = 512,
         **kwargs: Any,
     ) -> None:
+        if not activate_rllm_verl_grpo_group_compatibility():
+            raise RuntimeError("rLLM-to-verl GRPO group bridge is unavailable in the Ray worker")
         super().__init__(rollout_engine, **kwargs)
         self.verifier_broker_root = Path(verifier_broker_root).resolve(strict=True)
         self.verifier_timeout_s = verifier_timeout_s

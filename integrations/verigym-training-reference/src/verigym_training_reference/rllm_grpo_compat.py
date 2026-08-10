@@ -19,7 +19,15 @@ def bind_grpo_groups_to_trajectory_ids(batch: Any) -> Any:
     step_ids = non_tensor_batch.get("step_ids")
     if trajectory_ids is None or step_ids is None or len(trajectory_ids) != len(step_ids):
         raise RuntimeError("rLLM trajectory and step grouping metadata is inconsistent")
+    original_group_count = len({str(value) for value in step_ids})
+    stable_group_count = len({str(value) for value in trajectory_ids})
     non_tensor_batch["step_ids"] = trajectory_ids.copy()
+    print(
+        "VeriGym GRPO group bridge active: "
+        f"rows={len(step_ids)} original_groups={original_group_count} "
+        f"stable_groups={stable_group_count}",
+        flush=True,
+    )
     return batch
 
 

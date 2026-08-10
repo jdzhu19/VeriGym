@@ -20,7 +20,9 @@ class _Batch:
     non_tensor_batch: dict[str, Any]
 
 
-def test_grpo_groups_repeated_rollouts_by_stable_trajectory_identity() -> None:
+def test_grpo_groups_repeated_rollouts_by_stable_trajectory_identity(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     trajectory_ids = _CopyableIds(["task-a:rtl", "task-a:rtl", "task-b:rtl", "task-b:rtl"])
     batch = _Batch(
         non_tensor_batch={
@@ -32,6 +34,10 @@ def test_grpo_groups_repeated_rollouts_by_stable_trajectory_identity() -> None:
     assert bind_grpo_groups_to_trajectory_ids(batch) is batch
     assert batch.non_tensor_batch["step_ids"] == trajectory_ids
     assert batch.non_tensor_batch["step_ids"] is not trajectory_ids
+    assert (
+        capsys.readouterr().out
+        == "VeriGym GRPO group bridge active: rows=4 original_groups=4 stable_groups=2\n"
+    )
 
 
 def test_grpo_group_bridge_rejects_misaligned_metadata() -> None:
