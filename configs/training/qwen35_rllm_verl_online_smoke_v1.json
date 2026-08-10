@@ -146,7 +146,7 @@
         "rllm.mask_truncated_samples=True",
         "rllm.stepwise_advantage.enable=False",
         "rllm.sdk.proxy.admin_token=EMPTY",
-        "ray_kwargs.ray_init.num_cpus=16",
+        "ray_init.num_cpus=16",
         "reward.num_workers=1",
         "trainer.logger=['console']",
         "trainer.project_name=verigym-online",
