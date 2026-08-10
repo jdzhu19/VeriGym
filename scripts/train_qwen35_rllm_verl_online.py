@@ -19,6 +19,9 @@ from verigym_training_reference.online_workflow import VeriGymRtlWorkflow
 from verigym_training_reference.qwen35_verl_compat import (
     QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE,
 )
+from verigym_training_reference.rllm_grpo_compat import (
+    RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE,
+)
 
 from verigym.core.hashing import content_hash
 from verigym.experiments.state import atomic_dump_json
@@ -74,6 +77,40 @@ def _commit(environment_name: str) -> str:
     return value
 
 
+def _adapter_update_stats(config: DictConfig, checkpoint_root: Path) -> dict[str, float | int]:
+    from safetensors import safe_open  # type: ignore[import-not-found]
+
+    input_root = Path(str(config.actor_rollout_ref.model.lora_adapter_path)).resolve(strict=True)
+    input_path = (input_root / "adapter_model.safetensors").resolve(strict=True)
+    iteration = int(
+        (checkpoint_root / "latest_checkpointed_iteration.txt").read_text(encoding="utf-8")
+    )
+    output_path = (
+        checkpoint_root
+        / f"global_step_{iteration}"
+        / "actor"
+        / "lora_adapter"
+        / "adapter_model.safetensors"
+    ).resolve(strict=True)
+    changed = 0
+    maximum = 0.0
+    with (
+        safe_open(str(input_path), framework="pt", device="cpu") as before,
+        safe_open(str(output_path), framework="pt", device="cpu") as after,
+    ):
+        before_keys = set(before.keys())
+        after_keys = set(after.keys())
+        if before_keys != after_keys:
+            raise RuntimeError("online output adapter tensor keys differ from the input policy")
+        for name in sorted(before_keys):
+            difference = (before.get_tensor(name).float() - after.get_tensor(name).float()).abs()
+            tensor_maximum = float(difference.max())
+            if tensor_maximum > 0.0:
+                changed += 1
+                maximum = max(maximum, tensor_maximum)
+    return {"changed_tensor_count": changed, "max_abs_delta": maximum}
+
+
 def _completion_report(
     config: DictConfig, tasks: list[dict[str, Any]], task_manifest: dict[str, Any]
 ) -> dict[str, Any]:
@@ -83,6 +120,7 @@ def _completion_report(
         raise RuntimeError("online completion report paths are required")
     checkpoint_root = Path(str(config.trainer.default_local_dir)).resolve(strict=True)
     checkpoint_files = [path for path in checkpoint_root.rglob("*") if path.is_file()]
+    update_stats = _adapter_update_stats(config, checkpoint_root)
     scorecards = []
     for path in Path(output_value).resolve(strict=True).rglob("scorecard.json"):
         scorecards.append(json.loads(path.read_text(encoding="utf-8")))
@@ -100,7 +138,14 @@ def _completion_report(
         for task_id in sorted(task["task_id"] for task in tasks)
     }
     reward_variance_groups = sum(len(set(rewards)) > 1 for rewards in rewards_by_task.values())
-    if not checkpoint_files or not scorecards or invalid or not reward_variance_groups:
+    if (
+        not checkpoint_files
+        or not scorecards
+        or invalid
+        or not reward_variance_groups
+        or update_stats["changed_tensor_count"] <= 0
+        or update_stats["max_abs_delta"] <= 0.0
+    ):
         raise RuntimeError("online stack did not produce valid checkpoints and verifier outcomes")
     base = {
         "schema_version": "1.0",
@@ -118,6 +163,8 @@ def _completion_report(
         "infrastructure_invalid_count": invalid,
         "checkpoint_file_count": len(checkpoint_files),
         "checkpoint_bytes": sum(path.stat().st_size for path in checkpoint_files),
+        "adapter_changed_tensor_count": update_stats["changed_tensor_count"],
+        "adapter_max_abs_delta": update_stats["max_abs_delta"],
         "world_size": int(config.trainer.n_gpus_per_node),
         "rollout_backend": str(config.actor_rollout_ref.rollout.name),
         "rollout_mode": str(config.actor_rollout_ref.rollout.mode),
@@ -140,6 +187,8 @@ def _completion_report(
         "vllm_rollout_servers_used": True,
         "online_weight_synchronization_completed": True,
         "qwen35_causal_adapter_compatibility_used": True,
+        "rllm_verl_grpo_group_compatibility_used": True,
+        "effective_policy_update_verified": True,
         "verigym_sparse_reward_used": True,
         "hidden_assets_loaded_by_model": False,
         "reference_solutions_loaded_by_model": False,
@@ -160,6 +209,8 @@ def _completion_report(
 def main(config: DictConfig) -> None:
     if not QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE:
         raise RuntimeError("Qwen3.5 causal adapter compatibility hook did not activate")
+    if not RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE:
+        raise RuntimeError("rLLM-to-verl GRPO group compatibility hook did not activate")
     tasks, task_manifest = _load_task_manifest()
     output_value = os.environ.get(_OUTPUT_ENV)
     broker_value = os.environ.get(_BROKER_ENV)

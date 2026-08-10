@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 from pathlib import Path
 from types import ModuleType
 
@@ -73,6 +74,11 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     assert '"--pids-limit",\n        "8192"' in source
     assert '"nproc=8192:8192"' in source
 
+    trainer_source = Path("scripts/train_qwen35_rllm_verl_online.py").read_text(encoding="utf-8")
+    assert "RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE" in trainer_source
+    assert '"effective_policy_update_verified": True' in trainer_source
+    assert 'update_stats["changed_tensor_count"] <= 0' in trainer_source
+
 
 def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:
     module = _script()
@@ -86,3 +92,25 @@ def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: P
     )
     with pytest.raises(RuntimeError, match="outside the campaign workspace"):
         module._container_workspace_path(tmp_path.parent / "outside", tmp_path)
+
+
+def test_online_container_removes_only_ephemeral_special_entries(tmp_path: Path) -> None:
+    module = _script()
+    process_tmp = tmp_path / "process-tmp"
+    ray_tmp = tmp_path / "ray"
+    process_tmp.mkdir()
+    ray_tmp.mkdir()
+    diagnostic = ray_tmp / "raylet.out"
+    diagnostic.write_text("keep", encoding="utf-8")
+    (ray_tmp / "session_latest").symlink_to("session_fixture")
+    endpoint = process_tmp / "worker.sock"
+    worker_socket = socket.socket(socket.AF_UNIX)
+    worker_socket.bind(str(endpoint))
+    worker_socket.close()
+
+    removed = module._remove_ephemeral_special_entries([process_tmp, ray_tmp])
+
+    assert removed == 2
+    assert diagnostic.read_text(encoding="utf-8") == "keep"
+    assert not endpoint.exists()
+    assert not (ray_tmp / "session_latest").exists()

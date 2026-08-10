@@ -7,6 +7,7 @@ import argparse
 import os
 import re
 import signal
+import stat
 import subprocess
 import time
 from collections.abc import Sequence
@@ -92,6 +93,27 @@ def _container_workspace_path(path: Path, workspace: Path) -> Path:
 
 def _containerize_argument(value: str, workspace: Path) -> str:
     return value.replace(str(workspace), str(_CONTAINER_WORKSPACE))
+
+
+def _remove_ephemeral_special_entries(roots: Sequence[Path]) -> int:
+    """Remove stopped-worker IPC nodes without discarding regular Ray diagnostics."""
+
+    removed = 0
+    for root in roots:
+        if not root.is_dir() or root.is_symlink():
+            raise RuntimeError("ephemeral runtime root must be a real directory")
+        for directory, names, filenames in os.walk(root, topdown=False, followlinks=False):
+            parent = Path(directory)
+            for name in [*names, *filenames]:
+                path = parent / name
+                try:
+                    mode = os.lstat(path).st_mode
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(mode) or not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                    path.unlink()
+                    removed += 1
+    return removed
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -306,6 +328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except subprocess.TimeoutExpired:
                 os.killpg(broker.pid, signal.SIGKILL)
                 broker_code = broker.wait(timeout=5)
+        _remove_ephemeral_special_entries([process_tmp, ray_tmp])
         for signum, previous_handler in previous_handlers.items():
             signal.signal(signum, previous_handler)
     if trainer_code != 0:
