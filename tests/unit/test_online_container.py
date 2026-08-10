@@ -32,6 +32,9 @@ def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None
     assert "hydra.output_subdir=null" in online_stage["argv"]
     assert "hydra.job.chdir=False" in online_stage["argv"]
     assert "actor_rollout_ref.actor.ppo_mini_batch_size=2" in online_stage["argv"]
+    assert "++actor_rollout_ref.model.override_config.attn_implementation=sdpa" in online_stage[
+        "argv"
+    ]
     assert "rllm.sdk.proxy.admin_token=EMPTY" in online_stage["argv"]
 
 
