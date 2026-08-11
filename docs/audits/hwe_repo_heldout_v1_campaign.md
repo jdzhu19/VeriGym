@@ -67,3 +67,37 @@ No suite verifier container or labeled ephemeral cache volume remained after the
 This result validates the freeze, early-stop, replay, exclusion, and artifact-safety paths. It does
 not provide a completed three-task held-out result or a model-quality claim. A future attempt would
 be a new explicitly authorized campaign, not a retry within this frozen no-retry run.
+
+## Explicitly authorized attempt 2
+
+On 2026-08-11, the user explicitly authorized one new campaign attempt with the same frozen agent,
+split, task order, base seed, one-sample policy, 1,800-second per-task ceiling, and no-retry or
+best-of-K policy. The new output root was kept separate from the first attempt. Its plan hash is
+again `871c462b53f16a4d1e7e9bf7c74c7b5a40710844805073a6f11cf4b03e016efe`, confirming that the
+frozen sampling inputs did not change.
+
+The Ibex external-agent process started successfully in the frozen image and remained alive until
+the host control plane terminated it after `1803.0779150230228` seconds. Unlike the first attempt,
+the CLI emitted no canonical events and reported no token accounting before the timeout. The
+structured failure is `timeout`, origin `host_control_plane`; cleanup completed, the process group
+and authentication broker stopped, and the workspace had no changed paths. The container used
+network mode `none`, mounted neither the host home nor Docker socket, and received no credential or
+proxy environment variables. The startup warnings were identical to the first attempt that did
+reach the model service, so they do not explain the timeout.
+
+The unchanged base candidate was still checked by the official digest-locked Ibex verifier, which
+returned the ordinary failing result with exit code 134. The campaign recorded one
+infrastructure-invalid sample and stopped before CVA6 or Rocket, as required. This second attempt
+therefore also supplies no benchmark score or model-quality result.
+
+Zero-call visible replay passed. Observable trajectory export, validation, and source replay also
+passed with zero model, network, runtime, verifier, or public-launcher calls. The resulting dataset
+hash is `37afe7b6085738f892cc3b3822bb7d3c9030a096a1daa288e1bf9eb40f08c23b`; its sole held-out
+record is excluded as `infrastructure_invalid`, with zero eligible training records. The external
+training-reference preparation rejected it and created no training bundle. The exclusion report
+hash is `b47207863a54cce37a592b97e4f7e1497759cba87abf7f7be1c501937743e09c`.
+
+The final context-aware scan covered 233 files and 2,432,584 bytes. It passed with zero hard secret
+leaks and zero scanner errors under report hash
+`e639cf3c455076921e6d9132fc1ae359f3d5e164a3728adec8eac70b1b9f1e2c`. No suite verifier
+container or labeled ephemeral cache volume remained after the attempt.
