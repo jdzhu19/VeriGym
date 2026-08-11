@@ -15,11 +15,33 @@ violations remain safely contained outcomes. Candidate freezing, deterministic p
 reapplication, public tests, hidden Icarus verification, reporting, and replay all use the
 ordinary repository-repair path.
 
+The agent accepts an explicit `max_output_tokens` execution option. The effective limit may only
+tighten a task-level limit and is included in the agent-configuration identity. Frozen evaluation
+uses the ordinary `agent_version_id`, `agent_version_hash`, and bounded manifest options, so the
+resolved prompt policy records the exact immutable agent version without inserting repository
+contents into that version manifest.
+
 For real providers, launch VeriGym from a trusted shell and supply only environment variable
 names in configuration. Keep Docker `environment_allowlist` empty unless a non-secret task value
 is explicitly required. The repository-agent and verifier containers receive neither API
 credentials nor controller proxy credentials. Replay reads sealed artifacts only and does not
 instantiate the model client or access the network.
+
+## Frozen API repository campaigns
+
+`scripts/run_api_repository_campaign.py` is the independent provider-neutral campaign entry
+point. It accepts repeated `--source-task SOURCE::TASK_ID` selections, persists progress after
+every task, stops on the first infrastructure-invalid result, and never retries or performs
+best-of-K selection. Held-out mode requires the complete content-free split freeze and exact
+agent-version manifest before it creates the output directory. It verifies the complete task set,
+task/source hashes, current clean source commit, agent descriptor, model/reasoning/auth semantics,
+secret-free API request-policy hash, and all outer, agent-role, and suite-managed image IDs.
+
+DeepSeek evaluation should use `thinking_mode=disabled` with an explicit output cap. The provider
+request remains in the trusted host controller; both Docker roles use `network_mode=none` and an
+empty environment allowlist. Only the credential and base-URL environment variable *names* are
+recorded. The opt-in environment variable `VERIGYM_RUN_API_REPOSITORY_CAMPAIGN=1` is required, and
+the named variables must already exist in the trusted launching shell.
 
 For multi-turn provider-neutral agents, use `provider-neutral-api-repository-agent` with the
 versioned [`repository_action.v2`](repository_action_protocol.md) contract. It accepts exactly one

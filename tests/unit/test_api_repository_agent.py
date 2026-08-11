@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from verigym.agents.api_repository import ApiRepositoryAgent
 from verigym.agents.base import AgentContext, AgentTerminationError
 from verigym.core.episode import BudgetTracker
+from verigym.core.hashing import canonical_json, content_hash
 from verigym.core.model_gateway import ModelGateway
 from verigym.core.trace import TraceWriter
+from verigym.evolution.memory import build_agent_version
 from verigym.models.static import StaticModelClient
-from verigym.prompts.policy import resolve_prompt_policy
+from verigym.prompts.policy import prompt_contract_identity_hash, resolve_prompt_policy
 from verigym.schemas.agent import BudgetRemaining, Observation, ToolCallAction
 from verigym.schemas.common import ErrorCategory, InteractionMode
 from verigym.schemas.model import ModelMessage
@@ -63,6 +66,8 @@ def _observation(previous: ToolResult | None = None) -> Observation:
 def _started_agent(
     tmp_path: Path,
     response: str,
+    *,
+    options: dict[str, Any] | None = None,
 ) -> tuple[ApiRepositoryAgent, ModelGateway, RepositoryRtlSuite, Path, Path]:
     suite = RepositoryRtlSuite()
     task = suite.load_task(
@@ -82,7 +87,7 @@ def _started_agent(
     prompt = resolve_prompt_policy(
         interaction_mode=InteractionMode.AGENT,
         agent=agent,
-        agent_options={},
+        agent_options=options or {},
         task=task,
     )
     agent.start(
@@ -92,6 +97,7 @@ def _started_agent(
             seed=7,
             model_gateway=gateway,
             prompt_policy=prompt,
+            agent_options=options or {},
         )
     )
     return agent, gateway, suite, Path(assets.visible_root), trace_path
@@ -127,6 +133,80 @@ def test_api_repository_agent_uses_one_model_call_and_strict_public_context(
     assert "reference.patch" not in serialized
     assert "tb_counter_hidden" not in serialized
     assert "api_key" not in serialized.lower()
+
+
+def test_api_repository_agent_binds_explicit_output_limit(tmp_path: Path) -> None:
+    agent, _gateway, _suite, visible, trace_path = _started_agent(
+        tmp_path,
+        _good_plan(),
+        options={"max_output_tokens": 4096},
+    )
+
+    assert _advance_public_reads(agent, visible).type == "apply_patch"
+
+    serialized = trace_path.read_text(encoding="utf-8")
+    assert '"max_output_tokens":4096' in serialized
+
+
+@pytest.mark.parametrize("limit", [True, 0, 65_537, "4096"])
+def test_api_repository_agent_rejects_invalid_output_limit(
+    tmp_path: Path,
+    limit: object,
+) -> None:
+    with pytest.raises(ValueError, match="max_output_tokens"):
+        _started_agent(
+            tmp_path,
+            _good_plan(),
+            options={"max_output_tokens": limit},
+        )
+
+
+def test_api_repository_agent_accepts_hash_bound_frozen_version(tmp_path: Path) -> None:
+    suite = RepositoryRtlSuite()
+    task = suite.load_task(
+        TaskRef(id="repo-rtl/counter-wrap", suite="repo-rtl", native_id="counter-wrap")
+    )
+    agent = ApiRepositoryAgent()
+    base_policy = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=agent,
+        agent_options={"max_output_tokens": 4096},
+        task=task,
+    )
+    assert base_policy is not None
+    version = build_agent_version(
+        agent_version_id="api-repository-test-v0",
+        update_type="none",
+        executable_in_m10b=True,
+        base_agent_id=agent.descriptor.name,
+        agent_descriptor_hash=content_hash(agent.descriptor),
+        model_id="static",
+        reasoning_effort="thinking-disabled",
+        auth_semantic_id="offline.none",
+        runtime_identity_hash="2" * 64,
+        tool_policy_hash="3" * 64,
+        prompt_contract_hash=prompt_contract_identity_hash(base_policy),
+        source_commit="4" * 40,
+        package_hashes={"verigym": "5" * 64},
+        image_hashes={},
+    )
+    options = {
+        "max_output_tokens": 4096,
+        "agent_version_id": version.agent_version_id,
+        "agent_version_hash": version.version_hash,
+        "agent_version_manifest_json": canonical_json(version),
+    }
+
+    policy = resolve_prompt_policy(
+        interaction_mode=InteractionMode.AGENT,
+        agent=agent,
+        agent_options=options,
+        task=task,
+    )
+
+    assert policy is not None
+    assert policy.agent_version_id == version.agent_version_id
+    assert policy.agent_version_hash == version.version_hash
 
 
 @pytest.mark.parametrize(

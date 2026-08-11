@@ -96,6 +96,12 @@ The subsequent [frozen campaign](audits/hwe_repo_heldout_v1_campaign.md) stopped
 sample on an upstream model-capacity infrastructure error and preserved an ineligible trajectory;
 it is likewise not a benchmark score.
 
+Provider-neutral API evaluation uses the separate
+[`run_api_repository_campaign.py`](../scripts/run_api_repository_campaign.py) entry point and a
+separate agent-version/split freeze. It must not reuse the Luna agent-version identity. For
+DeepSeek, the frozen request policy includes disabled thinking, an explicit output-token cap,
+bounded transport timeouts, exact returned-model checking, and zero retry/best-of-K behavior.
+
 For a frozen multi-source campaign, repeat `--source-task SOURCE::TASK_ID`. Training mode remains
 the default. Held-out mode additionally requires a content-free repository freeze and the exact
 agent-version manifest; it rejects partial task sets, changed task/source hashes, a changed split,

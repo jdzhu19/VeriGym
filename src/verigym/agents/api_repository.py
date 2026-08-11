@@ -70,12 +70,12 @@ class ApiRepositoryAgent(AgentAdapter):
         content_visibility_policy="visible_assets_and_public_test_contract_only_v1",
         max_prompt_bytes=1024 * 1024,
         max_task_context_bytes=768 * 1024,
-        versioned_context_allowed=False,
+        versioned_context_allowed=True,
     )
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="api-repository-agent",
-        version="0.1.0",
+        version="0.2.0",
         api_version=PLUGIN_API_VERSION,
         provider="verigym",
         capabilities=[
@@ -85,6 +85,8 @@ class ApiRepositoryAgent(AgentAdapter):
             "strict_structured_action_plan",
             "docker_workspace_delegated",
             "credential_isolated",
+            "frozen_agent_version_binding",
+            "explicit_output_token_limit",
         ],
     )
 
@@ -106,13 +108,29 @@ class ApiRepositoryAgent(AgentAdapter):
         if context.prompt_policy.id != self.prompt_policy_spec.prompt_contract_id:
             raise ValueError("API repository prompt policy identity mismatch")
         if context.agent_options:
-            allowed = {"action_plan_protocol"}
+            allowed = {
+                "action_plan_protocol",
+                "agent_version_hash",
+                "agent_version_id",
+                "agent_version_manifest_json",
+                "max_output_tokens",
+            }
             if set(context.agent_options) - allowed:
                 raise ValueError("API repository agent received unknown options")
             protocol = context.agent_options.get("action_plan_protocol")
             if protocol not in {None, "strict_four_action_repository_repair_v1"}:
                 raise ValueError("unsupported API repository action-plan protocol")
-        self._max_output_tokens = context.task.budget.max_output_tokens
+        output_limit = context.agent_options.get("max_output_tokens")
+        if output_limit is not None and (
+            isinstance(output_limit, bool)
+            or not isinstance(output_limit, int)
+            or not 1 <= output_limit <= 65_536
+        ):
+            raise ValueError("max_output_tokens must be an integer in [1, 65536]")
+        task_limit = context.task.budget.max_output_tokens
+        if output_limit is not None and task_limit is not None and output_limit > task_limit:
+            raise ValueError("agent max_output_tokens may not exceed the task budget")
+        self._max_output_tokens = output_limit if output_limit is not None else task_limit
         self._context = context
         self._read_queue = [
             "TASK.md",
