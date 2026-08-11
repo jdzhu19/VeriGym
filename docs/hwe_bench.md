@@ -92,6 +92,9 @@ reproduced base-FAIL/reference-PASS for Ibex PR222, CVA6 PR2945, and Rocket PR30
 calls. An initial Rocket failure was traced to the official image's incomplete offline dependency
 cache; the profile-bound isolated-volume path resolved it without enabling verifier networking.
 This qualification is a gate result, not a benchmark score.
+The subsequent [frozen campaign](audits/hwe_repo_heldout_v1_campaign.md) stopped after its first
+sample on an upstream model-capacity infrastructure error and preserved an ineligible trajectory;
+it is likewise not a benchmark score.
 
 For a frozen multi-source campaign, repeat `--source-task SOURCE::TASK_ID`. Training mode remains
 the default. Held-out mode additionally requires a content-free repository freeze and the exact
