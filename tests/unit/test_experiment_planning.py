@@ -63,6 +63,9 @@ def test_experiment_schema_round_trip_is_strict_and_secret_free(tmp_path: Path) 
         "expected_auth_semantic_id": "codex.auth.inherited_chatgpt_session.v1",
     }
     assert ExperimentConfig.model_validate(identity_payload).execution.frozen_campaign_identity
+    identity_payload["systems"][0]["agent"]["options"] = {"max_output_tokens": 4096}
+    validated = ExperimentConfig.model_validate(identity_payload)
+    assert validated.systems[0].agent.options["max_output_tokens"] == 4096
     identity_payload["execution"]["frozen_campaign_identity"] = {
         "provider_token": "must-not-be-accepted"
     }
