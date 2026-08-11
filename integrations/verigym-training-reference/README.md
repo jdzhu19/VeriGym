@@ -27,6 +27,24 @@ The package also provides `run-campaign`, a shell-free resumable DAG runner for 
 verification, selection, training, checkpoint registration, and evaluation stages. Stage receipts
 bind commands to artifact hashes and reject mutated outputs on resume.
 
+Repository-level held-out sets can be frozen across prepared source roots without exporting issue
+text, repository files, hidden verifier assets, or reference patches:
+
+```bash
+verigym-training-reference freeze-repository-heldout \
+  --split-id hwe-repo-heldout-v1 \
+  --agent-version /path/to/frozen-agent-version.json \
+  --source-task /path/to/ibex::hwe-bench/repo-repair-v1/lowRISC__ibex__pr-222 \
+  --source-task /path/to/cva6::hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2945 \
+  --source-task /path/to/rocket::hwe-bench/repo-repair-v1/chipsalliance__rocket-chip__pr-3065 \
+  --output /path/to/heldout-freeze
+```
+
+The output contains only a task split and its hash-only task/source/agent binding. It is marked
+ineligible for training. `run_codex_repository_campaign.py --campaign-role heldout` requires both
+this directory and the same complete agent-version manifest, and rejects task-set or identity
+drift before sampling.
+
 Verifier-filtered strong-model solutions can be exported separately for SFT:
 
 ```bash

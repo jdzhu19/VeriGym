@@ -15,6 +15,7 @@ from verigym.experiments.state import atomic_dump_json
 from verigym.schemas.options import JsonValue
 
 from .campaign import load_campaign_spec, run_training_campaign
+from .heldout import RepositoryHeldoutRequest, freeze_repository_heldout
 from .online_policy import export_online_policy_version
 from .pipeline import (
     exclusion_counts,
@@ -134,6 +135,20 @@ def _parser() -> argparse.ArgumentParser:
     campaign.add_argument("--config", type=Path, required=True)
     campaign.add_argument("--workspace", type=Path, required=True)
     campaign.add_argument("--repository", type=Path, required=True)
+    freeze_repository = subparsers.add_parser(
+        "freeze-repository-heldout",
+        help="freeze a content-free multi-source repository held-out split",
+    )
+    freeze_repository.add_argument("--split-id", required=True)
+    freeze_repository.add_argument("--variant", default="repo-repair-v1")
+    freeze_repository.add_argument(
+        "--source-task",
+        action="append",
+        required=True,
+        metavar="SOURCE::TASK_ID",
+    )
+    freeze_repository.add_argument("--agent-version", type=Path, required=True)
+    freeze_repository.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -280,6 +295,28 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             repository=arguments.repository,
         )
         return report
+    if arguments.command == "freeze-repository-heldout":
+        requests: list[RepositoryHeldoutRequest] = []
+        for value in arguments.source_task:
+            raw_source, separator, task_id = value.partition("::")
+            if not separator or not raw_source or not task_id:
+                raise ConfigurationError("--source-task must use SOURCE::TASK_ID")
+            requests.append(RepositoryHeldoutRequest(source=Path(raw_source), task_id=task_id))
+        freeze_manifest = freeze_repository_heldout(
+            split_id=arguments.split_id,
+            requests=requests,
+            variant=arguments.variant,
+            agent_version_path=arguments.agent_version,
+            output=arguments.output,
+        )
+        return {
+            "status": "frozen",
+            "split_id": freeze_manifest.split_id,
+            "task_count": len(freeze_manifest.tasks),
+            "split_manifest_hash": freeze_manifest.split_manifest_hash,
+            "agent_version_hash": freeze_manifest.agent_version_hash,
+            "manifest_hash": freeze_manifest.manifest_hash,
+        }
     raise AssertionError(f"unhandled command: {arguments.command}")
 
 

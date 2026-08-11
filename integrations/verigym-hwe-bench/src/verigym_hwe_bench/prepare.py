@@ -21,13 +21,27 @@ from verigym.plugin_api import (
     hash_directory,
 )
 
-from .models import HweInstance, ImageLock, ImageLockEntry, base_commit_marker
+from .models import (
+    HweInstance,
+    ImageLockEntryV2,
+    ImageLockV2,
+    LicenseFileLock,
+    RepositoryProfile,
+    VerifierDependencyFile,
+    base_commit_marker,
+    repository_profile,
+)
 
-_REPOSITORY_HOMES = {
-    "lowRISC/ibex": "/home/ibex",
-    "openhwgroup/cva6": "/home/cva6",
-}
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _has_symlink_component(root: Path, relative: str) -> bool:
+    current = root
+    for component in relative.split("/"):
+        current /= component
+        if current.is_symlink():
+            return True
+    return False
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -97,6 +111,7 @@ def _official_instances(dataset: Path, selected: set[str]) -> list[HweInstance]:
                 raise ValueError(
                     f"selected record lacks official base-FAIL/fix-PASS evidence: {instance_id}"
                 )
+            profile = repository_profile(f"{org}/{repo}")
             found[instance_id] = HweInstance(
                 org=org,
                 repo=repo,
@@ -109,6 +124,8 @@ def _official_instances(dataset: Path, selected: set[str]) -> list[HweInstance]:
                 tb_script=str(row.get("tb_script") or ""),
                 modified_files=list(row.get("modified_files") or []),
                 expected_test_ids=sorted(str(value) for value in f2p),
+                language=profile.language,
+                license_id=profile.license_expression,
             )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ConfigurationError(f"could not select official HWE-Bench records: {exc}") from exc
@@ -137,7 +154,13 @@ def _inspect_image(reference: str, *, pull: bool) -> dict[str, Any]:
     return payload[0]
 
 
-def _extract_repository(*, image_id: str, repository_home: str, destination: Path) -> None:
+def _extract_repository(
+    *,
+    image_id: str,
+    repository_home: str,
+    destination: Path,
+    excluded_paths: list[str],
+) -> None:
     created = _command(
         ["docker", "create", "--network", "none", "--entrypoint", "/bin/true", image_id],
         timeout_s=60,
@@ -157,6 +180,7 @@ def _extract_repository(*, image_id: str, repository_home: str, destination: Pat
     metadata = destination / ".git"
     if metadata.exists():
         shutil.rmtree(metadata)
+    _apply_workspace_exclusions(destination, excluded_paths)
     _materialize_internal_file_symlinks(destination)
     # VeriGym candidates are content patches, not mode patches. Normalize the extracted Docker
     # tree before hashing so safe workspace copies reproduce an empty candidate exactly.
@@ -167,6 +191,18 @@ def _extract_repository(*, image_id: str, repository_home: str, destination: Pat
                 "selected HWE-Bench base repository contains a special filesystem entry"
             )
         os.chmod(path, 0o755 if path.is_dir() else 0o644)
+
+
+def _apply_workspace_exclusions(repository: Path, excluded_paths: list[str]) -> None:
+    root = repository.resolve(strict=True)
+    for relative in excluded_paths:
+        excluded = repository / relative
+        resolved = excluded.resolve(strict=False)
+        if excluded.is_symlink() or not resolved.is_relative_to(root) or not excluded.is_dir():
+            raise ConfigurationError(
+                f"repository profile exclusion is missing or unsafe: {relative}"
+            )
+        shutil.rmtree(excluded)
 
 
 def _materialize_internal_file_symlinks(repository: Path) -> None:
@@ -206,10 +242,17 @@ def _materialize_internal_file_symlinks(repository: Path) -> None:
         path.write_bytes(content)
 
 
-def _image_baseline(*, image_id: str, repository_home: str, base_commit: str) -> str:
+def _image_baseline(
+    *,
+    image_id: str,
+    repository_home: str,
+    base_commit: str,
+    marker: str | None = None,
+    baseline_identity_policy: str = "official_base_or_bound_synthetic",
+) -> str:
     """Read the runtime baseline and bind a synthetic baseline to the official PR base."""
 
-    marker = base_commit_marker(repository_home)
+    marker = marker or base_commit_marker(repository_home)
     checked = _command(
         [
             "docker",
@@ -253,11 +296,15 @@ def _image_baseline(*, image_id: str, repository_home: str, base_commit: str) ->
         timeout_s=60,
     )
     prepared_from = provenance.stdout.decode("utf-8", errors="replace").strip()
-    if provenance.returncode != 0 or prepared_from != base_commit:
+    if provenance.returncode == 0 and prepared_from == base_commit:
+        return observed
+    if baseline_identity_policy == "digest_locked_runtime_marker":
+        return observed
+    if baseline_identity_policy == "official_base_or_bound_synthetic":
         raise ConfigurationError(
             "selected HWE-Bench synthetic runtime baseline is not bound to the official base"
         )
-    return observed
+    raise ConfigurationError("selected HWE-Bench profile has an unsupported baseline policy")
 
 
 def prepare_source(
@@ -266,7 +313,9 @@ def prepare_source(
     output: Path,
     selected_tasks: list[str],
     pull: bool = False,
+    official_dataset_revision: str | None = None,
     official_source_commit: str | None = None,
+    verifier_cache: Path | None = None,
 ) -> Path:
     """Prepare only explicitly selected tasks; never infer or pull a full repository set."""
 
@@ -280,18 +329,23 @@ def prepare_source(
     output.parent.mkdir(parents=True, exist_ok=True)
     dataset = dataset.expanduser().resolve(strict=True)
     instances = _official_instances(dataset, set(selected_tasks))
-    entries: list[ImageLockEntry] = []
+    resolved_verifier_cache: Path | None = None
+    if verifier_cache is not None:
+        if verifier_cache.is_symlink():
+            raise ConfigurationError("verifier cache root may not be a symlink")
+        resolved_verifier_cache = verifier_cache.expanduser().resolve(strict=True)
+        if not resolved_verifier_cache.is_dir():
+            raise ConfigurationError("verifier cache root must be a directory")
+    entries: list[ImageLockEntryV2] = []
     with tempfile.TemporaryDirectory(prefix="verigym-hwe-prepare-", dir=output.parent) as temporary:
         prepared = Path(temporary) / "prepared"
         (prepared / "workspaces").mkdir(parents=True)
         for instance in instances:
-            repository_key = f"{instance.org}/{instance.repo}"
             try:
-                repository_home = _REPOSITORY_HOMES[repository_key]
-            except KeyError as exc:
-                raise ConfigurationError(
-                    f"initial HWE-Bench adapter has no executable profile for {repository_key}"
-                ) from exc
+                profile = repository_profile(instance.repository_id)
+            except ValueError as exc:
+                raise ConfigurationError(str(exc)) from exc
+            repository_home = profile.repository_home
             reference = (
                 f"ghcr.io/pku-liang/{instance.org.lower()}_m_{instance.repo.lower()}:"
                 f"pr-{instance.number}"
@@ -313,6 +367,8 @@ def prepare_source(
                 image_id=image_id,
                 repository_home=repository_home,
                 base_commit=instance.base_commit,
+                marker=profile.base_commit_marker,
+                baseline_identity_policy=profile.baseline_identity_policy,
             )
             workspace = prepared / "workspaces" / instance.slug
             repository = workspace / "repository"
@@ -321,11 +377,16 @@ def prepare_source(
                 image_id=image_id,
                 repository_home=repository_home,
                 destination=repository,
+                excluded_paths=profile.workspace_excluded_paths,
             )
             repository_hash = hash_directory(repository)
-            license_path = repository / "LICENSE"
-            if not license_path.is_file():
-                raise ConfigurationError("selected base repository lacks its declared LICENSE")
+            license_inventory = _license_inventory(repository, profile)
+            verifier_dependencies = _prepare_verifier_dependencies(
+                cache_root=resolved_verifier_cache,
+                prepared_root=prepared,
+                instance=instance,
+                profile=profile,
+            )
             (workspace / "TASK.md").write_text(
                 f"# {instance.title}\n\n{instance.problem_statement.rstrip()}\n",
                 encoding="utf-8",
@@ -361,7 +422,7 @@ def prepare_source(
                         or not (reference_repository / path).is_file()
                     ):
                         raise ConfigurationError(
-                            "initial HWE-Bench profile accepts only in-place text reference edits"
+                            "HWE-Bench profile accepts only in-place UTF-8 text reference edits"
                         )
                 reference_candidate = Candidate(
                     files={
@@ -379,18 +440,22 @@ def prepare_source(
                 "repository_hash": repository_hash,
                 "image_id": image_id,
                 "manifest_digest": manifest_digest,
+                "repository_profile_hash": profile.profile_hash,
+                "license_inventory": license_inventory,
+                "verifier_dependencies": verifier_dependencies,
             }
             if runtime_base_commit != instance.base_commit:
                 task_bundle_identity["runtime_base_commit"] = runtime_base_commit
             task_bundle_hash = content_hash(task_bundle_identity)
             entries.append(
-                ImageLockEntry(
+                ImageLockEntryV2(
                     instance_id=instance.instance_id,
                     slug=instance.slug,
                     image_reference=reference,
                     manifest_digest=manifest_digest,
                     image_id=image_id,
                     repository_home=repository_home,
+                    base_commit_marker=profile.base_commit_marker,
                     base_commit=runtime_base_commit,
                     repository_hash=repository_hash,
                     reference_repository_hash=reference_repository_hash,
@@ -405,7 +470,9 @@ def prepare_source(
                         }
                     ),
                     task_bundle_hash=task_bundle_hash,
-                    license_file_hash=hash_bytes(license_path.read_bytes()),
+                    repository_profile_hash=profile.profile_hash,
+                    license_inventory=license_inventory,
+                    verifier_dependencies=verifier_dependencies,
                 )
             )
         records = "".join(
@@ -413,8 +480,9 @@ def prepare_source(
             for instance in instances
         )
         (prepared / "instances.jsonl").write_text(records, encoding="utf-8")
-        lock = ImageLock(
+        lock = ImageLockV2(
             official_dataset_sha256=hash_bytes(dataset.read_bytes()),
+            official_dataset_revision=official_dataset_revision,
             official_source_commit=official_source_commit,
             entries=entries,
         )
@@ -423,6 +491,60 @@ def prepare_source(
         )
         os.replace(prepared, output)
     return output
+
+
+def _license_inventory(repository: Path, profile: RepositoryProfile) -> list[LicenseFileLock]:
+    inventory: list[LicenseFileLock] = []
+    for relative in profile.license_files:
+        license_path = repository / relative
+        if license_path.is_symlink() or not license_path.is_file():
+            raise ConfigurationError(
+                f"selected base repository lacks declared license file: {relative}"
+            )
+        inventory.append(
+            LicenseFileLock(path=relative, sha256=hash_bytes(license_path.read_bytes()))
+        )
+    return inventory
+
+
+def _prepare_verifier_dependencies(
+    *,
+    cache_root: Path | None,
+    prepared_root: Path,
+    instance: HweInstance,
+    profile: RepositoryProfile,
+) -> list[VerifierDependencyFile]:
+    dependencies = [item.model_copy(deep=True) for item in profile.verifier_dependencies]
+    if not dependencies:
+        return []
+    if cache_root is None:
+        raise ConfigurationError(
+            f"repository profile requires an explicit verifier cache: {instance.repository_id}"
+        )
+    destination_root = prepared_root / "verifier-dependencies" / instance.slug
+    for dependency in dependencies:
+        source = cache_root / dependency.cache_path
+        try:
+            resolved = source.resolve(strict=True)
+        except OSError as exc:
+            raise ConfigurationError(
+                f"verifier cache lacks a required file: {dependency.cache_path}"
+            ) from exc
+        if (
+            _has_symlink_component(cache_root, dependency.cache_path)
+            or not resolved.is_relative_to(cache_root)
+            or not resolved.is_file()
+            or resolved.stat().st_size != dependency.size_bytes
+            or hash_bytes(resolved.read_bytes()) != dependency.sha256
+        ):
+            raise ConfigurationError(
+                f"verifier cache dependency differs from its profile: {dependency.cache_path}"
+            )
+        destination = destination_root / dependency.cache_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(resolved, destination)
+        os.chmod(destination, 0o644)
+    return dependencies
 
 
 __all__ = ["prepare_source"]

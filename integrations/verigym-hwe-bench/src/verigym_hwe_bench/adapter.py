@@ -45,9 +45,9 @@ from verigym.plugin_api import (
     verify_frozen_repository_candidate,
 )
 
-from .dataset import NATIVE_LAYOUT, VARIANT, Catalog, load_catalog
+from .dataset import VARIANT, Catalog, load_catalog
 from .docker_verifier import DockerHweVerifier
-from .models import HweInstance, ImageLockEntry
+from .models import HweInstance, ImageLockEntry, ImageLockEntryType, ImageLockEntryV2, ImageLockV2
 
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "hwe-bench-official-repo-repair-v1"
@@ -88,6 +88,7 @@ class HweBenchSuite(SuiteAdapter):
             "external_source",
             "repository_repair",
             "systemverilog",
+            "chisel_scala",
             "functional_repair",
             "suite_managed_verifier",
             "digest_locked_per_pr_image",
@@ -180,18 +181,32 @@ class HweBenchSuite(SuiteAdapter):
                     for entry in catalog.lock.entries
                 ],
             }
+            if isinstance(catalog.lock, ImageLockV2):
+                configuration["repository_profile_hashes"] = {
+                    entry.instance_id: catalog.profile_for(entry.instance_id).profile_hash
+                    for entry in catalog.lock.entries
+                }
+                configuration["official_dataset_revision"] = catalog.lock.official_dataset_revision
+                configuration["verifier_dependency_hashes"] = {
+                    entry.instance_id: content_hash(entry.verifier_dependencies)
+                    for entry in catalog.lock.entries
+                }
+            license_expressions = sorted(
+                {catalog.instances[key].license_id for key in catalog.instances}
+            )
+            license_hashes = {
+                entry.instance_id: self._entry_license_hash(entry) for entry in catalog.lock.entries
+            }
             self._snapshot_cache = SuiteSourceSnapshot(
                 source_root=str(catalog.root),
                 dataset_root="instances.jsonl",
                 variant=VARIANT,
-                native_layout=NATIVE_LAYOUT,
+                native_layout=catalog.native_layout,
                 strict_compatibility=self._config.strict_compatibility,
                 configuration_fingerprint=content_hash(configuration),
                 dataset_content_hash=catalog.content_hash,
-                license_id="Apache-2.0",
-                license_file_hash=content_hash(
-                    {entry.instance_id: entry.license_file_hash for entry in catalog.lock.entries}
-                ),
+                license_id=" AND ".join(f"({value})" for value in license_expressions),
+                license_file_hash=content_hash(license_hashes),
                 git_commit=catalog.lock.official_source_commit,
                 git_remote="https://github.com/pku-liang/hwe-bench",
                 git_metadata_available=catalog.lock.official_source_commit is not None,
@@ -297,6 +312,9 @@ class HweBenchSuite(SuiteAdapter):
                 base_repository=self._base_repository(entry),
                 candidate_repository=candidate_dir / "repository",
                 artifact_root=artifact_root,
+                verifier_dependency_root=self._catalog().verifier_dependency_root(
+                    instance.instance_id
+                ),
             )
         ]
 
@@ -308,7 +326,7 @@ class HweBenchSuite(SuiteAdapter):
             self._snapshot_cache = None
         return self._catalog_cache
 
-    def _for_task(self, task: VeriTask) -> tuple[HweInstance, ImageLockEntry]:
+    def _for_task(self, task: VeriTask) -> tuple[HweInstance, ImageLockEntryType]:
         native = task.metadata.get("native_task_id")
         if not isinstance(native, str):
             raise ConfigurationError("HWE-Bench task lacks its native identity")
@@ -317,13 +335,20 @@ class HweBenchSuite(SuiteAdapter):
             raise ConfigurationError("HWE-Bench task identity changed")
         return instance, entry
 
-    def _base_repository(self, entry: ImageLockEntry) -> Path:
+    def _base_repository(self, entry: ImageLockEntryType) -> Path:
         return (self._catalog().root / "workspaces" / entry.slug / "repository").resolve(
             strict=True
         )
 
-    def _task(self, instance: HweInstance, entry: ImageLockEntry) -> VeriTask:
+    @staticmethod
+    def _entry_license_hash(entry: ImageLockEntryType) -> str:
+        if isinstance(entry, ImageLockEntry):
+            return entry.license_file_hash
+        return content_hash([item.model_dump(mode="json") for item in entry.license_inventory])
+
+    def _task(self, instance: HweInstance, entry: ImageLockEntryType) -> VeriTask:
         contract = _contract()
+        profile = self._catalog().profile_for(instance.instance_id)
         issue_hash = hash_bytes(instance.problem_statement.encode("utf-8"))
         public_assets_hash = content_hash({"public_tests": []})
         public_mount_hash = content_hash({"public_mount": None})
@@ -343,6 +368,10 @@ class HweBenchSuite(SuiteAdapter):
             "manifest_digest": entry.manifest_digest,
             "verifier_payload_hash": entry.verifier_payload_hash,
         }
+        if isinstance(entry, ImageLockEntryV2):
+            verifier_dependency_hash = content_hash(entry.verifier_dependencies)
+            safe_manifest["verifier_dependency_hash"] = verifier_dependency_hash
+            request["verifier_dependency_hash"] = verifier_dependency_hash
         node = VerifierNode(
             id="run_hidden_regression",
             plugin="hwe_bench.simulate",
@@ -350,7 +379,7 @@ class HweBenchSuite(SuiteAdapter):
             required=True,
             visibility=ToolVisibility.VERIFIER_ONLY,
             request=request,
-            timeout_s=900,
+            timeout_s=profile.verifier_limits.timeout_s,
             artifact_globs=["result.json"],
         )
         return VeriTask(
@@ -427,7 +456,23 @@ class HweBenchSuite(SuiteAdapter):
                             "repository_hash": entry.repository_hash,
                         }
                     ),
-                    "license_file_hash": entry.license_file_hash,
+                    "repository_profile_hash": profile.profile_hash,
+                    "source_lock_format": (
+                        "verigym_hwe_bench_source_v2"
+                        if isinstance(entry, ImageLockEntryV2)
+                        else "verigym_hwe_bench_source_v1"
+                    ),
+                    "base_commit_marker": profile.base_commit_marker,
+                    "license_expression": instance.license_id,
+                    "profile_license_expression": profile.license_expression,
+                    "license_provenance_status": (
+                        "profile_bound"
+                        if isinstance(entry, ImageLockEntryV2)
+                        else "legacy_v1_unbound"
+                    ),
+                    "license_inventory_hash": self._entry_license_hash(entry),
+                    # Core repository plan identity retains this singular compatibility key.
+                    "license_file_hash": self._entry_license_hash(entry),
                     "base_repository_hash": entry.repository_hash,
                     "issue_hash": issue_hash,
                     "public_assets_hash": public_assets_hash,

@@ -12,7 +12,7 @@ from verigym.plugin_api import (
 )
 
 from verigym_hwe_bench import HweBenchSuite
-from verigym_hwe_bench.dataset import VARIANT
+from verigym_hwe_bench.dataset import NATIVE_LAYOUT_V1, VARIANT, load_catalog
 from verigym_hwe_bench.models import HweInstance, ImageLock, ImageLockEntry
 
 
@@ -123,3 +123,13 @@ def test_adapter_keeps_hidden_verifier_and_reference_out_of_task_and_workspace(
         files={"repository/rtl/demo.sv": "assign y = a;\n"},
         label="official-reference-conformance-only",
     )
+
+
+def test_v1_prepared_source_remains_loadable_with_compatible_task_id(tmp_path: Path) -> None:
+    root, instance = _source(tmp_path)
+    catalog = load_catalog(root)
+    suite = HweBenchSuite().with_source(SuiteSourceConfig(source_root=root, variant=VARIANT))
+
+    assert catalog.native_layout == NATIVE_LAYOUT_V1
+    assert catalog.lock.format_id == "verigym_hwe_bench_source_v1"
+    assert list(suite.discover())[0].id == f"hwe-bench/{VARIANT}/{instance.slug}"

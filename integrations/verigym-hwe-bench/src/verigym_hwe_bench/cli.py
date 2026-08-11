@@ -30,7 +30,9 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--output", type=Path, required=True)
     prepare.add_argument("--task", action="append", required=True)
     prepare.add_argument("--pull", action="store_true")
+    prepare.add_argument("--official-dataset-revision")
     prepare.add_argument("--official-source-commit")
+    prepare.add_argument("--verifier-cache", type=Path)
     smoke = subparsers.add_parser("smoke")
     smoke.add_argument("--source", type=Path, required=True)
     smoke.add_argument("--output", type=Path, required=True)
@@ -134,7 +136,9 @@ def main(argv: list[str] | None = None) -> int:
                 output=args.output,
                 selected_tasks=args.task,
                 pull=args.pull,
+                official_dataset_revision=args.official_dataset_revision,
                 official_source_commit=args.official_source_commit,
+                verifier_cache=args.verifier_cache,
             )
             print(result)
         elif args.command == "smoke":

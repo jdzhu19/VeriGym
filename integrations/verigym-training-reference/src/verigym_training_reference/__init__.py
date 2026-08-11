@@ -7,8 +7,12 @@ from .campaign import (
     run_training_campaign,
 )
 from .heldout import (
+    RepositoryHeldoutFreezeManifest,
+    RepositoryHeldoutRequest,
     build_public_input_record,
     freeze_heldout_evaluation,
+    freeze_repository_heldout,
+    load_repository_heldout_freeze,
     summarize_heldout_results,
 )
 from .online_policy import export_online_policy_version
@@ -39,6 +43,8 @@ __all__ = [
     "CampaignStageSpec",
     "ModelSnapshotIdentity",
     "OnlineRewardResult",
+    "RepositoryHeldoutFreezeManifest",
+    "RepositoryHeldoutRequest",
     "SftMessage",
     "TrainingReferenceBundleManifest",
     "TrainingReferenceConfig",
@@ -53,9 +59,11 @@ __all__ = [
     "exclusion_counts",
     "export_online_policy_version",
     "freeze_heldout_evaluation",
+    "freeze_repository_heldout",
     "inspect_model_snapshot",
     "load_campaign_spec",
     "load_training_config",
+    "load_repository_heldout_freeze",
     "prepare_training_bundle",
     "register_checkpoint",
     "register_training_policy_version",

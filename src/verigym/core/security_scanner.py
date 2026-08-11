@@ -503,15 +503,31 @@ def _explicit_secret_findings(
     for match in _URL.finditer(data):
         candidate = match.group(0).rstrip(b".,);]}")
         decoded = candidate.decode("utf-8", errors="ignore")
-        parsed = urlsplit(decoded)
         rationale: str | None = None
-        if parsed.username is not None or parsed.password is not None:
-            rationale = "uri_contains_userinfo_secret"
+        try:
+            parsed = urlsplit(decoded)
+        except ValueError:
+            # Compiler diagnostics and other untrusted text can contain URL-shaped fragments with
+            # unmatched IPv6 brackets. Keep scanning without treating parser failure as a scanner
+            # failure, while conservatively retaining the two credential-bearing URI checks.
+            remainder = decoded.split("://", 1)[1]
+            authority = re.split(r"[/?#]", remainder, maxsplit=1)[0]
+            query = remainder.partition("?")[2].partition("#")[0]
+            if "@" in authority:
+                rationale = "uri_contains_userinfo_secret"
+            else:
+                for query_key, query_value in parse_qsl(query, keep_blank_values=True):
+                    if _SENSITIVE_KEY.search(query_key) and query_value.strip():
+                        rationale = "uri_contains_sensitive_query_value"
+                        break
         else:
-            for query_key, query_value in parse_qsl(parsed.query, keep_blank_values=True):
-                if _SENSITIVE_KEY.search(query_key) and query_value.strip():
-                    rationale = "uri_contains_sensitive_query_value"
-                    break
+            if parsed.username is not None or parsed.password is not None:
+                rationale = "uri_contains_userinfo_secret"
+            else:
+                for query_key, query_value in parse_qsl(parsed.query, keep_blank_values=True):
+                    if _SENSITIVE_KEY.search(query_key) and query_value.strip():
+                        rationale = "uri_contains_sensitive_query_value"
+                        break
         if rationale is not None:
             findings.append(
                 _finding(

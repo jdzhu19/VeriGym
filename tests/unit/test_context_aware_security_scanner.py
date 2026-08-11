@@ -104,6 +104,25 @@ def test_provider_prefix_kebab_identifier_is_diagnostic_but_sensitive_field_bloc
     )
 
 
+def test_malformed_ipv6_like_urls_do_not_abort_secret_scanning(tmp_path: Path) -> None:
+    _write(tmp_path / "compiler.log", "diagnostic https://[invalid-ipv6-fragment")
+    clean = _scan(tmp_path)
+    assert clean.gate == "pass"
+    assert clean.scanner_error_count == 0
+
+    _write(
+        tmp_path / "credential.log",
+        f"https://user:{CANARIES['uri']}@[invalid-ipv6-fragment",
+    )
+    blocked = _scan(tmp_path)
+    assert blocked.gate == "fail"
+    assert any(
+        finding.evidence_category == "credential_bearing_uri"
+        and finding.rationale_code == "uri_contains_userinfo_secret"
+        for finding in blocked.findings
+    )
+
+
 @pytest.mark.parametrize(
     ("relative", "payload", "category"),
     [

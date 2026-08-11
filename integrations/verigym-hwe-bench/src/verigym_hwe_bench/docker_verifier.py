@@ -16,18 +16,27 @@ from verigym.plugin_api import (
     VerifierResult,
     VerifierStatus,
     build_repository_patch,
+    content_hash,
     hash_bytes,
 )
 
-from .models import HweInstance, ImageLockEntry, base_commit_marker
+from .models import (
+    HweInstance,
+    ImageLockEntryType,
+    ImageLockEntryV2,
+    VerifierDependencyFile,
+    base_commit_marker,
+    repository_profile,
+)
 
 _START = "HWE_BENCH_RESULTS_START"
 _END = "HWE_BENCH_RESULTS_END"
+_CACHE_READY = "VERIGYM_HWE_CACHE_SEED_OK"
 _MARKER = re.compile(r"^TEST:\s*(.{1,256}?)\s*\.\.\.\s*(PASS|FAIL|SKIP)\s*$")
-_MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 
 _RUNNER = """#!/bin/bash
 set -euo pipefail
+__CACHE_SEED__
 cd __REPOSITORY_HOME__
 git reset --hard >/dev/null
 git clean -fdx >/dev/null
@@ -42,12 +51,51 @@ bash /home/verigym-tb-script.sh
 """
 
 
-def _render_runner(entry: ImageLockEntry) -> str:
+def _render_runner(entry: ImageLockEntryType) -> str:
+    marker = (
+        entry.base_commit_marker
+        if isinstance(entry, ImageLockEntryV2)
+        else base_commit_marker(entry.repository_home)
+    )
     return (
-        _RUNNER.replace("__REPOSITORY_HOME__", entry.repository_home)
-        .replace("__BASE_COMMIT_MARKER__", base_commit_marker(entry.repository_home))
+        _RUNNER.replace(
+            "__CACHE_SEED__",
+            (
+                f"bash /home/verigym-cache-seed.sh\nprintf '{_CACHE_READY}\\n'"
+                if isinstance(entry, ImageLockEntryV2) and entry.verifier_dependencies
+                else ":"
+            ),
+        )
+        .replace("__REPOSITORY_HOME__", entry.repository_home)
+        .replace("__BASE_COMMIT_MARKER__", marker)
         .replace("__BASE_COMMIT__", entry.base_commit)
     )
+
+
+def _render_cache_seed(dependencies: list[VerifierDependencyFile]) -> str:
+    lines = ["#!/bin/bash", "set -euo pipefail"]
+    for dependency in dependencies:
+        source = f"/home/verigym-dependencies/{dependency.cache_path}"
+        target = f"/tools/coursier/{dependency.cache_path}"
+        filename = dependency.cache_path.rsplit("/", 1)[1]
+        directory = target.rsplit("/", 1)[0]
+        lines.extend(
+            [
+                f'test ! -L "{source}"',
+                f'test -f "{source}"',
+                f'test "$(stat -c %s "{source}")" = "{dependency.size_bytes}"',
+                f'observed="$(sha256sum "{source}")"',
+                f'test "${{observed%% *}}" = "{dependency.sha256}"',
+                f'mkdir -p "{directory}"',
+                f'install -m 0644 "{source}" "{target}"',
+                f': > "{directory}/.{filename}.checked"',
+                f'observed="$(md5sum "{target}")"',
+                f'printf %s "${{observed%% *}}" > "{directory}/.{filename}__md5"',
+                f'observed="$(sha1sum "{target}")"',
+                f'printf %s "${{observed%% *}}" > "{directory}/.{filename}__sha1"',
+            ]
+        )
+    return "\n".join(lines) + "\n"
 
 
 def _run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
@@ -59,6 +107,37 @@ def _remove_container(name: str) -> None:
         _run(["docker", "rm", "--force", name], timeout_s=30)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
+
+
+def _remove_volume(name: str) -> bool:
+    try:
+        removed = _run(["docker", "volume", "rm", name], timeout_s=30)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return removed.returncode == 0
+
+
+def _validate_dependency_root(
+    root: Path | None, dependencies: list[VerifierDependencyFile]
+) -> Path | None:
+    if not dependencies:
+        if root is not None:
+            raise ValueError("unexpected verifier dependency root")
+        return None
+    if root is None or root.is_symlink() or not root.is_dir():
+        raise ValueError("verifier dependency root is missing or unsafe")
+    resolved_root = root.resolve(strict=True)
+    for dependency in dependencies:
+        path = root / dependency.cache_path
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or not path.resolve(strict=True).is_relative_to(resolved_root)
+            or path.stat().st_size != dependency.size_bytes
+            or hash_bytes(path.read_bytes()) != dependency.sha256
+        ):
+            raise ValueError("verifier dependency differs from its frozen inventory")
+    return resolved_root
 
 
 def _parse_markers(output: str) -> dict[str, str]:
@@ -80,15 +159,29 @@ class DockerHweVerifier:
         self,
         *,
         instance: HweInstance,
-        entry: ImageLockEntry,
+        entry: ImageLockEntryType,
         node: VerifierNode,
         base_repository: Path,
         candidate_repository: Path,
         artifact_root: Path,
+        verifier_dependency_root: Path | None = None,
     ) -> VerifierResult:
         started = time.monotonic()
+        profile = repository_profile(instance.repository_id)
         artifact_dir = artifact_root / node.id
         artifact_dir.mkdir(parents=True, exist_ok=False)
+        dependencies = entry.verifier_dependencies if isinstance(entry, ImageLockEntryV2) else []
+        try:
+            dependency_root = _validate_dependency_root(verifier_dependency_root, dependencies)
+        except (OSError, ValueError):
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.INVALID_REQUEST,
+                message="Frozen HWE-Bench verifier dependencies are unavailable or changed",
+            )
         try:
             inspection = _run(
                 ["docker", "image", "inspect", entry.image_id, "--format", "{{json .}}"],
@@ -162,6 +255,7 @@ class DockerHweVerifier:
             patch_path = staging / "candidate.patch"
             script_path = staging / "tb-script.sh"
             runner_path = staging / "runner.sh"
+            seed_path = staging / "cache-seed.sh"
             patch_path.write_text(patch, encoding="utf-8", newline="")
             script_path.write_text(instance.tb_script, encoding="utf-8", newline="")
             runner_path.write_text(
@@ -169,7 +263,56 @@ class DockerHweVerifier:
                 encoding="utf-8",
                 newline="",
             )
+            if dependencies:
+                seed_path.write_text(_render_cache_seed(dependencies), encoding="utf-8", newline="")
             container = f"verigym-hwe-{uuid.uuid4().hex[:20]}"
+            cache_volume: str | None = None
+            cache_mounts: list[str] = []
+            if dependencies:
+                assert dependency_root is not None
+                cache_volume = f"verigym-hwe-cache-{uuid.uuid4().hex[:20]}"
+                try:
+                    volume_created = _run(
+                        [
+                            "docker",
+                            "volume",
+                            "create",
+                            "--label",
+                            "verigym.owner=hwe-verifier",
+                            cache_volume,
+                        ],
+                        timeout_s=60,
+                    )
+                except subprocess.TimeoutExpired:
+                    _remove_volume(cache_volume)
+                    return self._result(
+                        node=node,
+                        artifact_dir=artifact_dir,
+                        started=started,
+                        status=VerifierStatus.ERROR,
+                        category=ErrorCategory.TIMEOUT,
+                        message="HWE-Bench verifier cache volume creation timed out",
+                    )
+                if volume_created.returncode != 0:
+                    _remove_volume(cache_volume)
+                    return self._result(
+                        node=node,
+                        artifact_dir=artifact_dir,
+                        started=started,
+                        status=VerifierStatus.ERROR,
+                        category=ErrorCategory.SANDBOX_ERROR,
+                        message="HWE-Bench verifier cache volume creation failed",
+                        stdout=volume_created.stdout,
+                        stderr=volume_created.stderr,
+                    )
+                cache_mounts = [
+                    "--mount",
+                    f"type=volume,src={cache_volume},dst=/tools/coursier",
+                    "--mount",
+                    (f"type=bind,src={dependency_root},dst=/home/verigym-dependencies,readonly"),
+                    "--mount",
+                    f"type=bind,src={seed_path},dst=/home/verigym-cache-seed.sh,readonly",
+                ]
             create = [
                 "docker",
                 "create",
@@ -182,11 +325,11 @@ class DockerHweVerifier:
                 "--security-opt",
                 "no-new-privileges",
                 "--pids-limit",
-                "4096",
+                str(profile.verifier_limits.pids_limit),
                 "--memory",
-                "16g",
+                str(profile.verifier_limits.memory_bytes),
                 "--cpus",
-                "4",
+                str(profile.verifier_limits.cpus),
                 "--init",
                 "--mount",
                 f"type=bind,src={patch_path},dst=/home/verigym-candidate.patch,readonly",
@@ -194,11 +337,13 @@ class DockerHweVerifier:
                 f"type=bind,src={script_path},dst=/home/verigym-tb-script.sh,readonly",
                 "--mount",
                 f"type=bind,src={runner_path},dst=/home/verigym-hwe-run.sh,readonly",
+                *cache_mounts,
                 "--entrypoint",
                 "/bin/bash",
                 entry.image_id,
                 "/home/verigym-hwe-run.sh",
             ]
+            cache_volume_removed = cache_volume is None
             try:
                 try:
                     created = _run(create, timeout_s=60)
@@ -240,9 +385,33 @@ class DockerHweVerifier:
                     )
             finally:
                 _remove_container(container)
+                if cache_volume is not None:
+                    cache_volume_removed = _remove_volume(cache_volume)
+        if not cache_volume_removed:
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.SANDBOX_ERROR,
+                message="HWE-Bench verifier cache volume cleanup failed",
+            )
         stdout = executed.stdout or b""
         stderr = executed.stderr or b""
-        if len(stdout) + len(stderr) > _MAX_OUTPUT_BYTES:
+        combined_output = (stdout + b"\n" + stderr).decode("utf-8", errors="replace")
+        if dependencies and _CACHE_READY not in combined_output:
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.SANDBOX_ERROR,
+                message="HWE-Bench verifier cache initialization failed",
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=executed.returncode,
+            )
+        if len(stdout) + len(stderr) > profile.verifier_limits.max_output_bytes:
             return self._result(
                 node=node,
                 artifact_dir=artifact_dir,
@@ -254,7 +423,7 @@ class DockerHweVerifier:
                 stderr=stderr,
                 exit_code=executed.returncode,
             )
-        tests = _parse_markers((stdout + b"\n" + stderr).decode("utf-8", errors="replace"))
+        tests = _parse_markers(combined_output)
         expected_tests = set(instance.expected_test_ids)
         passed = sum(tests.get(name) == "PASS" for name in expected_tests)
         all_passed = (
@@ -285,6 +454,10 @@ class DockerHweVerifier:
                 "capabilities_dropped": "all",
                 "no_new_privileges": True,
                 "container_user": "root",
+                "dependency_count": len(dependencies),
+                "dependency_inventory_hash": content_hash(dependencies),
+                "ephemeral_cache_volume": bool(dependencies),
+                "cache_volume_removed": cache_volume_removed,
                 "output_persisted": False,
             },
         )

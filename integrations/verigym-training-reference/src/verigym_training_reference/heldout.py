@@ -6,18 +6,79 @@ import json
 import os
 import stat
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import Field, field_validator, model_validator
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.orchestrator import VeriGym
+from verigym.evolution.memory import validate_agent_version
 from verigym.evolution.splits import build_task_split, validate_task_split
 from verigym.experiments.state import atomic_dump_json
 from verigym.registry.collections import build_registries
-from verigym.schemas.evolution import TaskSplitEntry, TaskSplitManifest
+from verigym.schemas.base import SCHEMA_VERSION, StrictModel
+from verigym.schemas.evolution import AgentVersionManifest, TaskSplitEntry, TaskSplitManifest
 from verigym.schemas.suite import SuiteSourceConfig
 
 _MAX_JSON_BYTES = 8 * 1024 * 1024
+_SHA256_LENGTH = 64
+
+
+def _sha256(value: str) -> str:
+    if len(value) != _SHA256_LENGTH or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise ValueError("repository held-out identities must be lowercase SHA-256")
+    return value
+
+
+class RepositoryHeldoutTaskIdentity(StrictModel):
+    task_id: str
+    task_hash: str
+    source_hash: str
+
+    @field_validator("task_hash", "source_hash")
+    @classmethod
+    def hash_value(cls, value: str) -> str:
+        return _sha256(value)
+
+
+class RepositoryHeldoutFreezeManifest(StrictModel):
+    """Content-free binding between repository tasks, a split, and a frozen agent."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_repository_heldout_freeze_v1"] = (
+        "verigym_repository_heldout_freeze_v1"
+    )
+    split_id: str
+    tasks: list[RepositoryHeldoutTaskIdentity] = Field(min_length=1, max_length=32)
+    split_manifest_hash: str
+    agent_version_hash: str
+    hidden_assets_exported: Literal[False] = False
+    reference_solutions_exported: Literal[False] = False
+    public_source_contents_exported: Literal[False] = False
+    sample_eligible_for_training: Literal[False] = False
+    manifest_hash: str
+
+    @field_validator("split_manifest_hash", "agent_version_hash", "manifest_hash")
+    @classmethod
+    def hash_value(cls, value: str) -> str:
+        return _sha256(value)
+
+    @model_validator(mode="after")
+    def task_set_is_canonical(self) -> RepositoryHeldoutFreezeManifest:
+        task_ids = [item.task_id for item in self.tasks]
+        if task_ids != sorted(task_ids) or len(task_ids) != len(set(task_ids)):
+            raise ValueError("repository held-out tasks must be unique and sorted")
+        return self
+
+
+@dataclass(frozen=True)
+class RepositoryHeldoutRequest:
+    source: Path
+    task_id: str
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -75,6 +136,151 @@ def build_public_input_record(task: Any, visible_root: Path) -> dict[str, Any]:
         "hidden_assets_included": False,
     }
     return {**base, "record_hash": content_hash(base)}
+
+
+def freeze_repository_heldout(
+    *,
+    split_id: str,
+    requests: Sequence[RepositoryHeldoutRequest],
+    variant: str,
+    agent_version_path: Path,
+    output: Path,
+) -> RepositoryHeldoutFreezeManifest:
+    """Freeze a multi-source repository held-out using identities only."""
+
+    if not requests or len(requests) > 32:
+        raise ConfigurationError("repository held-out requires between 1 and 32 tasks")
+    resolved_requests: list[RepositoryHeldoutRequest] = []
+    request_pairs: set[tuple[Path, str]] = set()
+    for request in requests:
+        expanded = request.source.expanduser()
+        if expanded.is_symlink():
+            raise ConfigurationError("repository held-out source roots may not be symlinks")
+        resolved = expanded.resolve(strict=True)
+        pair = (resolved, request.task_id)
+        if pair in request_pairs:
+            raise ConfigurationError("repository held-out repeats a source/task pair")
+        request_pairs.add(pair)
+        resolved_requests.append(RepositoryHeldoutRequest(source=resolved, task_id=request.task_id))
+
+    try:
+        agent_version = validate_agent_version(
+            AgentVersionManifest.model_validate(_read_json(agent_version_path.expanduser()))
+        )
+    except (ValueError, OSError) as exc:
+        raise ConfigurationError(f"invalid frozen agent-version manifest: {exc}") from exc
+
+    service = VeriGym(build_registries())
+    entries: list[TaskSplitEntry] = []
+    identities: list[RepositoryHeldoutTaskIdentity] = []
+    for request in resolved_requests:
+        source = SuiteSourceConfig(source_root=request.source, variant=variant)
+        _suite, task, _assets = service.load_task(request.task_id, source)
+        if (
+            task.source.kind != "repository"
+            or task.source.content_hash is None
+            or task.source.license is None
+            or task.source.attribution is None
+        ):
+            raise ConfigurationError("repository held-out tasks require a frozen repository hash")
+        task_hash = content_hash(task)
+        entries.append(
+            TaskSplitEntry(
+                task_id=task.id,
+                source_hash=task.source.content_hash,
+                task_hash=task_hash,
+                license=task.source.license,
+                attribution=task.source.attribution,
+            )
+        )
+        identities.append(
+            RepositoryHeldoutTaskIdentity(
+                task_id=task.id,
+                source_hash=task.source.content_hash,
+                task_hash=task_hash,
+            )
+        )
+    if len({item.task_id for item in identities}) != len(identities):
+        raise ConfigurationError("repository held-out task IDs must be unique")
+
+    split = build_task_split(
+        split_id=split_id,
+        training=[],
+        heldout=entries,
+        heldout_assets_loaded_after_version_hash=agent_version.version_hash,
+    )
+    validate_task_split(split)
+    ordered = sorted(identities, key=lambda item: item.task_id)
+    base = {
+        "schema_version": SCHEMA_VERSION,
+        "format_id": "verigym_repository_heldout_freeze_v1",
+        "split_id": split_id,
+        "tasks": [item.model_dump(mode="json") for item in ordered],
+        "split_manifest_hash": split.manifest_hash,
+        "agent_version_hash": agent_version.version_hash,
+        "hidden_assets_exported": False,
+        "reference_solutions_exported": False,
+        "public_source_contents_exported": False,
+        "sample_eligible_for_training": False,
+    }
+    manifest = RepositoryHeldoutFreezeManifest.model_validate(
+        {**base, "manifest_hash": content_hash(base)}
+    )
+    destination = output.expanduser()
+    if destination.exists():
+        if destination.is_symlink() or not destination.is_dir() or any(destination.iterdir()):
+            raise ConfigurationError("repository held-out output must be new or empty")
+    else:
+        destination.mkdir(parents=True)
+    atomic_dump_json(destination / "task-split.json", split)
+    atomic_dump_json(destination / "repository-heldout-freeze.json", manifest)
+    return manifest
+
+
+def load_repository_heldout_freeze(
+    root: Path,
+) -> tuple[RepositoryHeldoutFreezeManifest, TaskSplitManifest]:
+    """Validate a repository held-out freeze and its exact split binding."""
+
+    expanded = root.expanduser()
+    if expanded.is_symlink():
+        raise ConfigurationError("repository held-out freeze root may not be a symlink")
+    resolved = expanded.resolve(strict=True)
+    if not resolved.is_dir():
+        raise ConfigurationError("repository held-out freeze must be a directory")
+    try:
+        manifest = RepositoryHeldoutFreezeManifest.model_validate(
+            _read_json(resolved / "repository-heldout-freeze.json")
+        )
+        split = TaskSplitManifest.model_validate(_read_json(resolved / "task-split.json"))
+        validate_task_split(split)
+    except (ValueError, OSError) as exc:
+        raise ConfigurationError(f"invalid repository held-out freeze: {exc}") from exc
+    payload = manifest.model_dump(mode="json")
+    expected = payload.pop("manifest_hash")
+    if content_hash(payload) != expected:
+        raise ConfigurationError("repository held-out freeze identity changed")
+    split_tasks = sorted(
+        (
+            RepositoryHeldoutTaskIdentity(
+                task_id=item.task_id,
+                task_hash=item.task_hash,
+                source_hash=item.source_hash,
+            )
+            for item in split.heldout
+        ),
+        key=lambda item: item.task_id,
+    )
+    if (
+        split.training
+        or split.validation
+        or split.split_id != manifest.split_id
+        or split.manifest_hash != manifest.split_manifest_hash
+        or split.heldout_assets_loaded_after_version_hash != manifest.agent_version_hash
+        or split_tasks != manifest.tasks
+    ):
+        raise ConfigurationError("repository held-out freeze differs from its task split")
+    return manifest, split
 
 
 def freeze_heldout_evaluation(

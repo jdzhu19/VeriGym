@@ -20,6 +20,21 @@ The online oracle rejects task IDs outside the frozen training split. Hidden tes
 only in the verifier session, and infrastructure-invalid runs return `scalar_reward: null` so a
 trainer can reschedule them instead of learning from an infrastructure failure.
 
+## Repository held-out freeze
+
+`freeze-repository-heldout` accepts repeated `SOURCE::TASK_ID` selections so a split can span
+repositories and languages. It loads each selected task through its ordinary suite adapter, then
+writes only `task-split.json` and a content-free binding of task hashes, source hashes, the split
+hash, and one validated frozen agent-version hash. It exports no prompt text, repository bytes,
+hidden assets, or reference solution, and marks the set ineligible for training.
+
+The role-aware Codex repository runner keeps the former training entry point compatible. In
+`heldout` role it requires that freeze plus the complete agent-version manifest, enforces one
+sample per task, validates the exact task set and all agent, outer-runtime, and suite-managed
+verifier image identities, and stops after the first infrastructure-invalid result. The external
+training bundle accepts only trajectory records whose split is exactly `training`; held-out
+records are excluded.
+
 ## TRL/GRPO adapter
 
 The reference package supplies a dependency-free adapter for TRL's documented `prompt` dataset

@@ -1,5 +1,10 @@
 # HWE-Bench three-task Codex pilot
 
+> Provenance erratum (2026-08-11): this pilot used source-lock v1, whose generic instance default
+> recorded CVA6 as `Apache-2.0`. CVA6 is now declared as `SHL-0.51` by its explicit repository
+> profile. These three trajectories remain development-pilot evidence only and must not be imported
+> directly into a formal training bundle. New prepared sources use profile-bound source-lock v2.
+
 - Date: 2026-08-10
 - Scope: three official tasks, one sample each, no retry or best-of-K selection
 - Agent: Codex CLI 0.146.0, observed `gpt-5.6-luna`, reasoning effort `max`
