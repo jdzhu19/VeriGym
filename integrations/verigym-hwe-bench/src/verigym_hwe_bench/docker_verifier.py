@@ -110,11 +110,19 @@ def _remove_container(name: str) -> None:
 
 
 def _remove_volume(name: str) -> bool:
-    try:
-        removed = _run(["docker", "volume", "rm", name], timeout_s=30)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-    return removed.returncode == 0
+    """Remove one verifier-owned volume after Docker releases its final mount."""
+
+    attempts = 3
+    for attempt in range(attempts):
+        try:
+            removed = _run(["docker", "volume", "rm", name], timeout_s=30)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+        if removed.returncode == 0:
+            return True
+        if attempt + 1 < attempts:
+            time.sleep(0.25)
+    return False
 
 
 def _validate_dependency_root(

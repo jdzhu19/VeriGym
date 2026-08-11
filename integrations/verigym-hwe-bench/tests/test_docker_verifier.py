@@ -163,6 +163,28 @@ def test_v2_runner_uses_explicit_non_derived_rocket_marker() -> None:
     assert "/home/rocket-chip_base_commit.txt" not in runner
 
 
+def test_cache_volume_cleanup_retries_a_transient_release_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts: list[list[str]] = []
+    delays: list[float] = []
+
+    def fake_run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
+        assert timeout_s == 30
+        attempts.append(argv)
+        return subprocess.CompletedProcess(argv, 1 if len(attempts) == 1 else 0, b"", b"")
+
+    monkeypatch.setattr(docker_verifier, "_run", fake_run)
+    monkeypatch.setattr(docker_verifier.time, "sleep", delays.append)
+
+    assert docker_verifier._remove_volume("verigym-hwe-cache-fixture") is True
+    assert attempts == [
+        ["docker", "volume", "rm", "verigym-hwe-cache-fixture"],
+        ["docker", "volume", "rm", "verigym-hwe-cache-fixture"],
+    ]
+    assert delays == [0.25]
+
+
 @pytest.mark.parametrize(
     ("seed_ready", "expected_status"),
     [(True, VerifierStatus.PASSED), (False, VerifierStatus.ERROR)],
