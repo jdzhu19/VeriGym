@@ -6,10 +6,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from verigym_training_reference.heldout import (
-    RepositoryHeldoutFreezeManifest,
-    RepositoryHeldoutTaskIdentity,
-)
 
 from verigym.core.hashing import content_hash
 from verigym.evolution.memory import build_agent_version
@@ -30,6 +26,7 @@ def _heldout_files(
     *,
     suite_verifier_image: str | None = None,
 ) -> tuple[Path, Path, list[dict[str, object]]]:
+    heldout = pytest.importorskip("verigym_training_reference.heldout")
     agent_image = "a" * 64
     verifier_image = "b" * 64
     version = build_agent_version(
@@ -75,7 +72,7 @@ def _heldout_files(
         heldout=[entry],
         heldout_assets_loaded_after_version_hash=version.version_hash,
     )
-    task = RepositoryHeldoutTaskIdentity(
+    task = heldout.RepositoryHeldoutTaskIdentity(
         task_id=entry.task_id,
         task_hash=entry.task_hash,
         source_hash=entry.source_hash,
@@ -92,7 +89,7 @@ def _heldout_files(
         "public_source_contents_exported": False,
         "sample_eligible_for_training": False,
     }
-    freeze = RepositoryHeldoutFreezeManifest.model_validate(
+    freeze = heldout.RepositoryHeldoutFreezeManifest.model_validate(
         {**base, "manifest_hash": content_hash(base)}
     )
     freeze_root = tmp_path / "freeze"
