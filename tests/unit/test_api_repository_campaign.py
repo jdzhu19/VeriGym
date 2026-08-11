@@ -19,6 +19,7 @@ _summary = cast(Any, _NAMESPACE["_summary"])
 _run = cast(Any, _NAMESPACE["_run"])
 _heldout_binding = cast(Any, _NAMESPACE["_heldout_binding"])
 _model_policy_hash = cast(Any, _NAMESPACE["_model_policy_hash"])
+_parser = cast(Any, _NAMESPACE["_parser"])
 
 
 def _arguments(tmp_path: Path) -> SimpleNamespace:
@@ -42,6 +43,10 @@ def _arguments(tmp_path: Path) -> SimpleNamespace:
         agent_version=None,
         output=tmp_path / "campaign",
     )
+
+
+def test_campaign_default_output_cap_is_16k() -> None:
+    assert _parser().get_default("max_output_tokens") == 16_384
 
 
 def _heldout_files(

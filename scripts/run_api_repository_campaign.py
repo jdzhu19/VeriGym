@@ -66,7 +66,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
         default="strict_four_action_repository_repair_v1",
     )
-    parser.add_argument("--max-output-tokens", type=int, default=4096)
+    parser.add_argument("--max-output-tokens", type=int, default=16_384)
     parser.add_argument("--connect-timeout-s", type=float, default=10.0)
     parser.add_argument("--read-timeout-s", type=float, default=120.0)
     parser.add_argument("--request-timeout-s", type=float, default=120.0)

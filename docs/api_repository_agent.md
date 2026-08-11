@@ -37,11 +37,13 @@ agent-version manifest before it creates the output directory. It verifies the c
 task/source hashes, current clean source commit, agent descriptor, model/reasoning/auth semantics,
 secret-free API request-policy hash, and all outer, agent-role, and suite-managed image IDs.
 
-DeepSeek evaluation should use `thinking_mode=disabled` with an explicit output cap. The provider
-request remains in the trusted host controller; both Docker roles use `network_mode=none` and an
-empty environment allowlist. Only the credential and base-URL environment variable *names* are
-recorded. The opt-in environment variable `VERIGYM_RUN_API_REPOSITORY_CAMPAIGN=1` is required, and
-the named variables must already exist in the trusted launching shell.
+DeepSeek evaluation should use `thinking_mode=disabled` with an explicit output cap. The campaign
+runner defaults to 16,384 output tokens; a frozen campaign binds the effective value in both the
+request-policy and agent-version hashes. The provider request remains in the trusted host
+controller; both Docker roles use `network_mode=none` and an empty environment allowlist. Only the
+credential and base-URL environment variable *names* are recorded. The opt-in environment variable
+`VERIGYM_RUN_API_REPOSITORY_CAMPAIGN=1` is required, and the named variables must already exist in
+the trusted launching shell.
 
 Tasks that intentionally expose no public test, including HWE repo-repair tasks, use the frozen
 `strict_three_action_repository_repair_v1` response protocol: apply one patch, inspect the diff,
