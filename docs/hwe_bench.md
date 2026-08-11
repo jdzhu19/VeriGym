@@ -94,13 +94,20 @@ cache; the profile-bound isolated-volume path resolved it without enabling verif
 This qualification is a gate result, not a benchmark score.
 The subsequent [frozen campaign](audits/hwe_repo_heldout_v1_campaign.md) stopped after its first
 sample on an upstream model-capacity infrastructure error and preserved an ineligible trajectory;
-it is likewise not a benchmark score.
+it is likewise not a benchmark score. Its follow-up xhigh differential diagnosis found that Luna
+and the generic Docker bridge both work on minimal controls, while a real non-held-out repository
+request can still wait silently until the host timeout. This localizes the problem to intermittent
+Luna/app-server handling of repo-scale requests rather than the verifier or Docker isolation.
 
 Provider-neutral API evaluation uses the separate
 [`run_api_repository_campaign.py`](../scripts/run_api_repository_campaign.py) entry point and a
 separate agent-version/split freeze. It must not reuse the Luna agent-version identity. For
 DeepSeek, the frozen request policy includes disabled thinking, an explicit output-token cap,
 bounded transport timeouts, exact returned-model checking, and zero retry/best-of-K behavior.
+The first [independent DeepSeek held-out line](audits/hwe_repo_heldout_deepseek_v1_campaign.md)
+completed all three provider calls without infrastructure failures. All three candidates were
+rejected, and the held-out trajectory records were explicitly refused by training preparation;
+the result is a bounded negative evaluation, not a benchmark score.
 
 For a frozen multi-source campaign, repeat `--source-task SOURCE::TASK_ID`. Training mode remains
 the default. Held-out mode additionally requires a content-free repository freeze and the exact

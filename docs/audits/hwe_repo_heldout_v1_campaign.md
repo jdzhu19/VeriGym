@@ -101,3 +101,42 @@ The final context-aware scan covered 233 files and 2,432,584 bytes. It passed wi
 leaks and zero scanner errors under report hash
 `e639cf3c455076921e6d9132fc1ae359f3d5e164a3728adec8eac70b1b9f1e2c`. No suite verifier
 container or labeled ephemeral cache volume remained after the attempt.
+
+## Luna xhigh differential diagnosis
+
+The original `max` evidence above remains immutable. A separate, non-held-out diagnostic used
+`gpt-5.6-luna` with reasoning `xhigh` and the same inherited ChatGPT-session semantic, Codex
+capability fingerprint, outer verifier image, repository-agent image, and network-none Docker
+boundary. It selected Ibex PR167, which the historical Luna `max` pilot had resolved through the
+same bridge in 171.49 seconds.
+
+The xhigh PR167 process instead ran for 604.38 seconds and was terminated by the host control
+plane at its fixed 600-second ceiling. It emitted zero canonical CLI events, reported no token
+usage, ran no external commands, applied no patch, and left the repository hash unchanged. The
+process group, authentication broker, agent container, and verifier resources were cleaned. The
+official verifier subsequently rejected the unchanged base candidate as an ordinary failure.
+Visible replay passed. This reproduces the silent-wait symptom on a smaller, non-held-out task, so
+held-out task secrecy and verifier execution are not its cause.
+
+Two further non-held-out controls separated the remaining failure domains:
+
+| Control | Boundary | Result |
+| --- | --- | --- |
+| Fixed `OK` prompt, Luna xhigh | host Codex CLI, no VeriGym Docker bridge | completed in 8.76 s |
+| Synthetic protocol-valid repository task, Luna xhigh | full VeriGym Docker remote bridge | resolved in 63.58 s with 16 CLI events |
+| Real Ibex PR167, Luna xhigh | full VeriGym Docker remote bridge | timed out in 604.38 s with 0 CLI events |
+
+The direct control shows that Luna and the session authentication were available. The synthetic
+repository control shows that the network-none remote exec-server bridge and verifier Docker path
+were functional. Combined with the first held-out attempt's explicit upstream `serverOverloaded`
+event and the historical PR167 success, the most likely failure domain is intermittent Luna or
+host app-server control-plane waiting on repo-scale requests. The evidence does not distinguish a
+silent upstream queue from host app-server handling of a large initial repository context, so this
+is a medium-confidence localization rather than a definitive provider root cause.
+
+The sanitized six-case diagnosis hash is
+`5073337e544867071e14c8f7318cae077e8694116b6546a256f202ec593f973f`. The new diagnostic
+artifact scan covered 250 files and 2,274,205 bytes and passed with zero hard secret leaks and zero
+scanner errors under report hash
+`3652bd46abb592cdd6426cc873f73d6c0f5facdc5f1383daf24538800cc2f0b6`.
+No xhigh held-out score was attempted or claimed.
