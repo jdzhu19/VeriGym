@@ -3,7 +3,7 @@
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.episode import TerminationReason
-from verigym.core.errors import ConfigurationError
+from verigym.core.errors import ConfigurationError, PathPolicyError
 from verigym.core.external_process_identity import (
     bind_external_process_payload,
     build_external_process_request,
@@ -147,6 +147,7 @@ __all__ = [
     "ModelRunConfig",
     "NormalizedModelUsage",
     "ObservationPolicy",
+    "PathPolicyError",
     "ProviderRequestIdentity",
     "PLUGIN_API_VERSION",
     "PromptPolicyDescriptor",

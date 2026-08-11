@@ -340,7 +340,10 @@
         "agent_harness_kind": {
           "anyOf": [
             {
-              "const": "codex_cli",
+              "enum": [
+                "codex_cli",
+                "claude_cli"
+              ],
               "type": "string"
             },
             {
@@ -461,7 +464,10 @@
         "execution_surface": {
           "anyOf": [
             {
-              "const": "codex_cli",
+              "enum": [
+                "codex_cli",
+                "claude_cli"
+              ],
               "type": "string"
             },
             {
@@ -528,7 +534,8 @@
             {
               "enum": [
                 "codex_cli_readonly_single_turn_agent",
-                "codex_cli_external_agent"
+                "codex_cli_external_agent",
+                "claude_cli_external_agent"
               ],
               "type": "string"
             },

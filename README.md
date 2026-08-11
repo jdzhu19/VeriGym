@@ -37,6 +37,7 @@ experiment needs:
 
 ```bash
 python -m pip install -e integrations/verigym-codex-cli
+python -m pip install -e integrations/verigym-claude-cli
 python -m pip install -e integrations/verigym-rtl-repo
 python -m pip install -e integrations/verigym-verilog-eval-codecomplete
 python -m pip install -e integrations/verigym-rtllm

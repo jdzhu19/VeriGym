@@ -18,6 +18,10 @@ from verigym.schemas.options import JsonValue
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
+_SAFE_MODEL_ID = re.compile(
+    r"^(?=.{1,192}$)[A-Za-z0-9][A-Za-z0-9._:/+@-]*"
+    r"(?:\[[A-Za-z0-9][A-Za-z0-9._:-]{0,31}\])?$"
+)
 _SAFE_TASK_ID = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
     r"(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})+$"
@@ -85,6 +89,12 @@ def _hash(value: str) -> str:
 def _safe_id(value: str) -> str:
     if not _SAFE_ID.fullmatch(value):
         raise ValueError("identifiers must use the stable printable identifier vocabulary")
+    return value
+
+
+def _safe_model_id(value: str) -> str:
+    if not _SAFE_MODEL_ID.fullmatch(value):
+        raise ValueError("model IDs must use the stable provider-model identifier vocabulary")
     return value
 
 
@@ -825,13 +835,17 @@ class AgentVersionManifest(StrictModel):
     @field_validator(
         "agent_version_id",
         "base_agent_id",
-        "model_id",
         "reasoning_effort",
         "auth_semantic_id",
     )
     @classmethod
     def validate_ids(cls, value: str) -> str:
         return _safe_id(value)
+
+    @field_validator("model_id")
+    @classmethod
+    def validate_model_id(cls, value: str) -> str:
+        return _safe_model_id(value)
 
     @field_validator(
         "parent_version_hash",

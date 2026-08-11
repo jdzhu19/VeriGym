@@ -20,6 +20,7 @@ jobs:
       - name: Install core and optional integrations
         run: |
           python -m pip install -e '.[dev,openai-compatible]'
+          python -m pip install -e integrations/verigym-claude-cli
           python -m pip install -e integrations/verigym-rtl-repo
           python -m pip install -e integrations/verigym-hwe-bench
           python -m pip install -e integrations/verigym-verilog-eval-codecomplete
@@ -32,6 +33,7 @@ jobs:
           ruff check .
           mypy --strict src/verigym
           mypy --strict integrations/verigym-codex-cli/src/verigym_codex_cli
+          mypy --strict integrations/verigym-claude-cli/src/verigym_claude_cli
           mypy --strict integrations/verigym-rtl-repo/src/verigym_rtl_repo
           mypy --strict integrations/verigym-hwe-bench/src/verigym_hwe_bench
           mypy --strict \
@@ -65,6 +67,7 @@ jobs:
       - name: Install without RTL or container tools
         run: |
           python -m pip install -e '.[dev,openai-compatible]'
+          python -m pip install -e integrations/verigym-claude-cli
           python -m pip install -e integrations/verigym-rtl-repo
           python -m pip install -e integrations/verigym-hwe-bench
           python -m pip install -e integrations/verigym-verilog-eval-codecomplete
@@ -75,6 +78,7 @@ jobs:
         run: |
           pytest \
             -m "not requires_iverilog and not docker and not yosys and not external_benchmark and not release_audit"
+          pytest integrations/verigym-claude-cli/tests
           pytest integrations/verigym-rtl-repo/tests \
             -m "not external_benchmark"
           pytest -c integrations/verigym-hwe-bench/pyproject.toml \
@@ -105,6 +109,8 @@ jobs:
           python -m build
           python -m build integrations/verigym-codex-cli \
             --outdir integrations/verigym-codex-cli/dist
+          python -m build integrations/verigym-claude-cli \
+            --outdir integrations/verigym-claude-cli/dist
           python -m build integrations/verigym-rtl-repo \
             --outdir integrations/verigym-rtl-repo/dist
           python -m build integrations/verigym-hwe-bench \
@@ -125,6 +131,10 @@ jobs:
           python scripts/audit_codex_cli_distribution.py \
             --wheel integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
             --sdist integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0.tar.gz
+          python scripts/audit_optional_plugin_distribution.py \
+            --policy claude_cli \
+            --wheel integrations/verigym-claude-cli/dist/verigym_claude_cli-0.1.0-py3-none-any.whl \
+            --sdist integrations/verigym-claude-cli/dist/verigym_claude_cli-0.1.0.tar.gz
           python scripts/audit_optional_plugin_distribution.py \
             --policy rtl_repo \
             --wheel integrations/verigym-rtl-repo/dist/verigym_rtl_repo-0.1.0-py3-none-any.whl \
@@ -186,6 +196,7 @@ jobs:
           /tmp/verigym-codex-plugin-venv/bin/pip install \
             dist/verigym-0.1.0-py3-none-any.whl \
             integrations/verigym-codex-cli/dist/verigym_codex_cli-0.1.0-py3-none-any.whl \
+            integrations/verigym-claude-cli/dist/verigym_claude_cli-0.1.0-py3-none-any.whl \
             integrations/verigym-rtl-repo/dist/verigym_rtl_repo-0.1.0-py3-none-any.whl \
             integrations/verigym-hwe-bench/dist/verigym_hwe_bench-0.1.0-py3-none-any.whl \
             integrations/verigym-verilog-eval-codecomplete/dist/verigym_verilog_eval_codecomplete-0.1.0-py3-none-any.whl \
@@ -198,6 +209,7 @@ jobs:
           /tmp/verigym-codex-plugin-venv/bin/python - <<'PY'
           from verigym.core.errors import PluginNotFoundError
           from verigym.registry.collections import build_registries
+          from verigym_claude_cli import ClaudeCliAgentAdapter
           from verigym_codex_cli import resolve_auth_mode
 
           registries = build_registries()
@@ -206,6 +218,8 @@ jobs:
               == "verigym-codex-cli"
           )
           assert registries.agents.origin("codex-cli-agent").package == "verigym-codex-cli"
+          assert registries.agents.origin("claude-cli-agent").package == "verigym-claude-cli"
+          assert ClaudeCliAgentAdapter.descriptor.name == "claude-cli-agent"
           assert (
               registries.suites.origin("verilog-eval-code-complete").package
               == "verigym-verilog-eval-codecomplete"

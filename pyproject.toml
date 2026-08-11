@@ -100,6 +100,7 @@ markers = [
   "codex_cli_readonly_agent: exercises the read-only single-turn CLI agent path",
   "codex_cli_agent: exercises the external coding-agent path",
   "codex_cli_pilot: exercises the protected real-model pilot",
+  "claude_cli: exercises the Claude CLI integration path",
 ]
 
 [tool.ruff]

@@ -76,6 +76,44 @@ recreate only verifier sessions. The residual trusted computing base includes th
 control-plane binary, reviewed VeriGym/plugin code, Docker daemon, and host kernel; Docker does
 not protect against compromise of those components.
 
+### Claude CLI MCP external-agent boundary
+
+The optional `verigym-claude-cli` plugin uses a distinct host-control-plane design because Claude
+CLI does not implement the Codex app-server remote-environment protocol. Claude CLI owns only the
+provider connection on the trusted host. It runs in `--bare`, non-persistent print mode from a
+private empty control directory with an isolated `HOME`, cache, and temporary directory. User and
+project settings, `CLAUDE.md`, hooks, plugins, repository-provided skills, browser integration,
+session reuse, and all built-in tools are disabled. The prompt is supplied on stdin, not argv.
+
+The only advertised tools are exact `mcp__verigym__*` names from one strict inline MCP
+configuration. A fixed stdio adapter connects to a mode-0600 Unix socket inside a mode-0700 short
+scratch directory. The host process receives exactly one explicitly resolved provider credential
+form (`ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`); the two forms are never aliased. The adapter
+launcher removes both credential variable names, the provider base URL, proxy variables, and effort
+environment before starting the MCP child. Nonessential Claude traffic is disabled. The model gets
+no host-filesystem or shell tool; the trusted MCP adapter gets no provider credential or task-image
+mount and exposes only its fixed socket protocol. Neither receives a settings file, Docker socket,
+hidden verifier, or credential tool.
+
+Core-owned file tools validate every relative read and write against `WorkspacePolicy`. Argument-
+array commands run through the selected official task Docker session with `network=none`; no shell
+string or environment injection is accepted. Declared public tests use the existing hash-bound,
+read-only public-test path. A policy violation or runtime control-plane failure makes the episode
+terminal, and the ordinary candidate freeze and separate hidden verifier still run only after a
+structurally successful agent episode.
+
+The plugin sets an explicit model and `max` effort but does not configure a Claude turn limit,
+model-call limit, token limit, dollar budget, fallback model, retry, or best-of-K. The ordinary
+process wall timeout and bounded stdout/stderr capture remain safety and audit limits. Claude's
+observed context window and per-response maximum output are provenance, not VeriGym stopping
+conditions. Raw prompts, stdout events, message text, tool payloads, and thinking blocks are not
+persisted; only content-free event summaries, usage, hashes, policy outcomes, and bounded failure
+diagnostics are retained.
+
+The residual trusted computing base adds the installed Claude CLI binary and the reviewed MCP
+adapter/broker. Provider behavior and the CLI's own upstream response ceiling remain external
+dependencies; Docker does not protect against compromise of the trusted host control plane.
+
 ## Yosys and profile-specific protections
 
 Toolchain profile resolution is a verifier-side configuration step and completes before model

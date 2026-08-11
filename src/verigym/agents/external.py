@@ -12,6 +12,7 @@ from verigym.schemas.external_agent import (
     ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.options import JsonValue
+from verigym.schemas.tool import CommandSpec, CompletedCommand, ToolResult
 
 
 class ExternalAgentBridge(Protocol):
@@ -40,6 +41,14 @@ class ExternalAgentBridge(Protocol):
     def read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]: ...
 
     def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult: ...
+
+    def invoke_workspace_tool(
+        self, tool_name: str, request: dict[str, JsonValue]
+    ) -> ToolResult: ...
+
+    def execute_command(self, command: CommandSpec) -> CompletedCommand: ...
+
+    def execute_public_test(self, test_id: str) -> CompletedCommand: ...
 
     def emit_event(self, event_type: str, payload: dict[str, JsonValue]) -> None: ...
 

@@ -46,6 +46,18 @@ class Policy:
 
 
 _POLICIES = {
+    "claude_cli": Policy(
+        distribution="verigym-claude-cli",
+        version="0.1.0",
+        module="verigym_claude_cli",
+        entry_markers=(
+            "[verigym.agents]",
+            "claude-cli-agent = verigym_claude_cli:ClaudeCliAgentAdapter",
+        ),
+        forbidden_member_suffixes=frozenset(
+            {".db", ".jsonl", ".patch", ".pem", ".sqlite", ".trace"}
+        ),
+    ),
     "hwe_bench": Policy(
         distribution="verigym-hwe-bench",
         version="0.1.0",

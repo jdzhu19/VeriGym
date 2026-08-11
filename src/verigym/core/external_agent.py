@@ -22,9 +22,14 @@ from verigym.schemas.external_agent import (
     ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.options import JsonValue
+from verigym.schemas.tool import CommandSpec, CompletedCommand, ToolResult
+from verigym.tools.base import ToolContext
+from verigym.tools.file_tools import builtin_file_tools
 
-_EVENT_TYPE = re.compile(r"^codex_cli_[a-z0-9_]{1,80}$")
+_EVENT_TYPE = re.compile(r"^(?:codex|claude)_cli_[a-z0-9_]{1,80}$")
 _MAX_EVENT_BYTES = 256 * 1024
+_MAX_TOOL_OUTPUT_BYTES = 256 * 1024
+_WORKSPACE_TOOLS = {tool.descriptor.name: tool for tool in builtin_file_tools()}
 _FORBIDDEN_CANDIDATE_NAMES = {
     ".env",
     "auth.json",
@@ -89,6 +94,49 @@ class RuntimeExternalAgentBridge:
     def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
         return self._session.execute_external_process(request)
 
+    def invoke_workspace_tool(self, tool_name: str, request: dict[str, JsonValue]) -> ToolResult:
+        """Invoke one core-owned file tool against the visible workspace."""
+
+        tool = _WORKSPACE_TOOLS.get(tool_name)
+        if tool is None:
+            raise ValueError("external agent requested an unavailable workspace tool")
+        result = tool.execute(
+            dict(request),
+            ToolContext(
+                session=self._session,
+                workspace_policy=self._policy,
+                max_output_bytes=_MAX_TOOL_OUTPUT_BYTES,
+                artifact_dir=self._artifact_root,
+            ),
+        )
+        return result.model_copy(deep=True)
+
+    def execute_command(self, command: CommandSpec) -> CompletedCommand:
+        """Run one shell-free command through the selected runtime session."""
+
+        if command.requires_shell:
+            raise PathPolicyError("external agents cannot request shell command strings")
+        if command.env:
+            raise PathPolicyError("external agents cannot inject command environment variables")
+        if command.artifact_globs:
+            raise PathPolicyError("external-agent commands cannot collect undeclared artifacts")
+        if len(command.argv) > 128 or any(
+            len(value.encode("utf-8")) > 16 * 1024 for value in command.argv
+        ):
+            raise PathPolicyError("external-agent command arguments exceed the safety bound")
+        if command.stdin is not None and len(command.stdin.encode("utf-8")) > 1024 * 1024:
+            raise PathPolicyError("external-agent command stdin exceeds the safety bound")
+        if command.timeout_s > 1800:
+            raise PathPolicyError("external-agent command timeout exceeds 1800 seconds")
+        completed = self._session.execute(command)
+        self.validate_workspace()
+        return completed.model_copy(deep=True)
+
+    def execute_public_test(self, test_id: str) -> CompletedCommand:
+        completed = self._session.execute_public_test(test_id)
+        self.validate_workspace()
+        return completed.model_copy(deep=True)
+
     @property
     def accounting(self) -> ExternalAgentAccounting | None:
         return self._accounting.model_copy(deep=True) if self._accounting is not None else None
@@ -105,10 +153,10 @@ class RuntimeExternalAgentBridge:
 
     def emit_event(self, event_type: str, payload: dict[str, JsonValue]) -> None:
         if not _EVENT_TYPE.fullmatch(event_type):
-            raise ValueError("external-agent event types must use the codex_cli_* namespace")
+            raise ValueError("external-agent event types must use a registered *_cli_* namespace")
         clean = self._sanitize_payload(redact_mapping(payload))
         identity: ExternalAgentCallIdentity | None = None
-        if event_type == "codex_cli_identity_observed":
+        if event_type in {"codex_cli_identity_observed", "claude_cli_identity_observed"}:
             identity = ExternalAgentCallIdentity.model_validate(dict(clean))
         bounded, truncated = bound_value(clean, _MAX_EVENT_BYTES)
         if not isinstance(bounded, dict):
@@ -124,10 +172,12 @@ class RuntimeExternalAgentBridge:
         if self._accounting is not None:
             raise ValueError("external-agent accounting was already recorded")
         self._accounting = accounting.model_copy(deep=True)
-        self._trace.emit(
-            "codex_cli_accounting_recorded",
-            accounting.model_dump(mode="json"),
+        surface = (
+            self._observations[-1].execution_surface
+            if self._observations and self._observations[-1].execution_surface is not None
+            else "codex_cli"
         )
+        self._trace.emit(f"{surface}_accounting_recorded", accounting.model_dump(mode="json"))
 
     def validate_workspace(self) -> None:
         """Reject direct external edits that bypass the declared workspace policy."""

@@ -68,6 +68,22 @@ from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 from verigym.version import __version__
 
 
+def _external_agent_artifact_namespace(agent_name: str) -> str:
+    if agent_name.startswith("codex-cli-"):
+        return "codex_cli"
+    if agent_name.startswith("claude-cli-"):
+        return "claude_cli"
+    return "external_agent"
+
+
+def _external_agent_isolation_label(agent_name: str, execution_backend: str) -> str:
+    if agent_name.startswith("claude-cli-"):
+        return "host_claude_control_plane_runtime_mcp_delegated"
+    if execution_backend == "docker_outer_runtime_delegated":
+        return "docker_outer_runtime_delegated"
+    return "codex_cli_sandbox_on_trusted_host"
+
+
 class VeriGym:
     """High-level service for deterministic task execution."""
 
@@ -415,10 +431,9 @@ class VeriGym:
                 ),
                 **(
                     {
-                        "external_agent_isolation": (
-                            "docker_outer_runtime_delegated"
-                            if external_process_backend == "docker_outer_runtime_delegated"
-                            else "codex_cli_sandbox_on_trusted_host"
+                        "external_agent_isolation": _external_agent_isolation_label(
+                            agent.descriptor.name,
+                            external_process_backend,
                         ),
                         "external_agent_process_backend": external_process_backend,
                         "verigym_runtime_isolation": runtime.descriptor.isolation_level,
@@ -469,7 +484,8 @@ class VeriGym:
             if external_agent_selected:
                 external_bridge = RuntimeExternalAgentBridge(
                     session=env.session,
-                    artifact_root=layout.artifacts / "codex_cli",
+                    artifact_root=layout.artifacts
+                    / _external_agent_artifact_namespace(agent.descriptor.name),
                     isolation_level=runtime.descriptor.isolation_level,
                     policy=env.policy,
                     trace=trace,

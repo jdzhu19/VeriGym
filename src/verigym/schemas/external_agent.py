@@ -615,10 +615,11 @@ class ExternalAgentCallIdentity(StrictModel):
         Literal[
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
+            "claude_cli_external_agent",
         ]
         | None
     ) = None
-    execution_surface: Literal["codex_cli"] | None = None
+    execution_surface: Literal["codex_cli", "claude_cli"] | None = None
     interaction_class: (
         Literal[
             "cli_agent_single_turn_readonly",
@@ -628,7 +629,7 @@ class ExternalAgentCallIdentity(StrictModel):
     ) = None
     harness_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_client_kind: Literal["cli_agent_mediated"] | None = None
-    agent_harness_kind: Literal["codex_cli"] | None = None
+    agent_harness_kind: Literal["codex_cli", "claude_cli"] | None = None
     tool_availability_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_use_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_event_count: int | None = Field(default=None, ge=0)
@@ -743,9 +744,7 @@ class ExternalAgentCallIdentity(StrictModel):
                 or self.pure_api_model_eval is not False
                 or self.direct_api_benchmark is not False
             ):
-                raise ValueError(
-                    "Codex CLI agent identities cannot claim direct or ChatEval status"
-                )
+                raise ValueError("CLI agent identities cannot claim direct or ChatEval status")
         return self
 
 
