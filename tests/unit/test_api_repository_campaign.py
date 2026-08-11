@@ -28,6 +28,7 @@ def _arguments(tmp_path: Path) -> SimpleNamespace:
         model_id="deepseek-v4-flash",
         provider_id="DeepSeek",
         thinking_mode="disabled",
+        action_plan_protocol="strict_three_action_repository_repair_v1",
         max_output_tokens=4096,
         connect_timeout_s=10.0,
         read_timeout_s=120.0,

@@ -49,6 +49,27 @@ def _good_plan(test_id: str = "counter-wrap-public") -> str:
     )
 
 
+def _good_plan_without_public_test() -> str:
+    return json.dumps(
+        {
+            "schema_version": "1.0",
+            "actions": [
+                {
+                    "type": "apply_patch",
+                    "patch": (
+                        "--- a/repository/rtl/wrap_counter.sv\n"
+                        "+++ b/repository/rtl/wrap_counter.sv\n"
+                        "@@ -1,1 +1,1 @@\n-module old;\n+module new;\n"
+                    ),
+                },
+                {"type": "tool_call", "tool": "file.diff", "arguments": {}},
+                {"type": "final", "message": "done"},
+            ],
+        },
+        separators=(",", ":"),
+    )
+
+
 def _observation(previous: ToolResult | None = None) -> Observation:
     return Observation(
         task_id="repo-rtl/counter-wrap",
@@ -68,11 +89,18 @@ def _started_agent(
     response: str,
     *,
     options: dict[str, Any] | None = None,
+    without_public_tests: bool = False,
 ) -> tuple[ApiRepositoryAgent, ModelGateway, RepositoryRtlSuite, Path, Path]:
     suite = RepositoryRtlSuite()
     task = suite.load_task(
         TaskRef(id="repo-rtl/counter-wrap", suite="repo-rtl", native_id="counter-wrap")
     )
+    if without_public_tests:
+        metadata = dict(task.metadata)
+        repository = dict(metadata["repository_repair"])
+        repository["public_test_ids"] = []
+        metadata["repository_repair"] = repository
+        task = task.model_copy(update={"metadata": metadata})
     assets = suite.resolve_assets(task)
     agent = ApiRepositoryAgent()
     client = StaticModelClient(name="fake-api", responses=[response])
@@ -146,6 +174,38 @@ def test_api_repository_agent_binds_explicit_output_limit(tmp_path: Path) -> Non
 
     serialized = trace_path.read_text(encoding="utf-8")
     assert '"max_output_tokens":4096' in serialized
+
+
+def test_api_repository_agent_supports_tasks_without_public_tests(tmp_path: Path) -> None:
+    protocol = "strict_three_action_repository_repair_v1"
+    agent, gateway, _suite, visible, trace_path = _started_agent(
+        tmp_path,
+        _good_plan_without_public_test(),
+        options={"action_plan_protocol": protocol, "max_output_tokens": 4096},
+        without_public_tests=True,
+    )
+
+    first = _advance_public_reads(agent, visible)
+    second = agent.act(_observation())
+    third = agent.act(_observation())
+
+    assert [first.type, second.type, third.type] == ["apply_patch", "tool_call", "final"]
+    assert isinstance(second, ToolCallAction) and second.tool == "file.diff"
+    assert gateway.tracker.model_calls == 1
+    assert protocol in trace_path.read_text(encoding="utf-8")
+
+
+def test_three_action_protocol_rejects_task_with_public_tests(tmp_path: Path) -> None:
+    agent, gateway, _suite, visible, _trace = _started_agent(
+        tmp_path,
+        _good_plan_without_public_test(),
+        options={"action_plan_protocol": "strict_three_action_repository_repair_v1"},
+    )
+
+    with pytest.raises(AgentTerminationError, match="three-action protocol"):
+        _advance_public_reads(agent, visible)
+
+    assert gateway.tracker.model_calls == 1
 
 
 @pytest.mark.parametrize("limit", [True, 0, 65_537, "4096"])

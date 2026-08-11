@@ -57,6 +57,26 @@ class ApiRepositoryActionPlan(StrictModel):
         return self
 
 
+class ApiRepositoryNoPublicTestActionPlan(StrictModel):
+    """One bounded response for repositories that intentionally expose no public test."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    actions: list[dict[str, Any]] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_protocol(self) -> ApiRepositoryNoPublicTestActionPlan:
+        types = [action.get("type") for action in self.actions]
+        if types != ["apply_patch", "tool_call", "final"]:
+            raise ValueError("actions must be apply_patch, file.diff, then final")
+        inspect = self.actions[1]
+        if inspect.get("tool") != "file.diff" or inspect.get("arguments", {}) != {}:
+            raise ValueError("the second action must be file.diff with empty arguments")
+        final = self.actions[2]
+        if final.get("files") is not None:
+            raise ValueError("API repository plans may not submit replacement file maps")
+        return self
+
+
 class ApiRepositoryAgent(AgentAdapter):
     """Read public inputs in Docker, then execute one strict remote action plan."""
 
@@ -75,7 +95,7 @@ class ApiRepositoryAgent(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="api-repository-agent",
-        version="0.2.0",
+        version="0.3.0",
         api_version=PLUGIN_API_VERSION,
         provider="verigym",
         capabilities=[
@@ -87,6 +107,7 @@ class ApiRepositoryAgent(AgentAdapter):
             "credential_isolated",
             "frozen_agent_version_binding",
             "explicit_output_token_limit",
+            "optional_public_test_action_plan",
         ],
     )
 
@@ -98,6 +119,7 @@ class ApiRepositoryAgent(AgentAdapter):
         self._actions: list[AgentAction] = []
         self._request_complete = False
         self._max_output_tokens: int | None = None
+        self._action_plan_protocol = "strict_four_action_repository_repair_v1"
         self._last_action: AgentAction | None = None
 
     def start(self, context: AgentContext) -> None:
@@ -107,6 +129,7 @@ class ApiRepositoryAgent(AgentAdapter):
             raise ValueError("ApiRepositoryAgent owns its resolved execution prompt")
         if context.prompt_policy.id != self.prompt_policy_spec.prompt_contract_id:
             raise ValueError("API repository prompt policy identity mismatch")
+        self._action_plan_protocol = "strict_four_action_repository_repair_v1"
         if context.agent_options:
             allowed = {
                 "action_plan_protocol",
@@ -118,8 +141,14 @@ class ApiRepositoryAgent(AgentAdapter):
             if set(context.agent_options) - allowed:
                 raise ValueError("API repository agent received unknown options")
             protocol = context.agent_options.get("action_plan_protocol")
-            if protocol not in {None, "strict_four_action_repository_repair_v1"}:
+            if protocol not in {
+                None,
+                "strict_four_action_repository_repair_v1",
+                "strict_three_action_repository_repair_v1",
+            }:
                 raise ValueError("unsupported API repository action-plan protocol")
+            if isinstance(protocol, str):
+                self._action_plan_protocol = protocol
         output_limit = context.agent_options.get("max_output_tokens")
         if output_limit is not None and (
             isinstance(output_limit, bool)
@@ -224,7 +253,8 @@ class ApiRepositoryAgent(AgentAdapter):
         gateway = context.model_gateway
         prompt_policy = context.prompt_policy
         assert gateway is not None and prompt_policy is not None
-        prompt = _render_prompt(context, self._visible_content)
+        protocol = self._action_plan_protocol
+        prompt = _render_prompt(context, self._visible_content, protocol=protocol)
         validate_prompt_text(prompt, prompt_policy)
         prompt_hash = prompt_policy.configuration_fingerprint
         configuration_hash = agent_configuration_hash(self.descriptor, context.agent_options)
@@ -244,7 +274,7 @@ class ApiRepositoryAgent(AgentAdapter):
                 "interaction_mode": "agent",
                 "prompt_policy_hash": prompt_hash,
                 "agent_configuration_hash": configuration_hash,
-                "action_plan_protocol": "strict_four_action_repository_repair_v1",
+                "action_plan_protocol": protocol,
             },
         )
         try:
@@ -273,9 +303,13 @@ class ApiRepositoryAgent(AgentAdapter):
             raise _agent_output_error("provider response stopped at the output limit")
         try:
             raw = json.loads(response.text, object_pairs_hook=_unique_object)
-            plan = ApiRepositoryActionPlan.model_validate(raw)
+            plan = (
+                ApiRepositoryNoPublicTestActionPlan.model_validate(raw)
+                if protocol == "strict_three_action_repository_repair_v1"
+                else ApiRepositoryActionPlan.model_validate(raw)
+            )
             actions = [_ACTION_ADAPTER.validate_python(item) for item in plan.actions]
-            _validate_task_actions(context, actions)
+            _validate_task_actions(context, actions, protocol=protocol)
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             gateway.emit_action_rejected(
                 request.request_id,
@@ -286,12 +320,17 @@ class ApiRepositoryAgent(AgentAdapter):
             raise _agent_output_error(f"invalid API repository action plan: {exc}") from exc
         gateway.emit_parsed_action(
             request.request_id,
-            {"protocol": "strict_four_action_repository_repair_v1", "actions": plan.actions},
+            {"protocol": protocol, "actions": plan.actions},
         )
         return actions
 
 
-def _render_prompt(context: AgentContext, files: Mapping[str, str]) -> str:
+def _render_prompt(
+    context: AgentContext,
+    files: Mapping[str, str],
+    *,
+    protocol: str,
+) -> str:
     prompt_policy = context.prompt_policy
     assert prompt_policy is not None
     repository = context.task.metadata.get("repository_repair")
@@ -300,9 +339,26 @@ def _render_prompt(context: AgentContext, files: Mapping[str, str]) -> str:
         raw = repository.get("public_test_ids")
         if isinstance(raw, list) and all(isinstance(value, str) for value in raw):
             public_ids = sorted(raw)
+    required_actions: list[dict[str, Any]] = [
+        {"type": "apply_patch", "patch": "unified diff rooted at repository/"},
+    ]
+    if protocol == "strict_four_action_repository_repair_v1":
+        required_actions.append(
+            {
+                "type": "tool_call",
+                "tool": "repository.public_test",
+                "arguments": {"test_id": "one listed public test ID"},
+            }
+        )
+    required_actions.extend(
+        [
+            {"type": "tool_call", "tool": "file.diff", "arguments": {}},
+            {"type": "final", "message": "bounded completion note"},
+        ]
+    )
     payload = {
         "schema_version": "1.0",
-        "protocol": "strict_four_action_repository_repair_v1",
+        "protocol": protocol,
         "task": {
             "id": context.task.id,
             "title": context.task.title,
@@ -314,19 +370,7 @@ def _render_prompt(context: AgentContext, files: Mapping[str, str]) -> str:
             "public_test_ids": public_ids,
         },
         "visible_files": {path: files[path] for path in sorted(files)},
-        "required_response": {
-            "schema_version": "1.0",
-            "actions": [
-                {"type": "apply_patch", "patch": "unified diff rooted at repository/"},
-                {
-                    "type": "tool_call",
-                    "tool": "repository.public_test",
-                    "arguments": {"test_id": "one listed public test ID"},
-                },
-                {"type": "tool_call", "tool": "file.diff", "arguments": {}},
-                {"type": "final", "message": "bounded completion note"},
-            ],
-        },
+        "required_response": {"schema_version": "1.0", "actions": required_actions},
         "rules": [
             "Use only visible information in this prompt.",
             "Do not mention or infer hidden tests or reference patches.",
@@ -342,12 +386,25 @@ def _render_prompt(context: AgentContext, files: Mapping[str, str]) -> str:
     return rendered
 
 
-def _validate_task_actions(context: AgentContext, actions: list[AgentAction]) -> None:
+def _validate_task_actions(
+    context: AgentContext,
+    actions: list[AgentAction],
+    *,
+    protocol: str,
+) -> None:
     repository = context.task.metadata.get("repository_repair")
     public_ids = repository.get("public_test_ids") if isinstance(repository, dict) else None
-    test_action = actions[1]
     if not isinstance(actions[0], ApplyPatchAction):
         raise ValueError("first action did not validate as apply_patch")
+    if protocol == "strict_three_action_repository_repair_v1":
+        if public_ids:
+            raise ValueError("three-action protocol requires a task without public tests")
+        if not isinstance(actions[1], ToolCallAction) or not isinstance(
+            actions[2], FinalSubmissionAction
+        ):
+            raise ValueError("action plan types are invalid")
+        return
+    test_action = actions[1]
     if not isinstance(test_action, ToolCallAction):
         raise ValueError("second action did not validate as tool_call")
     if set(test_action.arguments) != {"test_id"} or test_action.arguments.get("test_id") not in (
@@ -390,4 +447,8 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-__all__ = ["ApiRepositoryActionPlan", "ApiRepositoryAgent"]
+__all__ = [
+    "ApiRepositoryActionPlan",
+    "ApiRepositoryAgent",
+    "ApiRepositoryNoPublicTestActionPlan",
+]

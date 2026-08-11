@@ -43,6 +43,12 @@ empty environment allowlist. Only the credential and base-URL environment variab
 recorded. The opt-in environment variable `VERIGYM_RUN_API_REPOSITORY_CAMPAIGN=1` is required, and
 the named variables must already exist in the trusted launching shell.
 
+Tasks that intentionally expose no public test, including HWE repo-repair tasks, use the frozen
+`strict_three_action_repository_repair_v1` response protocol: apply one patch, inspect the diff,
+then submit. Tasks with declared public-test IDs keep the four-action protocol. The three-action
+protocol is rejected for tasks that do expose public tests; it changes neither hidden-verifier
+execution nor verifier isolation.
+
 For multi-turn provider-neutral agents, use `provider-neutral-api-repository-agent` with the
 versioned [`repository_action.v2`](repository_action_protocol.md) contract. It accepts exactly one
 strict registered action per completion, preserves precise protocol rejection subcategories, and

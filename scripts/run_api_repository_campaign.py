@@ -58,6 +58,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url-env", default="VERIGYM_DEEPSEEK_API_BASE_URL")
     parser.add_argument("--api-key-env", default="VERIGYM_DEEPSEEK_API_KEY")
     parser.add_argument("--thinking-mode", choices=("disabled", "enabled"), default="disabled")
+    parser.add_argument(
+        "--action-plan-protocol",
+        choices=(
+            "strict_four_action_repository_repair_v1",
+            "strict_three_action_repository_repair_v1",
+        ),
+        default="strict_four_action_repository_repair_v1",
+    )
     parser.add_argument("--max-output-tokens", type=int, default=4096)
     parser.add_argument("--connect-timeout-s", type=float, default=10.0)
     parser.add_argument("--read-timeout-s", type=float, default=120.0)
@@ -303,6 +311,7 @@ def _model_policy_hash(arguments: argparse.Namespace) -> str:
             "api_key_env": arguments.api_key_env,
             "auth_semantic_id": _AUTH_SEMANTIC_ID,
             "thinking_mode": arguments.thinking_mode,
+            "action_plan_protocol": arguments.action_plan_protocol,
             "max_output_tokens": arguments.max_output_tokens,
             "connect_timeout_s": arguments.connect_timeout_s,
             "read_timeout_s": arguments.read_timeout_s,
@@ -442,6 +451,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
         "model_id": arguments.model_id,
         "reasoning_effort": reasoning_effort,
         "thinking_mode": arguments.thinking_mode,
+        "action_plan_protocol": arguments.action_plan_protocol,
         "max_output_tokens": arguments.max_output_tokens,
         "connect_timeout_s": arguments.connect_timeout_s,
         "read_timeout_s": arguments.read_timeout_s,
@@ -500,7 +510,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
         for sample_index in range(arguments.samples):
             run_id = _safe_run_id(index, task_id, sample_index)
             agent_options: dict[str, JsonValue] = {
-                "action_plan_protocol": "strict_four_action_repository_repair_v1",
+                "action_plan_protocol": arguments.action_plan_protocol,
                 "max_output_tokens": arguments.max_output_tokens,
             }
             if heldout is not None:
