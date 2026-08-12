@@ -120,6 +120,11 @@ used 12.40 GiB and the actor process used 10.13 GiB, leaving less than the 1.89 
 next FSDP all-gather. The repository smoke therefore enables FSDP2's native actor CPU-offload
 policy while retaining the viable 0.5 rollout envelope and job-exclusive scheduling. A multi-card
 native run shards the actor over all scheduler-owned GPUs while keeping tensor parallelism at two.
+With actor parameters offloaded, a maximum-length repository trajectory exposed a separate peak:
+the ordinary causal-LM head attempted to materialize the complete 32K-by-248,320 logits tensor.
+The repository smoke therefore also uses verl's fused PPO linear head with its Torch backend. That
+implementation computes token log probabilities and entropy in bounded 512-token vocabulary
+chunks without shortening the frozen 16K prompt and 16K response limits.
 Weight synchronization remains enabled, and the completion report still requires a changed output
 adapter.
 The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the
