@@ -74,13 +74,23 @@ def test_qwen35_compatibility_expands_combined_gdn_qkv_lora() -> None:
     assert expanded_b == ["q-b", "k-b", "v-b", "z-b"]
 
 
-def test_fsdp2_fused_wrap_patch_keeps_qwen35_head_in_root_unit() -> None:
-    model = _FakeFsdpModel()
+def test_fsdp2_fused_wrap_patch_keeps_qwen35_text_head_in_root_unit() -> None:
+    model = _FakeFsdpModel(model_type="qwen3_5_text")
     fsdp_utils = SimpleNamespace(
         _select_fsdp2_wrap_targets=lambda model, classes: [model.layer, model.lm_head]
     )
 
     assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
+    assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
+    assert fsdp_utils._select_fsdp2_wrap_targets(model, ["Layer"]) == [model.layer]
+
+
+def test_fsdp2_fused_wrap_patch_covers_qwen35_moe_text_model_type() -> None:
+    model = _FakeFsdpModel(model_type="qwen3_5_moe_text")
+    fsdp_utils = SimpleNamespace(
+        _select_fsdp2_wrap_targets=lambda model, classes: [model.layer, model.lm_head]
+    )
+
     assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
     assert fsdp_utils._select_fsdp2_wrap_targets(model, ["Layer"]) == [model.layer]
 

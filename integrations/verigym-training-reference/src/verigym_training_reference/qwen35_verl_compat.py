@@ -7,6 +7,12 @@ from collections.abc import MutableMapping, Sequence
 from typing import Any
 
 _FSDP2_SELECTOR_PATCH_MARKER = "_verigym_qwen35_fused_head_compatible"
+_QWEN35_CAUSAL_MODEL_TYPES = {
+    "qwen3_5",
+    "qwen3_5_moe",
+    "qwen3_5_moe_text",
+    "qwen3_5_text",
+}
 
 
 def _remove_qwen35_image_mappings(auto_model: Any) -> bool:
@@ -63,10 +69,10 @@ def activate_fsdp2_fused_wrap_compatibility(fsdp_utils: Any | None = None) -> bo
 
     def compatible_selector(model: Any, transformer_classes: Any) -> list[Any]:
         selected = list(original_selector(model, transformer_classes))
-        if getattr(getattr(model, "config", None), "model_type", None) not in {
-            "qwen3_5",
-            "qwen3_5_moe",
-        }:
+        if (
+            getattr(getattr(model, "config", None), "model_type", None)
+            not in _QWEN35_CAUSAL_MODEL_TYPES
+        ):
             return selected
         output_heads = {
             id(module)
