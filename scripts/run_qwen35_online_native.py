@@ -321,7 +321,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "PYTHONPATH": (
                 f"{repository / 'src'}:"
                 f"{repository / 'integrations/verigym-training-reference/src'}:"
-                f"{rllm_root}:{verl_root}:{transformers_root / 'src'}"
+                f"{rllm_root}:"
+                f"{rllm_root / 'rllm-model-gateway/src'}:"
+                f"{verl_root}:{transformers_root / 'src'}"
             ),
             "RAY_TMPDIR": str(ray_tmp),
             "RAYON_NUM_THREADS": "1",
