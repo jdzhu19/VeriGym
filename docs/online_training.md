@@ -85,6 +85,13 @@ unless PRoot seccomp acceleration is disabled, then binds the executable SHA-256
 image ID, host kernel, and guest glibc to the runtime manifest. Paths are never persisted. This is
 an ABI compatibility mechanism, not a relaxation of the broker/source separation.
 
+When PRoot's process tracing is incompatible with Ray or NCCL multiprocessing, use the narrower
+`run_qwen35_online_glibc.py` path. It verifies a regular Python executable whose ELF interpreter
+and transitive RPATH are pinned to the exported userspace, plus the patched-Python, dynamic-loader,
+patchelf, and rootfs image hashes. It removes inherited loader and proxy variables before launch.
+This preserves native process creation while changing only the userspace glibc; it does not expose
+the prepared source, Docker socket, hidden tests, or credentials to the trainer.
+
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
 qualification through the broker. A driver, image, package, or verifier mismatch is an

@@ -109,6 +109,28 @@ def test_native_runner_binds_proot_identity_without_persisting_paths(tmp_path: P
     assert str(tmp_path) not in json.dumps(layer)
 
 
+def test_native_runner_binds_glibc_loader_identities_without_paths(tmp_path: Path) -> None:
+    module = _script()
+    python = tmp_path / "python"
+    python.write_bytes(b"qualified-python")
+    loader = tmp_path / "loader"
+    loader.write_bytes(b"qualified-loader")
+    patcher = tmp_path / "patchelf"
+    patcher.write_bytes(b"qualified-patcher")
+    identity = tmp_path / "rootfs-image-id"
+    identity.write_text(f"sha256:{'b' * 64}\n", encoding="utf-8")
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(module.sys, "executable", str(python))
+        monkeypatch.setattr(module.platform, "libc_ver", lambda: ("glibc", "2.41"))
+        layer = module._glibc_compatibility_layer(python, loader, patcher, identity)
+
+    assert layer is not None
+    assert layer["kind"] == "glibc_loader"
+    assert layer["rootfs_image_id"] == f"sha256:{'b' * 64}"
+    assert str(tmp_path) not in json.dumps(layer)
+
+
 def test_broker_container_requires_role_labeled_private_volumes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -57,6 +57,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--trainer-stage", default="online-repository-grpo")
     parser.add_argument("--proot-executable", type=Path)
     parser.add_argument("--proot-rootfs-identity", type=Path)
+    parser.add_argument("--glibc-python-executable", type=Path)
+    parser.add_argument("--glibc-loader-executable", type=Path)
+    parser.add_argument("--glibc-patchelf-executable", type=Path)
+    parser.add_argument("--glibc-rootfs-identity", type=Path)
     parser.add_argument("trainer_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -203,6 +207,46 @@ def _compatibility_layer(
         "executable_sha256": _sha256_file(proot_executable),
         "rootfs_image_id": identity,
         "seccomp_acceleration": False,
+        "host_kernel_release": platform.release(),
+        "guest_libc_version": libc_version,
+    }
+
+
+def _glibc_compatibility_layer(
+    python_executable: Path | None,
+    loader_executable: Path | None,
+    patcher_executable: Path | None,
+    rootfs_identity: Path | None,
+) -> dict[str, object] | None:
+    values = (python_executable, loader_executable, patcher_executable, rootfs_identity)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise RuntimeError("glibc compatibility identities must be supplied together")
+    assert python_executable is not None
+    assert loader_executable is not None
+    assert patcher_executable is not None
+    assert rootfs_identity is not None
+    python = _file(python_executable)
+    if not Path(sys.executable).resolve(strict=True).samefile(python):
+        raise RuntimeError("native training is not running through the qualified Python")
+    identity = _file(rootfs_identity).read_text(encoding="utf-8").strip()
+    digest = identity.removeprefix("sha256:")
+    if (
+        not identity.startswith("sha256:")
+        or len(digest) != 64
+        or any(character not in "0123456789abcdef" for character in digest)
+    ):
+        raise RuntimeError("rootfs identity is not a Docker SHA-256 image ID")
+    libc_name, libc_version = platform.libc_ver()
+    if libc_name != "glibc" or not libc_version:
+        raise RuntimeError("patched Python did not expose a qualified glibc")
+    return {
+        "kind": "glibc_loader",
+        "executable_sha256": _sha256_file(python),
+        "rootfs_image_id": identity,
+        "loader_sha256": _sha256_file(loader_executable),
+        "patcher_sha256": _sha256_file(patcher_executable),
         "host_kernel_release": platform.release(),
         "guest_libc_version": libc_version,
     }
@@ -365,6 +409,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     driver_versions = {str(value["driver_version"]) for value in selected_metadata}
     if len(driver_versions) != 1:
         raise RuntimeError("selected GPUs report inconsistent driver versions")
+    proot_compatibility = _compatibility_layer(
+        arguments.proot_executable, arguments.proot_rootfs_identity
+    )
+    glibc_compatibility = _glibc_compatibility_layer(
+        arguments.glibc_python_executable,
+        arguments.glibc_loader_executable,
+        arguments.glibc_patchelf_executable,
+        arguments.glibc_rootfs_identity,
+    )
+    if proot_compatibility is not None and glibc_compatibility is not None:
+        raise RuntimeError("native training accepts only one ABI compatibility strategy")
     runtime = seal_runtime_manifest(
         {
             "python_version": ".".join(str(value) for value in sys.version_info[:3]),
@@ -382,9 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "fsdp_size": len(selected),
             "rollout_group_size": len(selected),
             "visible_device_count": torch.cuda.device_count(),
-            "compatibility_layer": _compatibility_layer(
-                arguments.proot_executable, arguments.proot_rootfs_identity
-            ),
+            "compatibility_layer": proot_compatibility or glibc_compatibility,
         }
     )
     runtime_path = workspace / "native-training-runtime.json"

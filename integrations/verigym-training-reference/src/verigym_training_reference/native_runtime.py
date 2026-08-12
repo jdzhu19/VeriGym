@@ -34,16 +34,20 @@ class GpuHealthSample:
 class NativeCompatibilityLayer(StrictModel):
     """Path-free identity of an optional userspace ABI compatibility layer."""
 
-    kind: Literal["proot_rootfs"]
+    kind: Literal["proot_rootfs", "glibc_loader"]
     executable_sha256: str
     rootfs_image_id: str
-    seccomp_acceleration: Literal[False]
+    seccomp_acceleration: Literal[False] | None = None
+    loader_sha256: str | None = None
+    patcher_sha256: str | None = None
     host_kernel_release: str = Field(min_length=1, max_length=128)
     guest_libc_version: str = Field(min_length=1, max_length=64)
 
-    @field_validator("executable_sha256")
+    @field_validator("executable_sha256", "loader_sha256", "patcher_sha256")
     @classmethod
-    def validate_executable_hash(cls, value: str) -> str:
+    def validate_executable_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise ValueError("compatibility executable identity must be a SHA-256 digest")
         return value
@@ -59,6 +63,23 @@ class NativeCompatibilityLayer(StrictModel):
         ):
             raise ValueError("compatibility rootfs identity must be a Docker SHA-256 image ID")
         return value
+
+    @model_validator(mode="after")
+    def validate_strategy_fields(self) -> NativeCompatibilityLayer:
+        if self.kind == "proot_rootfs":
+            if (
+                self.seccomp_acceleration is not False
+                or self.loader_sha256 is not None
+                or self.patcher_sha256 is not None
+            ):
+                raise ValueError("PRoot compatibility fields are internally inconsistent")
+        elif (
+            self.seccomp_acceleration is not None
+            or self.loader_sha256 is None
+            or self.patcher_sha256 is None
+        ):
+            raise ValueError("glibc-loader compatibility fields are incomplete")
+        return self
 
 
 class NativeTrainingRuntimeManifest(StrictModel):
