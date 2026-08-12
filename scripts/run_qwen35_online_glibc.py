@@ -91,6 +91,18 @@ def _clean_environment() -> dict[str, str]:
     }
 
 
+def _runtime_environment(python: Path) -> dict[str, str]:
+    environment = _clean_environment()
+    environment.update(
+        {
+            "PATH": f"{python.parent}:/usr/bin:/bin",
+            "PYTHONNOUSERSITE": "1",
+            "LD_LIBRARY_PATH": f"{python.parent.parent / 'lib'}:/usr/lib64",
+        }
+    )
+    return environment
+
+
 def _patchelf_value(patchelf: Path, option: str, executable: Path) -> str:
     completed = subprocess.run(
         [str(patchelf), option, str(executable)],
@@ -142,13 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     broker_report = arguments.broker_report.resolve()
     trainer_config = _file(arguments.trainer_config)
 
-    environment = _clean_environment()
-    environment.update(
-        {
-            "PATH": f"{python.parent}:/usr/bin:/bin",
-            "PYTHONNOUSERSITE": "1",
-        }
-    )
+    environment = _runtime_environment(python)
     command = [
         str(python),
         str(repository / "scripts/run_qwen35_online_native.py"),

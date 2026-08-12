@@ -42,6 +42,17 @@ def test_glibc_launcher_strips_sensitive_and_loader_environment(
     assert environment["CUDA_VISIBLE_DEVICES"] == "1,0,2,3"
 
 
+def test_glibc_launcher_sets_a_fixed_runtime_library_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _script()
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/untrusted/inherited/path")
+
+    environment = module._runtime_environment(Path("/opt/agent/bin/python3.11"))
+
+    assert environment["LD_LIBRARY_PATH"] == "/opt/agent/lib:/usr/lib64"
+
+
 def test_glibc_launcher_never_accepts_source_or_hidden_arguments() -> None:
     source = Path("scripts/run_qwen35_online_glibc.py").read_text(encoding="utf-8")
 
