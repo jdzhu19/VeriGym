@@ -74,6 +74,7 @@ class NativeTrainingRuntimeManifest(StrictModel):
     verigym_commit: str
     rllm_commit: str
     verl_commit: str
+    transformers_commit: str
     torch_cuda_version: str
     driver_version: str
     gpu_count: int
@@ -91,7 +92,13 @@ class NativeTrainingRuntimeManifest(StrictModel):
     raw_host_paths_included: Literal[False] = False
     manifest_hash: str = Field(default="", min_length=0, max_length=64)
 
-    @field_validator("package_inventory_hash", "verigym_commit", "rllm_commit", "verl_commit")
+    @field_validator(
+        "package_inventory_hash",
+        "verigym_commit",
+        "rllm_commit",
+        "verl_commit",
+        "transformers_commit",
+    )
     @classmethod
     def validate_hashes(cls, value: str) -> str:
         if len(value) != 40 and len(value) != 64:

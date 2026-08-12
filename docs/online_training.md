@@ -75,7 +75,8 @@ contention before importing PyTorch, and supports 4, 6, or 8 GPUs. It couples wo
 size, rLLM parallelism, and GRPO rollout group size (`n=N`) and writes the resolved values to a
 hash-bound `native-training-runtime.json` before the first model call. `--gpu-count auto` uses the
 largest supported uncontended subset; a fixed count fails closed when insufficient GPUs are clean.
-Different topology hashes are different runs even when task and policy inputs are unchanged.
+Different topology hashes are different runs even when task and policy inputs are unchanged. The
+runtime also binds the exact rLLM, verl, and Transformers source commits.
 
 On an older host ABI, the native launcher may be invoked from an explicitly qualified PRoot
 userspace by passing both `--proot-executable` and `--proot-rootfs-identity`. The launcher fails

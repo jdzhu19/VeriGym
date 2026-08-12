@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repository", type=Path, required=True)
     parser.add_argument("--rllm-root", type=Path, required=True)
     parser.add_argument("--verl-root", type=Path, required=True)
+    parser.add_argument("--transformers-root", type=Path, required=True)
     parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--task-manifest", type=Path, required=True)
@@ -270,6 +271,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     repository = _directory(arguments.repository)
     rllm_root = _directory(arguments.rllm_root)
     verl_root = _directory(arguments.verl_root)
+    transformers_root = _directory(arguments.transformers_root)
     model_root = _directory(arguments.model_root)
     adapter_root = _directory(arguments.adapter_root)
     task_manifest = _file(arguments.task_manifest)
@@ -319,7 +321,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "PYTHONPATH": (
                 f"{repository / 'src'}:"
                 f"{repository / 'integrations/verigym-training-reference/src'}:"
-                f"{rllm_root}:{verl_root}"
+                f"{rllm_root}:{verl_root}:{transformers_root / 'src'}"
             ),
             "RAY_TMPDIR": str(ray_tmp),
             "RAYON_NUM_THREADS": "1",
@@ -338,6 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "VERIGYM_RLLM_COMMIT": _git_head(rllm_root),
             "VERIGYM_SOURCE_COMMIT": _git_head(repository),
             "VERIGYM_VERL_COMMIT": _git_head(verl_root),
+            "VERIGYM_TRANSFORMERS_COMMIT": _git_head(transformers_root),
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_ATTENTION_BACKEND": "FLASH_ATTN",
             "VLLM_ENGINE_ITERATION_TIMEOUT_S": "3600",
@@ -369,6 +372,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "verigym_commit": environment["VERIGYM_SOURCE_COMMIT"],
             "rllm_commit": environment["VERIGYM_RLLM_COMMIT"],
             "verl_commit": environment["VERIGYM_VERL_COMMIT"],
+            "transformers_commit": environment["VERIGYM_TRANSFORMERS_COMMIT"],
             "torch_cuda_version": str(torch.version.cuda),
             "driver_version": driver_versions.pop(),
             "gpu_count": len(selected),

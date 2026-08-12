@@ -38,6 +38,7 @@ def _manifest(gpu_count: int = 4) -> dict[str, object]:
         "verigym_commit": "a" * 40,
         "rllm_commit": "b" * 40,
         "verl_commit": "c" * 40,
+        "transformers_commit": "d" * 40,
         "torch_cuda_version": "12.8",
         "driver_version": "525.105.17",
         "gpu_count": gpu_count,
@@ -101,7 +102,7 @@ def test_native_runtime_binds_path_free_proot_identity() -> None:
     value = _manifest()
     value["compatibility_layer"] = {
         "kind": "proot_rootfs",
-        "executable_sha256": "d" * 64,
+        "executable_sha256": "e" * 64,
         "rootfs_image_id": f"sha256:{'e' * 64}",
         "seccomp_acceleration": False,
         "host_kernel_release": "3.10.0-1160.el7.x86_64",
