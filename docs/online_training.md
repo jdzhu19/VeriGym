@@ -110,7 +110,7 @@ record these identities without raw host paths.
 
 The bounded repository smoke config keeps vLLM resident by disabling both `enable_sleep_mode` and
 `free_cache_engine`. This avoids vLLM's CUDA virtual-memory sleep allocator on legacy-driver nodes;
-FSDP parameter and optimizer offload, a 0.5 vLLM memory envelope, and 256 MiB weight-transfer
+FSDP parameter and optimizer offload, a 0.48 vLLM memory envelope, and 256 MiB weight-transfer
 buckets keep the A30 envelope bounded. A clean four-card A30 attempt at 0.4 loaded the model but
 could not allocate even one KV-cache block, before any rollout or broker session, so 0.4 is not a
 viable envelope for this frozen model and context. A prior 0.5 attempt reached rollout generation
@@ -118,8 +118,9 @@ but exhausted memory during actor log-probability computation on non-exclusive G
 job-exclusive four-card attempt reproduced the actor unshard failure: the resident vLLM process
 used 12.40 GiB and the actor process used 10.13 GiB, leaving less than the 1.89 GiB required by the
 next FSDP all-gather. The repository smoke therefore enables FSDP2's native actor CPU-offload
-policy while retaining the viable 0.5 rollout envelope and job-exclusive scheduling. A multi-card
-native run shards the actor over all scheduler-owned GPUs while keeping tensor parallelism at two.
+policy while retaining a rollout envelope above the known-inviable 0.4 setting and job-exclusive
+scheduling. A multi-card native run shards the actor over all scheduler-owned GPUs while keeping
+tensor parallelism at two.
 With actor parameters offloaded, a maximum-length repository trajectory exposed a separate peak:
 the ordinary causal-LM head attempted to materialize the complete 32K-by-248,320 logits tensor.
 The repository smoke therefore also uses verl's fused PPO linear head with its Torch backend. That
