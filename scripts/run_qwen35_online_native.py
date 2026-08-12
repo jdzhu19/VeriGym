@@ -34,6 +34,7 @@ _SECRET_NAME = re.compile(
 _PROXY_NAME = re.compile(r"(?:HTTP|HTTPS|ALL|NO)_PROXY", re.IGNORECASE)
 _ENV_REFERENCE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 _REQUIRED_PACKAGES = ("ray", "rllm", "torch", "transformers", "verl", "vllm")
+_RAY_TMP_ROOT_MAX_BYTES = 35
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -445,7 +446,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         ray_tmp.chmod(0o700)
     else:
         ray_tmp = arguments.ray_tmp_root
-    ray_tmp = _private_directory(ray_tmp, max_bytes=48)
+    # Ray appends a timestamp, a seven-digit Linux PID, and ``/sockets/dash_MetricsHead``.
+    # Reserve that entire suffix under Linux's 107-byte AF_UNIX pathname limit.
+    ray_tmp = _private_directory(ray_tmp, max_bytes=_RAY_TMP_ROOT_MAX_BYTES)
     rllm_home = workspace / "rllm-home"
     hf_home = workspace / "hf-home"
     native_home = workspace / "native-home"

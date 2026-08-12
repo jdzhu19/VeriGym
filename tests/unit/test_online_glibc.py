@@ -106,6 +106,12 @@ def test_glibc_launcher_requires_private_short_process_tmp(
         module._private_directory(process_tmp, max_bytes=48)
 
 
+def test_glibc_launcher_uses_the_native_ray_socket_root_bound() -> None:
+    glibc = _script()
+
+    assert glibc._RAY_TMP_ROOT_MAX_BYTES == 35
+
+
 def test_glibc_launcher_accepts_only_confined_link_targets(tmp_path: Path) -> None:
     module = _script()
     root = tmp_path / "rootfs"

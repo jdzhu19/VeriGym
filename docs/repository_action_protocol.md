@@ -48,3 +48,11 @@ delegates actions to a host-owned VeriGym episode. The training container receiv
 prepared source root, Docker socket, hidden assets, nor reference patch; it receives only bounded
 public observations and the final sparse outcome. veRL remains the training backend through the
 existing rLLM `AgentTrainer` path.
+
+Large repositories use `verigym_repository_context_projection_v1`: the broker converts the full
+flat tree into a deterministic shallow directory outline and shallow-first bounded file sample,
+with exact included/omitted counts. Each turn is a self-contained rolling context containing the
+latest bounded tool observation and an identity-bound summary of the immediately preceding action;
+older turns are retained only in a fixed-size rolling summary, so raw action and observation
+history is not appended indefinitely. The task description, action contract, state, and sparse
+terminal outcome are unchanged by this projection.

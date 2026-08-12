@@ -91,7 +91,15 @@ def test_native_runner_source_has_no_hidden_or_source_argument() -> None:
     assert '"HF_HUB_OFFLINE": "1"' in source
     assert '"HOME": str(native_home)' in source
     assert '"TRANSFORMERS_OFFLINE": "1"' in source
-    assert "ray_tmp = _private_directory(ray_tmp, max_bytes=48)" in source
+    assert "max_bytes=_RAY_TMP_ROOT_MAX_BYTES" in source
+
+
+def test_native_runner_reserves_full_ray_dashboard_socket_suffix() -> None:
+    module = _script()
+    maximum_pid = "4194304"
+    suffix = f"/ray/session_2026-08-12_21-02-14_397938_{maximum_pid}/sockets/dash_MetricsHead"
+
+    assert module._RAY_TMP_ROOT_MAX_BYTES + len(suffix.encode()) == 107
 
 
 def test_native_runner_binds_proot_identity_without_persisting_paths(tmp_path: Path) -> None:

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
-from verigym.core.artifact_policy import bound_value
 from verigym.core.episode import TerminationReason
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
@@ -42,10 +41,14 @@ from .repository_broker_protocol import (
     hashed_message,
     read_hashed_message,
 )
+from .repository_context import (
+    REPOSITORY_OBSERVATION_MAX_BYTES,
+    project_repository_observation,
+)
 
 _STATE_MACHINE_ID: RepositoryActionStateMachine = "repository_action_state_machine_v2"
 _MAX_ACTION_BYTES = 2 * 1024 * 1024
-_MAX_OBSERVATION_BYTES = 512 * 1024
+_MAX_OBSERVATION_BYTES = REPOSITORY_OBSERVATION_MAX_BYTES
 
 
 class OnlineRepositoryBrokerAgent(AgentAdapter):
@@ -234,9 +237,8 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
         bounded_observation: object | None = None
         observation_truncated = False
         if observation is not None:
-            bounded_observation, observation_truncated = bound_value(
-                observation.model_dump(mode="json"),
-                _MAX_OBSERVATION_BYTES,
+            bounded_observation, observation_truncated = project_repository_observation(
+                observation.model_dump(mode="json"), max_bytes=_MAX_OBSERVATION_BYTES
             )
         return {
             "schema_version": "1.0",

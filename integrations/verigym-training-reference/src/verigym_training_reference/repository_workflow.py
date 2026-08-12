@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,7 @@ from rllm.workflows.workflow import (  # type: ignore[import-not-found]
 )
 
 from .repository_broker_protocol import RepositoryBrokerClient
+from .repository_context import repository_history_entry, repository_turn_messages
 from .rllm_grpo_compat import activate_rllm_verl_grpo_group_compatibility
 
 
@@ -68,36 +68,25 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
             raise RuntimeError("repository broker terminated before the first model action")
         maximum = initial.get("max_completion_calls")
         contract = initial.get("prompt_contract")
-        observation = initial.get("observation")
         if not isinstance(maximum, int) or maximum < 1 or not isinstance(contract, dict):
             raise RuntimeError("repository broker omitted its frozen action contract")
-        messages: list[dict[str, str]] = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a bounded repository repair agent. Return exactly one JSON object "
-                    "matching the supplied repository_action.v2 contract and no prose."
-                ),
-            },
-            {
-                "role": "user",
-                "content": _json_message(
-                    {
-                        "task": {
-                            "id": task_id,
-                            "description": task.get("task_description"),
-                            "submission_kind": "patch",
-                        },
-                        "prompt_contract": contract,
-                        "public_test_ids": initial.get("public_test_ids", []),
-                        "observation": observation,
-                    }
-                ),
-            },
-        ]
         steps: list[Step] = []
         terminal: dict[str, Any] | None = None
+        response = initial
+        history: list[dict[str, Any]] = []
         for turn in range(maximum):
+            messages = repository_turn_messages(
+                task_id=task_id,
+                task_description=task.get("task_description"),
+                contract=contract,
+                public_test_ids=initial.get("public_test_ids", []),
+                observation=response.get("observation"),
+                broker_observation_truncated=response.get("observation_truncated") is True,
+                state=response.get("state"),
+                turn=turn,
+                previous_action=history[-1]["action"] if history else None,
+                history=history[:-1],
+            )
             generation_options: dict[str, Any] = {
                 "application_id": f"{uid}:repository:{turn}",
             }
@@ -139,17 +128,7 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
                 self._require_valid_infrastructure(response)
                 terminal = response
                 break
-            observation_message = {
-                "role": "user",
-                "content": _json_message(
-                    {
-                        "tool_observation": response.get("observation"),
-                        "state": response.get("state"),
-                        "turn": turn,
-                    }
-                ),
-            }
-            messages.extend([assistant_message, observation_message])
+            history.append(repository_history_entry(raw_action, response))
         if terminal is None:
             raise RuntimeError(
                 "repository workflow exhausted its frozen turn budget without finish"
@@ -187,10 +166,6 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
             raise RuntimeError("VeriGym repository broker reported infrastructure-invalid outcome")
         if response.get("resolved") not in {True, False}:
             raise RuntimeError("VeriGym repository broker omitted its binary task outcome")
-
-
-def _json_message(value: dict[str, Any]) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _validate_trainable_model_output(output: ModelOutput) -> None:

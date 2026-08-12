@@ -17,6 +17,7 @@ _SECRET_NAME = re.compile(
 )
 _PROXY_NAME = re.compile(r"(?:HTTP|HTTPS|ALL|NO)_PROXY", re.IGNORECASE)
 _DYNAMIC_LINKER_ENV = frozenset({"LD_LIBRARY_PATH", "LD_PRELOAD", "LIBRARY_PATH"})
+_RAY_TMP_ROOT_MAX_BYTES = 35
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -231,7 +232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not compiler_lines or compiler_lines[0].strip() != arguments.expected_c_compiler_version:
         raise RuntimeError("C compiler version differs from its pin")
     process_tmp = _private_directory(arguments.process_tmp_root)
-    ray_tmp = _private_directory(arguments.ray_tmp_root, max_bytes=48)
+    ray_tmp = _private_directory(arguments.ray_tmp_root, max_bytes=_RAY_TMP_ROOT_MAX_BYTES)
 
     repository = _directory(arguments.repository)
     rllm_root = _directory(arguments.rllm_root)

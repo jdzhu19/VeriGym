@@ -76,6 +76,11 @@ case the broker launcher accepts `--docker-helper` only together with
 executable, and mounts only that fixed file read-only. Do not mount the containing system binary
 directory into the broker container.
 
+Native Ray temporary roots must be private and at most 35 encoded pathname bytes. This reserves
+the complete timestamp, maximum Linux PID, and `dash_MetricsHead` suffix under the 107-byte Linux
+AF_UNIX pathname limit; a longer root fails preflight instead of silently disabling a dashboard
+subprocess.
+
 The native launcher requires a numeric scheduler-provided `CUDA_VISIBLE_DEVICES`, samples GPU
 contention before importing PyTorch, and supports 4, 6, or 8 GPUs. It couples world size, FSDP
 size, rLLM parallelism, and GRPO rollout group size (`n=N`) and writes the resolved values to a
