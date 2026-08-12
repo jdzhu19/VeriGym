@@ -53,12 +53,15 @@ def test_glibc_launcher_sets_a_fixed_runtime_library_path(
     process_tmp.mkdir(mode=0o700)
 
     environment = module._runtime_environment(
-        Path("/opt/agent/bin/python3.11"), compiler, process_tmp
+        Path("/opt/agent/bin/python3.11"), compiler, process_tmp, Path("/src/VeriGym")
     )
 
     assert environment["LD_LIBRARY_PATH"] == "/opt/agent/lib:/usr/lib64"
     assert environment["CC"] == str(compiler)
     assert environment["PATH"].startswith("/opt/gcc/bin:/opt/agent/bin:")
+    assert environment["PYTHONPATH"] == (
+        "/src/VeriGym/src:/src/VeriGym/integrations/verigym-training-reference/src"
+    )
     assert environment["TMPDIR"] == str(process_tmp)
 
 

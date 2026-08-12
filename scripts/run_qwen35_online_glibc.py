@@ -140,13 +140,18 @@ def _clean_environment() -> dict[str, str]:
     }
 
 
-def _runtime_environment(python: Path, compiler: Path, process_tmp: Path) -> dict[str, str]:
+def _runtime_environment(
+    python: Path, compiler: Path, process_tmp: Path, repository: Path
+) -> dict[str, str]:
     environment = _clean_environment()
     environment.update(
         {
             "CC": str(compiler),
             "PATH": f"{compiler.parent}:{python.parent}:/usr/bin:/bin",
             "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": (
+                f"{repository / 'src'}:{repository / 'integrations/verigym-training-reference/src'}"
+            ),
             "LD_LIBRARY_PATH": _runtime_library_path(python),
             "TMPDIR": str(process_tmp),
         }
@@ -239,7 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     broker_report = arguments.broker_report.resolve()
     trainer_config = _file(arguments.trainer_config)
 
-    environment = _runtime_environment(python, compiler, process_tmp)
+    environment = _runtime_environment(python, compiler, process_tmp, repository)
     command = [
         str(python),
         str(repository / "scripts/run_qwen35_online_native.py"),
