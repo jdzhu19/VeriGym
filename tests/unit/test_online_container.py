@@ -102,6 +102,8 @@ def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() 
     ]
     assert "data.max_response_length=16384" in stage["argv"]
     assert "++actor_rollout_ref.rollout.max_model_len=32768" in stage["argv"]
+    assert "actor_rollout_ref.rollout.free_cache_engine=False" in stage["argv"]
+    assert "++actor_rollout_ref.rollout.enable_sleep_mode=False" in stage["argv"]
     assert "rllm.workflow.retry_limit=0" in stage["argv"]
     assert "online-repository-broker-report.json" in stage["expected_outputs"]
     assert stage["gpu_ids"] == [0, 1, 2, 3]
