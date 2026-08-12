@@ -31,6 +31,36 @@ class GpuHealthSample:
         )
 
 
+class NativeCompatibilityLayer(StrictModel):
+    """Path-free identity of an optional userspace ABI compatibility layer."""
+
+    kind: Literal["proot_rootfs"]
+    executable_sha256: str
+    rootfs_image_id: str
+    seccomp_acceleration: Literal[False]
+    host_kernel_release: str = Field(min_length=1, max_length=128)
+    guest_libc_version: str = Field(min_length=1, max_length=64)
+
+    @field_validator("executable_sha256")
+    @classmethod
+    def validate_executable_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("compatibility executable identity must be a SHA-256 digest")
+        return value
+
+    @field_validator("rootfs_image_id")
+    @classmethod
+    def validate_rootfs_image_id(cls, value: str) -> str:
+        digest = value.removeprefix("sha256:")
+        if (
+            not value.startswith("sha256:")
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError("compatibility rootfs identity must be a Docker SHA-256 image ID")
+        return value
+
+
 class NativeTrainingRuntimeManifest(StrictModel):
     """Portable identity of a Conda-hosted rLLM/veRL training process."""
 
@@ -52,6 +82,7 @@ class NativeTrainingRuntimeManifest(StrictModel):
     fsdp_size: int
     rollout_group_size: int
     visible_device_count: int
+    compatibility_layer: NativeCompatibilityLayer | None = None
     source_root_loaded_by_training_process: Literal[False] = False
     docker_socket_loaded_by_training_process: Literal[False] = False
     hidden_assets_loaded_by_training_process: Literal[False] = False
@@ -173,6 +204,7 @@ def validate_runtime_manifest(value: dict[str, Any]) -> NativeTrainingRuntimeMan
 
 __all__ = [
     "GpuHealthSample",
+    "NativeCompatibilityLayer",
     "NativeTrainingRuntimeManifest",
     "SUPPORTED_GPU_COUNTS",
     "package_inventory_hash",

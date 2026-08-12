@@ -77,6 +77,12 @@ hash-bound `native-training-runtime.json` before the first model call. `--gpu-co
 largest supported uncontended subset; a fixed count fails closed when insufficient GPUs are clean.
 Different topology hashes are different runs even when task and policy inputs are unchanged.
 
+On an older host ABI, the native launcher may be invoked from an explicitly qualified PRoot
+userspace by passing both `--proot-executable` and `--proot-rootfs-identity`. The launcher fails
+unless PRoot seccomp acceleration is disabled, then binds the executable SHA-256, exported rootfs
+image ID, host kernel, and guest glibc to the runtime manifest. Paths are never persisted. This is
+an ABI compatibility mechanism, not a relaxation of the broker/source separation.
+
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
 qualification through the broker. A driver, image, package, or verifier mismatch is an

@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -52,6 +54,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-report-timeout-s", type=int, default=300)
     parser.add_argument("--trainer-config", type=Path)
     parser.add_argument("--trainer-stage", default="online-repository-grpo")
+    parser.add_argument("--proot-executable", type=Path)
+    parser.add_argument("--proot-rootfs-identity", type=Path)
     parser.add_argument("trainer_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -163,6 +167,44 @@ def _package_inventory() -> tuple[dict[str, str], dict[str, str]]:
     if missing:
         raise RuntimeError(f"native training environment lacks required packages: {missing}")
     return complete, required
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with _file(path).open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _compatibility_layer(
+    proot_executable: Path | None, rootfs_identity: Path | None
+) -> dict[str, object] | None:
+    if (proot_executable is None) != (rootfs_identity is None):
+        raise RuntimeError("proot executable and rootfs identity must be supplied together")
+    if proot_executable is None or rootfs_identity is None:
+        return None
+    if os.environ.get("PROOT_NO_SECCOMP") != "1":
+        raise RuntimeError("the qualified PRoot path requires disabled seccomp acceleration")
+    identity = _file(rootfs_identity).read_text(encoding="utf-8").strip()
+    digest = identity.removeprefix("sha256:")
+    if (
+        not identity.startswith("sha256:")
+        or len(digest) != 64
+        or any(character not in "0123456789abcdef" for character in digest)
+    ):
+        raise RuntimeError("rootfs identity is not a Docker SHA-256 image ID")
+    libc_name, libc_version = platform.libc_ver()
+    if libc_name != "glibc" or not libc_version:
+        raise RuntimeError("PRoot compatibility layer did not expose a qualified glibc")
+    return {
+        "kind": "proot_rootfs",
+        "executable_sha256": _sha256_file(proot_executable),
+        "rootfs_image_id": identity,
+        "seccomp_acceleration": False,
+        "host_kernel_release": platform.release(),
+        "guest_libc_version": libc_version,
+    }
 
 
 def _clean_environment() -> dict[str, str]:
@@ -334,6 +376,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "fsdp_size": len(selected),
             "rollout_group_size": len(selected),
             "visible_device_count": torch.cuda.device_count(),
+            "compatibility_layer": _compatibility_layer(
+                arguments.proot_executable, arguments.proot_rootfs_identity
+            ),
         }
     )
     runtime_path = workspace / "native-training-runtime.json"

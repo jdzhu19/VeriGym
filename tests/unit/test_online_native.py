@@ -92,6 +92,23 @@ def test_native_runner_source_has_no_hidden_or_source_argument() -> None:
     assert '"TRANSFORMERS_OFFLINE": "1"' in source
 
 
+def test_native_runner_binds_proot_identity_without_persisting_paths(tmp_path: Path) -> None:
+    module = _script()
+    executable = tmp_path / "proot"
+    executable.write_bytes(b"qualified-proot")
+    identity = tmp_path / "rootfs-image-id"
+    identity.write_text(f"sha256:{'a' * 64}\n", encoding="utf-8")
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("PROOT_NO_SECCOMP", "1")
+        monkeypatch.setattr(module.platform, "libc_ver", lambda: ("glibc", "2.41"))
+        layer = module._compatibility_layer(executable, identity)
+
+    assert layer is not None
+    assert layer["rootfs_image_id"] == f"sha256:{'a' * 64}"
+    assert str(tmp_path) not in json.dumps(layer)
+
+
 def test_broker_container_requires_role_labeled_private_volumes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

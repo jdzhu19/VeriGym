@@ -97,6 +97,24 @@ def test_native_runtime_manifest_is_hash_bound_and_path_free() -> None:
         validate_runtime_manifest(encoded)
 
 
+def test_native_runtime_binds_path_free_proot_identity() -> None:
+    value = _manifest()
+    value["compatibility_layer"] = {
+        "kind": "proot_rootfs",
+        "executable_sha256": "d" * 64,
+        "rootfs_image_id": f"sha256:{'e' * 64}",
+        "seccomp_acceleration": False,
+        "host_kernel_release": "3.10.0-1160.el7.x86_64",
+        "guest_libc_version": "2.41",
+    }
+
+    manifest = seal_runtime_manifest(value)
+
+    assert manifest.compatibility_layer is not None
+    assert manifest.compatibility_layer.kind == "proot_rootfs"
+    assert "/" not in manifest.compatibility_layer.executable_sha256
+
+
 def test_native_runtime_rejects_inconsistent_topology() -> None:
     value = _manifest(6)
     value["rollout_group_size"] = 4
