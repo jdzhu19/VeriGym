@@ -79,6 +79,10 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
 
     trainer_source = Path("scripts/train_qwen35_rllm_verl_online.py").read_text(encoding="utf-8")
     assert "RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE" in trainer_source
+    assert 'fused_module_name = "verigym_training_reference.qwen35_verl_fused_compat"' in (
+        trainer_source
+    )
+    assert "FSDP2 Torch-fused training requires its pinned external library" in trainer_source
     assert '"effective_policy_update_verified": True' in trainer_source
     assert 'update_stats["changed_tensor_count"] <= 0' in trainer_source
 
@@ -108,6 +112,9 @@ def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() 
     assert "++actor_rollout_ref.actor.fsdp_config.offload_policy=True" in stage["argv"]
     assert "actor_rollout_ref.model.use_fused_kernels=True" in stage["argv"]
     assert "actor_rollout_ref.model.fused_kernel_options.impl_backend=torch" in stage["argv"]
+    assert (
+        "actor_rollout_ref.model.external_lib=verigym_training_reference.qwen35_verl_fused_compat"
+    ) in stage["argv"]
     assert (
         "actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=256"
         in stage["argv"]

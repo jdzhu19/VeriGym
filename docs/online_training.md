@@ -124,7 +124,15 @@ With actor parameters offloaded, a maximum-length repository trajectory exposed 
 the ordinary causal-LM head attempted to materialize the complete 32K-by-248,320 logits tensor.
 The repository smoke therefore also uses verl's fused PPO linear head with its Torch backend. That
 implementation computes token log probabilities and entropy in bounded 512-token vocabulary
-chunks without shortening the frozen 16K prompt and 16K response limits.
+chunks without shortening the frozen 16K prompt and 16K response limits. Verl 0.7.1's fused head
+reads the independently wrapped FSDP2 `lm_head` weight without invoking that module's forward
+hook, leaving a sharded `DTensor` next to ordinary hidden-state tensors. The pinned external
+Qwen3.5 compatibility module therefore leaves `lm_head` in the root FSDP2 unit instead of wrapping
+it independently. The root pre-forward hook exposes the complete CUDA weight to the chunked
+projection, and the normal root post-forward/backward lifecycle reshards and CPU-offloads it. The
+selector adjustment is restricted to Qwen3.5; other models keep verl's original wrap policy. It
+lives in a separate opt-in external-lib module selected only by the FSDP2 Torch-fused repository
+configuration, so non-fused and non-FSDP2 Qwen3.5 runs also retain the original policy.
 Weight synchronization remains enabled, and the completion report still requires a changed output
 adapter.
 The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the

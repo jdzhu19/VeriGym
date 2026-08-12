@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import os
@@ -260,6 +261,17 @@ def _completion_report(
 def main(config: DictConfig) -> None:
     if not QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE:
         raise RuntimeError("Qwen3.5 causal adapter compatibility hook did not activate")
+    torch_fused_fsdp2 = bool(config.actor_rollout_ref.model.use_fused_kernels) and (
+        config.actor_rollout_ref.model.fused_kernel_options.impl_backend == "torch"
+        and config.actor_rollout_ref.actor.strategy == "fsdp2"
+    )
+    if torch_fused_fsdp2:
+        fused_module_name = "verigym_training_reference.qwen35_verl_fused_compat"
+        if config.actor_rollout_ref.model.external_lib != fused_module_name:
+            raise RuntimeError("FSDP2 Torch-fused training requires its pinned external library")
+        fused_module = importlib.import_module(fused_module_name)
+        if not fused_module.QWEN35_FSDP2_FUSED_WRAP_COMPATIBILITY_ACTIVE:
+            raise RuntimeError("Qwen3.5 FSDP2 fused-head wrap compatibility hook did not activate")
     if not RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE:
         raise RuntimeError("rLLM-to-verl GRPO group compatibility hook did not activate")
     tasks, task_manifest = _load_task_manifest()
