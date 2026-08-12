@@ -272,6 +272,37 @@ def test_export_online_policy_accepts_isolated_repository_broker(tmp_path: Path)
     assert reward["rollout_records"] == sessions
 
 
+def test_export_online_policy_accepts_hash_bound_native_runtime(tmp_path: Path) -> None:
+    model = _model_root(tmp_path / "model")
+    parent, _ = _parent_policy(tmp_path, model)
+    completion, broker, tasks, checkpoint = _online_inputs(tmp_path, parent)
+    value = json.loads(completion.read_text(encoding="utf-8"))
+    value["training_runtime_kind"] = "conda"
+    value["training_runtime_hash"] = "e" * 64
+    identity = dict(value)
+    identity.pop("report_hash")
+    value["report_hash"] = content_hash(identity)
+    completion.write_text(json.dumps(value), encoding="utf-8")
+
+    export_online_policy_version(
+        completion_report=completion,
+        broker_report=broker,
+        task_manifest=tasks,
+        checkpoint_root=checkpoint,
+        parent_manifest=parent,
+        model_root=model,
+        output=tmp_path / "registered-policy",
+        policy_version_id="policy-native-v1",
+        learning_rate=1e-6,
+    )
+
+    report = json.loads(
+        (tmp_path / "registered-policy" / "adapter" / "training-report.json").read_text()
+    )
+    assert report["training_runtime_kind"] == "conda"
+    assert report["training_runtime_hash"] == "e" * 64
+
+
 def test_export_online_policy_rejects_repository_broker_for_rtl_workflow(
     tmp_path: Path,
 ) -> None:

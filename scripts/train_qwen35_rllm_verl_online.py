@@ -15,6 +15,7 @@ import torch
 from omegaconf import DictConfig
 from rllm.data.dataset import DatasetRegistry
 from rllm.trainer.agent_trainer import AgentTrainer
+from verigym_training_reference.native_runtime import validate_runtime_manifest
 from verigym_training_reference.online_workflow import VeriGymRtlWorkflow
 from verigym_training_reference.qwen35_verl_compat import (
     QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE,
@@ -33,6 +34,7 @@ _REPOSITORY_BROKER_ENV = "VERIGYM_ONLINE_REPOSITORY_BROKER_ROOT"
 _OUTPUT_ENV = "VERIGYM_ONLINE_VERIFIER_OUTPUT"
 _REPORT_ENV = "VERIGYM_ONLINE_COMPLETION_REPORT"
 _WORKFLOW_ENV = "VERIGYM_ONLINE_WORKFLOW"
+_NATIVE_RUNTIME_ENV = "VERIGYM_TRAINING_RUNTIME_MANIFEST"
 
 
 def _canonical_hash(value: dict[str, Any]) -> str:
@@ -85,6 +87,38 @@ def _workflow_kind() -> str:
     if value not in {"rtl", "repository"}:
         raise RuntimeError("VERIGYM_ONLINE_WORKFLOW must be 'rtl' or 'repository'")
     return value
+
+
+def _training_runtime() -> dict[str, Any]:
+    native_value = os.environ.get(_NATIVE_RUNTIME_ENV)
+    image_id = os.environ.get("VERIGYM_TRAINING_IMAGE_ID")
+    if native_value and image_id:
+        raise RuntimeError("online training runtime cannot be both native and containerized")
+    if native_value:
+        path = Path(native_value).resolve(strict=True)
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise RuntimeError("native training runtime manifest root is not an object")
+        manifest = validate_runtime_manifest(value)
+        if (
+            manifest.verigym_commit != _commit("VERIGYM_SOURCE_COMMIT")
+            or manifest.rllm_commit != _commit("VERIGYM_RLLM_COMMIT")
+            or manifest.verl_commit != _commit("VERIGYM_VERL_COMMIT")
+            or manifest.gpu_count != torch.cuda.device_count()
+        ):
+            raise RuntimeError("native training runtime differs from the active process")
+        return {
+            "kind": "conda",
+            "identity_hash": manifest.manifest_hash,
+            "manifest": manifest.model_dump(mode="json"),
+        }
+    if not image_id:
+        raise RuntimeError("online training runtime identity is required")
+    container = {"kind": "container", "image_id": image_id}
+    return {
+        **container,
+        "identity_hash": _canonical_hash(container),
+    }
 
 
 def _adapter_update_stats(config: DictConfig, checkpoint_root: Path) -> dict[str, float | int]:
@@ -157,6 +191,7 @@ def _completion_report(
         or update_stats["max_abs_delta"] <= 0.0
     ):
         raise RuntimeError("online stack did not produce valid checkpoints and verifier outcomes")
+    training_runtime = _training_runtime()
     base = {
         "schema_version": "1.0",
         "format_id": "verigym_rllm_verl_online_smoke_report_v1",
@@ -183,7 +218,10 @@ def _completion_report(
         "rllm_commit": _commit("VERIGYM_RLLM_COMMIT"),
         "verl_commit": _commit("VERIGYM_VERL_COMMIT"),
         "verigym_commit": _commit("VERIGYM_SOURCE_COMMIT"),
-        "training_container_image_id": os.environ["VERIGYM_TRAINING_IMAGE_ID"],
+        "training_runtime_kind": training_runtime["kind"],
+        "training_runtime_hash": training_runtime["identity_hash"],
+        "training_runtime": training_runtime,
+        "training_container_image_id": training_runtime.get("image_id"),
         "cuda_runtime": torch.version.cuda,
         "gpu_count": torch.cuda.device_count(),
         "gpu_names": [
@@ -205,6 +243,8 @@ def _completion_report(
         "reference_solutions_loaded_by_model": False,
         "credential_values_included": False,
         "raw_host_paths_included": False,
+        "source_root_loaded_by_training_process": False,
+        "docker_socket_loaded_by_training_process": False,
         "full_ray_vllm_stack_qualified": True,
     }
     report = {**base, "report_hash": content_hash(base)}

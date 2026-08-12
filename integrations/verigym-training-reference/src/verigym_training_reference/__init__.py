@@ -15,6 +15,16 @@ from .heldout import (
     load_repository_heldout_freeze,
     summarize_heldout_results,
 )
+from .native_runtime import (
+    GpuHealthSample,
+    NativeTrainingRuntimeManifest,
+    parse_visible_devices,
+    replace_topology_overrides,
+    seal_runtime_manifest,
+    select_gpu_devices,
+    topology_overrides,
+    validate_runtime_manifest,
+)
 from .online_policy import export_online_policy_version
 from .pipeline import (
     exclusion_counts,
@@ -41,7 +51,9 @@ from .trl_adapter import TrlRewardAdapter, build_trl_dataset_rows
 
 __all__ = [
     "CampaignStageSpec",
+    "GpuHealthSample",
     "ModelSnapshotIdentity",
+    "NativeTrainingRuntimeManifest",
     "OnlineRewardResult",
     "RepositoryHeldoutFreezeManifest",
     "RepositoryHeldoutRequest",
@@ -65,10 +77,16 @@ __all__ = [
     "load_training_config",
     "load_repository_heldout_freeze",
     "prepare_training_bundle",
+    "parse_visible_devices",
     "register_checkpoint",
     "register_training_policy_version",
     "resolve_model_root",
+    "replace_topology_overrides",
     "run_training_campaign",
+    "seal_runtime_manifest",
+    "select_gpu_devices",
     "summarize_heldout_results",
+    "topology_overrides",
+    "validate_runtime_manifest",
     "validate_training_bundle",
 ]

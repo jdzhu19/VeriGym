@@ -138,6 +138,18 @@ def _validate_online_inputs(
         or completion["adapter_max_abs_delta"] <= 0
     ):
         raise ConfigurationError("online completion report does not qualify a policy update")
+    runtime_kind = completion.get("training_runtime_kind", "container")
+    runtime_hash = completion.get("training_runtime_hash")
+    if runtime_kind not in {"container", "conda"}:
+        raise ConfigurationError("online completion report uses an unsupported training runtime")
+    if runtime_hash is not None and (
+        not isinstance(runtime_hash, str)
+        or len(runtime_hash) != 64
+        or any(character not in "0123456789abcdef" for character in runtime_hash)
+    ):
+        raise ConfigurationError("online completion report training runtime identity is invalid")
+    if runtime_kind == "conda" and not isinstance(runtime_hash, str):
+        raise ConfigurationError("native online completion report omits its runtime identity")
     broker_format = broker.get("format_id")
     workflow_kind = completion.get("workflow_kind", "rtl")
     if broker_format == "verigym_online_verifier_broker_report_v1":
@@ -154,6 +166,9 @@ def _validate_online_inputs(
             broker.get("hidden_assets_exported_to_training_container") is not False
             or broker.get("source_root_exported_to_training_container") is not False
             or broker.get("docker_socket_exported_to_training_container") is not False
+            or broker.get("hidden_assets_exported_to_training_process", False) is not False
+            or broker.get("source_root_exported_to_training_process", False) is not False
+            or broker.get("docker_socket_exported_to_training_process", False) is not False
             or broker.get("credential_values_included") is not False
         ):
             raise ConfigurationError("repository broker violated the training isolation boundary")
@@ -335,6 +350,8 @@ def export_online_policy_version(
             "training_kind": "rllm_verigym_verl_online_grpo_lora",
             "learning_rate": learning_rate,
             "world_size": completion["world_size"],
+            "training_runtime_kind": completion.get("training_runtime_kind", "container"),
+            "training_runtime_hash": completion.get("training_runtime_hash"),
             "software": completion["software"],
             "rllm_commit": completion["rllm_commit"],
             "verl_commit": completion["verl_commit"],

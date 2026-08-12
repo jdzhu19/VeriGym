@@ -144,5 +144,11 @@ is explicitly configured.
 `configs/training/qwen35_repository_rllm_verl_online_smoke_v1.json` is the bounded opt-in CVA6
 PR2170 example. It requires a frozen training split and source-lock v2 source through
 `VERIGYM_REPOSITORY_TRAINING_SPLIT` and `VERIGYM_CVA6_TRAINING_SOURCE`. Its 32K rollout capacity
-is an explicit four-RTX-3090 smoke resource envelope; the workflow itself still delegates turn
+is an explicit four-24-GiB-GPU smoke resource envelope; the workflow itself still delegates turn
 count to the task budget and sets no per-action token override.
+
+For schedulers where the GPU node cannot access Docker, use the split native path documented in
+`../../docs/online_training.md`. The trusted login-node broker container owns a private source volume and
+Docker verification, while the GPU-side Conda process runs only the rLLM/veRL trainer. The native
+runtime manifest binds its package inventory and resolved 4/6/8-GPU topology; rollout group size
+scales with world size so no worker is assigned an empty GRPO group.

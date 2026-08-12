@@ -182,6 +182,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "hidden_assets_exported_to_training_container": False,
         "source_root_exported_to_training_container": False,
         "docker_socket_exported_to_training_container": False,
+        "hidden_assets_exported_to_training_process": False,
+        "source_root_exported_to_training_process": False,
+        "docker_socket_exported_to_training_process": False,
         "credential_values_included": False,
         "broker_protocol_hash": content_hash(
             {

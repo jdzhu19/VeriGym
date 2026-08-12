@@ -59,3 +59,25 @@ successor policy. The completion report qualifies interoperability and
 weight synchronization only when at least one rollout group has reward variance; it is not a
 convergence or benchmark claim. The pinned compatibility pair is rLLM `v0.3.0-pre` with verl
 `v0.7.1`, which includes the upstream Qwen3.5 FSDP2/vLLM path.
+
+## Split broker and native GPU trainer
+
+Clusters that expose Docker only on a login node can keep the same trust boundary by running
+`run_qwen35_online_broker_container.py` on that node and
+`run_qwen35_online_native.py` inside the scheduler-owned GPU allocation. The trusted broker keeps
+the prepared source in a role-labeled Docker volume and communicates through the existing
+hash-bound filesystem protocol. The native trainer receives only the public task manifest,
+bounded observations, sparse outcomes, model, adapter, and code; it receives no source-root or
+Docker-socket argument. Both sides use a shared campaign directory for requests and responses.
+
+The native launcher requires a numeric scheduler-provided `CUDA_VISIBLE_DEVICES`, samples GPU
+contention before importing PyTorch, and supports 4, 6, or 8 GPUs. It couples world size, FSDP
+size, rLLM parallelism, and GRPO rollout group size (`n=N`) and writes the resolved values to a
+hash-bound `native-training-runtime.json` before the first model call. `--gpu-count auto` uses the
+largest supported uncontended subset; a fixed count fails closed when insufficient GPUs are clean.
+Different topology hashes are different runs even when task and policy inputs are unchanged.
+
+Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
+collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
+qualification through the broker. A driver, image, package, or verifier mismatch is an
+infrastructure failure and must stop before online training.

@@ -174,6 +174,8 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
                 "reference_solution_loaded_by_model": False,
                 "source_root_loaded_by_training_container": False,
                 "docker_socket_loaded_by_training_container": False,
+                "source_root_loaded_by_training_process": False,
+                "docker_socket_loaded_by_training_process": False,
             },
         )
         self.commit(trajectory=trajectory)

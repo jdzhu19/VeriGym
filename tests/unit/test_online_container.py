@@ -107,6 +107,16 @@ def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() 
     assert stage["gpu_ids"] == [0, 1, 2, 3]
 
 
+def test_online_trainer_accepts_hash_bound_native_runtime_without_weakening_container() -> None:
+    source = Path("scripts/train_qwen35_rllm_verl_online.py").read_text(encoding="utf-8")
+
+    assert "VERIGYM_TRAINING_RUNTIME_MANIFEST" in source
+    assert "validate_runtime_manifest" in source
+    assert "cannot be both native and containerized" in source
+    assert '"training_runtime_hash"' in source
+    assert '"source_root_loaded_by_training_process": False' in source
+
+
 def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:
     module = _script()
     artifact = tmp_path / "ray" / "session"
