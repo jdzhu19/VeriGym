@@ -147,19 +147,25 @@ def _runtime_environment(python: Path, compiler: Path, process_tmp: Path) -> dic
             "CC": str(compiler),
             "PATH": f"{compiler.parent}:{python.parent}:/usr/bin:/bin",
             "PYTHONNOUSERSITE": "1",
-            "LD_LIBRARY_PATH": f"{python.parent.parent / 'lib'}:/usr/lib64",
+            "LD_LIBRARY_PATH": _runtime_library_path(python),
             "TMPDIR": str(process_tmp),
         }
     )
     return environment
 
 
+def _runtime_library_path(python: Path) -> str:
+    return f"{python.parent.parent / 'lib'}:/usr/lib64"
+
+
 def _patchelf_value(patchelf: Path, option: str, executable: Path) -> str:
+    environment = _clean_environment()
+    environment["LD_LIBRARY_PATH"] = _runtime_library_path(executable)
     completed = subprocess.run(
         [str(patchelf), option, str(executable)],
         check=True,
         capture_output=True,
-        env=_clean_environment(),
+        env=environment,
         shell=False,
         text=True,
         timeout=30,

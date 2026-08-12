@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,28 @@ def test_glibc_launcher_sets_a_fixed_runtime_library_path(
     assert environment["CC"] == str(compiler)
     assert environment["PATH"].startswith("/opt/gcc/bin:/opt/agent/bin:")
     assert environment["TMPDIR"] == str(process_tmp)
+
+
+def test_glibc_launcher_uses_only_fixed_libraries_for_patchelf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _script()
+    observed: dict[str, str] = {}
+
+    def run(*_args, **kwargs):
+        observed.update(kwargs["env"])
+        return subprocess.CompletedProcess([], 0, stdout="qualified\n", stderr="")
+
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/inherited")
+    monkeypatch.setattr(module.subprocess, "run", run)
+
+    assert (
+        module._patchelf_value(
+            Path("/tools/patchelf"), "--print-rpath", Path("/opt/agent/bin/python")
+        )
+        == "qualified"
+    )
+    assert observed["LD_LIBRARY_PATH"] == "/opt/agent/lib:/usr/lib64"
 
 
 def test_glibc_launcher_requires_private_short_process_tmp(
