@@ -79,7 +79,8 @@ Different topology hashes are different runs even when task and policy inputs ar
 runtime also binds the exact rLLM, verl, and Transformers source commits.
 
 On an older host ABI, the native launcher may be invoked from an explicitly qualified PRoot
-userspace by passing both `--proot-executable` and `--proot-rootfs-identity`. The launcher fails
+userspace with `run_qwen35_online_proot.py`; the inner launcher receives both
+`--proot-executable` and `--proot-rootfs-identity`. The launchers fail
 unless PRoot seccomp acceleration is disabled, then binds the executable SHA-256, exported rootfs
 image ID, host kernel, and guest glibc to the runtime manifest. Paths are never persisted. This is
 an ABI compatibility mechanism, not a relaxation of the broker/source separation.
