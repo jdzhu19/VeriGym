@@ -72,13 +72,15 @@ def _file(path: Path, *, executable: bool = False) -> Path:
     return value
 
 
-def _linked_file(path: Path) -> Path:
+def _linked_file(path: Path, *, confined_to: Path | None = None) -> Path:
     metadata = os.lstat(path)
     if not (stat.S_ISLNK(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
         raise RuntimeError(f"required linked file is unavailable or unsafe: {path.name}")
     value = path.resolve(strict=True)
     if not value.is_file():
         raise RuntimeError(f"required linked file target is unavailable: {path.name}")
+    if confined_to is not None and not value.is_relative_to(confined_to.resolve(strict=True)):
+        raise RuntimeError(f"required linked file escapes its qualified root: {path.name}")
     return value
 
 
@@ -177,7 +179,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     rootfs_identity = _file(rootfs / ".export-complete").read_text(encoding="utf-8").strip()
     if rootfs_identity != _image_id(arguments.expected_rootfs_image_id):
         raise RuntimeError("exported rootfs image identity differs from its pin")
-    loader = _file(rootfs / "lib/x86_64-linux-gnu/ld-linux-x86-64.so.2", executable=True)
+    loader_path = rootfs / "lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+    loader = _linked_file(loader_path, confined_to=rootfs)
+    if not os.access(loader, os.X_OK):
+        raise RuntimeError("qualified dynamic loader is not executable")
     expected_rpath = ":".join(
         (
             str(python.parent.parent / "lib"),
@@ -185,7 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(rootfs / "usr/lib/x86_64-linux-gnu"),
         )
     )
-    if _patchelf_value(patchelf, "--print-interpreter", python) != str(loader):
+    if _patchelf_value(patchelf, "--print-interpreter", python) != str(loader_path):
         raise RuntimeError("patched Python interpreter differs from the qualified loader")
     if _patchelf_value(patchelf, "--print-rpath", python) != expected_rpath:
         raise RuntimeError("patched Python RPATH differs from the qualified userspace")

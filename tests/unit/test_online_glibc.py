@@ -75,6 +75,25 @@ def test_glibc_launcher_requires_private_short_process_tmp(
         module._private_directory(process_tmp)
 
 
+def test_glibc_launcher_accepts_only_confined_link_targets(tmp_path: Path) -> None:
+    module = _script()
+    root = tmp_path / "rootfs"
+    loader = root / "usr/lib/loader"
+    loader.parent.mkdir(parents=True)
+    loader.write_bytes(b"loader")
+    link = root / "lib/loader"
+    link.parent.mkdir()
+    link.symlink_to("../usr/lib/loader")
+
+    assert module._linked_file(link, confined_to=root) == loader.resolve()
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"outside")
+    link.unlink()
+    link.symlink_to(outside)
+    with pytest.raises(RuntimeError, match="escapes"):
+        module._linked_file(link, confined_to=root)
+
+
 def test_glibc_launcher_never_accepts_source_or_hidden_arguments() -> None:
     source = Path("scripts/run_qwen35_online_glibc.py").read_text(encoding="utf-8")
 
