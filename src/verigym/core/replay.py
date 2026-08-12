@@ -27,6 +27,8 @@ from verigym.protocols.repository_action import (
     RepositoryActionProtocolViolation,
     bounded_tool_result_identity,
     extract_transport_action,
+    repository_action_state_failure,
+    task_requires_public_test,
     validate_canonical_action,
 )
 from verigym.provenance import get_build_provenance
@@ -532,8 +534,10 @@ def _validate_repository_action_protocol_replay(
                     max_response_bytes=descriptor.max_response_bytes,
                 )
                 envelope, arguments = validate_canonical_action(raw, task=task)
-                failure = _repository_action_state_failure(
+                failure = repository_action_state_failure(
                     envelope.action,
+                    state_machine_id=descriptor.state_machine_id,
+                    public_test_required=task_requires_public_test(task),
                     patch_applied=patch_applied,
                     public_observed=public_observed,
                     diff_observed=diff_observed,
@@ -604,23 +608,6 @@ def _validate_repository_action_protocol_replay(
             terminal_reason = events[-1].payload.get("termination_reason")
             if record.termination_reason != terminal_reason:
                 raise ReplayError("repository action terminal reason cannot be reproduced")
-
-
-def _repository_action_state_failure(
-    action: str,
-    *,
-    patch_applied: bool,
-    public_observed: bool,
-    diff_observed: bool,
-    finished: bool,
-) -> RepositoryProtocolError | None:
-    if finished:
-        return "agent_invalid_state_transition"
-    if action in {"run_public_test", "inspect_diff"} and not patch_applied:
-        return "agent_invalid_state_transition"
-    if action == "finish" and not (patch_applied and public_observed and diff_observed):
-        return "agent_finish_invalid"
-    return None
 
 
 def _normalized_synthesis(metrics: SynthesisMetrics | None) -> dict[str, object] | None:

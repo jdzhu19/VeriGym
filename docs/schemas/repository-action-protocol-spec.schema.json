@@ -5,7 +5,7 @@
   "properties": {
     "default_max_completion_calls": {
       "default": 6,
-      "maximum": 32,
+      "maximum": 128,
       "minimum": 1,
       "title": "Default Max Completion Calls",
       "type": "integer"
@@ -33,8 +33,11 @@
       "type": "string"
     },
     "prompt_contract_id": {
-      "const": "repository_action_v2_prompt_v1",
-      "default": "repository_action_v2_prompt_v1",
+      "default": "repository_action_v2_prompt_v2",
+      "enum": [
+        "repository_action_v2_prompt_v1",
+        "repository_action_v2_prompt_v2"
+      ],
       "title": "Prompt Contract Id",
       "type": "string"
     },
@@ -62,8 +65,11 @@
       "type": "string"
     },
     "state_machine_id": {
-      "const": "repository_action_state_machine_v1",
-      "default": "repository_action_state_machine_v1",
+      "default": "repository_action_state_machine_v2",
+      "enum": [
+        "repository_action_state_machine_v1",
+        "repository_action_state_machine_v2"
+      ],
       "title": "State Machine Id",
       "type": "string"
     },

@@ -50,6 +50,7 @@ def _started(
     responses: list[str],
     *,
     max_completion_calls: int = 6,
+    public_tests: bool = True,
 ) -> tuple[ProviderNeutralApiRepositoryAgent, ModelGateway, RepositoryApiProtocolSuite, Path]:
     suite = RepositoryApiProtocolSuite()
     task = suite.load_task(
@@ -59,6 +60,26 @@ def _started(
             native_id="protocol-valid-hold",
         )
     )
+    if not public_tests:
+        repository = dict(task.metadata["repository_repair"])
+        repository["public_test_ids"] = []
+        task = task.model_copy(
+            update={
+                "metadata": {**task.metadata, "repository_repair": repository},
+                "interaction": task.interaction.model_copy(
+                    update={
+                        "allowed_tools": [
+                            tool
+                            for tool in task.interaction.allowed_tools
+                            if tool != "repository.public_test"
+                        ],
+                        "denied_tools": sorted(
+                            set(task.interaction.denied_tools) | {"repository.public_test"}
+                        ),
+                    }
+                ),
+            }
+        )
     assets = suite.resolve_assets(task)
     agent = ProviderNeutralApiRepositoryAgent()
     options = {
@@ -232,6 +253,53 @@ def test_fake_provider_multi_turn_valid_path_binds_each_tool_observation(tmp_pat
     assert all(record.accepted for record in records)
     assert all(record.tool_result_hash for record in records[:-1])
     assert gateway.tracker.model_calls == 5
+
+
+def test_fake_provider_no_public_test_path_can_finish_after_diff(tmp_path: Path) -> None:
+    patch = (
+        "--- a/repository/rtl/valid_register.sv\n"
+        "+++ b/repository/rtl/valid_register.sv\n"
+        "@@ -1,1 +1,1 @@\n-old\n+new\n"
+    )
+    agent, gateway, _suite, visible = _started(
+        tmp_path,
+        [
+            _response("apply_patch", {"patch": patch}),
+            _response("inspect_diff", {}),
+            _response("finish", {"message": "candidate frozen without public tests"}),
+        ],
+        public_tests=False,
+    )
+    apply = _advance_bootstrap(agent, visible)
+    assert apply.type == "apply_patch"
+    diff = agent.act(
+        _observation(
+            ToolResult(
+                tool="file.apply_patch",
+                success=True,
+                category=ErrorCategory.SUCCESS,
+                message="patch applied",
+            )
+        )
+    )
+    assert diff.type == "tool_call" and diff.tool == "file.diff"
+    finish = agent.act(
+        _observation(
+            ToolResult(
+                tool="file.diff",
+                success=True,
+                category=ErrorCategory.SUCCESS,
+                stdout=patch,
+            )
+        )
+    )
+    assert finish.type == "final"
+    assert [record.action_name for record in agent.action_protocol_records()] == [
+        "apply_patch",
+        "inspect_diff",
+        "finish",
+    ]
+    assert gateway.tracker.model_calls == 3
 
 
 def test_patch_context_mismatch_is_precise_agent_argument_failure(tmp_path: Path) -> None:

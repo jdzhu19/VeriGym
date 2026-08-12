@@ -17,8 +17,15 @@ from verigym.schemas.action_protocol import (
     RepositoryActionNormalization,
     RepositoryActionProtocolDescriptor,
     RepositoryActionProtocolSpec,
+    RepositoryActionStateMachine,
     RepositoryActionTransport,
     RepositoryProtocolError,
+)
+from verigym.schemas.agent import (
+    AgentAction,
+    ApplyPatchAction,
+    FinalSubmissionAction,
+    ToolCallAction,
 )
 from verigym.schemas.base import StrictModel
 from verigym.schemas.options import JsonValue
@@ -105,13 +112,19 @@ _ACTION_MAPPINGS = {
 }
 
 
-def prompt_contract() -> dict[str, Any]:
+def prompt_contract(
+    state_machine_id: RepositoryActionStateMachine = "repository_action_state_machine_v2",
+) -> dict[str, Any]:
     """Return the deterministic action prompt contract derived from the registry."""
 
     registry = action_registry()
-    return {
+    prompt_contract_id = {
+        "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
+        "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
+    }[state_machine_id]
+    contract = {
         "schema_version": "1.0",
-        "prompt_contract_id": "repository_action_v2_prompt_v1",
+        "prompt_contract_id": prompt_contract_id,
         "protocol": "repository_action.v2",
         "required_response": {
             "protocol": "repository_action.v2",
@@ -124,11 +137,18 @@ def prompt_contract() -> dict[str, Any]:
             "Return exactly one action object and no prose.",
             "Use only registered actions; unrestricted shell is unavailable.",
             "Read visible files before editing.",
-            "Use registered public tests for bounded feedback.",
+            (
+                "Use registered public tests for bounded feedback."
+                if state_machine_id == "repository_action_state_machine_v1"
+                else "Use a registered public test when the task exposes one."
+            ),
             "Inspect the candidate diff before finish.",
             "Never request credentials, network, hidden assets, or reference patches.",
         ],
     }
+    if state_machine_id == "repository_action_state_machine_v2":
+        contract["state_machine_id"] = state_machine_id
+    return contract
 
 
 def resolve_repository_action_protocol(
@@ -153,7 +173,7 @@ def resolve_repository_action_protocol(
         agent_options.get("max_completion_calls", protocol_spec.default_max_completion_calls),
         "max_completion_calls",
         1,
-        32,
+        128,
     )
     max_bytes = _bounded_int(
         agent_options.get("max_response_bytes", protocol_spec.default_max_response_bytes),
@@ -164,7 +184,7 @@ def resolve_repository_action_protocol(
     if task.budget.max_model_calls is not None and max_calls > task.budget.max_model_calls:
         raise ValueError("repository action completion-call limit exceeds the task model budget")
     registry_hash = content_hash(action_registry())
-    contract_hash = content_hash(prompt_contract())
+    contract_hash = content_hash(prompt_contract(protocol_spec.state_machine_id))
     public_ids = _public_test_ids(task)
     task_tool_contract = {
         "allowed_tools": sorted(task.interaction.allowed_tools),
@@ -224,6 +244,63 @@ def validate_repository_action_protocol_binding(
             mismatches.append(field)
     raise ValueError(
         "repository action protocol mismatch: " + ", ".join(mismatches or ["descriptor"])
+    )
+
+
+def repository_action_state_failure(
+    action: str,
+    *,
+    state_machine_id: RepositoryActionStateMachine,
+    public_test_required: bool,
+    patch_applied: bool,
+    public_observed: bool,
+    diff_observed: bool,
+    finished: bool,
+) -> RepositoryProtocolError | None:
+    """Validate one state transition without depending on an execution provider."""
+
+    if finished:
+        return "agent_invalid_state_transition"
+    if action in {"run_public_test", "inspect_diff"} and not patch_applied:
+        return "agent_invalid_state_transition"
+    required_public_observation = (
+        True if state_machine_id == "repository_action_state_machine_v1" else public_test_required
+    )
+    if action == "finish" and not (
+        patch_applied and diff_observed and (public_observed or not required_public_observation)
+    ):
+        return "agent_finish_invalid"
+    return None
+
+
+def task_requires_public_test(task: VeriTask) -> bool:
+    """Return whether the public action state machine requires a test observation."""
+
+    return bool(_public_test_ids(task))
+
+
+def canonical_repository_action_to_agent_action(
+    action: str,
+    arguments: _StrictArguments,
+) -> AgentAction:
+    """Map one validated canonical action to the ordinary VeriGym environment action."""
+
+    if isinstance(arguments, ListFilesArguments):
+        return ToolCallAction(tool="file.list", arguments=arguments.model_dump(mode="json"))
+    if isinstance(arguments, ReadFileArguments):
+        return ToolCallAction(tool="file.read", arguments=arguments.model_dump(mode="json"))
+    if isinstance(arguments, ApplyPatchArguments):
+        return ApplyPatchAction(patch=arguments.patch)
+    if isinstance(arguments, RunPublicTestArguments):
+        return ToolCallAction(
+            tool="repository.public_test", arguments=arguments.model_dump(mode="json")
+        )
+    if isinstance(arguments, InspectDiffArguments):
+        return ToolCallAction(tool="file.diff", arguments={})
+    if isinstance(arguments, FinishArguments):
+        return FinalSubmissionAction(message=arguments.message)
+    raise RepositoryActionProtocolViolation(
+        "agent_unknown_action", f"unmapped canonical repository action: {action}"
     )
 
 
@@ -508,10 +585,13 @@ __all__ = [
     "RunPublicTestArguments",
     "action_registry",
     "bounded_tool_result_identity",
+    "canonical_repository_action_to_agent_action",
     "extract_json_content",
     "extract_transport_action",
     "prompt_contract",
+    "repository_action_state_failure",
     "resolve_repository_action_protocol",
+    "task_requires_public_test",
     "validate_canonical_action",
     "validate_repository_action_protocol_binding",
 ]

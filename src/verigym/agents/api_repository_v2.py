@@ -13,16 +13,13 @@ from verigym.core.model_gateway import ModelBudgetError
 from verigym.models.base import ModelClientError
 from verigym.prompts.policy import agent_configuration_hash, validate_prompt_text
 from verigym.protocols.repository_action import (
-    ApplyPatchArguments,
-    FinishArguments,
-    InspectDiffArguments,
-    ListFilesArguments,
-    ReadFileArguments,
     RepositoryActionProtocolViolation,
-    RunPublicTestArguments,
     bounded_tool_result_identity,
+    canonical_repository_action_to_agent_action,
     extract_transport_action,
     prompt_contract,
+    repository_action_state_failure,
+    task_requires_public_test,
     validate_canonical_action,
 )
 from verigym.schemas.action_protocol import (
@@ -35,7 +32,6 @@ from verigym.schemas.agent import (
     AgentAction,
     ApplyPatchAction,
     EpisodeResult,
-    FinalSubmissionAction,
     Observation,
     ToolCallAction,
 )
@@ -53,7 +49,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
     supported_modes = frozenset({InteractionMode.AGENT})
     action_protocol_spec = RepositoryActionProtocolSpec()
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="repository_action_v2_prompt_v1",
+        prompt_contract_id="repository_action_v2_prompt_v2",
         prompt_contract_version="1.0.0",
         task_context_policy="bounded_public_repository_tools_v2",
         base_instruction_policy="generated_repository_action_registry_v2",
@@ -65,7 +61,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="provider-neutral-api-repository-agent",
-        version="0.1.0",
+        version="0.2.0",
         api_version=PLUGIN_API_VERSION,
         provider="verigym",
         capabilities=[
@@ -314,7 +310,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
                 max_response_bytes=protocol.max_response_bytes,
             )
             envelope, arguments = validate_canonical_action(raw, task=context.task)
-            action = self._map_action(envelope.action, arguments)
+            action = canonical_repository_action_to_agent_action(envelope.action, arguments)
             self._validate_state_transition(envelope.action)
         except RepositoryActionProtocolViolation as exc:
             gateway.emit_action_rejected(
@@ -405,52 +401,27 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
         )
 
     def _validate_state_transition(self, action: str) -> None:
-        if self._state == "finished":
+        context = self._require_context()
+        protocol = context.action_protocol
+        assert protocol is not None
+        failure = repository_action_state_failure(
+            action,
+            state_machine_id=protocol.state_machine_id,
+            public_test_required=task_requires_public_test(context.task),
+            patch_applied=self._patch_applied,
+            public_observed=self._public_test_observed,
+            diff_observed=self._diff_observed,
+            finished=self._state == "finished",
+        )
+        if failure is not None:
             raise RepositoryActionProtocolViolation(
-                "agent_invalid_state_transition", "repository action followed terminal finish"
-            )
-
-        if action == "run_public_test" and not self._patch_applied:
-            raise RepositoryActionProtocolViolation(
-                "agent_invalid_state_transition", "public test requires a materialized candidate"
-            )
-        if action == "inspect_diff" and not self._patch_applied:
-            raise RepositoryActionProtocolViolation(
-                "agent_invalid_state_transition",
-                "diff inspection requires a materialized candidate",
-            )
-        if action == "finish" and not (
-            self._patch_applied and self._public_test_observed and self._diff_observed
-        ):
-            raise RepositoryActionProtocolViolation(
-                "agent_finish_invalid",
-                "finish requires a materialized patch, public-test observation, "
-                "and diff inspection",
+                failure,
+                "repository action is invalid for the current frozen state-machine state",
             )
 
     def _set_last_termination(self, reason: str) -> None:
         if self._records:
             self._records[-1] = self._records[-1].model_copy(update={"termination_reason": reason})
-
-    @staticmethod
-    def _map_action(action: str, arguments: Any) -> AgentAction:
-        if isinstance(arguments, ListFilesArguments):
-            return ToolCallAction(tool="file.list", arguments=arguments.model_dump(mode="json"))
-        if isinstance(arguments, ReadFileArguments):
-            return ToolCallAction(tool="file.read", arguments=arguments.model_dump(mode="json"))
-        if isinstance(arguments, ApplyPatchArguments):
-            return ApplyPatchAction(patch=arguments.patch)
-        if isinstance(arguments, RunPublicTestArguments):
-            return ToolCallAction(
-                tool="repository.public_test", arguments=arguments.model_dump(mode="json")
-            )
-        if isinstance(arguments, InspectDiffArguments):
-            return ToolCallAction(tool="file.diff", arguments={})
-        if isinstance(arguments, FinishArguments):
-            return FinalSubmissionAction(message=arguments.message)
-        raise RepositoryActionProtocolViolation(
-            "agent_unknown_action", f"unmapped canonical repository action: {action}"
-        )
 
 
 def _render_prompt(
@@ -467,7 +438,7 @@ def _render_prompt(
     public_ids = repository.get("public_test_ids") if isinstance(repository, dict) else []
     payload = {
         "schema_version": "1.0",
-        "prompt_contract": prompt_contract(),
+        "prompt_contract": prompt_contract(protocol.state_machine_id),
         "action_protocol_identity": protocol.model_dump(mode="json"),
         "task": {
             "id": context.task.id,

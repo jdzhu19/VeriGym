@@ -69,6 +69,9 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     assert "VeriGym trainer:{_CONTAINER_WORKSPACE}" in source
     assert '"HOME":' not in source
     assert '"OMP_NUM_THREADS": "1"' in source
+    assert '"TMPDIR": str(process_tmp)' in source
+    assert '"XDG_CACHE_HOME": str(container_cache / "host-xdg")' in source
+    assert '"HF_HOME": str(workspace / "host-hf-home")' in source
     assert "broker.wait(timeout=15)" in source
     assert "broker.wait(timeout=3)" in source
     assert '"--pids-limit",\n        "8192"' in source
@@ -78,6 +81,30 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
     assert "RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE" in trainer_source
     assert '"effective_policy_update_verified": True' in trainer_source
     assert 'update_stats["changed_tensor_count"] <= 0' in trainer_source
+
+
+def test_repository_mode_preserves_legacy_rtl_report_name() -> None:
+    source = Path("scripts/run_qwen35_online_container.py").read_text(encoding="utf-8")
+
+    assert '"online-verifier-broker-report.json"' in source
+    assert '"online-repository-broker-report.json"' in source
+
+
+def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() -> None:
+    path = Path("configs/training/qwen35_repository_rllm_verl_online_smoke_v1.json")
+    campaign = json.loads(path.read_text(encoding="utf-8"))
+    stage = next(
+        item for item in campaign["stages"] if item["stage_id"] == "online-repository-grpo"
+    )
+
+    assert ["--workflow", "repository"] == stage["argv"][
+        stage["argv"].index("--workflow") : stage["argv"].index("--workflow") + 2
+    ]
+    assert "data.max_response_length=16384" in stage["argv"]
+    assert "++actor_rollout_ref.rollout.max_model_len=32768" in stage["argv"]
+    assert "rllm.workflow.retry_limit=0" in stage["argv"]
+    assert "online-repository-broker-report.json" in stage["expected_outputs"]
+    assert stage["gpu_ids"] == [0, 1, 2, 3]
 
 
 def test_online_container_uses_short_workspace_alias_for_ray_sockets(tmp_path: Path) -> None:

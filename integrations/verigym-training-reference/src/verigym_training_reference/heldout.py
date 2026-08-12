@@ -119,7 +119,29 @@ def build_public_input_record(task: Any, visible_root: Path) -> dict[str, Any]:
 
     candidate_path = task.interaction.final_submission.path
     if candidate_path is None:
-        raise ConfigurationError("held-out export requires a single-file final submission")
+        if task.interaction.final_submission.kind != "patch":
+            raise ConfigurationError("held-out export requires a file or patch final submission")
+        readme_path = visible_root / "README.md"
+        repository = task.metadata.get("repository_repair")
+        public_test_ids = repository.get("public_test_ids") if isinstance(repository, dict) else []
+        if not isinstance(public_test_ids, list) or not all(
+            isinstance(value, str) for value in public_test_ids
+        ):
+            raise ConfigurationError("repository task has an invalid public-test inventory")
+        base = {
+            "schema_version": "1.0",
+            "task_id": task.id,
+            "task_description": task.description,
+            "public_readme": (
+                readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
+            ),
+            "submission_kind": "patch",
+            "public_test_ids": sorted(public_test_ids),
+            "source_hash": task.source.content_hash,
+            "task_hash": content_hash(task),
+            "hidden_assets_included": False,
+        }
+        return {**base, "record_hash": content_hash(base)}
     readme_path = visible_root / "README.md"
     candidate = visible_root / candidate_path
     if not readme_path.is_file() or not candidate.is_file():

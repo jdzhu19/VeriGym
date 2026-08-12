@@ -138,8 +138,34 @@ def _validate_online_inputs(
         or completion["adapter_max_abs_delta"] <= 0
     ):
         raise ConfigurationError("online completion report does not qualify a policy update")
-    if broker.get("format_id") != "verigym_online_verifier_broker_report_v1":
-        raise ConfigurationError("unsupported online verifier broker report")
+    broker_format = broker.get("format_id")
+    workflow_kind = completion.get("workflow_kind", "rtl")
+    if broker_format == "verigym_online_verifier_broker_report_v1":
+        broker_count = broker.get("request_count")
+        broker_records = broker.get("requests")
+        if workflow_kind != "rtl":
+            raise ConfigurationError("online workflow differs from its verifier broker")
+    elif broker_format == "verigym_online_repository_broker_report_v1":
+        broker_count = broker.get("session_count")
+        broker_records = broker.get("sessions")
+        if workflow_kind != "repository":
+            raise ConfigurationError("online workflow differs from its repository broker")
+        if (
+            broker.get("hidden_assets_exported_to_training_container") is not False
+            or broker.get("source_root_exported_to_training_container") is not False
+            or broker.get("docker_socket_exported_to_training_container") is not False
+            or broker.get("credential_values_included") is not False
+        ):
+            raise ConfigurationError("repository broker violated the training isolation boundary")
+    else:
+        raise ConfigurationError("unsupported online broker report")
+    if (
+        not isinstance(broker_count, int)
+        or broker_count < 1
+        or not isinstance(broker_records, list)
+        or len(broker_records) != broker_count
+    ):
+        raise ConfigurationError("online broker report has inconsistent rollout records")
     if tasks.get("format_id") != "verigym_online_tasks_v1":
         raise ConfigurationError("unsupported online task manifest")
     if completion.get("task_manifest_hash") != tasks.get("manifest_hash") or broker.get(
@@ -147,7 +173,7 @@ def _validate_online_inputs(
     ) != tasks.get("manifest_hash"):
         raise ConfigurationError("online reports differ from the task manifest")
     if (
-        completion.get("rollout_count") != broker.get("request_count")
+        completion.get("rollout_count") != broker_count
         or completion.get("resolved_count") != broker.get("resolved_count")
         or broker.get("infrastructure_invalid_count") != 0
     ):
@@ -172,6 +198,56 @@ def _validate_online_inputs(
     task_ids.sort()
     if task_ids != completion.get("task_ids") or len(task_ids) != len(raw_tasks):
         raise ConfigurationError("online completion task coverage differs from its manifest")
+    task_id_set = set(task_ids)
+    if any(
+        not isinstance(record, dict)
+        or record.get("task_id") not in task_id_set
+        or record.get("infrastructure_valid") not in {True, False}
+        or record.get("resolved") not in {True, False, None}
+        for record in broker_records
+    ):
+        raise ConfigurationError("online broker contains an invalid rollout record")
+    if broker["infrastructure_invalid_count"] != sum(
+        record["infrastructure_valid"] is not True for record in broker_records
+    ) or broker["resolved_count"] != sum(record["resolved"] is True for record in broker_records):
+        raise ConfigurationError("online broker summary differs from its rollout records")
+    rewards = completion.get("rewards_by_task")
+    if not isinstance(rewards, dict) or set(rewards) != task_id_set:
+        raise ConfigurationError("online completion reward coverage differs from its manifest")
+    for task_id in task_ids:
+        observed = rewards[task_id]
+        expected = [
+            float(record["resolved"] is True)
+            for record in broker_records
+            if record["task_id"] == task_id
+        ]
+        if (
+            not isinstance(observed, list)
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or float(value) not in {0.0, 1.0}
+                for value in observed
+            )
+            or sorted(float(value) for value in observed) != sorted(expected)
+        ):
+            raise ConfigurationError("online completion rewards differ from broker outcomes")
+
+
+def _broker_rollouts(broker: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
+    if broker["format_id"] == "verigym_online_repository_broker_report_v1":
+        count = broker["session_count"]
+        records = broker["sessions"]
+    else:
+        count = broker["request_count"]
+        records = broker["requests"]
+    return int(count), sorted(
+        records,
+        key=lambda item: (
+            str(item.get("task_id")),
+            str(item.get("request_hash", item.get("session_id"))),
+        ),
+    )
 
 
 def export_online_policy_version(
@@ -220,20 +296,22 @@ def export_online_policy_version(
         inventory = _adapter_inventory(adapter)
         adapter_hash = _inventory_hash(inventory)
 
-        request_records = sorted(
-            broker.get("requests", []),
-            key=lambda item: (str(item.get("task_id")), str(item.get("request_hash"))),
-        )
+        rollout_count, rollout_records = _broker_rollouts(broker)
         reward_base = {
             "schema_version": "1.0",
             "format_id": "verigym_online_reward_manifest_v1",
             "task_manifest_hash": tasks["manifest_hash"],
             "input_policy_version_hash": parent.version_hash,
-            "request_count": broker["request_count"],
+            "workflow_kind": completion.get("workflow_kind", "rtl"),
+            "broker_format_id": broker["format_id"],
+            "rollout_count": rollout_count,
+            # Retained as compatibility aliases for existing reward-manifest readers.
+            "request_count": rollout_count,
             "resolved_count": broker["resolved_count"],
             "infrastructure_invalid_count": broker["infrastructure_invalid_count"],
             "rewards_by_task": completion["rewards_by_task"],
-            "request_records": request_records,
+            "rollout_records": rollout_records,
+            "request_records": rollout_records,
             "broker_report_hash": broker["report_hash"],
             "hidden_assets_included": False,
             "reference_solutions_included": False,

@@ -12,6 +12,10 @@ from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 RepositoryActionTransport = Literal["json_content", "native_tool_call"]
+RepositoryActionStateMachine = Literal[
+    "repository_action_state_machine_v1",
+    "repository_action_state_machine_v2",
+]
 RepositoryActionState = Literal[
     "awaiting_action",
     "candidate_modified",
@@ -46,19 +50,30 @@ class RepositoryActionProtocolSpec(StrictModel):
     protocol_id: Literal["repository_action.v2"] = "repository_action.v2"
     protocol_version: Literal["2.0.0"] = "2.0.0"
     registry_version: Literal["2.0.0"] = "2.0.0"
-    prompt_contract_id: Literal["repository_action_v2_prompt_v1"] = "repository_action_v2_prompt_v1"
+    prompt_contract_id: Literal[
+        "repository_action_v2_prompt_v1",
+        "repository_action_v2_prompt_v2",
+    ] = "repository_action_v2_prompt_v2"
     normalizer_id: Literal["repository_action_json_representation_v1"] = (
         "repository_action_json_representation_v1"
     )
-    state_machine_id: Literal["repository_action_state_machine_v1"] = (
-        "repository_action_state_machine_v1"
-    )
+    state_machine_id: RepositoryActionStateMachine = "repository_action_state_machine_v2"
     default_transport: RepositoryActionTransport = "json_content"
     supported_transports: list[RepositoryActionTransport] = Field(
         default_factory=_default_transports
     )
-    default_max_completion_calls: int = Field(default=6, ge=1, le=32)
+    default_max_completion_calls: int = Field(default=6, ge=1, le=128)
     default_max_response_bytes: int = Field(default=262_144, ge=1024, le=4 * 1024 * 1024)
+
+    @model_validator(mode="after")
+    def validate_prompt_state_pair(self) -> RepositoryActionProtocolSpec:
+        expected = {
+            "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
+            "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
+        }[self.state_machine_id]
+        if self.prompt_contract_id != expected:
+            raise ValueError("repository action prompt and state-machine versions must match")
+        return self
 
 
 class RepositoryActionProtocolDescriptor(StrictModel):
@@ -76,8 +91,8 @@ class RepositoryActionProtocolDescriptor(StrictModel):
     prompt_contract_id: str
     prompt_contract_hash: str
     normalizer_id: str
-    state_machine_id: str
-    max_completion_calls: int = Field(ge=1, le=32)
+    state_machine_id: RepositoryActionStateMachine
+    max_completion_calls: int = Field(ge=1, le=128)
     max_response_bytes: int = Field(ge=1024, le=4 * 1024 * 1024)
     agent_descriptor_hash: str
     task_tool_contract_hash: str
@@ -182,6 +197,7 @@ __all__ = [
     "RepositoryActionProtocolDescriptor",
     "RepositoryActionProtocolSpec",
     "RepositoryActionState",
+    "RepositoryActionStateMachine",
     "RepositoryActionTransport",
     "RepositoryActionTurnRecord",
     "RepositoryProtocolError",

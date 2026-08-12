@@ -5,6 +5,13 @@ repository-repair agents. Provider transport extraction and canonical action val
 separate. A model client may supply `json_content` or `native_tool_call`; an experiment binds one
 transport before planning. The M12A conformance pilot binds `json_content`.
 
+The protocol envelope remains `repository_action.v2`, while the frozen state-machine and prompt
+contract are versioned separately. Legacy `repository_action_state_machine_v1` requires a public
+test observation before finish. `repository_action_state_machine_v2` requires it only when the
+task declares public tests, allowing HWE repository tasks to use `apply_patch`, `inspect_diff`,
+and `finish` without inventing a model-visible test. A frozen descriptor binds the selected
+state-machine and prompt hashes, so the two semantics cannot be silently substituted.
+
 Each completion represents exactly one object with `protocol`, `action`, and `arguments` fields.
 The registered actions cover visible file listing and reads, unified-patch application, registered
 public tests, repository diff inspection, and candidate finish. The registry's strict schemas
@@ -31,3 +38,13 @@ candidate freeze, and separate Icarus 12 hidden verifier. Per-turn raw/normalize
 normalization decisions, validation results, action/tool linkage, state transitions, and terminal
 taxonomy are persisted for deterministic zero-network replay. Credentials remain in the trusted
 controller and never enter the agent or verifier container.
+
+## Online rLLM repository workflow
+
+`VeriGymRepositoryWorkflow` uses rLLM's `Workflow`, `RolloutEngine`, and trainable
+`Episode`/`Trajectory`/`Step` records. Every model turn emits exactly one protocol action and keeps
+the original prompt IDs, completion IDs, and log probabilities. A hash-bound filesystem broker
+delegates actions to a host-owned VeriGym episode. The training container receives neither the
+prepared source root, Docker socket, hidden assets, nor reference patch; it receives only bounded
+public observations and the final sparse outcome. veRL remains the training backend through the
+existing rLLM `AgentTrainer` path.

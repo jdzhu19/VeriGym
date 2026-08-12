@@ -19,6 +19,7 @@ from verigym_training_reference.online_workflow import VeriGymRtlWorkflow
 from verigym_training_reference.qwen35_verl_compat import (
     QWEN35_CAUSAL_ADAPTER_COMPATIBILITY_ACTIVE,
 )
+from verigym_training_reference.repository_workflow import VeriGymRepositoryWorkflow
 from verigym_training_reference.rllm_grpo_compat import (
     RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE,
 )
@@ -28,8 +29,10 @@ from verigym.experiments.state import atomic_dump_json
 
 _MANIFEST_ENV = "VERIGYM_ONLINE_TASK_MANIFEST"
 _BROKER_ENV = "VERIGYM_ONLINE_BROKER_ROOT"
+_REPOSITORY_BROKER_ENV = "VERIGYM_ONLINE_REPOSITORY_BROKER_ROOT"
 _OUTPUT_ENV = "VERIGYM_ONLINE_VERIFIER_OUTPUT"
 _REPORT_ENV = "VERIGYM_ONLINE_COMPLETION_REPORT"
+_WORKFLOW_ENV = "VERIGYM_ONLINE_WORKFLOW"
 
 
 def _canonical_hash(value: dict[str, Any]) -> str:
@@ -74,6 +77,13 @@ def _commit(environment_name: str) -> str:
         raise RuntimeError(f"{environment_name} is required")
     if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
         raise RuntimeError(f"{environment_name} is not a full Git commit")
+    return value
+
+
+def _workflow_kind() -> str:
+    value = os.environ.get(_WORKFLOW_ENV, "rtl")
+    if value not in {"rtl", "repository"}:
+        raise RuntimeError("VERIGYM_ONLINE_WORKFLOW must be 'rtl' or 'repository'")
     return value
 
 
@@ -151,6 +161,7 @@ def _completion_report(
         "schema_version": "1.0",
         "format_id": "verigym_rllm_verl_online_smoke_report_v1",
         "status": "completed",
+        "workflow_kind": _workflow_kind(),
         "task_manifest_hash": task_manifest["manifest_hash"],
         "input_policy_version_id": task_manifest["input_policy_version_id"],
         "input_policy_version_hash": task_manifest["input_policy_version_hash"],
@@ -213,24 +224,35 @@ def main(config: DictConfig) -> None:
         raise RuntimeError("rLLM-to-verl GRPO group compatibility hook did not activate")
     tasks, task_manifest = _load_task_manifest()
     output_value = os.environ.get(_OUTPUT_ENV)
-    broker_value = os.environ.get(_BROKER_ENV)
+    workflow_kind = _workflow_kind()
+    broker_environment = _BROKER_ENV if workflow_kind == "rtl" else _REPOSITORY_BROKER_ENV
+    broker_value = os.environ.get(broker_environment)
     if not output_value or not broker_value:
-        raise RuntimeError("online verifier broker and output paths are required")
+        raise RuntimeError("selected online broker and output paths are required")
     Path(output_value).resolve(strict=True)
-    verifier_broker = str(Path(broker_value).resolve(strict=True))
+    selected_broker = str(Path(broker_value).resolve(strict=True))
     dataset_identity = _canonical_hash(
         {"task_ids": sorted(task["task_id"] for task in tasks), "kind": "online-train-v1"}
     )[:16]
     name = f"verigym-online-{dataset_identity}"
     train_dataset = DatasetRegistry.register_dataset(name, tasks, "train")
     validation_dataset = DatasetRegistry.register_dataset(name, tasks[:1], "validation")
+    workflow_class = VeriGymRtlWorkflow
+    workflow_args: dict[str, Any] = {
+        "verifier_broker_root": selected_broker,
+        "plan_tokens": 96,
+        "solution_tokens": 512,
+    }
+    if workflow_kind == "repository":
+        workflow_class = VeriGymRepositoryWorkflow
+        workflow_args = {
+            "repository_broker_root": selected_broker,
+            "broker_timeout_s": 3600,
+            "action_tokens": None,
+        }
     trainer = AgentTrainer(
-        workflow_class=VeriGymRtlWorkflow,
-        workflow_args={
-            "verifier_broker_root": verifier_broker,
-            "plan_tokens": 96,
-            "solution_tokens": 512,
-        },
+        workflow_class=workflow_class,
+        workflow_args=workflow_args,
         train_dataset=train_dataset,
         val_dataset=validation_dataset,
         config=config,

@@ -133,3 +133,16 @@ dependencies remain external requirements; ordinary package tests do not import 
 The trainer container has no network, verifier source mount, or Docker socket. Candidate scoring is
 performed by a host-side, hash-bound broker so verifier-owned assets remain outside the policy
 process.
+
+For repository-level online rollouts, launch `run_qwen35_online_container.py` with
+`--workflow repository`. This selects `VeriGymRepositoryWorkflow`: rLLM owns the multi-turn loop
+and captures every turn's token IDs and log probabilities, while a separate host broker owns the
+VeriGym Docker workspace and hidden verification. The repository workflow uses
+`repository_action.v2` and does not impose an additional per-action output-token cap unless one
+is explicitly configured.
+
+`configs/training/qwen35_repository_rllm_verl_online_smoke_v1.json` is the bounded opt-in CVA6
+PR2170 example. It requires a frozen training split and source-lock v2 source through
+`VERIGYM_REPOSITORY_TRAINING_SPLIT` and `VERIGYM_CVA6_TRAINING_SOURCE`. Its 32K rollout capacity
+is an explicit four-RTX-3090 smoke resource envelope; the workflow itself still delegates turn
+count to the task budget and sets no per-action token override.

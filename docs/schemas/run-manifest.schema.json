@@ -1612,7 +1612,7 @@
           "type": "string"
         },
         "max_completion_calls": {
-          "maximum": 32,
+          "maximum": 128,
           "minimum": 1,
           "title": "Max Completion Calls",
           "type": "integer"
@@ -1665,6 +1665,10 @@
           "type": "string"
         },
         "state_machine_id": {
+          "enum": [
+            "repository_action_state_machine_v1",
+            "repository_action_state_machine_v2"
+          ],
           "title": "State Machine Id",
           "type": "string"
         },

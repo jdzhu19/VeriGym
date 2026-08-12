@@ -66,7 +66,9 @@ def _patch(path: str, before: str, after: str) -> str:
     )
 
 
-def _runtime(image: str, image_id: str) -> DockerRuntimeConfig:
+def online_docker_runtime_config(image: str, image_id: str) -> DockerRuntimeConfig:
+    """Build the shared network-none runtime used by online host-side episodes."""
+
     if os.getuid() == 0:
         raise RuntimeError("online Docker verification requires a non-root host identity")
     return DockerRuntimeConfig(
@@ -143,7 +145,7 @@ def score_online_candidate(
             mode=InteractionMode.AGENT,
             agent=submitter.descriptor.name,
             runtime="docker",
-            docker_config=_runtime(
+            docker_config=online_docker_runtime_config(
                 str(binding["verifier_image"]), str(binding["verifier_image_id"])
             ),
             seed=int(request.get("seed", 20260809)),
@@ -171,4 +173,4 @@ def score_online_candidate(
     }
 
 
-__all__ = ["score_online_candidate"]
+__all__ = ["online_docker_runtime_config", "score_online_candidate"]

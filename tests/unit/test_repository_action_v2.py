@@ -10,6 +10,7 @@ from verigym.protocols.repository_action import (
     extract_json_content,
     extract_transport_action,
     prompt_contract,
+    repository_action_state_failure,
     resolve_repository_action_protocol,
     validate_canonical_action,
     validate_repository_action_protocol_binding,
@@ -233,6 +234,7 @@ def test_registry_prompt_and_resolver_are_deterministic_and_fail_closed() -> Non
     assert first == second
     assert first is not None
     assert first.action_registry_hash
+    assert first.state_machine_id == "repository_action_state_machine_v2"
     assert action_registry()["one_action_per_turn"] is True
     assert prompt_contract()["registry_hash"] == first.action_registry_hash
     validate_repository_action_protocol_binding(expected=first, resolved=second)
@@ -240,6 +242,57 @@ def test_registry_prompt_and_resolver_are_deterministic_and_fail_closed() -> Non
         validate_repository_action_protocol_binding(
             expected=first,
             resolved=first.model_copy(update={"action_transport": "native_tool_call"}),
+        )
+
+
+def test_versioned_state_machine_preserves_legacy_and_allows_no_public_test_finish() -> None:
+    legacy = prompt_contract("repository_action_state_machine_v1")
+    current = prompt_contract("repository_action_state_machine_v2")
+    assert legacy["prompt_contract_id"] == "repository_action_v2_prompt_v1"
+    assert "state_machine_id" not in legacy
+    assert current["prompt_contract_id"] == "repository_action_v2_prompt_v2"
+    assert current["state_machine_id"] == "repository_action_state_machine_v2"
+
+    common = {
+        "patch_applied": True,
+        "public_observed": False,
+        "diff_observed": True,
+        "finished": False,
+    }
+    assert (
+        repository_action_state_failure(
+            "finish",
+            state_machine_id="repository_action_state_machine_v2",
+            public_test_required=False,
+            **common,
+        )
+        is None
+    )
+    assert (
+        repository_action_state_failure(
+            "finish",
+            state_machine_id="repository_action_state_machine_v2",
+            public_test_required=True,
+            **common,
+        )
+        == "agent_finish_invalid"
+    )
+    assert (
+        repository_action_state_failure(
+            "finish",
+            state_machine_id="repository_action_state_machine_v1",
+            public_test_required=False,
+            **common,
+        )
+        == "agent_finish_invalid"
+    )
+
+
+def test_protocol_spec_rejects_mixed_prompt_and_state_machine_versions() -> None:
+    with pytest.raises(ValueError, match="versions must match"):
+        RepositoryActionProtocolSpec(
+            prompt_contract_id="repository_action_v2_prompt_v1",
+            state_machine_id="repository_action_state_machine_v2",
         )
 
 

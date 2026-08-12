@@ -33,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--campaign-workspace", type=Path, required=True)
     parser.add_argument("--gpu-ids", default="0,1,2,3")
+    parser.add_argument("--workflow", choices=("rtl", "repository"), default="rtl")
     parser.add_argument("trainer_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -137,7 +138,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise RuntimeError("campaign workspace is unavailable")
     container_task_manifest = _container_workspace_path(task_manifest, workspace)
 
-    broker_root = workspace / "verifier-broker"
+    broker_root = workspace / (
+        "verifier-broker" if arguments.workflow == "rtl" else "repository-broker"
+    )
     verifier_output = workspace / "verifier-runs"
     process_tmp = workspace / "process-tmp"
     container_cache = workspace / "container-cache"
@@ -169,7 +172,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         encoding="utf-8",
     )
     group_path.write_text(f"root:x:0:\nverigym:x:{os.getgid()}:verigym\n", encoding="utf-8")
-    broker_report = workspace / "online-verifier-broker-report.json"
+    broker_report = workspace / (
+        "online-verifier-broker-report.json"
+        if arguments.workflow == "rtl"
+        else "online-repository-broker-report.json"
+    )
     completion_report = workspace / "online-completion-report.json"
 
     broker_environment = {
@@ -177,10 +184,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         for name in ["HOME", "LANG", "LC_ALL", "PATH", "PYTHONPATH"]
         if name in os.environ
     }
+    broker_environment.update(
+        {
+            "HF_HOME": str(workspace / "host-hf-home"),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "TMPDIR": str(process_tmp),
+            "TORCH_HOME": str(container_cache / "host-torch"),
+            "XDG_CACHE_HOME": str(container_cache / "host-xdg"),
+        }
+    )
+    broker_script = (
+        "run_qwen35_online_verifier_broker.py"
+        if arguments.workflow == "rtl"
+        else "run_qwen35_online_repository_broker.py"
+    )
     broker = subprocess.Popen(
         [
             str(verifier_python),
-            str(repository / "scripts/run_qwen35_online_verifier_broker.py"),
+            str(repository / "scripts" / broker_script),
             "--task-manifest",
             str(task_manifest),
             "--source-root",
@@ -239,6 +260,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "TRANSFORMERS_OFFLINE": "1",
         "TRITON_CACHE_DIR": str(_container_workspace_path(container_cache / "triton", workspace)),
         "VERIGYM_ONLINE_BROKER_ROOT": str(_container_workspace_path(broker_root, workspace)),
+        "VERIGYM_ONLINE_REPOSITORY_BROKER_ROOT": str(
+            _container_workspace_path(broker_root, workspace)
+        ),
         "VERIGYM_ONLINE_COMPLETION_REPORT": str(
             _container_workspace_path(completion_report, workspace)
         ),
@@ -246,6 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "VERIGYM_ONLINE_VERIFIER_OUTPUT": str(
             _container_workspace_path(verifier_output, workspace)
         ),
+        "VERIGYM_ONLINE_WORKFLOW": arguments.workflow,
         "VERIGYM_RLLM_COMMIT": _git_head(rllm_root),
         "VERIGYM_SOURCE_COMMIT": _git_head(repository),
         "VERIGYM_TRAINING_IMAGE_ID": arguments.expected_image_id,

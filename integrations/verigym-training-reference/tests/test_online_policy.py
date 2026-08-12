@@ -214,6 +214,99 @@ def test_export_online_policy_registers_compact_successor(tmp_path: Path) -> Non
     assert str(tmp_path) not in (output / "policy-version.json").read_text(encoding="utf-8")
 
 
+def test_export_online_policy_accepts_isolated_repository_broker(tmp_path: Path) -> None:
+    model = _model_root(tmp_path / "model")
+    parent, _ = _parent_policy(tmp_path, model)
+    completion, broker, tasks, checkpoint = _online_inputs(tmp_path, parent)
+    completion_value = json.loads(completion.read_text(encoding="utf-8"))
+    completion_value["workflow_kind"] = "repository"
+    completion_identity = dict(completion_value)
+    completion_identity.pop("report_hash")
+    completion_value["report_hash"] = content_hash(completion_identity)
+    completion.write_text(json.dumps(completion_value), encoding="utf-8")
+    broker_value = json.loads(broker.read_text(encoding="utf-8"))
+    sessions = [
+        {
+            "session_id": record["request_hash"],
+            "task_id": record["task_id"],
+            "run_id": f"run-{index}",
+            "infrastructure_valid": record["infrastructure_valid"],
+            "resolved": record["resolved"],
+            "terminal_hash": record["response_hash"],
+            "error_category": None,
+        }
+        for index, record in enumerate(broker_value["requests"])
+    ]
+    repository_base = {
+        "schema_version": "1.0",
+        "format_id": "verigym_online_repository_broker_report_v1",
+        "task_manifest_hash": broker_value["task_manifest_hash"],
+        "session_count": len(sessions),
+        "infrastructure_invalid_count": 0,
+        "resolved_count": 1,
+        "sessions": sessions,
+        "hidden_assets_exported_to_training_container": False,
+        "source_root_exported_to_training_container": False,
+        "docker_socket_exported_to_training_container": False,
+        "credential_values_included": False,
+    }
+    _write_hashed(broker, repository_base, "report_hash")
+    output = tmp_path / "registered-policy"
+
+    export_online_policy_version(
+        completion_report=completion,
+        broker_report=broker,
+        task_manifest=tasks,
+        checkpoint_root=checkpoint,
+        parent_manifest=parent,
+        model_root=model,
+        output=output,
+        policy_version_id="policy-v1",
+        learning_rate=1e-6,
+    )
+
+    reward = json.loads((output / "reward-manifest.json").read_text(encoding="utf-8"))
+    assert reward["workflow_kind"] == "repository"
+    assert reward["broker_format_id"] == "verigym_online_repository_broker_report_v1"
+    assert reward["rollout_count"] == 2
+    assert reward["rollout_records"] == sessions
+
+
+def test_export_online_policy_rejects_repository_broker_for_rtl_workflow(
+    tmp_path: Path,
+) -> None:
+    model = _model_root(tmp_path / "model")
+    parent, _ = _parent_policy(tmp_path, model)
+    completion, broker, tasks, checkpoint = _online_inputs(tmp_path, parent)
+    broker_value = json.loads(broker.read_text(encoding="utf-8"))
+    repository_base = {
+        "schema_version": "1.0",
+        "format_id": "verigym_online_repository_broker_report_v1",
+        "task_manifest_hash": broker_value["task_manifest_hash"],
+        "session_count": 2,
+        "infrastructure_invalid_count": 0,
+        "resolved_count": 1,
+        "sessions": [{"task_id": "suite/task"}, {"task_id": "suite/task"}],
+        "hidden_assets_exported_to_training_container": False,
+        "source_root_exported_to_training_container": False,
+        "docker_socket_exported_to_training_container": False,
+    }
+    _write_hashed(broker, repository_base, "report_hash")
+
+    with pytest.raises(ConfigurationError, match="workflow differs"):
+        export_online_policy_version(
+            completion_report=completion,
+            broker_report=broker,
+            task_manifest=tasks,
+            checkpoint_root=checkpoint,
+            parent_manifest=parent,
+            model_root=model,
+            output=tmp_path / "registered-policy",
+            policy_version_id="policy-v1",
+            learning_rate=1e-6,
+        )
+
+
 def test_export_online_policy_rejects_parent_mismatch_atomically(tmp_path: Path) -> None:
     model = _model_root(tmp_path / "model")
     parent, _ = _parent_policy(tmp_path, model)

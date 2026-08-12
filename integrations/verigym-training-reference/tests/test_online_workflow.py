@@ -7,6 +7,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from verigym.schemas.task import TaskRef
+from verigym.suites.repo_api_protocol.adapter import RepositoryApiProtocolSuite
+
+from verigym_training_reference import build_public_input_record
 from verigym_training_reference.rtl import extract_rtl_candidate
 
 
@@ -31,6 +35,21 @@ def test_online_workflow_activates_grpo_group_bridge_inside_ray_worker() -> None
 
     assert "activate_rllm_verl_grpo_group_compatibility()" in source
     assert "GRPO group bridge is unavailable in the Ray worker" in source
+
+
+def test_repository_workflow_uses_rollout_tokens_and_no_training_side_runtime() -> None:
+    source = (
+        Path(__file__).parents[1] / "src" / "verigym_training_reference" / "repository_workflow.py"
+    ).read_text(encoding="utf-8")
+
+    assert "class VeriGymRepositoryWorkflow(Workflow)" in source
+    assert "rollout_engine.get_model_response" in source
+    assert "prompt_ids" in source and "completion_ids" in source and "logprobs" in source
+    assert "RepositoryBrokerClient" in source
+    assert "import docker" not in source
+    assert "import subprocess" not in source
+    assert "DockerRuntime" not in source
+    assert "source_root=" not in source
 
 
 def test_extract_rtl_candidate_prefers_explicit_tags() -> None:
@@ -101,6 +120,44 @@ def test_online_manifest_embeds_only_public_task_material(tmp_path: Path) -> Non
     assert manifest["tasks"][0]["public_record"] == public
     assert str(tmp_path) not in manifest_text
     assert "source_root" not in manifest_text
+
+
+def test_patch_public_record_exports_identity_without_repository_bytes(tmp_path: Path) -> None:
+    suite = RepositoryApiProtocolSuite()
+    task = suite.load_task(
+        TaskRef(
+            id="repo-api-protocol/protocol-valid-hold",
+            suite="repo-api-protocol",
+            native_id="protocol-valid-hold",
+        )
+    )
+    repository = dict(task.metadata["repository_repair"])
+    repository["public_test_ids"] = []
+    patch_task = task.model_copy(
+        update={
+            "interaction": task.interaction.model_copy(
+                update={
+                    "final_submission": task.interaction.final_submission.model_copy(
+                        update={"kind": "patch", "path": None}
+                    )
+                }
+            ),
+            "metadata": {**task.metadata, "repository_repair": repository},
+        }
+    )
+    visible = tmp_path / "visible"
+    visible.mkdir()
+    (visible / "README.md").write_text("public instructions\n", encoding="utf-8")
+
+    record = build_public_input_record(patch_task, visible)
+
+    assert record["submission_kind"] == "patch"
+    assert record["public_test_ids"] == []
+    assert record["hidden_assets_included"] is False
+    assert "candidate_skeleton" not in record
+    assert "source_root" not in json.dumps(record)
+    identity = dict(record)
+    assert identity.pop("record_hash") == _canonical_hash(identity)
 
 
 def test_online_broker_returns_hash_bound_sparse_outcome(tmp_path: Path) -> None:

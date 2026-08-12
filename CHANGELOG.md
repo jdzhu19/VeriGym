@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-No unreleased changes.
+- Added an isolated, multi-turn `repository_action.v2` workflow for online Qwen3.5 training with
+  rLLM and veRL. A host-owned broker retains the live repository, Docker runtime, and verifier;
+  the training container receives only frozen public inputs, bounded observations, and sparse
+  terminal rewards.
+- Added a versioned repository state machine that permits tasks without public tests to finish
+  after a successful patch and diff inspection, while retaining exact v1 replay compatibility.
+- Extended online policy export to register both legacy verifier-broker and repository-broker
+  rollouts without changing an existing frozen workflow identity.
 
 ## 0.1.0 alpha - 2026-08-02
 
