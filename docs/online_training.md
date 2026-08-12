@@ -103,6 +103,8 @@ FSDP parameter and optimizer offload, a 0.5 vLLM memory envelope, and 256 MiB we
 buckets keep the A30 envelope bounded. A six-card native run additionally shards the actor over all
 scheduler-owned GPUs while keeping tensor parallelism at two. Weight synchronization remains
 enabled, and the completion report still requires a changed output adapter.
+The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the
+repository smoke uses `retry_limit=1` for exactly one attempt and no retry.
 
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
