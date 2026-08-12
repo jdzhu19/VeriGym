@@ -105,6 +105,7 @@ def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() 
     assert "actor_rollout_ref.rollout.free_cache_engine=False" in stage["argv"]
     assert "++actor_rollout_ref.rollout.enable_sleep_mode=False" in stage["argv"]
     assert "actor_rollout_ref.rollout.gpu_memory_utilization=0.5" in stage["argv"]
+    assert "++actor_rollout_ref.actor.fsdp_config.offload_policy=True" in stage["argv"]
     assert (
         "actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=256"
         in stage["argv"]

@@ -114,11 +114,14 @@ FSDP parameter and optimizer offload, a 0.5 vLLM memory envelope, and 256 MiB we
 buckets keep the A30 envelope bounded. A clean four-card A30 attempt at 0.4 loaded the model but
 could not allocate even one KV-cache block, before any rollout or broker session, so 0.4 is not a
 viable envelope for this frozen model and context. A prior 0.5 attempt reached rollout generation
-but exhausted memory during actor log-probability computation on non-exclusive GPUs; it did not
-isolate the envelope from external GPU load. Job-exclusive scheduling is therefore required while
-the viable 0.5 envelope is retained. A multi-card native run shards the actor over all
-scheduler-owned GPUs while keeping tensor parallelism at two. Weight synchronization remains
-enabled, and the completion report still requires a changed output adapter.
+but exhausted memory during actor log-probability computation on non-exclusive GPUs. A subsequent
+job-exclusive four-card attempt reproduced the actor unshard failure: the resident vLLM process
+used 12.40 GiB and the actor process used 10.13 GiB, leaving less than the 1.89 GiB required by the
+next FSDP all-gather. The repository smoke therefore enables FSDP2's native actor CPU-offload
+policy while retaining the viable 0.5 rollout envelope and job-exclusive scheduling. A multi-card
+native run shards the actor over all scheduler-owned GPUs while keeping tensor parallelism at two.
+Weight synchronization remains enabled, and the completion report still requires a changed output
+adapter.
 The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the
 repository smoke uses `retry_limit=1` for exactly one attempt and no retry.
 
