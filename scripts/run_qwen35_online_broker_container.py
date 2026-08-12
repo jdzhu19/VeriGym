@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -26,6 +27,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-root", type=Path, required=True)
     parser.add_argument("--verifier-output", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--docker-helper", type=Path)
+    parser.add_argument("--expected-docker-helper-sha256")
     return parser
 
 
@@ -78,6 +81,36 @@ def _mount(path: Path, mode: str) -> str:
     return f"{path}:{path}:{mode}"
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _docker_helper(
+    docker: Path,
+    helper: Path | None,
+    expected_sha256: str | None,
+) -> Path | None:
+    if (helper is None) != (expected_sha256 is None):
+        raise RuntimeError("Docker helper path and SHA-256 must be supplied together")
+    if helper is None or expected_sha256 is None:
+        return None
+    resolved = _safe_file(helper)
+    if resolved == docker or resolved.parent != docker.parent:
+        raise RuntimeError("Docker helper must be a distinct sibling of the Docker executable")
+    if len(expected_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in expected_sha256
+    ):
+        raise RuntimeError("expected Docker helper SHA-256 is malformed")
+    digest = _sha256_file(resolved)
+    if digest != expected_sha256:
+        raise RuntimeError("Docker helper identity differs from its pin")
+    return resolved
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     image = _inspect("image", arguments.image)
@@ -96,6 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     _volume(arguments.source_volume, "source")
     scratch_mountpoint = _volume(arguments.scratch_volume, "scratch")
     docker = Path(shutil.which("docker") or "").resolve(strict=True)
+    docker_helper = _docker_helper(
+        docker,
+        arguments.docker_helper,
+        arguments.expected_docker_helper_sha256,
+    )
     socket = Path("/var/run/docker.sock").resolve(strict=True)
     socket_mode = os.lstat(socket).st_mode
     if not stat.S_ISSOCK(socket_mode):
@@ -139,6 +177,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--volume",
         f"{docker}:{docker}:ro",
     ]
+    if docker_helper is not None:
+        command.extend(["--volume", _mount(docker_helper, "ro")])
     host_mounts = {
         repository: "ro",
         environment_root: "ro",

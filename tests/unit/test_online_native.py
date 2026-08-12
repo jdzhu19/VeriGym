@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -207,3 +208,20 @@ def test_broker_container_keeps_source_in_a_named_volume() -> None:
     assert '"--source-root",\n            "/verigym-source"' in source
     assert 'f"{socket}:{socket}:rw"' in source
     assert '"--network",\n        "none"' in source
+
+
+def test_broker_container_binds_an_explicit_hash_locked_docker_helper(
+    tmp_path: Path,
+) -> None:
+    module = _script("run_qwen35_online_broker_container.py")
+    docker = tmp_path / "docker"
+    helper = tmp_path / "docker_new"
+    docker.write_bytes(b"site-wrapper")
+    helper.write_bytes(b"upstream-docker-cli")
+    expected = hashlib.sha256(helper.read_bytes()).hexdigest()
+
+    assert module._docker_helper(docker, helper, expected) == helper.resolve()
+    with pytest.raises(RuntimeError, match="identity differs"):
+        module._docker_helper(docker, helper, "0" * 64)
+    with pytest.raises(RuntimeError, match="supplied together"):
+        module._docker_helper(docker, helper, None)

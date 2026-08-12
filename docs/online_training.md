@@ -70,6 +70,12 @@ hash-bound filesystem protocol. The native trainer receives only the public task
 bounded observations, sparse outcomes, model, adapter, and code; it receives no source-root or
 Docker-socket argument. Both sides use a shared campaign directory for requests and responses.
 
+Some HPC sites replace `docker` with a wrapper that delegates to a sibling executable. In that
+case the broker launcher accepts `--docker-helper` only together with
+`--expected-docker-helper-sha256`, verifies that it is a distinct sibling of the selected Docker
+executable, and mounts only that fixed file read-only. Do not mount the containing system binary
+directory into the broker container.
+
 The native launcher requires a numeric scheduler-provided `CUDA_VISIBLE_DEVICES`, samples GPU
 contention before importing PyTorch, and supports 4, 6, or 8 GPUs. It couples world size, FSDP
 size, rLLM parallelism, and GRPO rollout group size (`n=N`) and writes the resolved values to a
