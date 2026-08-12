@@ -83,6 +83,7 @@ def test_online_container_keeps_cupy_cache_in_campaign_workspace() -> None:
         trainer_source
     )
     assert "FSDP2 Torch-fused training requires its pinned external library" in trainer_source
+    assert "QWEN35_FSDP2_FUSED_HEAD_COMPATIBILITY_ACTIVE" in trainer_source
     assert '"effective_policy_update_verified": True' in trainer_source
     assert 'update_stats["changed_tensor_count"] <= 0' in trainer_source
 

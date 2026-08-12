@@ -270,8 +270,10 @@ def main(config: DictConfig) -> None:
         if config.actor_rollout_ref.model.external_lib != fused_module_name:
             raise RuntimeError("FSDP2 Torch-fused training requires its pinned external library")
         fused_module = importlib.import_module(fused_module_name)
-        if not fused_module.QWEN35_FSDP2_FUSED_WRAP_COMPATIBILITY_ACTIVE:
-            raise RuntimeError("Qwen3.5 FSDP2 fused-head wrap compatibility hook did not activate")
+        if not fused_module.QWEN35_FSDP2_FUSED_HEAD_COMPATIBILITY_ACTIVE:
+            raise RuntimeError(
+                "Qwen3.5 FSDP2 fused-head module compatibility hook did not activate"
+            )
     if not RLLM_VERL_GRPO_GROUP_COMPATIBILITY_ACTIVE:
         raise RuntimeError("rLLM-to-verl GRPO group compatibility hook did not activate")
     tasks, task_manifest = _load_task_manifest()

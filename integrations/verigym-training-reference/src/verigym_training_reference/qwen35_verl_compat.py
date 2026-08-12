@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import types
 from collections.abc import MutableMapping, Sequence
-from typing import Any
+from typing import Any, cast
 
-_FSDP2_SELECTOR_PATCH_MARKER = "_verigym_qwen35_fused_head_compatible"
+_FSDP2_FUSED_FORWARD_PATCH_MARKER = "_verigym_qwen35_fused_head_compatible"
 _QWEN35_CAUSAL_MODEL_TYPES = {
     "qwen3_5",
     "qwen3_5_moe",
@@ -47,47 +48,140 @@ def activate_qwen35_causal_adapter_compatibility() -> bool:
     return _remove_qwen35_image_mappings(AutoModelForImageTextToText)
 
 
-def activate_fsdp2_fused_wrap_compatibility(fsdp_utils: Any | None = None) -> bool:
-    """Keep Qwen3.5's fused-output head in the root FSDP2 unit.
+def _call_fused_head(
+    head: Any,
+    hidden_states: Any,
+    input_ids: Any,
+    temperature: float,
+    fused_linear_factory: Any,
+) -> tuple[Any, Any]:
+    """Run the bounded projection through the head's FSDP2 module hooks."""
 
-    Verl's FSDP2 selector normally wraps ``lm_head`` independently. Its Torch fused PPO
-    forward reads ``lm_head.weight`` directly, bypassing the head module's pre-forward
-    all-gather hook and mixing a CPU-offloaded sharded DTensor with CUDA hidden states.
-    Leaving only that head in the root FSDP2 unit makes the root pre-forward hook expose a
-    full CUDA Tensor for the bounded fused projection and preserves normal FSDP2 backward.
+    original_forward = head.forward
+
+    def fused_forward(
+        module: Any,
+        head_hidden_states: Any,
+        head_input_ids: Any,
+        head_temperature: float,
+    ) -> tuple[Any, Any]:
+        return cast(
+            tuple[Any, Any],
+            fused_linear_factory().forward(
+                hidden_states=head_hidden_states,
+                vocab_weights=module.weight,
+                input_ids=head_input_ids,
+                temperature=head_temperature,
+            ),
+        )
+
+    head.forward = types.MethodType(fused_forward, head)
+    try:
+        return cast(tuple[Any, Any], head(hidden_states, input_ids, temperature))
+    finally:
+        head.forward = original_forward
+
+
+def activate_fsdp2_fused_head_compatibility(dense_common: Any | None = None) -> bool:
+    """Route Qwen3.5's bounded fused projection through its FSDP2 head module.
+
+    Verl reads ``lm_head.weight`` directly in its Torch fused PPO forward. An independently
+    FSDP2-wrapped, CPU-offloaded head is therefore still a sharded DTensor. Calling the head
+    module itself runs FSDP2's all-gather and reshard hooks around only the bounded projection,
+    avoiding both mixed Tensor/DTensor operations and a full head resident during the backbone.
     """
 
-    resolved_fsdp_utils: Any = fsdp_utils
-    if resolved_fsdp_utils is None:
+    resolved_dense_common: Any = dense_common
+    if resolved_dense_common is None:
         try:
-            resolved_fsdp_utils = importlib.import_module("verl.utils.fsdp_utils")
+            resolved_dense_common = importlib.import_module("verl.models.transformers.dense_common")
         except ModuleNotFoundError:
             return False
-    original_selector = resolved_fsdp_utils._select_fsdp2_wrap_targets
-    if getattr(original_selector, _FSDP2_SELECTOR_PATCH_MARKER, False):
+    original_forward = resolved_dense_common.forward_with_torch_backend
+    if getattr(original_forward, _FSDP2_FUSED_FORWARD_PATCH_MARKER, False):
         return True
 
-    def compatible_selector(model: Any, transformer_classes: Any) -> list[Any]:
-        selected = list(original_selector(model, transformer_classes))
-        if (
-            getattr(getattr(model, "config", None), "model_type", None)
-            not in _QWEN35_CAUSAL_MODEL_TYPES
+    def compatible_forward(
+        model: Any,
+        input_ids: Any = None,
+        attention_mask: Any = None,
+        position_ids: Any = None,
+        past_key_values: Any = None,
+        inputs_embeds: Any = None,
+        labels: Any = None,
+        use_cache: Any = None,
+        output_attentions: Any = None,
+        output_hidden_states: Any = None,
+        return_dict: Any = None,
+        cache_position: Any = None,
+        logits_to_keep: Any = 0,
+        temperature: float = 1.0,
+        **loss_kwargs: Any,
+    ) -> Any:
+        if getattr(getattr(model, "config", None), "model_type", None) not in (
+            _QWEN35_CAUSAL_MODEL_TYPES
         ):
-            return selected
-        output_heads = {
-            id(module)
-            for name, module in model.named_modules()
-            if name.rsplit(".", 1)[-1] == "lm_head"
-        }
-        if not output_heads:
-            raise RuntimeError("Qwen3.5 FSDP2 compatibility could not identify lm_head")
-        filtered = [module for module in selected if id(module) not in output_heads]
-        if len(filtered) == len(selected):
-            raise RuntimeError("Qwen3.5 FSDP2 selector did not independently wrap lm_head")
-        return filtered
+            return original_forward(
+                model,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                logits_to_keep=logits_to_keep,
+                temperature=temperature,
+                **loss_kwargs,
+            )
 
-    setattr(compatible_selector, _FSDP2_SELECTOR_PATCH_MARKER, True)
-    resolved_fsdp_utils._select_fsdp2_wrap_targets = compatible_selector
+        fsdp = importlib.import_module("torch.distributed.fsdp")
+        torch = importlib.import_module("torch")
+        torch_functional = importlib.import_module("verl.utils.experimental.torch_functional")
+
+        if not isinstance(model.lm_head, fsdp.FSDPModule):
+            raise RuntimeError("Qwen3.5 fused PPO compatibility requires an FSDP2 lm_head")
+        outputs = resolved_dense_common.forward_base_model(
+            model,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            cache_position=cache_position,
+        )
+        if not return_dict:
+            raise NotImplementedError("Qwen3.5 fused PPO compatibility requires return_dict")
+        if labels is not None:
+            rolled_labels = torch.roll(labels, shifts=-1, dims=-1)
+        elif input_ids is not None:
+            rolled_labels = torch.roll(input_ids, shifts=-1, dims=-1)
+        else:
+            raise RuntimeError("Qwen3.5 fused PPO forward requires labels or input_ids")
+        log_probs, entropy = _call_fused_head(
+            model.lm_head,
+            outputs[0],
+            rolled_labels,
+            temperature,
+            torch_functional.FusedLinearForPPO,
+        )
+        return resolved_dense_common.CausalLMOutputForPPO(
+            log_probs=log_probs,
+            entropy=entropy,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+    setattr(compatible_forward, _FSDP2_FUSED_FORWARD_PATCH_MARKER, True)
+    resolved_dense_common.forward_with_torch_backend = compatible_forward
     return True
 
 

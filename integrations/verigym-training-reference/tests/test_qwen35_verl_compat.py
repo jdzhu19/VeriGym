@@ -3,8 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from verigym_training_reference.qwen35_verl_compat import (
+    _call_fused_head,
     _remove_qwen35_image_mappings,
-    activate_fsdp2_fused_wrap_compatibility,
+    activate_fsdp2_fused_head_compatibility,
     expand_qwen35_gdn_lora_slices,
     map_qwen35_causal_weight_name_for_vllm,
 )
@@ -31,14 +32,28 @@ class _FakeCombinedTensor:
         return ("q-b", "k-b", "v-b")
 
 
-class _FakeFsdpModel:
-    def __init__(self, model_type: str = "qwen3_5") -> None:
-        self.config = SimpleNamespace(model_type=model_type)
-        self.layer = object()
-        self.lm_head = object()
+class _FakeHead:
+    def __init__(self) -> None:
+        self.weight = "weight"
+        self.calls: list[tuple[object, ...]] = []
 
-    def named_modules(self):
-        return [("", self), ("model.layers.0", self.layer), ("lm_head", self.lm_head)]
+    def forward(self, *args: object) -> str:
+        self.calls.append(("original", *args))
+        return "original"
+
+    def __call__(self, *args: object) -> object:
+        self.calls.append(("hook", *args))
+        return self.forward(*args)
+
+
+class _FakeFusedLinear:
+    def forward(self, **kwargs: object) -> tuple[object, object]:
+        return kwargs["hidden_states"], kwargs["vocab_weights"]
+
+
+class _FailingFusedLinear:
+    def forward(self, **kwargs: object) -> tuple[object, object]:
+        raise RuntimeError("projection failed")
 
 
 def test_qwen35_compatibility_removes_only_image_text_dispatch() -> None:
@@ -74,35 +89,62 @@ def test_qwen35_compatibility_expands_combined_gdn_qkv_lora() -> None:
     assert expanded_b == ["q-b", "k-b", "v-b", "z-b"]
 
 
-def test_fsdp2_fused_wrap_patch_keeps_qwen35_text_head_in_root_unit() -> None:
-    model = _FakeFsdpModel(model_type="qwen3_5_text")
-    fsdp_utils = SimpleNamespace(
-        _select_fsdp2_wrap_targets=lambda model, classes: [model.layer, model.lm_head]
+def test_fused_head_call_runs_module_hook_and_restores_original_forward() -> None:
+    head = _FakeHead()
+
+    assert _call_fused_head(head, "hidden", "ids", 0.5, _FakeFusedLinear) == (
+        "hidden",
+        "weight",
     )
-
-    assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
-    assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
-    assert fsdp_utils._select_fsdp2_wrap_targets(model, ["Layer"]) == [model.layer]
+    assert head.calls == [("hook", "hidden", "ids", 0.5)]
+    assert head("next") == "original"
 
 
-def test_fsdp2_fused_wrap_patch_covers_qwen35_moe_text_model_type() -> None:
-    model = _FakeFsdpModel(model_type="qwen3_5_moe_text")
-    fsdp_utils = SimpleNamespace(
-        _select_fsdp2_wrap_targets=lambda model, classes: [model.layer, model.lm_head]
-    )
+def test_fused_head_call_restores_original_forward_after_failure() -> None:
+    head = _FakeHead()
 
-    assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
-    assert fsdp_utils._select_fsdp2_wrap_targets(model, ["Layer"]) == [model.layer]
+    try:
+        _call_fused_head(head, "hidden", "ids", 0.5, _FailingFusedLinear)
+    except RuntimeError as error:
+        assert str(error) == "projection failed"
+    else:
+        raise AssertionError("failing fused projection did not propagate")
+
+    assert head("next") == "original"
 
 
-def test_fsdp2_fused_wrap_patch_leaves_other_models_unchanged() -> None:
-    model = _FakeFsdpModel(model_type="qwen2")
-    fsdp_utils = SimpleNamespace(
-        _select_fsdp2_wrap_targets=lambda model, classes: [model.layer, model.lm_head]
-    )
+def test_fused_head_compatibility_is_idempotent_and_leaves_other_models_unchanged() -> None:
+    calls: list[tuple[object, ...]] = []
 
-    assert activate_fsdp2_fused_wrap_compatibility(fsdp_utils) is True
-    assert fsdp_utils._select_fsdp2_wrap_targets(model, ["Layer"]) == [
-        model.layer,
-        model.lm_head,
+    def original_forward(model: object, *args: object, **kwargs: object) -> str:
+        calls.append((model, *args, kwargs))
+        return "original"
+
+    dense_common = SimpleNamespace(forward_with_torch_backend=original_forward)
+    assert activate_fsdp2_fused_head_compatibility(dense_common) is True
+    patched = dense_common.forward_with_torch_backend
+    assert activate_fsdp2_fused_head_compatibility(dense_common) is True
+    assert dense_common.forward_with_torch_backend is patched
+
+    model = SimpleNamespace(config=SimpleNamespace(model_type="qwen2"))
+    assert patched(model, input_ids="ids", temperature=0.5) == "original"
+    assert calls == [
+        (
+            model,
+            {
+                "input_ids": "ids",
+                "attention_mask": None,
+                "position_ids": None,
+                "past_key_values": None,
+                "inputs_embeds": None,
+                "labels": None,
+                "use_cache": None,
+                "output_attentions": None,
+                "output_hidden_states": None,
+                "return_dict": None,
+                "cache_position": None,
+                "logits_to_keep": 0,
+                "temperature": 0.5,
+            },
+        )
     ]
