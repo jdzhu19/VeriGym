@@ -135,6 +135,37 @@ def test_native_runtime_binds_path_free_glibc_loader_identities() -> None:
     assert manifest.compatibility_layer.seccomp_acceleration is None
 
 
+def test_native_runtime_binds_path_free_gpu_toolchain() -> None:
+    value = _manifest()
+    value["gpu_toolchain"] = {
+        "nccl_library_sha256": "1" * 64,
+        "nccl_source_commit": "2" * 40,
+        "nccl_cuda_version": "12.4.131",
+        "c_compiler_sha256": "3" * 64,
+        "c_compiler_version": "gcc (GCC) 12.2.0",
+    }
+
+    manifest = seal_runtime_manifest(value)
+
+    assert manifest.gpu_toolchain is not None
+    assert manifest.gpu_toolchain.nccl_cuda_version == "12.4.131"
+    assert "/" not in manifest.gpu_toolchain.c_compiler_version
+
+
+def test_native_runtime_rejects_invalid_gpu_toolchain_identity() -> None:
+    value = _manifest()
+    value["gpu_toolchain"] = {
+        "nccl_library_sha256": "not-a-hash",
+        "nccl_source_commit": "2" * 40,
+        "nccl_cuda_version": "12.4.131",
+        "c_compiler_sha256": "3" * 64,
+        "c_compiler_version": "gcc (GCC) 12.2.0",
+    }
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        seal_runtime_manifest(value)
+
+
 def test_native_runtime_rejects_incomplete_glibc_loader_identity() -> None:
     value = _manifest()
     value["compatibility_layer"] = {

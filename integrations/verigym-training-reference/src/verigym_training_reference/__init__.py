@@ -17,6 +17,7 @@ from .heldout import (
 )
 from .native_runtime import (
     GpuHealthSample,
+    NativeGpuToolchain,
     NativeTrainingRuntimeManifest,
     parse_visible_devices,
     replace_topology_overrides,
@@ -53,6 +54,7 @@ __all__ = [
     "CampaignStageSpec",
     "GpuHealthSample",
     "ModelSnapshotIdentity",
+    "NativeGpuToolchain",
     "NativeTrainingRuntimeManifest",
     "OnlineRewardResult",
     "RepositoryHeldoutFreezeManifest",

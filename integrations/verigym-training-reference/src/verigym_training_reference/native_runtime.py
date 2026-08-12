@@ -82,6 +82,30 @@ class NativeCompatibilityLayer(StrictModel):
         return self
 
 
+class NativeGpuToolchain(StrictModel):
+    """Path-free identity of the qualified native GPU/JIT toolchain."""
+
+    nccl_library_sha256: str
+    nccl_source_commit: str
+    nccl_cuda_version: str = Field(min_length=1, max_length=32)
+    c_compiler_sha256: str
+    c_compiler_version: str = Field(min_length=1, max_length=128)
+
+    @field_validator("nccl_library_sha256", "c_compiler_sha256")
+    @classmethod
+    def validate_binary_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("native GPU toolchain binary identity must be a SHA-256 digest")
+        return value
+
+    @field_validator("nccl_source_commit")
+    @classmethod
+    def validate_source_commit(cls, value: str) -> str:
+        if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("NCCL source identity must be a full Git commit")
+        return value
+
+
 class NativeTrainingRuntimeManifest(StrictModel):
     """Portable identity of a Conda-hosted rLLM/veRL training process."""
 
@@ -105,6 +129,7 @@ class NativeTrainingRuntimeManifest(StrictModel):
     rollout_group_size: int
     visible_device_count: int
     compatibility_layer: NativeCompatibilityLayer | None = None
+    gpu_toolchain: NativeGpuToolchain | None = None
     source_root_loaded_by_training_process: Literal[False] = False
     docker_socket_loaded_by_training_process: Literal[False] = False
     hidden_assets_loaded_by_training_process: Literal[False] = False
@@ -233,6 +258,7 @@ def validate_runtime_manifest(value: dict[str, Any]) -> NativeTrainingRuntimeMan
 __all__ = [
     "GpuHealthSample",
     "NativeCompatibilityLayer",
+    "NativeGpuToolchain",
     "NativeTrainingRuntimeManifest",
     "SUPPORTED_GPU_COUNTS",
     "package_inventory_hash",

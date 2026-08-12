@@ -61,6 +61,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--glibc-loader-executable", type=Path)
     parser.add_argument("--glibc-patchelf-executable", type=Path)
     parser.add_argument("--glibc-rootfs-identity", type=Path)
+    parser.add_argument("--nccl-library", type=Path)
+    parser.add_argument("--nccl-source-root", type=Path)
+    parser.add_argument("--expected-nccl-library-sha256")
+    parser.add_argument("--expected-nccl-source-commit")
+    parser.add_argument("--nccl-cuda-version")
+    parser.add_argument("--c-compiler", type=Path)
+    parser.add_argument("--expected-c-compiler-sha256")
+    parser.add_argument("--expected-c-compiler-version")
+    parser.add_argument("--process-tmp-root", type=Path)
     parser.add_argument("trainer_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -79,11 +88,22 @@ def _file(path: Path) -> Path:
     return resolved
 
 
+def _private_directory(path: Path) -> Path:
+    resolved = _directory(path)
+    metadata = resolved.stat()
+    if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+        raise RuntimeError("process temporary directory must be private to the current user")
+    if len(os.fsencode(resolved)) > 64:
+        raise RuntimeError("process temporary directory path is too long for local IPC sockets")
+    return resolved
+
+
 def _git_head(root: Path) -> str:
     completed = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        ["git", "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
+        cwd=root,
         shell=False,
         text=True,
         timeout=30,
@@ -252,6 +272,76 @@ def _glibc_compatibility_layer(
     }
 
 
+def _program_version(executable: Path) -> str:
+    completed = subprocess.run(
+        [str(executable), "--version"],
+        check=True,
+        capture_output=True,
+        env=_clean_environment(),
+        shell=False,
+        text=True,
+        timeout=30,
+    )
+    lines = completed.stdout.splitlines()
+    if not lines:
+        raise RuntimeError("C compiler did not report a version")
+    return lines[0].strip()
+
+
+def _gpu_toolchain_identity(
+    nccl_library: Path | None,
+    nccl_source_root: Path | None,
+    expected_nccl_library_sha256: str | None,
+    expected_nccl_source_commit: str | None,
+    nccl_cuda_version: str | None,
+    c_compiler: Path | None,
+    expected_c_compiler_sha256: str | None,
+    expected_c_compiler_version: str | None,
+) -> dict[str, str] | None:
+    values = (
+        nccl_library,
+        nccl_source_root,
+        expected_nccl_library_sha256,
+        expected_nccl_source_commit,
+        nccl_cuda_version,
+        c_compiler,
+        expected_c_compiler_sha256,
+        expected_c_compiler_version,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise RuntimeError("native GPU toolchain identities must be supplied together")
+    assert nccl_library is not None
+    assert nccl_source_root is not None
+    assert expected_nccl_library_sha256 is not None
+    assert expected_nccl_source_commit is not None
+    assert nccl_cuda_version is not None
+    assert c_compiler is not None
+    assert expected_c_compiler_sha256 is not None
+    assert expected_c_compiler_version is not None
+    nccl_sha256 = _sha256_file(nccl_library)
+    if nccl_sha256 != expected_nccl_library_sha256:
+        raise RuntimeError("NCCL library identity differs from its pin")
+    nccl_commit = _git_head(_directory(nccl_source_root))
+    if nccl_commit != expected_nccl_source_commit:
+        raise RuntimeError("NCCL source identity differs from its pin")
+    compiler = _file(c_compiler)
+    compiler_sha256 = _sha256_file(compiler)
+    if compiler_sha256 != expected_c_compiler_sha256:
+        raise RuntimeError("C compiler identity differs from its pin")
+    compiler_version = _program_version(compiler)
+    if compiler_version != expected_c_compiler_version:
+        raise RuntimeError("C compiler version differs from its pin")
+    return {
+        "nccl_library_sha256": nccl_sha256,
+        "nccl_source_commit": nccl_commit,
+        "nccl_cuda_version": nccl_cuda_version,
+        "c_compiler_sha256": compiler_sha256,
+        "c_compiler_version": compiler_version,
+    }
+
+
 def _clean_environment() -> dict[str, str]:
     environment = {
         name: value
@@ -341,12 +431,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     environment = _clean_environment()
     environment["CUDA_VISIBLE_DEVICES"] = ",".join(str(device) for device in selected)
     cache = workspace / "native-cache"
-    process_tmp = workspace / "process-tmp"
+    if arguments.process_tmp_root is None:
+        process_tmp = workspace / "process-tmp"
+        process_tmp.mkdir(parents=True, exist_ok=True, mode=0o700)
+        process_tmp.chmod(0o700)
+    else:
+        process_tmp = arguments.process_tmp_root
+    process_tmp = _private_directory(process_tmp)
     ray_tmp = workspace / "ray"
     rllm_home = workspace / "rllm-home"
     hf_home = workspace / "hf-home"
     native_home = workspace / "native-home"
-    for path in (cache, process_tmp, ray_tmp, rllm_home, hf_home, native_home):
+    for path in (cache, ray_tmp, rllm_home, hf_home, native_home):
         path.mkdir(parents=True, exist_ok=True)
     environment.update(
         {
@@ -420,6 +516,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if proot_compatibility is not None and glibc_compatibility is not None:
         raise RuntimeError("native training accepts only one ABI compatibility strategy")
+    gpu_toolchain = _gpu_toolchain_identity(
+        arguments.nccl_library,
+        arguments.nccl_source_root,
+        arguments.expected_nccl_library_sha256,
+        arguments.expected_nccl_source_commit,
+        arguments.nccl_cuda_version,
+        arguments.c_compiler,
+        arguments.expected_c_compiler_sha256,
+        arguments.expected_c_compiler_version,
+    )
     runtime = seal_runtime_manifest(
         {
             "python_version": ".".join(str(value) for value in sys.version_info[:3]),
@@ -438,6 +544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "rollout_group_size": len(selected),
             "visible_device_count": torch.cuda.device_count(),
             "compatibility_layer": proot_compatibility or glibc_compatibility,
+            "gpu_toolchain": gpu_toolchain,
         }
     )
     runtime_path = workspace / "native-training-runtime.json"

@@ -88,9 +88,13 @@ an ABI compatibility mechanism, not a relaxation of the broker/source separation
 When PRoot's process tracing is incompatible with Ray or NCCL multiprocessing, use the narrower
 `run_qwen35_online_glibc.py` path. It verifies a regular Python executable whose ELF interpreter
 and transitive RPATH are pinned to the exported userspace, plus the patched-Python, dynamic-loader,
-patchelf, and rootfs image hashes. It removes inherited loader and proxy variables before launch.
+patchelf, and rootfs image hashes. The launcher also verifies that the active Python NCCL link
+resolves to the hash-pinned build, binds its source commit and CUDA build version, and pins the C
+compiler used by runtime kernel builds. A caller-owned mode-0700 short temporary directory is
+required for local IPC sockets. It removes inherited loader and proxy variables before launch.
 This preserves native process creation while changing only the userspace glibc; it does not expose
-the prepared source, Docker socket, hidden tests, or credentials to the trainer.
+the prepared source, Docker socket, hidden tests, or credentials to the trainer. Runtime manifests
+record these identities without raw host paths.
 
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS

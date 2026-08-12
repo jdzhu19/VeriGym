@@ -43,14 +43,36 @@ def test_glibc_launcher_strips_sensitive_and_loader_environment(
 
 
 def test_glibc_launcher_sets_a_fixed_runtime_library_path(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _script()
     monkeypatch.setenv("LD_LIBRARY_PATH", "/untrusted/inherited/path")
+    compiler = Path("/opt/gcc/bin/gcc")
+    process_tmp = tmp_path / "ipc"
+    process_tmp.mkdir(mode=0o700)
 
-    environment = module._runtime_environment(Path("/opt/agent/bin/python3.11"))
+    environment = module._runtime_environment(
+        Path("/opt/agent/bin/python3.11"), compiler, process_tmp
+    )
 
     assert environment["LD_LIBRARY_PATH"] == "/opt/agent/lib:/usr/lib64"
+    assert environment["CC"] == str(compiler)
+    assert environment["PATH"].startswith("/opt/gcc/bin:/opt/agent/bin:")
+    assert environment["TMPDIR"] == str(process_tmp)
+
+
+def test_glibc_launcher_requires_private_short_process_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _script()
+    process_tmp = tmp_path / "ipc"
+    process_tmp.mkdir(mode=0o700)
+    monkeypatch.setattr(module.os, "fsencode", lambda _path: b"/short/ipc")
+
+    assert module._private_directory(process_tmp) == process_tmp.resolve()
+    process_tmp.chmod(0o755)
+    with pytest.raises(RuntimeError, match="private"):
+        module._private_directory(process_tmp)
 
 
 def test_glibc_launcher_never_accepts_source_or_hidden_arguments() -> None:

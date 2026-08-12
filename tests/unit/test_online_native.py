@@ -131,6 +131,53 @@ def test_native_runner_binds_glibc_loader_identities_without_paths(tmp_path: Pat
     assert str(tmp_path) not in json.dumps(layer)
 
 
+def test_native_runner_binds_gpu_toolchain_without_paths(tmp_path: Path) -> None:
+    module = _script()
+    nccl = tmp_path / "libnccl.so.2"
+    nccl.write_bytes(b"qualified-nccl")
+    source = tmp_path / "nccl-source"
+    source.mkdir()
+    compiler = tmp_path / "gcc"
+    compiler.write_bytes(b"qualified-gcc")
+    compiler.chmod(0o755)
+    nccl_sha256 = module._sha256_file(nccl)
+    compiler_sha256 = module._sha256_file(compiler)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(module, "_git_head", lambda _path: "c" * 40)
+        monkeypatch.setattr(module, "_program_version", lambda _path: "gcc (GCC) 12.2.0")
+        identity = module._gpu_toolchain_identity(
+            nccl,
+            source,
+            nccl_sha256,
+            "c" * 40,
+            "12.4.131",
+            compiler,
+            compiler_sha256,
+            "gcc (GCC) 12.2.0",
+        )
+
+    assert identity is not None
+    assert identity["nccl_cuda_version"] == "12.4.131"
+    assert str(tmp_path) not in json.dumps(identity)
+
+
+def test_native_runner_rejects_partial_gpu_toolchain_identity(tmp_path: Path) -> None:
+    module = _script()
+
+    with pytest.raises(RuntimeError, match="supplied together"):
+        module._gpu_toolchain_identity(
+            tmp_path / "libnccl.so.2",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
 def test_broker_container_requires_role_labeled_private_volumes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
