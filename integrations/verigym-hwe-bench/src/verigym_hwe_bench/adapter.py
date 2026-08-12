@@ -137,9 +137,7 @@ class HweBenchSuite(SuiteAdapter):
     def resolve_assets(self, task: VeriTask) -> ResolvedTaskAssets:
         instance, entry = self._for_task(task)
         source = self._catalog().root / "workspaces" / entry.slug
-        temporary = tempfile.TemporaryDirectory(
-            prefix="verigym-hwe-visible-", dir=self._catalog().root.parent
-        )
+        temporary = tempfile.TemporaryDirectory(prefix="verigym-hwe-visible-")
         visible = Path(temporary.name).resolve()
         copy_tree_safely(source, visible)
         self._visible_temporaries.append(temporary)
@@ -217,9 +215,7 @@ class HweBenchSuite(SuiteAdapter):
     def reference_solution(self, task: VeriTask) -> Candidate | None:
         instance, entry = self._for_task(task)
         base = self._base_repository(entry)
-        with tempfile.TemporaryDirectory(
-            prefix="verigym-hwe-reference-", dir=self._catalog().root.parent
-        ) as temporary:
+        with tempfile.TemporaryDirectory(prefix="verigym-hwe-reference-") as temporary:
             repository = Path(temporary) / "repository"
             copy_tree_safely(base, repository)
             try:

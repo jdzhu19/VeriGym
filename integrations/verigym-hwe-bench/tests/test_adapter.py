@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
+import pytest
 from verigym.plugin_api import (
     Candidate,
     SuiteSourceConfig,
@@ -12,6 +14,7 @@ from verigym.plugin_api import (
 )
 
 from verigym_hwe_bench import HweBenchSuite
+from verigym_hwe_bench import adapter as adapter_module
 from verigym_hwe_bench.dataset import NATIVE_LAYOUT_V1, VARIANT, load_catalog
 from verigym_hwe_bench.models import HweInstance, ImageLock, ImageLockEntry
 
@@ -133,3 +136,28 @@ def test_v1_prepared_source_remains_loadable_with_compatible_task_id(tmp_path: P
     assert catalog.native_layout == NATIVE_LAYOUT_V1
     assert catalog.lock.format_id == "verigym_hwe_bench_source_v1"
     assert list(suite.discover())[0].id == f"hwe-bench/{VARIANT}/{instance.slug}"
+
+
+def test_adapter_uses_configured_tempdir_instead_of_source_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _instance = _source(tmp_path / "sealed")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setenv("TMPDIR", str(scratch))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    original = tempfile.TemporaryDirectory
+    requested_parents: list[object] = []
+
+    def tracked_temporary_directory(*args: object, **kwargs: object) -> object:
+        requested_parents.append(kwargs.get("dir"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(adapter_module.tempfile, "TemporaryDirectory", tracked_temporary_directory)
+    suite = HweBenchSuite().with_source(SuiteSourceConfig(source_root=root, variant=VARIANT))
+    task = suite.load_task(list(suite.discover())[0])
+
+    assets = suite.resolve_assets(task)
+    assert Path(assets.visible_root).parent == scratch.resolve()
+    assert suite.reference_solution(task) is not None
+    assert requested_parents == [None, None]
