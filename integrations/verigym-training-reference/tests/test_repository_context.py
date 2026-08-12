@@ -105,6 +105,10 @@ def test_repository_turn_context_does_not_replay_raw_action_history() -> None:
     payload = json.loads(messages[1]["content"])
 
     assert len(messages) == 2
+    assert (
+        '{"protocol":"repository_action.v2","action":"read_file",'
+        '"arguments":{"path":"repository/example.sv"}}' in messages[0]["content"]
+    )
     assert payload["context_policy"]["raw_action_history_included"] is False
     assert payload["context_policy"]["history_included_count"] == 1
     assert payload["bounded_history"][0]["observation"]["previous_tool_result"]["stdout"]

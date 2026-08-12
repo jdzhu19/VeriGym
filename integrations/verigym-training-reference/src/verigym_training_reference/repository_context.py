@@ -167,7 +167,12 @@ def repository_turn_messages(
             "role": "system",
             "content": (
                 "You are a bounded repository repair agent. Return exactly one JSON object "
-                "matching the supplied repository_action.v2 contract and no prose."
+                "matching the supplied repository_action.v2 contract and no prose. Every "
+                "response must contain exactly the top-level keys protocol, action, and "
+                "arguments. Example shape: "
+                '{"protocol":"repository_action.v2","action":"read_file",'
+                '"arguments":{"path":"repository/example.sv"}}. Replace the example action '
+                "and arguments with the single action needed for the current turn."
             ),
         },
         {
