@@ -99,8 +99,10 @@ record these identities without raw host paths.
 
 The bounded repository smoke config keeps vLLM resident by disabling both `enable_sleep_mode` and
 `free_cache_engine`. This avoids vLLM's CUDA virtual-memory sleep allocator on legacy-driver nodes;
-FSDP parameter and optimizer offload keep the four-card A30 envelope bounded. Weight synchronization
-remains enabled, and the completion report still requires a changed output adapter.
+FSDP parameter and optimizer offload, a 0.5 vLLM memory envelope, and 256 MiB weight-transfer
+buckets keep the A30 envelope bounded. A six-card native run additionally shards the actor over all
+scheduler-owned GPUs while keeping tensor parallelism at two. Weight synchronization remains
+enabled, and the completion report still requires a changed output adapter.
 
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
