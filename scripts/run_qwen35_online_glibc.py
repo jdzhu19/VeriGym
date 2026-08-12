@@ -37,6 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-c-compiler-sha256", required=True)
     parser.add_argument("--expected-c-compiler-version", required=True)
     parser.add_argument("--process-tmp-root", type=Path, required=True)
+    parser.add_argument("--ray-tmp-root", type=Path, required=True)
     parser.add_argument("--repository", type=Path, required=True)
     parser.add_argument("--rllm-root", type=Path, required=True)
     parser.add_argument("--verl-root", type=Path, required=True)
@@ -84,12 +85,12 @@ def _linked_file(path: Path, *, confined_to: Path | None = None) -> Path:
     return value
 
 
-def _private_directory(path: Path) -> Path:
+def _private_directory(path: Path, *, max_bytes: int = 64) -> Path:
     value = _directory(path)
     metadata = value.stat()
     if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
-        raise RuntimeError("process temporary directory must be private to the current user")
-    if len(os.fsencode(value)) > 64:
+        raise RuntimeError("IPC temporary directory must be private to the current user")
+    if len(os.fsencode(value)) > max_bytes:
         raise RuntimeError("process temporary directory path is too long for local IPC sockets")
     return value
 
@@ -230,6 +231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not compiler_lines or compiler_lines[0].strip() != arguments.expected_c_compiler_version:
         raise RuntimeError("C compiler version differs from its pin")
     process_tmp = _private_directory(arguments.process_tmp_root)
+    ray_tmp = _private_directory(arguments.ray_tmp_root, max_bytes=48)
 
     repository = _directory(arguments.repository)
     rllm_root = _directory(arguments.rllm_root)
@@ -300,6 +302,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         arguments.expected_c_compiler_version,
         "--process-tmp-root",
         str(process_tmp),
+        "--ray-tmp-root",
+        str(ray_tmp),
     ]
     return subprocess.run(command, cwd=repository, env=environment, shell=False).returncode
 

@@ -100,6 +100,11 @@ def test_glibc_launcher_requires_private_short_process_tmp(
     with pytest.raises(RuntimeError, match="private"):
         module._private_directory(process_tmp)
 
+    process_tmp.chmod(0o700)
+    monkeypatch.setattr(module.os, "fsencode", lambda _path: b"x" * 49)
+    with pytest.raises(RuntimeError, match="too long"):
+        module._private_directory(process_tmp, max_bytes=48)
+
 
 def test_glibc_launcher_accepts_only_confined_link_targets(tmp_path: Path) -> None:
     module = _script()

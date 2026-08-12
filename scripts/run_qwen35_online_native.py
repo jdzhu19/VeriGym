@@ -70,6 +70,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-c-compiler-sha256")
     parser.add_argument("--expected-c-compiler-version")
     parser.add_argument("--process-tmp-root", type=Path)
+    parser.add_argument("--ray-tmp-root", type=Path)
     parser.add_argument("trainer_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -88,12 +89,12 @@ def _file(path: Path) -> Path:
     return resolved
 
 
-def _private_directory(path: Path) -> Path:
+def _private_directory(path: Path, *, max_bytes: int = 64) -> Path:
     resolved = _directory(path)
     metadata = resolved.stat()
     if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
-        raise RuntimeError("process temporary directory must be private to the current user")
-    if len(os.fsencode(resolved)) > 64:
+        raise RuntimeError("IPC temporary directory must be private to the current user")
+    if len(os.fsencode(resolved)) > max_bytes:
         raise RuntimeError("process temporary directory path is too long for local IPC sockets")
     return resolved
 
@@ -438,11 +439,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         process_tmp = arguments.process_tmp_root
     process_tmp = _private_directory(process_tmp)
-    ray_tmp = workspace / "ray"
+    if arguments.ray_tmp_root is None:
+        ray_tmp = workspace / "ray"
+        ray_tmp.mkdir(parents=True, exist_ok=True, mode=0o700)
+        ray_tmp.chmod(0o700)
+    else:
+        ray_tmp = arguments.ray_tmp_root
+    ray_tmp = _private_directory(ray_tmp, max_bytes=48)
     rllm_home = workspace / "rllm-home"
     hf_home = workspace / "hf-home"
     native_home = workspace / "native-home"
-    for path in (cache, ray_tmp, rllm_home, hf_home, native_home):
+    for path in (cache, rllm_home, hf_home, native_home):
         path.mkdir(parents=True, exist_ok=True)
     environment.update(
         {

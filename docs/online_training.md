@@ -90,8 +90,9 @@ When PRoot's process tracing is incompatible with Ray or NCCL multiprocessing, u
 and transitive RPATH are pinned to the exported userspace, plus the patched-Python, dynamic-loader,
 patchelf, and rootfs image hashes. The launcher also verifies that the active Python NCCL link
 resolves to the hash-pinned build, binds its source commit and CUDA build version, and pins the C
-compiler used by runtime kernel builds. A caller-owned mode-0700 short temporary directory is
-required for local IPC sockets. It removes inherited loader and proxy variables before launch.
+compiler used by runtime kernel builds. Caller-owned mode-0700 short temporary directories are
+required for process-local and Ray IPC sockets; the Ray root has a stricter byte-length bound. It
+removes inherited loader and proxy variables before launch.
 This preserves native process creation while changing only the userspace glibc; it does not expose
 the prepared source, Docker socket, hidden tests, or credentials to the trainer. Runtime manifests
 record these identities without raw host paths.

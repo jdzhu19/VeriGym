@@ -90,6 +90,7 @@ def test_native_runner_source_has_no_hidden_or_source_argument() -> None:
     assert '"HF_HUB_OFFLINE": "1"' in source
     assert '"HOME": str(native_home)' in source
     assert '"TRANSFORMERS_OFFLINE": "1"' in source
+    assert "ray_tmp = _private_directory(ray_tmp, max_bytes=48)" in source
 
 
 def test_native_runner_binds_proot_identity_without_persisting_paths(tmp_path: Path) -> None:
