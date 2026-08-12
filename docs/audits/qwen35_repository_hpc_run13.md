@@ -34,9 +34,13 @@ protocol inference was added.
 rLLM retained six zero-reward trainable trajectories and advanced to actor log-probability
 computation. That phase exhausted GPU memory before the optimizer step: one worker had only
 161.50 MiB free when a 256 MiB allocation was requested. The accompanying
-`CUBLAS_STATUS_NOT_INITIALIZED` errors were secondary CUDA failures. No checkpoint or changed
-adapter was produced, so run13 is infrastructure-invalid as a training qualification even though
-the broker/verifier path itself remained valid.
+`CUBLAS_STATUS_NOT_INITIALIZED` errors were secondary CUDA failures. The LSF allocation's
+effective GPU mode was also `mode=shared:j_exclusive=no`; OOM diagnostics identified unrelated
+processes using several hundred MiB on the selected GPUs. The run therefore does not isolate a
+single memory cause: the 0.5 resident-rollout envelope left inadequate headroom, and scheduler
+sharing allowed external load after the clean startup preflight. No checkpoint or changed adapter
+was produced, so run13 is infrastructure-invalid as a training qualification even though the
+broker/verifier path itself remained valid.
 
 ## Corrective action
 
@@ -45,6 +49,9 @@ required top-level keys while preserving strict parsing. The vLLM memory envelop
 0.5 to 0.4, reserving approximately 2.35 GiB more headroom per 23.5 GiB A30 for actor computation.
 The rollout engine remains resident: this node's legacy CUDA driver was separately observed to
 reject vLLM's CuMem sleep allocator, so enabling cache-engine sleep is not a valid workaround.
+Subsequent optimizer-step qualification must use scheduler-enforced job-exclusive GPUs; a
+point-in-time contention preflight alone cannot prevent another shared LSF job from entering after
+startup.
 
 The next qualification must use a fresh run identity. Acceptance still requires reward variance,
 one completed optimizer update, a resumable checkpoint, and a changed registered adapter.

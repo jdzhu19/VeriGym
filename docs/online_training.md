@@ -123,3 +123,11 @@ Native execution is opt-in. First freeze the Conda package inventory, verify a C
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS
 qualification through the broker. A driver, image, package, or verifier mismatch is an
 infrastructure failure and must stop before online training.
+
+Scheduler allocation must also prevent another job from entering an already selected GPU for the
+duration of the update. On LSF clusters that default to shared GPU scheduling, request
+`mode=shared:j_exclusive=yes`: this retains the multiple CUDA processes required by FSDP and vLLM
+inside the training job while excluding unrelated LSF jobs from those GPUs. A clean preflight is
+necessary but cannot substitute for scheduler enforcement after the trainer starts. Preserve the
+effective GPU requirement in the run audit and treat a non-exclusive shared allocation as
+infrastructure-invalid for a real optimizer-step qualification.
