@@ -45,13 +45,14 @@ broker/verifier path itself remained valid.
 ## Corrective action
 
 The repository system prompt now includes one exact canonical JSON envelope with all three
-required top-level keys while preserving strict parsing. The vLLM memory envelope is reduced from
-0.5 to 0.4, reserving approximately 2.35 GiB more headroom per 23.5 GiB A30 for actor computation.
-The rollout engine remains resident: this node's legacy CUDA driver was separately observed to
-reject vLLM's CuMem sleep allocator, so enabling cache-engine sleep is not a valid workaround.
-Subsequent optimizer-step qualification must use scheduler-enforced job-exclusive GPUs; a
-point-in-time contention preflight alone cannot prevent another shared LSF job from entering after
-startup.
+required top-level keys while preserving strict parsing. An initial follow-up reduced the vLLM
+memory envelope from 0.5 to 0.4, but the clean, job-exclusive run18 follow-up documented separately
+showed that 0.4 cannot allocate a single KV-cache block. The configuration therefore retains the
+viable 0.5 envelope. The rollout engine remains resident: this node's legacy CUDA driver was
+separately observed to reject vLLM's CuMem sleep allocator, so enabling cache-engine sleep is not a
+valid workaround. Subsequent optimizer-step qualification must use scheduler-enforced
+job-exclusive GPUs; a point-in-time contention preflight alone cannot prevent another shared LSF
+job from entering after startup.
 
 The next qualification must use a fresh run identity. Acceptance still requires reward variance,
 one completed optimizer update, a resumable checkpoint, and a changed registered adapter.

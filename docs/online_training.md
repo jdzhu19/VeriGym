@@ -110,10 +110,13 @@ record these identities without raw host paths.
 
 The bounded repository smoke config keeps vLLM resident by disabling both `enable_sleep_mode` and
 `free_cache_engine`. This avoids vLLM's CUDA virtual-memory sleep allocator on legacy-driver nodes;
-FSDP parameter and optimizer offload, a 0.4 vLLM memory envelope, and 256 MiB weight-transfer
-buckets keep the A30 envelope bounded. The 0.4 envelope reserves training headroom after a real
-0.5-envelope qualification reached rollout generation but exhausted GPU memory during actor
-log-probability computation. A six-card native run additionally shards the actor over all
+FSDP parameter and optimizer offload, a 0.5 vLLM memory envelope, and 256 MiB weight-transfer
+buckets keep the A30 envelope bounded. A clean four-card A30 attempt at 0.4 loaded the model but
+could not allocate even one KV-cache block, before any rollout or broker session, so 0.4 is not a
+viable envelope for this frozen model and context. A prior 0.5 attempt reached rollout generation
+but exhausted memory during actor log-probability computation on non-exclusive GPUs; it did not
+isolate the envelope from external GPU load. Job-exclusive scheduling is therefore required while
+the viable 0.5 envelope is retained. A multi-card native run shards the actor over all
 scheduler-owned GPUs while keeping tensor parallelism at two. Weight synchronization remains
 enabled, and the completion report still requires a changed output adapter.
 The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the
