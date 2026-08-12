@@ -73,6 +73,7 @@ def test_topology_overrides_scale_grpo_group_with_world_size(gpu_count: int) -> 
     values = topology_overrides(gpu_count)
     assert f"actor_rollout_ref.rollout.n={gpu_count}" in values
     assert f"trainer.n_gpus_per_node={gpu_count}" in values
+    assert f"+ray_init.num_cpus={gpu_count * 4}" in values
     replaced = replace_topology_overrides(
         [
             "data.train_batch_size=1",
@@ -80,11 +81,13 @@ def test_topology_overrides_scale_grpo_group_with_world_size(gpu_count: int) -> 
             "trainer.n_gpus_per_node=4",
             "++actor_rollout_ref.actor.fsdp_config.fsdp_size=4",
             "rllm.workflow.n_parallel_tasks=4",
+            "+ray_init.num_cpus=16",
         ],
         gpu_count,
     )
     assert len([value for value in replaced if "rollout.n=" in value]) == 1
-    assert values == replaced[-4:]
+    assert len([value for value in replaced if "ray_init.num_cpus=" in value]) == 1
+    assert values == replaced[-5:]
 
 
 def test_native_runtime_manifest_is_hash_bound_and_path_free() -> None:

@@ -12,6 +12,7 @@ from verigym.core.hashing import content_hash
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 
 SUPPORTED_GPU_COUNTS = (4, 6, 8)
+RAY_CPUS_PER_GPU = 4
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,7 @@ def topology_overrides(gpu_count: int) -> list[str]:
         f"actor_rollout_ref.rollout.n={gpu_count}",
         f"rllm.workflow.n_parallel_tasks={gpu_count}",
         f"trainer.n_gpus_per_node={gpu_count}",
+        f"+ray_init.num_cpus={gpu_count * RAY_CPUS_PER_GPU}",
     ]
 
 
