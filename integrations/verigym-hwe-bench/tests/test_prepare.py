@@ -82,6 +82,29 @@ def test_profile_workspace_exclusion_rejects_symlink(tmp_path: Path) -> None:
     assert outside.is_dir()
 
 
+def test_profile_workspace_exclusion_accepts_absent_generated_directory(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    _apply_workspace_exclusions(repository, ["vendor/tool/build"])
+
+    assert list(repository.iterdir()) == []
+
+
+def test_profile_workspace_exclusion_rejects_existing_regular_file(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    build = repository / "build"
+    build.write_text("unexpected node\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="missing or unsafe"):
+        _apply_workspace_exclusions(repository, ["build"])
+
+    assert build.is_file()
+
+
 def test_synthetic_runtime_baseline_is_bound_to_official_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

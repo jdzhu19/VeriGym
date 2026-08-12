@@ -198,7 +198,16 @@ def _apply_workspace_exclusions(repository: Path, excluded_paths: list[str]) -> 
     for relative in excluded_paths:
         excluded = repository / relative
         resolved = excluded.resolve(strict=False)
-        if excluded.is_symlink() or not resolved.is_relative_to(root) or not excluded.is_dir():
+        if excluded.is_symlink() or not resolved.is_relative_to(root):
+            raise ConfigurationError(
+                f"repository profile exclusion is missing or unsafe: {relative}"
+            )
+        # Profiles describe paths that must never reach the agent workspace. Older repository
+        # snapshots may predate a generated build directory, in which case absence already
+        # satisfies the exclusion. Existing non-directory nodes remain fail-closed.
+        if not excluded.exists():
+            continue
+        if not excluded.is_dir():
             raise ConfigurationError(
                 f"repository profile exclusion is missing or unsafe: {relative}"
             )
