@@ -70,7 +70,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  "${seccomp_arguments[@]}" \
+  ${seccomp_arguments[@]+"${seccomp_arguments[@]}"} \
   --pids-limit 8192 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \

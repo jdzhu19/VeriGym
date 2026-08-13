@@ -105,7 +105,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  "${seccomp_arguments[@]}" \
+  ${seccomp_arguments[@]+"${seccomp_arguments[@]}"} \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
   --env HF_HUB_OFFLINE=1 \
@@ -114,12 +114,12 @@ docker run --rm \
   --volume "$empty_home:/work/home" \
   --volume "$model_root:/model:ro" \
   --volume "$cache_root:/cache" \
-  "${adapter_mount[@]}" \
+  ${adapter_mount[@]+"${adapter_mount[@]}"} \
   "$image_id" \
   python3 -m vllm.entrypoints.openai.api_server \
   --model /model \
   --served-model-name "$base_model_id" \
-  "${adapter_arguments[@]}" \
+  ${adapter_arguments[@]+"${adapter_arguments[@]}"} \
   --tensor-parallel-size 4 \
   --host 0.0.0.0 \
   --port 8000
