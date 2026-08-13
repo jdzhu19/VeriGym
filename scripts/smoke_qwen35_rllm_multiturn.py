@@ -59,9 +59,9 @@ async def _run(arguments: argparse.Namespace) -> dict[str, object]:
     rollout = OpenAIEngine(
         model=arguments.model_id,
         tokenizer=tokenizer,
-        max_prompt_length=16_384,
+        max_prompt_length=32_768,
         max_response_length=16_384,
-        max_model_length=32_768,
+        max_model_length=49_152,
         api_retries=1,
         base_url=base_url,
         api_key=api_key,
@@ -95,8 +95,8 @@ async def _run(arguments: argparse.Namespace) -> dict[str, object]:
     if len(episodes) != 1:
         raise RuntimeError("native rLLM smoke returned the wrong episode count")
     episode = episodes[0]
-    if episode.termination_reason == TerminationReason.ERROR:
-        raise RuntimeError("native rLLM smoke was infrastructure-invalid")
+    if episode.termination_reason != TerminationReason.ENV_DONE:
+        raise RuntimeError("native rLLM smoke did not reach a broker terminal")
     if len(episode.trajectories) != 1 or not episode.trajectories[0].steps:
         raise RuntimeError("native rLLM smoke returned no trainable trajectory")
     steps = episode.trajectories[0].steps
@@ -118,6 +118,8 @@ async def _run(arguments: argparse.Namespace) -> dict[str, object]:
         "upstream_loop_class": "MultiTurnWorkflow",
         "step_count": len(steps),
         "completion_token_count": sum(len(step.response_ids) for step in steps),
+        "max_prompt_length": 32_768,
+        "max_response_length": 16_384,
         "token_logprob_alignment_preserved": True,
         "infrastructure_valid": True,
         "resolved": bool(episode.is_correct),

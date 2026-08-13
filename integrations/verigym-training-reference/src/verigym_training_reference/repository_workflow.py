@@ -17,6 +17,7 @@ from rllm.workflows.multi_turn_workflow import (  # type: ignore[import-not-foun
 from rllm.workflows.workflow import (  # type: ignore[import-not-found]
     TerminationEvent,
     TerminationReason,
+    Workflow,
 )
 from verigym.protocols.repository_action import (
     canonical_action_json,
@@ -221,6 +222,7 @@ class VeriGymBrokerEnvironment(BaseEnv):  # type: ignore[misc]
         self._client: RepositoryBrokerClient | None = None
         self._turn = 0
         self._terminal: dict[str, Any] | None = None
+        self._last_reset_result: tuple[Any, dict[str, Any]] | None = None
         self.max_completion_calls: int | None = None
 
     def bind_uid(self, uid: str) -> None:
@@ -229,6 +231,7 @@ class VeriGymBrokerEnvironment(BaseEnv):  # type: ignore[misc]
         self._uid = uid
 
     def reset(self, task: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
+        self._last_reset_result = None
         if not isinstance(task, dict):
             raise RuntimeError("repository environment requires a public task record")
         if task.get("hidden_assets_included") is not False:
@@ -261,14 +264,25 @@ class VeriGymBrokerEnvironment(BaseEnv):  # type: ignore[misc]
         if not isinstance(maximum, int) or maximum < 1 or not isinstance(contract, dict):
             raise RuntimeError("repository broker omitted its frozen action contract")
         self.max_completion_calls = maximum
-        return initial.get("observation"), {
-            "initial": True,
-            "task": task,
-            "prompt_contract": contract,
-            "public_test_ids": initial.get("public_test_ids", []),
-            "observation_truncated": initial.get("observation_truncated") is True,
-            "response_hash": initial.get("response_hash"),
-        }
+        result = (
+            initial.get("observation"),
+            {
+                "initial": True,
+                "task": task,
+                "prompt_contract": contract,
+                "public_test_ids": initial.get("public_test_ids", []),
+                "observation_truncated": initial.get("observation_truncated") is True,
+                "response_hash": initial.get("response_hash"),
+            },
+        )
+        self._last_reset_result = result
+        return result
+
+    def last_reset_result(self) -> tuple[Any, dict[str, Any]]:
+        if self._last_reset_result is None:
+            raise RuntimeError("repository environment has no completed reset result")
+        observation, info = self._last_reset_result
+        return observation, dict(info)
 
     def step(self, action: Any) -> tuple[str, float, bool, dict[str, Any]]:
         client = self._require_client()
@@ -373,9 +387,13 @@ class VeriGymRepositoryWorkflow(MultiTurnWorkflow):  # type: ignore[misc]
     ) -> tuple[Any, dict[Any, Any]]:
         if uid is None:
             raise RuntimeError("repository workflow requires a rollout UID")
-        self.agent.reset()
         self.env.bind_uid(uid)
-        observation, info = super().reset(task, uid)
+        # The pinned MultiTurnWorkflow.reset calls env.reset twice: once through
+        # Workflow.reset's lifecycle discovery and once directly.  Keep the upstream
+        # run loop, but invoke the base lifecycle exactly once and recover its result.
+        self.start_timing()
+        Workflow.reset(self, task, uid)
+        observation, info = self.env.last_reset_result()
         if not isinstance(info, dict):
             raise RuntimeError("repository environment reset info must be an object")
         if self.env.max_completion_calls is None:
