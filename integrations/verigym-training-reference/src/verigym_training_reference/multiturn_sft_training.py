@@ -123,6 +123,10 @@ def sft_spec_kwargs(
                 "max_length": MAX_LENGTH,
                 "truncation": "error",
                 "use_dynamic_bsz": False,
+                "custom_cls": {
+                    "path": "pkg://verigym_training_reference.verl_sft_dataset",
+                    "name": "VeriGymHfTemplateSFTDataset",
+                },
             },
             "trainer": {
                 "total_epochs": 3,
@@ -208,6 +212,8 @@ def assert_resolved_verl_config(config: Any, *, output: Path) -> None:
         "data.truncation": "error",
         "data.use_dynamic_bsz": False,
         "data.rllm.tokenize_and_mask_method": "hf_template",
+        "data.custom_cls.path": "pkg://verigym_training_reference.verl_sft_dataset",
+        "data.custom_cls.name": "VeriGymHfTemplateSFTDataset",
         "optim.lr": 1e-4,
         "trainer.total_epochs": 3,
         "trainer.total_training_steps": EXPECTED_STEPS,
@@ -281,6 +287,7 @@ def run_frozen_multiturn_sft(
         "max_length": MAX_LENGTH,
         "truncation": "error",
         "tokenize_method": "hf_template",
+        "tool_argument_template_adapter": "openai_json_string_to_mapping_v1",
         "dataset_manifest_hash": inputs.manifest.manifest_hash,
         "dataset_records_sha256": inputs.train_jsonl_sha256,
         "tokenizer_hash": inputs.manifest.tokenizer_hash,

@@ -162,6 +162,11 @@ only integrity-bound training-split transcripts and verified runs, applies the l
 template with rLLM's `hf_template` segmentation, and fails instead of truncating beyond 16,384
 tokens. `scripts/train_qwen35_multiturn_sft.py` then requires exactly eight sealed records and the
 frozen rLLM/veRL/vLLM versions before launching `AgentSFTTrainer` for six optimizer steps.
+The sealed records keep canonical OpenAI JSON-string tool arguments. A training-only dataset
+adapter converts those strings to the mappings required by Qwen3.5's native template and groups
+the leading masked `system`/`user` prefix, because that template rejects a system-only prefix. The
+adapter is selected explicitly in the resolved veRL config; all assistant segments remain
+supervised and the source records are never rewritten.
 
 The supporting real-run sequence is:
 

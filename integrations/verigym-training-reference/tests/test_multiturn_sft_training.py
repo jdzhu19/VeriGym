@@ -27,6 +27,8 @@ from verigym_training_reference.multiturn_sft_exporter import (
     TranscriptRunBinding,
     bindings_from_cva6_collection,
     export_verified_multiturn_sft,
+    hf_template_messages,
+    rllm_hf_template_token_count,
 )
 from verigym_training_reference.multiturn_sft_training import (
     EXPECTED_STEPS,
@@ -124,6 +126,8 @@ def test_frozen_training_input_requires_exact_eight_and_current_tool_contract(
 
     assert len(inputs.rows) == 8
     assert all(set(row) == {"messages"} for row in inputs.rows)
+    function = inputs.rows[0]["messages"][2]["tool_calls"][0]["function"]
+    assert function["arguments"] == '{"message":"done"}'
     train = tmp_path / "train.jsonl"
     train.write_bytes(train.read_bytes() + b"\n")
     with pytest.raises(ConfigurationError, match="manifest"):
@@ -155,6 +159,10 @@ def test_frozen_sft_spec_is_exact_and_resolved_config_is_checked(tmp_path: Path)
         "seed": 484,
     }
     assert overrides["trainer"]["total_training_steps"] == EXPECTED_STEPS
+    assert overrides["data"]["custom_cls"] == {
+        "path": "pkg://verigym_training_reference.verl_sft_dataset",
+        "name": "VeriGymHfTemplateSFTDataset",
+    }
 
     config = SimpleNamespace(
         model=SimpleNamespace(
@@ -172,6 +180,10 @@ def test_frozen_sft_spec_is_exact_and_resolved_config_is_checked(tmp_path: Path)
             truncation="error",
             use_dynamic_bsz=False,
             rllm=SimpleNamespace(tokenize_and_mask_method="hf_template"),
+            custom_cls=SimpleNamespace(
+                path="pkg://verigym_training_reference.verl_sft_dataset",
+                name="VeriGymHfTemplateSFTDataset",
+            ),
         ),
         optim=SimpleNamespace(lr=1e-4),
         trainer=SimpleNamespace(
@@ -350,6 +362,43 @@ class _Tokenizer:
     def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
         del add_special_tokens
         return list(text.encode())
+
+
+class _QwenStyleTokenizer(_Tokenizer):
+    def apply_chat_template(
+        self,
+        conversation: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> str:
+        if [message.get("role") for message in conversation] == ["system"]:
+            raise RuntimeError("Qwen template requires a user query")
+        for message in conversation:
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call["function"]["arguments"], dict):
+                    raise TypeError("Qwen template requires argument mappings")
+        return super().apply_chat_template(
+            conversation,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+        )
+
+
+def test_hf_template_adapter_preserves_openai_record_and_renders_qwen_shape() -> None:
+    original = _example(1)["messages"]
+
+    adapted = hf_template_messages(original)
+
+    assert original[2]["tool_calls"][0]["function"]["arguments"] == '{"message":"done"}'
+    assert adapted[2]["tool_calls"][0]["function"]["arguments"] == {"message": "done"}
+    assert rllm_hf_template_token_count(_QwenStyleTokenizer(), original) > 0
+
+
+def test_hf_template_adapter_rejects_non_object_arguments() -> None:
+    messages = [{"role": "assistant", "tool_calls": [{"function": {"arguments": "[]"}}]}]
+    with pytest.raises(ConfigurationError, match="decode to an object"):
+        hf_template_messages(messages)
 
 
 def test_multiturn_export_rejects_heldout_before_reading_run(tmp_path: Path) -> None:

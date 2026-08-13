@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -235,27 +236,94 @@ def rllm_hf_template_token_count(
     tokenizer: ChatTemplateTokenizer,
     messages: list[dict[str, Any]],
 ) -> int:
-    """Match pinned rLLM's incremental ``hf_template`` tokenization exactly."""
+    """Match the configured rLLM ``hf_template`` tokenization exactly.
 
-    full = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    The frozen dataset remains OpenAI-compatible, where function arguments are
+    canonical JSON strings. Qwen3.5's native Hugging Face template expects the
+    same arguments as mappings. The training loader applies this same
+    deterministic, in-memory adapter before handing rows to pinned rLLM.
+    """
+
+    tokens, _loss_mask = hf_template_tokens_and_loss_mask(tokenizer, messages)
+    return len(tokens)
+
+
+def hf_template_tokens_and_loss_mask(
+    tokenizer: ChatTemplateTokenizer,
+    messages: list[dict[str, Any]],
+) -> tuple[list[int], list[int]]:
+    """Render Qwen-compatible turns and supervise every assistant segment.
+
+    Qwen3.5 refuses to render a prefix containing only the system message. Both
+    leading system and user tokens are masked, so they can safely form one
+    segment. Every later message retains an independent prefix boundary.
+    """
+
+    if len(messages) < 2 or [message.get("role") for message in messages[:2]] != [
+        "system",
+        "user",
+    ]:
+        raise ConfigurationError("multi-turn HF rendering must start with system then user")
+    template_messages = hf_template_messages(messages)
+    full = tokenizer.apply_chat_template(
+        template_messages, tokenize=False, add_generation_prompt=False
+    )
     if not isinstance(full, str):
         raise ConfigurationError("tokenizer chat template did not return text")
-    offsets = [0]
-    for index in range(len(messages)):
+    offsets = [0, 0]
+    for index in range(1, len(template_messages)):
         prefix = tokenizer.apply_chat_template(
-            messages[: index + 1], tokenize=False, add_generation_prompt=False
+            template_messages[: index + 1], tokenize=False, add_generation_prompt=False
         )
         if not isinstance(prefix, str) or not full.startswith(prefix):
             raise ConfigurationError("tokenizer chat template is not prefix-stable for rLLM")
         offsets.append(len(prefix))
-    count = 0
-    for index in range(len(messages)):
-        count += len(
-            tokenizer.encode(full[offsets[index] : offsets[index + 1]], add_special_tokens=False)
+    tokens: list[int] = []
+    loss_mask: list[int] = []
+    for index in range(len(template_messages)):
+        segment = tokenizer.encode(
+            full[offsets[index] : offsets[index + 1]], add_special_tokens=False
         )
-    if count < 1:
+        tokens.extend(segment)
+        supervised = 1 if template_messages[index].get("role") == "assistant" else 0
+        loss_mask.extend([supervised] * len(segment))
+    if not tokens:
         raise ConfigurationError("tokenizer produced an empty multi-turn trajectory")
-    return count
+    if not any(loss_mask):
+        raise ConfigurationError("tokenizer produced no supervised assistant tokens")
+    return tokens, loss_mask
+
+
+def hf_template_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Adapt canonical OpenAI tool arguments for native HF chat templates.
+
+    This never mutates or replaces the provider-neutral transcript stored in
+    the sealed dataset. It rejects malformed/non-object arguments instead of
+    silently changing their meaning.
+    """
+
+    adapted = deepcopy(messages)
+    for message in adapted:
+        tool_calls = message.get("tool_calls")
+        if tool_calls is None:
+            continue
+        if not isinstance(tool_calls, list):
+            raise ConfigurationError("SFT tool_calls must be a list for HF rendering")
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict) or not isinstance(tool_call.get("function"), dict):
+                raise ConfigurationError("SFT tool call is malformed for HF rendering")
+            function = tool_call["function"]
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                raise ConfigurationError("OpenAI SFT tool arguments must be a JSON string")
+            try:
+                decoded = json.loads(arguments)
+            except (TypeError, ValueError) as exc:
+                raise ConfigurationError("OpenAI SFT tool arguments are not valid JSON") from exc
+            if not isinstance(decoded, dict):
+                raise ConfigurationError("OpenAI SFT tool arguments must decode to an object")
+            function["arguments"] = decoded
+    return adapted
 
 
 def _validated_run(
@@ -387,5 +455,7 @@ __all__ = [
     "TranscriptRunBinding",
     "bindings_from_cva6_collection",
     "export_verified_multiturn_sft",
+    "hf_template_messages",
+    "hf_template_tokens_and_loss_mask",
     "rllm_hf_template_token_count",
 ]
