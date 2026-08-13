@@ -32,6 +32,7 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "--read-only --cap-drop ALL" in build
     assert "--env OPENBLAS_NUM_THREADS=1" in build
     assert "--env OMP_NUM_THREADS=1" in build
+    assert build.count("--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m") == 2
     assert "python3 -m pip install" in dockerfile
     assert '"vllm" not in' in build
 

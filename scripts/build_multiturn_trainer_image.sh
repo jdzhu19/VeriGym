@@ -38,6 +38,7 @@ observed_runtime=$(docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
   --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
   --env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
   --volume "$base_check_home:/work/home:ro" --entrypoint python3 "$base_id" \
   -c 'import importlib.metadata,torch; print(importlib.metadata.version("vllm").split("+")[0], torch.version.cuda)')
 if [[ $observed_runtime != "0.22.1 12.9" ]]; then
@@ -79,7 +80,8 @@ docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
   --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
   --env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 \
-  --env PYTHONDONTWRITEBYTECODE=1 --volume "$base_check_home:/work/home:ro" \
+  --env PYTHONDONTWRITEBYTECODE=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+  --volume "$base_check_home:/work/home:ro" \
   --entrypoint python3 "$image_id" -c \
   'import importlib.metadata,os,torch; assert importlib.metadata.version("verl") == "0.8.0"; assert os.environ["VERIGYM_VLLM_SERVICE_VERSION"] == "0.22.1"; assert torch.version.cuda == "12.9"; assert "vllm" not in {str(item.metadata["Name"]).lower() for item in importlib.metadata.distributions()}'
 printf '%s\n' "$image_id"

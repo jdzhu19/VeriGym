@@ -39,6 +39,7 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert '--volume "$runtime_check_home:/work/home:ro"' in build
     assert build.count("--read-only --cap-drop ALL") == 2
     assert "--env OPENBLAS_NUM_THREADS=1" in build
+    assert build.count("--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m") == 2
     assert "seccomp=unconfined" not in build
 
 
