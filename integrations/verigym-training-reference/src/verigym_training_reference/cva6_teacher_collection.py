@@ -165,13 +165,7 @@ def collect_cva6_teacher_trajectories(
                 raise ConfigurationError(
                     f"teacher collection stopped on infrastructure-invalid {attempt_id}"
                 ) from exc
-            infrastructure_invalid = bool(
-                result.scorecard.status == "error"
-                or result.scorecard.correctness.infrastructure_error
-                or (
-                    result.scorecard.failure is not None and result.scorecard.failure.infrastructure
-                )
-            )
+            infrastructure_invalid = _is_infrastructure_invalid(result.scorecard)
             attempt: dict[str, Any] = {
                 "attempt_id": attempt_id,
                 "task_id": task_id,
@@ -416,6 +410,15 @@ def _save_progress(root: Path, progress: dict[str, Any]) -> None:
 
 def _attempt_id(campaign_id: str, pool_index: int, provider: str, sample_index: int) -> str:
     return f"{campaign_id}-{pool_index:02d}-{provider}-sample-{sample_index}"
+
+
+def _is_infrastructure_invalid(scorecard: Any) -> bool:
+    failure = scorecard.failure
+    return bool(
+        scorecard.correctness.infrastructure_error
+        or (failure is not None and failure.infrastructure)
+        or (scorecard.status == "error" and (failure is None or failure.kind == "runtime"))
+    )
 
 
 def _training_transcript(run: Path) -> Path:

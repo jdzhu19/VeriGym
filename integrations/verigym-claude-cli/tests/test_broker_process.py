@@ -24,17 +24,59 @@ from verigym.schemas.agent import BudgetRemaining, EpisodeResult, Observation
 from verigym.schemas.common import InteractionMode
 from verigym.suites.toy_rtl.adapter import ToyRtlSuite
 
-from verigym_claude_cli.agent import ClaudeCliAgentAdapter
-from verigym_claude_cli.broker import ClaudeToolBroker
+from verigym_claude_cli.agent import ClaudeCliAgentAdapter, _process_failure
+from verigym_claude_cli.broker import BrokerStats, ClaudeToolBroker
 from verigym_claude_cli.capabilities import discover_capabilities
 from verigym_claude_cli.config import agent_settings
 from verigym_claude_cli.events import parse_event_stream
 from verigym_claude_cli.invocation import build_arguments
 from verigym_claude_cli.process import (
     ClaudeCliProcessRunner,
+    ClaudeProcessResult,
     provider_environment,
     resolve_executable,
 )
+
+
+def _timed_out_process() -> ClaudeProcessResult:
+    return ClaudeProcessResult(
+        arguments=("claude",),
+        exit_code=143,
+        stdout="",
+        stderr="",
+        duration_s=1800.0,
+        timed_out=True,
+        stdout_truncated=True,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+
+
+def _broker_stats(*, tool_calls: int) -> BrokerStats:
+    return BrokerStats(
+        tool_calls=tool_calls,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=tool_calls,
+        file_writes=0,
+        patches=0,
+        policy_failure=None,
+        infrastructure_failure=None,
+    )
+
+
+def test_sustained_broker_activity_makes_timeout_an_agent_failure() -> None:
+    active = _process_failure(_timed_out_process(), None, None, _broker_stats(tool_calls=8))
+    inactive = _process_failure(_timed_out_process(), None, None, _broker_stats(tool_calls=0))
+
+    assert active is not None
+    assert active.failure.kind == "model"
+    assert active.failure.category == "agent_timeout"
+    assert active.failure.infrastructure is False
+    assert inactive is not None
+    assert inactive.failure.kind == "runtime"
+    assert inactive.failure.category == "timeout"
+    assert inactive.failure.infrastructure is True
 
 
 class FakeBridge:

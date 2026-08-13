@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from verigym.core.errors import ConfigurationError
@@ -8,6 +9,7 @@ from verigym.core.errors import ConfigurationError
 from verigym_training_reference.cva6_teacher_collection import (
     _attempt_id,
     _campaign_output,
+    _is_infrastructure_invalid,
 )
 
 
@@ -44,3 +46,23 @@ def test_campaign_cannot_resume_under_a_different_identity(tmp_path: Path) -> No
             split_hash="a" * 64,
             docker_config_hash="b" * 64,
         )
+
+
+@pytest.mark.parametrize(
+    ("status", "failure", "expected"),
+    [
+        ("error", SimpleNamespace(kind="model", infrastructure=False), False),
+        ("error", SimpleNamespace(kind="runtime", infrastructure=False), True),
+        ("failed", SimpleNamespace(kind="model", infrastructure=True), True),
+    ],
+)
+def test_teacher_campaign_distinguishes_agent_and_infrastructure_failures(
+    status: str, failure: object, expected: bool
+) -> None:
+    scorecard = SimpleNamespace(
+        status=status,
+        failure=failure,
+        correctness=SimpleNamespace(infrastructure_error=False),
+    )
+
+    assert _is_infrastructure_invalid(scorecard) is expected
