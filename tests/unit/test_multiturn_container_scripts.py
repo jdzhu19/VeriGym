@@ -134,6 +134,10 @@ def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
     assert "--gpus" not in native_runner
     assert "$task:/input/task.json:ro" in native_runner
     assert "$model_root:/model:ro" in native_runner
+    assert "--env OPENBLAS_NUM_THREADS=1" in native_runner
+    assert "--env OMP_NUM_THREADS=1" in native_runner
+    assert "--env MKL_NUM_THREADS=1" in native_runner
+    assert "--env NUMEXPR_NUM_THREADS=1" in native_runner
     assert "--read-only" in native_runner
     assert "docker.sock" not in native_runner
     assert "--privileged" not in native_runner

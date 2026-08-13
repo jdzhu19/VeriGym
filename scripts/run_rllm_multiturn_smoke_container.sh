@@ -74,6 +74,10 @@ docker run --rm \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
   --env TMPDIR=/cache/tmp \
+  --env OPENBLAS_NUM_THREADS=1 \
+  --env OMP_NUM_THREADS=1 \
+  --env MKL_NUM_THREADS=1 \
+  --env NUMEXPR_NUM_THREADS=1 \
   --env VERIGYM_RUN_QWEN35_RLLM_MULTITURN_SMOKE=1 \
   --env VERIGYM_MODEL_BASE_URL=http://verigym-qwen35-vllm:8000/v1 \
   --env VERIGYM_MODEL_API_KEY=local-verigym-no-auth \
