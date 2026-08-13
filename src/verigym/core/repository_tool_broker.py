@@ -24,6 +24,7 @@ from verigym.schemas.options import JsonValue
 
 _MAX_MESSAGE_BYTES = 2 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 512 * 1024
+_MAX_TRAINING_CAPTURE_BYTES = 32 * 1024 * 1024
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _TOOL_NAMES = frozenset(
     definition["name"] for definition in repository_tool_definitions(dialect="mcp")
@@ -58,6 +59,15 @@ class RepositoryToolBrokerStats:
     finished: bool = False
 
 
+@dataclass(frozen=True)
+class RepositoryToolBrokerTurn:
+    """One canonical public action/observation pair captured only for training."""
+
+    tool_name: str
+    arguments_json: str
+    observation_json: str
+
+
 class RepositoryToolBroker:
     """Route six typed actions into an already isolated runtime bridge."""
 
@@ -67,7 +77,11 @@ class RepositoryToolBroker:
         bridge: ExternalAgentBridge,
         socket_path: Path,
         public_test_ids: tuple[str, ...],
+        capture_training_transcript: bool = False,
+        campaign_role: str | None = None,
     ) -> None:
+        if capture_training_transcript and campaign_role != "training":
+            raise ValueError("repository broker transcript capture is training-only")
         self._bridge = bridge
         self.socket_path = socket_path
         self._public_test_ids = frozenset(public_test_ids)
@@ -88,6 +102,9 @@ class RepositoryToolBroker:
         self._finished = False
         self._policy_failure: str | None = None
         self._infrastructure_failure: str | None = None
+        self._capture_training_transcript = capture_training_transcript
+        self._training_turns: list[RepositoryToolBrokerTurn] = []
+        self._training_capture_bytes = 0
 
     def start(self) -> None:
         if self._server is not None:
@@ -137,6 +154,14 @@ class RepositoryToolBroker:
                 policy_failure=self._policy_failure,
                 infrastructure_failure=self._infrastructure_failure,
             )
+
+    def training_turns(self) -> tuple[RepositoryToolBrokerTurn, ...]:
+        """Return canonical turns only when the broker was explicitly training-bound."""
+
+        if not self._capture_training_transcript:
+            raise RuntimeError("repository broker transcript capture was not enabled")
+        with self._lock:
+            return tuple(self._training_turns)
 
     def _serve(self) -> None:
         assert self._server is not None
@@ -197,10 +222,16 @@ class RepositoryToolBroker:
                 )
             self._tool_calls += 1
             try:
-                canonical_action_json(name, arguments)
+                canonical_action = json.loads(canonical_action_json(name, arguments))
             except RepositoryActionProtocolViolation as exc:
                 self._rejected_calls += 1
                 return self._error_result(name, exc.subcategory)
+            canonical_arguments = json.dumps(
+                canonical_action["arguments"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
             state_failure = repository_action_state_failure(
                 name,
                 state_machine_id="repository_action_state_machine_v2",
@@ -212,14 +243,20 @@ class RepositoryToolBroker:
             )
             if state_failure is not None:
                 self._rejected_calls += 1
-                return self._error_result(name, state_failure)
+                state_response = self._error_result(name, state_failure)
+            else:
+                state_response = None
+        if state_response is not None:
+            return self._capture_response(name, canonical_arguments, state_response)
         try:
             if name == "list_files":
-                return self._workspace_result(name, "file.list", arguments)
+                response = self._workspace_result(name, "file.list", arguments)
+                return self._capture_response(name, canonical_arguments, response)
             if name == "read_file":
                 with self._lock:
                     self._file_reads += 1
-                return self._workspace_result(name, "file.read", arguments)
+                response = self._workspace_result(name, "file.read", arguments)
+                return self._capture_response(name, canonical_arguments, response)
             if name == "apply_patch":
                 with self._lock:
                     self._patches += 1
@@ -229,9 +266,10 @@ class RepositoryToolBroker:
                 if success:
                     with self._lock:
                         self._patch_applied = True
-                return response
+                return self._capture_response(name, canonical_arguments, response)
             if name == "run_public_test":
-                return self._run_public_test(arguments)
+                response = self._run_public_test(arguments)
+                return self._capture_response(name, canonical_arguments, response)
             if name == "inspect_diff":
                 with self._lock:
                     self._diff_inspections += 1
@@ -241,27 +279,64 @@ class RepositoryToolBroker:
                 if success:
                     with self._lock:
                         self._diff_observed = True
-                return response
+                return self._capture_response(name, canonical_arguments, response)
             if name == "finish":
                 if set(arguments) != {"message"} or not isinstance(arguments["message"], str):
                     return self._error_result(name, "finish requires one string message")
                 with self._lock:
                     self._finish_calls += 1
                     self._finished = True
-                return self._payload_result(
+                response = self._payload_result(
                     name, {"accepted": True, "terminal": True}, is_error=False
                 )
+                return self._capture_response(name, canonical_arguments, response)
         except PathPolicyError as exc:
             message = _safe_error(str(exc)) or type(exc).__name__
             with self._lock:
                 self._policy_failure = message
-            return self._error_result(name, message)
+            response = self._error_result(name, message)
+            return self._capture_response(name, canonical_arguments, response)
         except Exception as exc:
             message = _safe_error(str(exc)) or type(exc).__name__
             with self._lock:
                 self._infrastructure_failure = message
-            return self._error_result(name, message)
-        return self._error_result(name, "unknown tool request")
+            response = self._error_result(name, message)
+            return self._capture_response(name, canonical_arguments, response)
+        response = self._error_result(name, "unknown tool request")
+        return self._capture_response(name, canonical_arguments, response)
+
+    def _capture_response(
+        self, name: str, arguments_json: str, response: dict[str, Any]
+    ) -> dict[str, Any]:
+        if not self._capture_training_transcript:
+            return response
+        content = response.get("content")
+        observation = (
+            content[0].get("text")
+            if isinstance(content, list)
+            and len(content) == 1
+            and isinstance(content[0], dict)
+            and content[0].get("type") == "text"
+            else None
+        )
+        if not isinstance(observation, str):
+            with self._lock:
+                self._infrastructure_failure = "canonical training observation was unavailable"
+            return response
+        capture_bytes = len(arguments_json.encode("utf-8")) + len(observation.encode("utf-8"))
+        with self._lock:
+            if self._training_capture_bytes + capture_bytes > _MAX_TRAINING_CAPTURE_BYTES:
+                self._infrastructure_failure = "canonical training capture exceeded its bound"
+                return response
+            self._training_turns.append(
+                RepositoryToolBrokerTurn(
+                    tool_name=name,
+                    arguments_json=arguments_json,
+                    observation_json=observation,
+                )
+            )
+            self._training_capture_bytes += capture_bytes
+        return response
 
     def _workspace_result(
         self, name: str, tool_name: str, arguments: dict[str, Any]
@@ -343,4 +418,8 @@ def _safe_error(text: str) -> str:
     return _CONTROL.sub(" ", clean)
 
 
-__all__ = ["RepositoryToolBroker", "RepositoryToolBrokerStats"]
+__all__ = [
+    "RepositoryToolBroker",
+    "RepositoryToolBrokerStats",
+    "RepositoryToolBrokerTurn",
+]

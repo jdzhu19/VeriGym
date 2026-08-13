@@ -32,12 +32,13 @@ from verigym.protocols.repository_action import repository_tool_definitions
 
 from ._version import __version__
 from .artifacts import update_summary, write_evidence
-from .broker import BrokerStats, ClaudeToolBroker
+from .broker import BrokerStats, BrokerTurn, ClaudeToolBroker
 from .capabilities import CapabilityReport, runtime_capabilities
 from .config import ClaudeSettings, agent_settings
 from .events import (
     EventParseError,
     ParsedEventStream,
+    TranscriptNormalizationInfrastructureError,
     normalize_training_messages,
     parse_event_stream,
 )
@@ -153,6 +154,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
         public_test_ids = _public_test_ids(context)
         process: ClaudeProcessResult
         broker_stats: BrokerStats
+        broker_turns: tuple[BrokerTurn, ...] = ()
         invocation: dict[str, object]
         try:
             root = configured_broker_root()
@@ -165,6 +167,8 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     bridge=bridge,
                     socket_path=socket_path,
                     public_test_ids=public_test_ids,
+                    capture_training_transcript=settings.capture_training_transcript,
+                    campaign_role=settings.campaign_role,
                 )
                 arguments = build_arguments(
                     settings, socket_path=socket_path, run_id=context.run_id
@@ -203,6 +207,8 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 finally:
                     broker.stop()
                 broker_stats = broker.stats()
+                if settings.capture_training_transcript:
+                    broker_turns = broker.training_turns()
         except ClaudeProcessError as exc:
             raise _termination(
                 TerminationReason.MODEL_ERROR,
@@ -242,6 +248,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     process.stdout,
                     system_prompt=_training_system_prompt(),
                     user_prompt=prompt,
+                    broker_turns=broker_turns,
                 )
                 training_transcript = build_teacher_transcript(
                     campaign_role="training",
@@ -258,6 +265,14 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                         "tools": repository_tool_definitions(dialect="openai"),
                     },
                     messages=messages,
+                )
+            except TranscriptNormalizationInfrastructureError as exc:
+                failure = _termination(
+                    TerminationReason.RUNTIME_ERROR,
+                    kind="runtime",
+                    category="training_transcript_normalization_invalid",
+                    message=str(exc),
+                    infrastructure=True,
                 )
             except (EventParseError, ValueError) as exc:
                 failure = _termination(

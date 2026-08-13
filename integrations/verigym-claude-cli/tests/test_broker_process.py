@@ -193,6 +193,37 @@ def test_broker_routes_only_typed_workspace_and_runtime_calls(tmp_path: Path) ->
     assert stats.diff_inspections == 1
     assert stats.finish_calls == 1
     assert stats.finished is True
+    with pytest.raises(RuntimeError, match="not enabled"):
+        broker.training_turns()
+
+
+def test_broker_capture_is_training_only_and_preserves_canonical_turns(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="training-only"):
+        ClaudeToolBroker(
+            bridge=FakeBridge(),
+            socket_path=tmp_path / "heldout" / "mcp.sock",
+            public_test_ids=(),
+            capture_training_transcript=True,
+            campaign_role="heldout",
+        )
+    broker = ClaudeToolBroker(
+        bridge=FakeBridge(),
+        socket_path=tmp_path / "training" / "mcp.sock",
+        public_test_ids=(),
+        capture_training_transcript=True,
+        campaign_role="training",
+    )
+    broker.start()
+    try:
+        response = _call(broker.socket_path, "list_files", {"path": "repository"})
+    finally:
+        broker.stop()
+
+    turns = broker.training_turns()
+    assert len(turns) == 1
+    assert turns[0].tool_name == "list_files"
+    assert json.loads(turns[0].arguments_json) == {"path": "repository", "recursive": True}
+    assert turns[0].observation_json == response["content"][0]["text"]
 
 
 def test_unexpected_bridge_exception_is_infrastructure_not_policy(tmp_path: Path) -> None:

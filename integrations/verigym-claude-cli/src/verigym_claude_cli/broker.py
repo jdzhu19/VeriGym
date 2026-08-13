@@ -6,5 +6,8 @@ from verigym.core.repository_tool_broker import (
 from verigym.core.repository_tool_broker import (
     RepositoryToolBrokerStats as BrokerStats,
 )
+from verigym.core.repository_tool_broker import (
+    RepositoryToolBrokerTurn as BrokerTurn,
+)
 
-__all__ = ["BrokerStats", "ClaudeToolBroker"]
+__all__ = ["BrokerStats", "BrokerTurn", "ClaudeToolBroker"]

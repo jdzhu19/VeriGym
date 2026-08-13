@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from verigym.core.repository_tool_broker import RepositoryToolBrokerTurn
 from verigym.protocols.repository_action import canonical_action_json
 from verigym.schemas.multiturn_sft import MultiTurnSftMessage
 
@@ -18,6 +19,10 @@ _MAX_LINE_BYTES = 2 * 1024 * 1024
 
 class EventParseError(RuntimeError):
     """Claude emitted an unsafe or structurally invalid event stream."""
+
+
+class TranscriptNormalizationInfrastructureError(EventParseError):
+    """Provider events disagreed with the broker-owned canonical transcript."""
 
 
 @dataclass(frozen=True)
@@ -231,6 +236,7 @@ def normalize_training_messages(
     *,
     system_prompt: str,
     user_prompt: str,
+    broker_turns: tuple[RepositoryToolBrokerTurn, ...],
 ) -> list[MultiTurnSftMessage]:
     """Losslessly normalize public Claude MCP events while dropping thinking blocks."""
 
@@ -239,6 +245,7 @@ def normalize_training_messages(
         MultiTurnSftMessage(role="user", content=user_prompt),
     ]
     final_text: str | None = None
+    broker_turn_index = 0
     for line in stdout.splitlines():
         if not line.strip():
             continue
@@ -328,22 +335,42 @@ def normalize_training_messages(
                 call_id = block.get("tool_use_id")
                 if not isinstance(call_id, str):
                     raise EventParseError("Claude tool result omits its call ID")
-                text = _tool_result_text(block.get("content"))
+                _tool_result_text(block.get("content"))
                 name = _pending_tool_name(messages, call_id)
-                messages.append(
-                    MultiTurnSftMessage(
-                        role="tool",
-                        content=text,
-                        tool_call_id=call_id,
-                        name=name,
+                if broker_turn_index >= len(broker_turns):
+                    raise TranscriptNormalizationInfrastructureError(
+                        "Claude tool result has no broker-owned observation"
                     )
-                )
+                turn = broker_turns[broker_turn_index]
+                arguments = _pending_tool_arguments(messages, call_id)
+                if turn.tool_name != name or turn.arguments_json != arguments:
+                    raise TranscriptNormalizationInfrastructureError(
+                        "Claude tool event differs from the canonical broker turn"
+                    )
+                try:
+                    messages.append(
+                        MultiTurnSftMessage(
+                            role="tool",
+                            content=turn.observation_json,
+                            tool_call_id=call_id,
+                            name=name,
+                        )
+                    )
+                except ValueError as exc:
+                    raise TranscriptNormalizationInfrastructureError(
+                        "broker-owned observation is not canonical SFT JSON"
+                    ) from exc
+                broker_turn_index += 1
         elif event_type == "result" and final_text is None:
             result = event.get("result")
             if isinstance(result, str) and result.strip():
                 final_text = result
     if final_text is None:
         raise EventParseError("Claude training stream has no final assistant content")
+    if broker_turn_index != len(broker_turns):
+        raise TranscriptNormalizationInfrastructureError(
+            "canonical broker turn count differs from Claude tool results"
+        )
     messages.append(MultiTurnSftMessage(role="assistant", content=final_text))
     return messages
 
@@ -391,6 +418,15 @@ def _pending_tool_name(messages: list[MultiTurnSftMessage], call_id: str) -> str
     return call.function.name
 
 
+def _pending_tool_arguments(messages: list[MultiTurnSftMessage], call_id: str) -> str:
+    if not messages or messages[-1].role != "assistant" or not messages[-1].tool_calls:
+        raise EventParseError("Claude tool result has no preceding assistant call")
+    call = messages[-1].tool_calls[0]
+    if call.id != call_id:
+        raise EventParseError("Claude tool result call ID changed")
+    return call.function.arguments
+
+
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -404,6 +440,7 @@ __all__ = [
     "EventParseError",
     "EventSummary",
     "ParsedEventStream",
+    "TranscriptNormalizationInfrastructureError",
     "normalize_training_messages",
     "parse_event_stream",
 ]

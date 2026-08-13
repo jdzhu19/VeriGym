@@ -39,6 +39,12 @@ normalization decisions, validation results, action/tool linkage, state transiti
 taxonomy are persisted for deterministic zero-network replay. Credentials remain in the trusted
 controller and never enter the agent or verifier container.
 
+Teacher transcript capture is a separate, explicit training-only broker mode. The provider event
+stream supplies assistant call IDs and canonical arguments; the broker-owned capture supplies the
+exact public observation that crossed the repository boundary. Export requires the ordered tool
+names and arguments to agree. Ordinary audit mode remains content-free, and enabling capture for a
+held-out campaign is rejected before the broker starts.
+
 ## Online rLLM repository workflow
 
 `VeriGymRepositoryWorkflow` uses rLLM's `Workflow`, `RolloutEngine`, and trainable
