@@ -11,22 +11,7 @@ LABEL org.opencontainers.image.title="VeriGym vLLM 0.22.1 CUDA 12.9 service" \
       io.verigym.python.base_id="${PYTHON_BASE_ID}" \
       io.verigym.vllm.version="0.22.1" \
       io.verigym.vllm.cuda_variant="cu129" \
-      io.verigym.vllm.wheel_sha256="${VLLM_WHEEL_SHA256}" \
-      io.verigym.runtime.gcc_package_version="${GCC_PACKAGE_VERSION}" \
-      io.verigym.runtime.libc6_dev_package_version="${LIBC6_DEV_PACKAGE_VERSION}"
-
-# Triton compiles small launchers and model-specific kernels when vLLM initializes the engine.
-# Keep the minimum C toolchain in the runtime image and pin its requested Debian package versions.
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      "gcc=${GCC_PACKAGE_VERSION}" \
-      "libc6-dev=${LIBC6_DEV_PACKAGE_VERSION}" && \
-    rm -rf /var/lib/apt/lists/* && \
-    printf '#include <Python.h>\nint verigym_cc_smoke(void) { return 0; }\n' \
-      > /tmp/verigym-cc-smoke.c && \
-    cc -shared -fPIC $(python3-config --includes) \
-      /tmp/verigym-cc-smoke.c -o /tmp/verigym-cc-smoke.so && \
-    rm /tmp/verigym-cc-smoke.c /tmp/verigym-cc-smoke.so
+      io.verigym.vllm.wheel_sha256="${VLLM_WHEEL_SHA256}"
 
 RUN python3 -c 'import urllib.request; \
 urllib.request.urlretrieve( \
@@ -59,6 +44,21 @@ RUN python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
 assert torch.__version__.split("+")[0] == "2.11.0"; \
 assert torchvision.__version__ == "0.26.0+cu129"; \
 assert torchaudio.__version__ == "2.11.0+cu129"'
+
+# Triton compiles small launchers and model-specific kernels when vLLM initializes the engine.
+# Keep the minimum C toolchain in the runtime image and pin its requested Debian package versions.
+LABEL io.verigym.runtime.gcc_package_version="${GCC_PACKAGE_VERSION}" \
+      io.verigym.runtime.libc6_dev_package_version="${LIBC6_DEV_PACKAGE_VERSION}"
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      "gcc=${GCC_PACKAGE_VERSION}" \
+      "libc6-dev=${LIBC6_DEV_PACKAGE_VERSION}" && \
+    rm -rf /var/lib/apt/lists/* && \
+    printf '#include <Python.h>\nint verigym_cc_smoke(void) { return 0; }\n' \
+      > /tmp/verigym-cc-smoke.c && \
+    cc -shared -fPIC $(python3-config --includes) \
+      /tmp/verigym-cc-smoke.c -o /tmp/verigym-cc-smoke.so && \
+    rm /tmp/verigym-cc-smoke.c /tmp/verigym-cc-smoke.so
 
 RUN mkdir -p /opt/verigym && \
     python3 -m pip freeze --all | LC_ALL=C sort > /opt/verigym/vllm-service-pip-freeze.txt && \
