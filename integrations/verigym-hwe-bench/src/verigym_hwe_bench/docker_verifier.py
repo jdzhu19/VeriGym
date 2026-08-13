@@ -242,9 +242,20 @@ class DockerHweVerifier:
                 category=ErrorCategory.PARSER_ERROR,
                 message="Docker image identity metadata has an unexpected shape",
             )
-        if image.get("Id") != entry.image_id or not any(
-            str(value).endswith(f"@{entry.manifest_digest}")
-            for value in image.get("RepoDigests", [])
+        repository_digests = image["RepoDigests"]
+        if any(not isinstance(value, str) for value in repository_digests):
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.PARSER_ERROR,
+                message="Docker returned malformed repository digest metadata",
+            )
+        manifest_digest_observed = bool(repository_digests)
+        if image.get("Id") != entry.image_id or (
+            manifest_digest_observed
+            and not any(value.endswith(f"@{entry.manifest_digest}") for value in repository_digests)
         ):
             return self._result(
                 node=node,
@@ -458,6 +469,7 @@ class DockerHweVerifier:
             metadata={
                 "image_id": entry.image_id,
                 "manifest_digest": entry.manifest_digest,
+                "manifest_digest_observed": manifest_digest_observed,
                 "network_mode": "none",
                 "capabilities_dropped": "all",
                 "no_new_privileges": True,

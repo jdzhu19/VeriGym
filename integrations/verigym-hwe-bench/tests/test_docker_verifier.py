@@ -26,9 +26,11 @@ from verigym_hwe_bench.models import (
 )
 
 
+@pytest.mark.parametrize("airgapped", [False, True])
 def test_verifier_parses_pass_without_persisting_hidden_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    airgapped: bool,
 ) -> None:
     base = tmp_path / "base"
     candidate = tmp_path / "candidate"
@@ -70,7 +72,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     def fake_run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
         del timeout_s
         if argv[:3] == ["docker", "image", "inspect"]:
-            payload = {"Id": image_id, "RepoDigests": [f"name@{digest}"]}
+            payload = {"Id": image_id, "RepoDigests": [] if airgapped else [f"name@{digest}"]}
             return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
         if argv[:2] == ["docker", "create"]:
             return subprocess.CompletedProcess(argv, 0, b"container-id\n", b"")
@@ -103,6 +105,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     persisted = (tmp_path / "artifacts" / node.id / "result.json").read_text()
     assert result.status == VerifierStatus.PASSED
     assert result.tests_passed == result.tests_total == 1
+    assert result.metadata["manifest_digest_observed"] is not airgapped
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
     assert "SECRET_RUNTIME_OUTPUT" not in persisted
 
