@@ -156,6 +156,8 @@ def export_verified_multiturn_sft(
             "source_hash": run.source_hash,
             "candidate_hash": run.candidate_hash,
             "verifier_hash": scorecard.reproducibility.verifier_hash,
+            "verigym_source_commit": run.build_provenance.source_commit,
+            "verigym_source_tree_hash": run.build_provenance.source_tree_hash,
             "provider": transcript["provider"],
             "model_id": transcript["model_id"],
             "reasoning_effort": transcript["reasoning_effort"],
@@ -199,6 +201,10 @@ def export_verified_multiturn_sft(
         "example_hashes": [example.example_hash for example in examples],
         "tokenizer_hash": tokenizer_hash,
         "tool_contract_hash": tool_contract_hash,
+        "verigym_source_commits": sorted({example.verigym_source_commit for example in examples}),
+        "verigym_source_tree_hashes": sorted(
+            {example.verigym_source_tree_hash for example in examples}
+        ),
         "records_sha256": records_sha256,
         "only_training_split": True,
         "only_resolved_samples": True,
@@ -268,6 +274,12 @@ def _validated_run(
         raise ConfigurationError("multi-turn SFT run is rejected or infrastructure-invalid")
     if manifest.candidate_hash is None:
         raise ConfigurationError("verified run omits its candidate identity")
+    if (
+        manifest.build_provenance.dirty
+        or manifest.build_provenance.source_commit is None
+        or manifest.build_provenance.source_tree_hash is None
+    ):
+        raise ConfigurationError("verified run does not have clean source-code lineage")
     if (
         manifest.candidate_hash != scorecard.reproducibility.candidate_hash
         or manifest.verifier_hash != scorecard.reproducibility.verifier_hash

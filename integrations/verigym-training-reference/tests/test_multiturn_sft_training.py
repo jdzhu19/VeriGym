@@ -71,6 +71,8 @@ def _example(index: int) -> dict[str, object]:
             "source_hash": hash_character * 64,
             "candidate_hash": "b" * 64,
             "verifier_hash": "c" * 64,
+            "verigym_source_commit": "9" * 64,
+            "verigym_source_tree_hash": "8" * 64,
             "provider": "anthropic-compatible",
             "model_id": "deepseek-v4-flash[1m]",
             "reasoning_effort": "max",
@@ -98,6 +100,8 @@ def _dataset(root: Path) -> None:
         "example_hashes": [value["example_hash"] for value in examples],
         "tokenizer_hash": "f" * 64,
         "tool_contract_hash": content_hash(repository_tool_definitions(dialect="openai")),
+        "verigym_source_commits": ["9" * 64],
+        "verigym_source_tree_hashes": ["8" * 64],
         "records_sha256": hash_bytes(payload),
     }
     draft = VerifiedMultiTurnSftDatasetManifest.model_construct(**base, manifest_hash="0" * 64)

@@ -64,6 +64,8 @@ def _example_payload() -> dict[str, object]:
         "source_hash": "b" * 64,
         "candidate_hash": "c" * 64,
         "verifier_hash": "d" * 64,
+        "verigym_source_commit": "9" * 64,
+        "verigym_source_tree_hash": "8" * 64,
         "provider": "anthropic-compatible",
         "model_id": "deepseek-v4-flash[1m]",
         "reasoning_effort": "max",

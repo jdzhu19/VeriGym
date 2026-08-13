@@ -162,6 +162,8 @@ class VerifiedMultiTurnSftExample(StrictModel):
     source_hash: str
     candidate_hash: str
     verifier_hash: str
+    verigym_source_commit: str
+    verigym_source_tree_hash: str
     provider: str
     model_id: str
     reasoning_effort: Literal["max", "xhigh"]
@@ -199,6 +201,8 @@ class VerifiedMultiTurnSftExample(StrictModel):
         "source_hash",
         "candidate_hash",
         "verifier_hash",
+        "verigym_source_commit",
+        "verigym_source_tree_hash",
         "prompt_hash",
         "tool_contract_hash",
         "harness_hash",
@@ -292,6 +296,8 @@ class VerifiedMultiTurnSftDatasetManifest(StrictModel):
     example_hashes: list[str] = Field(min_length=1)
     tokenizer_hash: str
     tool_contract_hash: str
+    verigym_source_commits: list[str] = Field(min_length=1)
+    verigym_source_tree_hashes: list[str] = Field(min_length=1)
     records_sha256: str
     only_training_split: Literal[True] = True
     only_resolved_samples: Literal[True] = True
@@ -318,6 +324,11 @@ class VerifiedMultiTurnSftDatasetManifest(StrictModel):
     def validate_example_hashes(cls, values: list[str]) -> list[str]:
         return [_sha256(value) for value in values]
 
+    @field_validator("verigym_source_commits", "verigym_source_tree_hashes")
+    @classmethod
+    def validate_source_hashes(cls, values: list[str]) -> list[str]:
+        return [_sha256(value) for value in values]
+
     @model_validator(mode="after")
     def validate_manifest(self) -> Self:
         if self.record_count != len(self.task_ids) or self.record_count != len(self.example_hashes):
@@ -326,6 +337,10 @@ class VerifiedMultiTurnSftDatasetManifest(StrictModel):
             raise ValueError("multi-turn dataset tasks must be sorted and unique")
         if len(set(self.example_hashes)) != len(self.example_hashes):
             raise ValueError("multi-turn dataset example hashes must be unique")
+        if self.verigym_source_commits != sorted(set(self.verigym_source_commits)):
+            raise ValueError("multi-turn dataset source commits must be sorted and unique")
+        if self.verigym_source_tree_hashes != sorted(set(self.verigym_source_tree_hashes)):
+            raise ValueError("multi-turn dataset source tree hashes must be sorted and unique")
         identity = self.model_dump(mode="json", exclude={"manifest_hash"})
         if content_hash(identity) != self.manifest_hash:
             raise ValueError("multi-turn SFT manifest identity changed")
