@@ -114,7 +114,11 @@ _ACTION_MAPPINGS = {
 _ACTION_DESCRIPTIONS = {
     "list_files": "List visible task-workspace files using safe relative paths.",
     "read_file": "Read one visible UTF-8 task-workspace file by relative path.",
-    "apply_patch": "Apply one unified diff to editable repository paths.",
+    "apply_patch": (
+        "Apply one unified diff to editable repository paths. The patch must use exact "
+        "--- a/path and +++ b/path file headers plus numbered "
+        "@@ -old,count +new,count @@ hunk headers; do not use *** Update File syntax."
+    ),
     "run_public_test": "Run one exact task-declared public test.",
     "inspect_diff": "Inspect the current canonical candidate diff.",
     "finish": "Finish after applying a patch and inspecting the candidate diff.",

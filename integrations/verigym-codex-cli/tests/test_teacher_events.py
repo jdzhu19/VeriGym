@@ -55,6 +55,47 @@ def test_codex_teacher_preserves_completed_mcp_call_and_drops_reasoning() -> Non
     assert "private" not in json.dumps([message.model_dump() for message in messages])
 
 
+def test_codex_teacher_binds_pre_tool_assistant_text_to_that_tool_turn() -> None:
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+    stdout = "\n".join(
+        [
+            _line(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "Submitting the repair."},
+                }
+            ),
+            _line(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "mcp_tool_call",
+                        "server": "verigym",
+                        "id": "call_exact_2",
+                        "name": "finish",
+                        "arguments": {"message": "done"},
+                        "result": observation,
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "complete"},
+                }
+            ),
+        ]
+    )
+
+    messages = normalize_training_messages(stdout, system_prompt="system", user_prompt="user")
+
+    assert messages[2].content == "Submitting the repair."
+    assert messages[2].tool_calls is not None
+    assert messages[-1].content == "complete"
+
+
 def test_codex_teacher_rejects_shell_event_instead_of_guessing_semantics() -> None:
     stdout = "\n".join(
         [
@@ -120,3 +161,4 @@ def test_frozen_codex_training_system_prompt_is_sft_safe() -> None:
     )
 
     assert messages[0].content == _training_system_prompt()
+    assert "*** Update File syntax is invalid" in messages[0].content

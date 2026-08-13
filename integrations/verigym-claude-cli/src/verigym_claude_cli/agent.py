@@ -410,7 +410,11 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
         "instructions": [
             "Solve the task by using only the mcp__verigym__* tools supplied in this session.",
             "Begin by listing and reading visible files; paths are relative to /workspace.",
-            "Use apply_patch only for paths permitted by editable_globs.",
+            (
+                "Use apply_patch only for paths permitted by editable_globs. Its patch must "
+                "use --- a/path and +++ b/path file headers plus numbered "
+                "@@ -old,count +new,count @@ hunk headers; never use *** Update File syntax."
+            ),
             "Use only relative MCP paths; never send /workspace or another absolute path.",
             "Use run_public_test only with an ID listed in public_test_ids.",
             "Inspect the final diff, then call finish exactly once.",
@@ -430,7 +434,9 @@ def _training_system_prompt() -> str:
     return (
         "You are a bounded repository repair agent. Use exactly one supplied repository "
         "function per turn and do not mix prose with a tool call. Read visible files before "
-        "editing, use only declared public tests, inspect the candidate diff, then call finish. "
+        "editing. apply_patch requires ---/+++ file headers and numbered @@ hunk headers; "
+        "*** Update File syntax is invalid. Use only declared public tests, inspect the "
+        "candidate diff, then call finish. "
         "Shell, network, hidden assets, and golden repair artifacts are unavailable."
     )
 

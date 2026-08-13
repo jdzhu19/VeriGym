@@ -127,8 +127,8 @@ class MultiTurnSftMessage(StrictModel):
                 raise ValueError("assistant SFT messages cannot be tool observations")
             has_calls = bool(self.tool_calls)
             has_content = bool(self.content)
-            if has_calls == has_content:
-                raise ValueError("assistant SFT messages contain one tool call or final content")
+            if not has_calls and not has_content:
+                raise ValueError("assistant SFT messages require a tool call or final content")
             if has_calls and len(self.tool_calls or []) != 1:
                 raise ValueError("repository SFT permits exactly one tool call per turn")
         else:

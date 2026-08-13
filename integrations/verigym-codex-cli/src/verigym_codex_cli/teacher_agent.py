@@ -341,7 +341,11 @@ def _teacher_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
         "instructions": [
             "Use only the VeriGym MCP repository tools.",
             "Use exactly one MCP tool per turn and no built-in tools.",
-            "Read visible files before editing and use apply_patch for changes.",
+            (
+                "Read visible files before editing. apply_patch requires --- a/path and "
+                "+++ b/path file headers plus numbered @@ -old,count +new,count @@ hunk "
+                "headers; never use *** Update File syntax."
+            ),
             "Run a declared public test when available.",
             "Inspect the diff, then call finish exactly once.",
             "Do not access shell, network, host files, hidden assets, or golden repair artifacts.",
@@ -354,7 +358,9 @@ def _training_system_prompt() -> str:
     return (
         "You are a bounded repository repair agent. Use exactly one supplied repository "
         "function per turn and do not mix prose with a tool call. Read visible files before "
-        "editing, use only declared public tests, inspect the candidate diff, then call finish. "
+        "editing. apply_patch requires ---/+++ file headers and numbered @@ hunk headers; "
+        "*** Update File syntax is invalid. Use only declared public tests, inspect the "
+        "candidate diff, then call finish. "
         "Shell, network, hidden assets, and golden repair artifacts are unavailable."
     )
 

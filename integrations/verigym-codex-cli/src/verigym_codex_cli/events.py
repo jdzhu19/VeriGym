@@ -255,6 +255,8 @@ def normalize_training_messages(
         MultiTurnSftMessage(role="user", content=user_prompt),
     ]
     final_text: str | None = None
+    pending_assistant_text: list[str] = []
+    finish_completed = False
     canonical_tools = {
         "list_files",
         "read_file",
@@ -285,9 +287,12 @@ def normalize_training_messages(
                     continue
                 text = _item_text(item)
                 if text.strip():
-                    if final_text is not None:
-                        raise EventParseError("Codex emitted multiple final assistant messages")
-                    final_text = text
+                    if finish_completed:
+                        if final_text is not None:
+                            raise EventParseError("Codex emitted multiple post-finish messages")
+                        final_text = text
+                    else:
+                        pending_assistant_text.append(text)
                 continue
             if item_type == "mcp_tool_call":
                 if event_type != "item.completed":
@@ -316,7 +321,11 @@ def normalize_training_messages(
                     MultiTurnSftMessage.model_validate(
                         {
                             "role": "assistant",
-                            "content": None,
+                            "content": (
+                                "\n".join(pending_assistant_text)
+                                if pending_assistant_text
+                                else None
+                            ),
                             "tool_calls": [
                                 {
                                     "id": call_id,
@@ -330,6 +339,7 @@ def normalize_training_messages(
                         }
                     )
                 )
+                pending_assistant_text.clear()
                 messages.append(
                     MultiTurnSftMessage(
                         role="tool",
@@ -338,6 +348,7 @@ def normalize_training_messages(
                         name=raw_name,
                     )
                 )
+                finish_completed = finish_completed or raw_name == "finish"
                 continue
             if item_type in {
                 "command_execution",
@@ -373,6 +384,12 @@ def normalize_training_messages(
             continue
         else:
             raise EventParseError("Codex teacher stream contains an unsupported event type")
+    if pending_assistant_text:
+        if not finish_completed or final_text is not None:
+            raise EventParseError("Codex assistant text is not bound to a canonical turn")
+        final_text = "\n".join(pending_assistant_text)
+    if not finish_completed:
+        raise EventParseError("Codex teacher stream has no completed finish call")
     if final_text is None:
         raise EventParseError("Codex teacher stream has no final assistant message")
     messages.append(MultiTurnSftMessage(role="assistant", content=final_text))

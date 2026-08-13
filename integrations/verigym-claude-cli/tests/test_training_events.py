@@ -120,3 +120,4 @@ def test_frozen_claude_training_system_prompt_is_sft_safe() -> None:
     )
 
     assert messages[0].content == _training_system_prompt()
+    assert "*** Update File syntax is invalid" in messages[0].content

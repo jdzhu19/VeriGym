@@ -91,6 +91,27 @@ def test_tool_schemas_are_derived_identically_for_openai_and_mcp() -> None:
     assert [entry["function"]["parameters"] for entry in openai] == [
         entry["inputSchema"] for entry in mcp
     ]
+    apply_patch = next(entry for entry in openai if entry["function"]["name"] == "apply_patch")
+    assert "*** Update File" in apply_patch["function"]["description"]
+
+
+def test_assistant_text_may_accompany_a_canonical_tool_call() -> None:
+    message = MultiTurnSftMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": "Submitting the bounded candidate.",
+            "tool_calls": [
+                {
+                    "id": "call_finish_with_text",
+                    "type": "function",
+                    "function": {"name": "finish", "arguments": '{"message":"done"}'},
+                }
+            ],
+        }
+    )
+
+    assert message.content == "Submitting the bounded candidate."
+    assert message.tool_calls is not None
 
 
 def test_teacher_capture_is_training_only_and_tamper_evident() -> None:
