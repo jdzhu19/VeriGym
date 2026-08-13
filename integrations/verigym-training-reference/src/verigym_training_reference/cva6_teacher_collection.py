@@ -26,6 +26,7 @@ _CODEX_MODEL = "gpt-5.4"
 _BASE_SEED = 484
 _TARGET_SUCCESSES = 8
 _MAX_TOKENS = 16_384
+_MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
 _OPT_IN_ENV = "VERIGYM_RUN_CVA6_TEACHER_COLLECTION"
 _DEFAULT_CAMPAIGN_ID = "cva6-verified-multiturn-teachers-v1"
 _CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
@@ -322,6 +323,7 @@ def _run_config(
                 "model_id": _CLAUDE_MODEL,
                 "reasoning_effort": "max",
                 "max_process_time_s": max_process_time_s,
+                "max_output_bytes": _MAX_EVIDENCE_BYTES,
                 "allow_proxy_environment": True,
                 "campaign_role": "training",
                 "capture_training_transcript": True,
@@ -334,6 +336,7 @@ def _run_config(
             "model_id": _CODEX_MODEL,
             "reasoning_effort": "xhigh",
             "max_process_time_s": max_process_time_s,
+            "max_output_bytes": _MAX_EVIDENCE_BYTES,
             "allow_proxy_environment": True,
             "campaign_role": "training",
             "capture_training_transcript": True,

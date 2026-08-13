@@ -7,10 +7,23 @@ import pytest
 from verigym.core.errors import ConfigurationError
 
 from verigym_training_reference.cva6_teacher_collection import (
+    _MAX_EVIDENCE_BYTES,
     _attempt_id,
     _campaign_output,
     _is_infrastructure_invalid,
 )
+
+
+def test_teacher_campaign_uses_the_maximum_bounded_cli_evidence_stream() -> None:
+    assert _MAX_EVIDENCE_BYTES == 16 * 1024 * 1024
+
+    source = (
+        Path(__file__).parents[1]
+        / "src"
+        / "verigym_training_reference"
+        / "cva6_teacher_collection.py"
+    ).read_text(encoding="utf-8")
+    assert source.count('"max_output_bytes": _MAX_EVIDENCE_BYTES') == 2
 
 
 def test_campaign_identity_is_bound_into_progress_and_attempt_ids(tmp_path: Path) -> None:
