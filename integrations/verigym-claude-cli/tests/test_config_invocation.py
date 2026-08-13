@@ -312,6 +312,58 @@ def test_stream_parser_preserves_remote_failure_after_retry_without_context_usag
     assert parsed.failure_message == "server overloaded"
 
 
+def test_stream_parser_preserves_cli_synthetic_server_failure() -> None:
+    events = [
+        {
+            "type": "system",
+            "subtype": "init",
+            "model": "deepseek-v4-flash[1m]",
+            "tools": list(CLAUDE_TOOL_NAMES),
+        },
+        {"type": "system", "subtype": "api_retry", "attempt": 10},
+        {
+            "type": "assistant",
+            "error": "server_error",
+            "message": {
+                "model": "<synthetic>",
+                "content": [{"type": "text", "text": "request failed"}],
+            },
+        },
+        {"type": "result", "subtype": "success", "is_error": True},
+    ]
+    parsed = parse_event_stream(
+        "\n".join(json.dumps(event) for event in events),
+        requested_model_id="deepseek-v4-flash[1m]",
+        expected_context_window_tokens=1_000_000,
+    )
+    assert not parsed.successful
+    assert parsed.observed_model_id == "deepseek-v4-flash[1m]"
+    assert parsed.failure_message == "Claude assistant reported server_error"
+
+
+def test_stream_parser_rejects_synthetic_failure_with_successful_result() -> None:
+    events = [
+        {
+            "type": "system",
+            "subtype": "init",
+            "model": "deepseek-v4-flash[1m]",
+            "tools": list(CLAUDE_TOOL_NAMES),
+        },
+        {
+            "type": "assistant",
+            "error": "server_error",
+            "message": {"model": "<synthetic>", "content": []},
+        },
+        {"type": "result", "subtype": "success", "is_error": False},
+    ]
+    with pytest.raises(EventParseError, match="synthetic failure ended"):
+        parse_event_stream(
+            "\n".join(json.dumps(event) for event in events),
+            requested_model_id="deepseek-v4-flash[1m]",
+            expected_context_window_tokens=None,
+        )
+
+
 def test_identity_classifies_mcp_transport_once(
     configured_fake: Path,
 ) -> None:

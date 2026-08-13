@@ -87,6 +87,7 @@ def parse_event_stream(
     final_hash: str | None = None
     thinking_count = 0
     failure_message: str | None = None
+    synthetic_failure_seen = False
     lines = [line for line in stdout.splitlines() if line.strip()]
     if not lines:
         raise EventParseError("Claude event stream is empty")
@@ -132,7 +133,14 @@ def parse_event_stream(
             if not isinstance(message, dict):
                 raise EventParseError("Claude assistant event omits its message object")
             event_model = _optional_string(message.get("model"))
-            if event_model is not None:
+            assistant_error = _optional_string(payload.get("error"))
+            synthetic_failure = event_model == "<synthetic>" and bool(
+                assistant_error and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", assistant_error)
+            )
+            if synthetic_failure:
+                synthetic_failure_seen = True
+                failure_message = f"Claude assistant reported {assistant_error}"
+            elif event_model is not None:
                 observed_models.append(event_model)
             content = message.get("content")
             if not isinstance(content, list):
@@ -145,6 +153,8 @@ def parse_event_stream(
                     event_thinking = True
                     thinking_count += 1
                 if block_type == "tool_use":
+                    if synthetic_failure:
+                        raise EventParseError("Claude synthetic failure attempted a tool call")
                     name = block.get("name")
                     if not isinstance(name, str) or name not in CLAUDE_TOOL_NAMES:
                         raise EventParseError("Claude invoked a tool outside the MCP allowlist")
@@ -184,7 +194,7 @@ def parse_event_stream(
                 errors = payload.get("errors")
                 if isinstance(errors, list) and errors and isinstance(errors[0], str):
                     failure_message = errors[0][:1000]
-                else:
+                elif failure_message is None:
                     failure_message = "Claude terminal result reported an error"
         elif event_type not in {"system", "user", "rate_limit_event", "stream_event"}:
             raise EventParseError(f"Claude emitted unsupported event type: {event_type}")
@@ -200,6 +210,8 @@ def parse_event_stream(
         )
     if not init_seen or not terminal_seen:
         raise EventParseError("Claude event stream lacks init or terminal evidence")
+    if synthetic_failure_seen and successful:
+        raise EventParseError("Claude synthetic failure ended with a successful result")
     observed_model = _select_observed_model(observed_models, requested_model_id)
     if expected_context_window_tokens is not None and (
         (successful and context_window != expected_context_window_tokens)
