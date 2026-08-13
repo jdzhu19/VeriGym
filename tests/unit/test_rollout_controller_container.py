@@ -30,6 +30,7 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "PYTHON_BASE_REPODIGEST" in build
     assert "DOCKER_CLI_BASE_REPODIGEST" in build
     assert "--network verigym-hwe-net" in build
+    assert "DOCKER_BUILDKIT=0 docker build" in build
 
 
 def test_controller_runner_is_networkless_and_socket_is_controller_only() -> None:

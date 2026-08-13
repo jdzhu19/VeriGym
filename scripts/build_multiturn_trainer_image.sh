@@ -50,7 +50,7 @@ python -m build --wheel --no-isolation --outdir "$context/wheels" "$verigym_chec
 python -m build --wheel --no-isolation --outdir "$context/wheels" \
   "$verigym_checkout/integrations/verigym-training-reference"
 
-docker build \
+DOCKER_BUILDKIT=0 docker build \
   --network verigym-hwe-net \
   --build-arg "VLLM_BASE=$vllm_base" \
   --build-arg "RLLM_COMMIT=$rllm_commit" \

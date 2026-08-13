@@ -17,6 +17,7 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "docker.sock" not in dockerfile
     assert "VLLM_BASE_REPODIGEST" in build
     assert "--network verigym-hwe-net" in build
+    assert "DOCKER_BUILDKIT=0 docker build" in build
     assert "--entrypoint python3" in build
     assert "RUN python3 -m pip install" in dockerfile
 

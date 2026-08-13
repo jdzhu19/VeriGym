@@ -51,7 +51,7 @@ python3 -m build --wheel --no-isolation --outdir "$context/wheels" \
 python3 -m build --wheel --no-isolation --outdir "$context/wheels" \
   "$verigym_checkout/integrations/verigym-training-reference"
 
-docker build \
+DOCKER_BUILDKIT=0 docker build \
   --network verigym-hwe-net \
   --build-arg "PYTHON_BASE=$python_base" \
   --build-arg "DOCKER_CLI_BASE=$docker_cli_base" \
