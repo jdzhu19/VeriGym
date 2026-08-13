@@ -136,7 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--group-add",
         str(socket_gid),
         "--env",
-        f"HOME={scratch_mountpoint}",
+        "HOME=/tmp",
         "--env",
         f"TMPDIR={scratch_mountpoint}",
         "--tmpfs",

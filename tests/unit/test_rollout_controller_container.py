@@ -49,6 +49,8 @@ def test_controller_runner_is_networkless_and_socket_is_controller_only() -> Non
     assert 'f"{socket}:{socket}:rw"' in source
     assert 'f"{empty_home}:{container_home}:rw"' in source
     assert '"--empty-home"' in source
+    assert '"HOME=/tmp"' in source
+    assert 'f"TMPDIR={scratch_mountpoint}"' in source
     assert 'f"{arguments.source_volume}:/verigym-source:ro"' in source
     assert '"--privileged"' not in source
     assert "provider" not in source.lower()
