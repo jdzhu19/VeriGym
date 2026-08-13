@@ -83,6 +83,18 @@ class PolicyRejectingBridge(FakeBridge):
         raise PathPolicyError("simulated absolute-path policy rejection")
 
 
+class RetryablePatchBridge(FakeBridge):
+    def invoke_workspace_tool(self, tool_name: str, request: dict[str, JsonValue]) -> ToolResult:
+        if tool_name == "file.apply_patch":
+            return ToolResult(
+                tool=tool_name,
+                success=False,
+                category=ErrorCategory.PERMISSION_DENIED,
+                message="patch context does not match the workspace",
+            )
+        return super().invoke_workspace_tool(tool_name, request)
+
+
 def _call(socket_path: Path, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     payload = json.dumps({"name": name, "arguments": arguments}).encode() + b"\n"
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -171,6 +183,29 @@ def test_bridge_path_rejection_is_policy_not_infrastructure(tmp_path: Path) -> N
     stats = broker.stats()
     assert stats.policy_failure == "simulated absolute-path policy rejection"
     assert stats.infrastructure_failure is None
+
+
+def test_patch_context_error_is_retryable_not_terminal_policy(tmp_path: Path) -> None:
+    broker = ClaudeToolBroker(
+        bridge=RetryablePatchBridge(),
+        socket_path=tmp_path / "private" / "mcp.sock",
+        public_test_ids=(),
+    )
+    broker.start()
+    try:
+        request = {"patch": "--- a/repository/a.sv\n+++ b/repository/a.sv\n@@ -1 +1 @@\n-a\n+b\n"}
+        assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert (
+            _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"] is False
+        )
+    finally:
+        broker.stop()
+    stats = broker.stats()
+    assert stats.policy_failure is None
+    assert stats.infrastructure_failure is None
+    assert stats.rejected_calls == 2
+    assert stats.patches == 2
 
 
 def test_fake_process_receives_explicit_max_effort_without_output_token_override(

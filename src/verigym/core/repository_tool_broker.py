@@ -28,6 +28,16 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _TOOL_NAMES = frozenset(
     definition["name"] for definition in repository_tool_definitions(dialect="mcp")
 )
+_RETRYABLE_PATCH_ERRORS = (
+    "invalid unified patch:",
+    "patch context does not match the workspace",
+    "patch hunk is out of range or overlaps a prior hunk",
+    "patch hunk line counts do not match its header",
+    "patch cannot have both paths set to /dev/null",
+    "renames are not supported by file.apply_patch",
+    "patch file has no hunks",
+    "patch is empty",
+)
 
 
 @dataclass(frozen=True)
@@ -269,8 +279,12 @@ class RepositoryToolBroker:
             "policy_denied",
             "sandbox_error",
         }:
+            message = result.message or result.stderr or result.category.value
             with self._lock:
-                self._policy_failure = result.message or result.stderr or result.category.value
+                if name == "apply_patch" and message.startswith(_RETRYABLE_PATCH_ERRORS):
+                    self._rejected_calls += 1
+                else:
+                    self._policy_failure = message
         elif not result.success and result.category.value == "internal_error":
             with self._lock:
                 self._infrastructure_failure = result.message or "workspace tool internal error"
