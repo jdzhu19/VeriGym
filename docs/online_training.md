@@ -128,6 +128,11 @@ filesystem and a non-root UID, and exposes only the scheduler allocation. It is 
 digest-locked vLLM service, SFT trainer, and adapter reload images. Never propagate it to the
 rollout controller or a benchmark sandbox, whose inputs and repository contents are untrusted.
 
+The vLLM launcher fixes `VLLM_USE_FLASHINFER_SAMPLER=0`. In vLLM 0.22.1 the optional FlashInfer
+top-k/top-p path may JIT-build a CUDA extension during engine profiling and requires `nvcc` even
+before the first request. The PyTorch-native sampler avoids adding the CUDA compiler toolchain to
+the serving image; Triton's model kernels still use the pinned minimal C compiler described below.
+
 The GPU Docker launchers do not pass scheduler-visible numeric indices across the daemon boundary.
 Some LSF installations cgroup-filter and renumber an allocation even though the host Docker daemon
 still interprets numbers in its global device namespace. Each launcher therefore requires its

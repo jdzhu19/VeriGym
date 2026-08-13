@@ -79,6 +79,7 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "seccomp_arguments=(--security-opt seccomp=unconfined)" in runner
     assert "--env LOGNAME=verigym" in runner
     assert "--env USER=verigym" in runner
+    assert "--env VLLM_USE_FLASHINFER_SAMPLER=0" in runner
     assert "--ipc host" not in runner
     assert "docker.sock" not in runner
     assert "--privileged" not in runner

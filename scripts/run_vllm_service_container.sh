@@ -116,6 +116,7 @@ docker run --rm \
   --env USER=verigym \
   --env HF_HUB_OFFLINE=1 \
   --env TRANSFORMERS_OFFLINE=1 \
+  --env VLLM_USE_FLASHINFER_SAMPLER=0 \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=8g \
   --volume "$empty_home:/work/home" \
   --volume "$model_root:/model:ro" \
