@@ -143,18 +143,7 @@ def validate_runtime_pins(rllm_source: Path) -> dict[str, str]:
     """Require the frozen trainer and separately bound model-service versions."""
 
     source = _safe_directory(rllm_source, "rLLM source")
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=source,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ConfigurationError("cannot identify the frozen rLLM checkout") from exc
-    commit = result.stdout.strip()
+    commit = _rllm_commit(source)
     if commit != RLLM_COMMIT:
         raise ConfigurationError(f"rLLM commit must be {RLLM_COMMIT}; found {commit}")
     try:
@@ -174,6 +163,30 @@ def validate_runtime_pins(rllm_source: Path) -> dict[str, str]:
             f"found verl=={versions['verl']} and vllm=={versions['vllm']}"
         )
     return versions
+
+
+def _rllm_commit(source: Path) -> str:
+    marker = source / ".verigym-rllm-commit"
+    if marker.exists() or marker.is_symlink():
+        try:
+            commit = _read_regular_file(marker).decode("ascii").strip()
+        except (UnicodeDecodeError, OSError) as exc:
+            raise ConfigurationError("invalid sealed rLLM commit marker") from exc
+        if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
+            raise ConfigurationError("invalid sealed rLLM commit marker")
+        return commit
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=source,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ConfigurationError("cannot identify the frozen rLLM checkout") from exc
+    return result.stdout.strip()
 
 
 def assert_resolved_verl_config(config: Any, *, output: Path) -> None:

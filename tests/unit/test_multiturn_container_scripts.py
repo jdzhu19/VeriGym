@@ -13,6 +13,9 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "vllm lmcache opencv-python-headless cupy-cuda13x pygobject" in dockerfile
     assert "1d1109a655e291b3001d8526d7c9ecc5b9328226" in dockerfile
     assert "COPY rllm /opt/rllm" in dockerfile
+    assert ".verigym-rllm-commit" in dockerfile
+    assert '"$context/rllm/.verigym-rllm-commit"' in build
+    assert 'subprocess.check_output(["git"' not in dockerfile
     assert "COPY wheels /opt/verigym/wheels" in dockerfile
     assert "models" not in dockerfile.lower()
     assert "docker.sock" not in dockerfile

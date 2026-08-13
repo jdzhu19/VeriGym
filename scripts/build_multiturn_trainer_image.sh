@@ -46,6 +46,7 @@ cp "$verigym_checkout/docker/multiturn-trainer/.dockerignore" "$context/.dockeri
 cp "$verigym_checkout/scripts/train_qwen35_multiturn_sft.py" \
   "$context/train_qwen35_multiturn_sft.py"
 cp -a "$rllm_checkout" "$context/rllm"
+printf '%s\n' "$rllm_commit" >"$context/rllm/.verigym-rllm-commit"
 python -m build --wheel --no-isolation --outdir "$context/wheels" "$verigym_checkout"
 python -m build --wheel --no-isolation --outdir "$context/wheels" \
   "$verigym_checkout/integrations/verigym-training-reference"

@@ -237,6 +237,38 @@ def test_runtime_pins_bind_separate_vllm_service(
     assert "VERIGYM_VLLM_SERVICE_VERSION" not in os.environ
 
 
+def test_runtime_pins_accept_sealed_commit_without_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "rllm"
+    source.mkdir()
+    (source / ".verigym-rllm-commit").write_text(
+        "1d1109a655e291b3001d8526d7c9ecc5b9328226\n", encoding="ascii"
+    )
+    monkeypatch.setattr(
+        "verigym_training_reference.multiturn_sft_training.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("sealed image must not invoke git"),
+    )
+    package_version = "verigym_training_reference.multiturn_sft_training._package_version"
+    monkeypatch.setattr(package_version, lambda name: "0.8.0" if name == "verl" else "")
+    metadata_version = (
+        "verigym_training_reference.multiturn_sft_training.importlib.metadata.version"
+    )
+    monkeypatch.setattr(
+        metadata_version,
+        lambda name: (_ for _ in ()).throw(importlib.metadata.PackageNotFoundError(name)),
+    )
+    monkeypatch.setenv("VERIGYM_VLLM_SERVICE_VERSION", "0.22.1")
+
+    assert validate_runtime_pins(source)["rllm_commit"] == (
+        "1d1109a655e291b3001d8526d7c9ecc5b9328226"
+    )
+
+    (source / ".verigym-rllm-commit").write_text("tampered\n", encoding="ascii")
+    with pytest.raises(ConfigurationError, match="invalid sealed rLLM commit marker"):
+        validate_runtime_pins(source)
+
+
 def test_collection_receipt_resolves_only_bound_relative_paths(tmp_path: Path) -> None:
     entries = [
         TaskSplitEntry(
