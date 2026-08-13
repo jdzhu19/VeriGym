@@ -20,6 +20,7 @@ if [[ -n $(cd "$verigym_checkout" && git status --porcelain) ]]; then
   echo "vLLM service image requires a clean VeriGym checkout" >&2
   exit 2
 fi
+verigym_commit=$(cd "$verigym_checkout" && git rev-parse HEAD)
 base_id=$(docker image inspect "$python_base" --format '{{.Id}}')
 if [[ ! $base_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "Python base has no immutable local image ID" >&2
@@ -41,6 +42,7 @@ DOCKER_BUILDKIT=0 docker build \
   --build-arg "PYTHON_BASE=$python_base" \
   --build-arg "PYTHON_BASE_ID=$base_id" \
   --build-arg "VLLM_WHEEL_SHA256=$wheel_sha256" \
+  --build-arg "VERIGYM_COMMIT=$verigym_commit" \
   --tag "$image_tag" \
   "$context"
 
