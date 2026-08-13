@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -48,7 +50,8 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "import importlib.metadata,torch,torchaudio,torchvision,vllm" in build
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
-    assert '--gpus "\\"device=$gpu_devices\\""' in runner
+    assert 'docker_gpu_devices=$(resolve_docker_gpu_device_ids "$gpu_devices")' in runner
+    assert '--gpus "\\"device=$docker_gpu_devices\\""' in runner
     assert '--publish "127.0.0.1:$port:8000"' in runner
     assert '--network "$network_name"' in runner
     assert "ADAPTER_ROOT_OR_DASH" in runner
@@ -75,7 +78,8 @@ def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None
     )
 
     assert "--network none" in runner
-    assert '--gpus "\\"device=$gpu_devices\\""' in runner
+    assert 'docker_gpu_devices=$(resolve_docker_gpu_device_ids "$gpu_devices")' in runner
+    assert '--gpus "\\"device=$docker_gpu_devices\\""' in runner
     assert "$model_root:/model:ro" in runner
     assert "$dataset_root:/dataset:ro" in runner
     assert "$output_root:/output" in runner
@@ -102,7 +106,8 @@ def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
     )
 
     assert "--network none" in reload_runner
-    assert '--gpus "\\"device=$gpu_devices\\""' in reload_runner
+    assert 'docker_gpu_devices=$(resolve_docker_gpu_device_ids "$gpu_devices")' in reload_runner
+    assert '--gpus "\\"device=$docker_gpu_devices\\""' in reload_runner
     assert "--nproc-per-node=4" in reload_runner
     assert "--read-only" in reload_runner
     assert "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE" in reload_runner
@@ -119,3 +124,39 @@ def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
     assert "--read-only" in native_runner
     assert "docker.sock" not in native_runner
     assert "--privileged" not in native_runner
+
+
+def test_gpu_docker_device_helper_crosses_daemon_boundary_by_uuid(tmp_path: Path) -> None:
+    root = Path(__file__).parents[2]
+    fake = tmp_path / "nvidia-smi"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' '0, GPU-11111111-1111-1111-1111-111111111111' "
+        "'1, GPU-22222222-2222-2222-2222-222222222222' "
+        "'2, GPU-33333333-3333-3333-3333-333333333333' "
+        "'3, GPU-44444444-4444-4444-4444-444444444444'\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    environment = dict(os.environ)
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source {root / 'scripts/lib/gpu_docker_devices.sh'}; "
+            "resolve_docker_gpu_device_ids 2,0,3,1",
+        ],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == (
+        "GPU-33333333-3333-3333-3333-333333333333,"
+        "GPU-11111111-1111-1111-1111-111111111111,"
+        "GPU-44444444-4444-4444-4444-444444444444,"
+        "GPU-22222222-2222-2222-2222-222222222222"
+    )

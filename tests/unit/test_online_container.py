@@ -21,7 +21,25 @@ def _script() -> ModuleType:
 def test_multi_gpu_request_preserves_device_list_for_docker_csv_parser() -> None:
     module = _script()
 
-    assert module._docker_gpu_request("0,1,2,3") == '"device=0,1,2,3"'
+    uuids = module._parse_scheduler_gpu_uuids(
+        "2,0,3,1",
+        "\n".join(
+            [
+                "0, GPU-11111111-1111-1111-1111-111111111111",
+                "1, GPU-22222222-2222-2222-2222-222222222222",
+                "2, GPU-33333333-3333-3333-3333-333333333333",
+                "3, GPU-44444444-4444-4444-4444-444444444444",
+            ]
+        ),
+    )
+
+    assert uuids == (
+        "GPU-33333333-3333-3333-3333-333333333333,"
+        "GPU-11111111-1111-1111-1111-111111111111,"
+        "GPU-44444444-4444-4444-4444-444444444444,"
+        "GPU-22222222-2222-2222-2222-222222222222"
+    )
+    assert module._docker_gpu_request(uuids) == f'"device={uuids}"'
 
 
 def test_online_campaign_redirects_hydra_outputs_to_campaign_workspace() -> None:

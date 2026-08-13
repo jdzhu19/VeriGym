@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_root/lib/gpu_docker_devices.sh"
+
 if [[ ${VERIGYM_RUN_QWEN35_VLLM_SERVICE:-} != 1 ]]; then
   echo "VERIGYM_RUN_QWEN35_VLLM_SERVICE=1 is required" >&2
   exit 2
@@ -50,6 +53,7 @@ if [[ -z ${CUDA_VISIBLE_DEVICES:-} ]] || [[ $CUDA_VISIBLE_DEVICES != "$gpu_devic
   echo "explicit service GPU IDs must match the LSF CUDA_VISIBLE_DEVICES allocation" >&2
   exit 2
 fi
+docker_gpu_devices=$(resolve_docker_gpu_device_ids "$gpu_devices")
 for path in "$model_root" "$cache_root" "$empty_home"; do
   if [[ -L $path || ! -d $path ]]; then
     echo "all service mounts must be existing non-symlink directories" >&2
@@ -100,7 +104,7 @@ docker run --rm \
   --name verigym-qwen35-vllm \
   --network "$network_name" \
   --publish "127.0.0.1:$port:8000" \
-  --gpus "\"device=$gpu_devices\"" \
+  --gpus "\"device=$docker_gpu_devices\"" \
   --shm-size 16g \
   --read-only \
   --cap-drop ALL \

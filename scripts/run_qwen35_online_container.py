@@ -84,6 +84,36 @@ def _docker_gpu_request(gpu_ids: str) -> str:
     return f'"device={gpu_ids}"'
 
 
+def _parse_scheduler_gpu_uuids(gpu_ids: str, query: str) -> str:
+    visible: dict[str, str] = {}
+    for line in query.splitlines():
+        fields = [value.strip() for value in line.split(",")]
+        if len(fields) != 2 or not fields[0].isdigit():
+            raise RuntimeError("nvidia-smi returned a malformed scheduler-visible device")
+        uuid = fields[1]
+        if re.fullmatch(r"GPU-[0-9A-Fa-f-]{32,64}", uuid) is None:
+            raise RuntimeError("nvidia-smi returned a non-canonical GPU UUID")
+        if fields[0] in visible or uuid in visible.values():
+            raise RuntimeError("nvidia-smi returned duplicate GPU identity")
+        visible[fields[0]] = uuid
+    requested = gpu_ids.split(",")
+    if any(value not in visible for value in requested):
+        raise RuntimeError("requested GPU is not visible inside the scheduler allocation")
+    return ",".join(visible[value] for value in requested)
+
+
+def _docker_gpu_device_ids(gpu_ids: str) -> str:
+    completed = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader,nounits"],
+        check=True,
+        capture_output=True,
+        shell=False,
+        text=True,
+        timeout=30,
+    )
+    return _parse_scheduler_gpu_uuids(gpu_ids, completed.stdout)
+
+
 def _container_workspace_path(path: Path, workspace: Path) -> Path:
     try:
         relative = path.relative_to(workspace)
@@ -121,6 +151,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     if not _GPU_IDS.fullmatch(arguments.gpu_ids):
         raise RuntimeError("GPU IDs must be a comma-separated list of integers")
+    if os.environ.get("CUDA_VISIBLE_DEVICES") != arguments.gpu_ids:
+        raise RuntimeError("container GPU IDs must match the scheduler allocation")
+    docker_gpu_devices = _docker_gpu_device_ids(arguments.gpu_ids)
     if _image_id(arguments.image) != arguments.expected_image_id:
         raise RuntimeError("training container image identity differs from the campaign pin")
 
@@ -304,7 +337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--user",
         f"{os.getuid()}:{os.getgid()}",
         "--gpus",
-        _docker_gpu_request(arguments.gpu_ids),
+        _docker_gpu_request(docker_gpu_devices),
         "--workdir",
         str(repository),
     ]

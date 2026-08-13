@@ -121,6 +121,14 @@ filesystem and a non-root UID, and exposes only the scheduler allocation. It is 
 digest-locked vLLM service, SFT trainer, and adapter reload images. Never propagate it to the
 rollout controller or a benchmark sandbox, whose inputs and repository contents are untrusted.
 
+The GPU Docker launchers do not pass scheduler-visible numeric indices across the daemon boundary.
+Some LSF installations cgroup-filter and renumber an allocation even though the host Docker daemon
+still interprets numbers in its global device namespace. Each launcher therefore requires its
+numeric request to equal `CUDA_VISIBLE_DEVICES`, resolves those visible indices to canonical GPU
+UUIDs with `nvidia-smi`, rejects missing or duplicate identities, and gives Docker only the UUIDs.
+This prevents an apparently correct `device=0,1,2,3` request from selecting another job's physical
+GPUs after scheduler renumbering.
+
 Some HPC sites replace `docker` with a wrapper that delegates to a sibling executable. In that
 case the broker launcher accepts `--docker-helper` only together with
 `--expected-docker-helper-sha256`, verifies that it is a distinct sibling of the selected Docker
