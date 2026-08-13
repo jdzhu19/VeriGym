@@ -49,6 +49,9 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert 'torch.version.cuda == "12.9"' in dockerfile
     assert "PYTHON_BASE_DIGEST_OR_ID" in build
     assert "exact local image ID" in build
+    assert "verigym-vllm-base-home" in build
+    assert '--volume "$base_check_home:/work/home:ro"' in build
+    assert "--read-only --cap-drop ALL" in build
     assert "VERIGYM_COMMIT" in dockerfile
     assert "VERIGYM_COMMIT=$verigym_commit" in build
     assert "vllm-service-pip-freeze.txt" in dockerfile

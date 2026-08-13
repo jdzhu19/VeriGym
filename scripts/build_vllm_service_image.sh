@@ -28,7 +28,12 @@ if [[ ! $base_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "Python base has no immutable local image ID" >&2
   exit 2
 fi
-observed_python=$(docker run --rm --network none --entrypoint python3 "$base_id" \
+base_check_home=$(mktemp -d "$build_parent/verigym-vllm-base-home.XXXXXXXX")
+trap 'rmdir "$base_check_home"' EXIT
+observed_python=$(docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --volume "$base_check_home:/work/home:ro" \
+  --entrypoint python3 "$base_id" \
   -c 'import platform; print(platform.python_version())')
 if [[ $observed_python != 3.11.9 ]]; then
   echo "Python base must contain Python 3.11.9" >&2
@@ -55,6 +60,9 @@ if [[ $(docker image inspect "$python_base" --format '{{.Id}}') != "$base_id" ]]
   exit 2
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
-docker run --rm --network none --entrypoint python3 "$image_id" -c \
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --volume "$base_check_home:/work/home:ro" \
+  --entrypoint python3 "$image_id" -c \
 'import importlib.metadata,shutil,torch,torchaudio,torchvision,vllm; assert importlib.metadata.version("vllm").split("+")[0] == "0.22.1"; assert torch.__version__.split("+")[0] == "2.11.0"; assert torch.version.cuda == "12.9"; assert torchvision.__version__ == "0.26.0+cu129"; assert torchaudio.__version__ == "2.11.0+cu129"; assert vllm.__version__.split("+")[0] == "0.22.1"; assert shutil.which("cc")'
 printf '%s\n' "$image_id"
