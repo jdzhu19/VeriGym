@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pwd
 import re
 import stat
 import subprocess
@@ -23,6 +24,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-manifest", type=Path, required=True)
     parser.add_argument("--source-volume", required=True)
     parser.add_argument("--scratch-volume", required=True)
+    parser.add_argument(
+        "--empty-home",
+        type=Path,
+        required=True,
+        help="Dedicated empty host directory mounted at the container user-home path",
+    )
     parser.add_argument("--broker-root", type=Path, required=True)
     parser.add_argument("--verifier-output", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -58,6 +65,13 @@ def _file(path: Path) -> Path:
     return resolved
 
 
+def _empty_directory(path: Path) -> Path:
+    resolved = _directory(path)
+    if next(resolved.iterdir(), None) is not None:
+        raise RuntimeError("controller empty-home mount is not empty")
+    return resolved
+
+
 def _volume(name: str, role: str) -> str:
     value = _inspect("volume", name)
     labels = value.get("Labels")
@@ -89,6 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise RuntimeError("controller image identity or role labels differ from policy")
 
     task_manifest = _file(arguments.task_manifest)
+    empty_home = _empty_directory(arguments.empty_home)
+    container_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     broker_root = _directory(arguments.broker_root)
     verifier_output = _directory(arguments.verifier_output)
     report_parent = _directory(arguments.report.parent)
@@ -125,6 +141,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"TMPDIR={scratch_mountpoint}",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,nodev,size=64m",
+        "--volume",
+        f"{empty_home}:{container_home}:rw",
         "--volume",
         f"{socket}:{socket}:rw",
         "--volume",

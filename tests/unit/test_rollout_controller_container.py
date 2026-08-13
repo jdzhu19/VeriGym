@@ -43,6 +43,8 @@ def test_controller_runner_is_networkless_and_socket_is_controller_only() -> Non
     assert '"--read-only"' in source
     assert '"--cap-drop",\n        "ALL"' in source
     assert 'f"{socket}:{socket}:rw"' in source
+    assert 'f"{empty_home}:{container_home}:rw"' in source
+    assert '"--empty-home"' in source
     assert 'f"{arguments.source_volume}:/verigym-source:ro"' in source
     assert '"--privileged"' not in source
     assert "provider" not in source.lower()
@@ -65,3 +67,14 @@ def test_controller_requires_role_labeled_volumes(monkeypatch: pytest.MonkeyPatc
     assert module._volume("source-v1", "source").endswith("/source-v1/_data")
     with pytest.raises(RuntimeError, match="scratch policy"):
         module._volume("source-v1", "scratch")
+
+
+def test_controller_rejects_nonempty_home_mount(tmp_path: Path) -> None:
+    module = _module()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert module._empty_directory(empty) == empty
+
+    (empty / "unexpected").write_text("not safe to expose", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="empty-home mount is not empty"):
+        module._empty_directory(empty)
