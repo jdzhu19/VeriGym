@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from verigym.core.repository_tool_broker import (
     RepositoryToolBroker,
@@ -441,7 +442,7 @@ def _termination(
     message: str,
     *,
     infrastructure: bool = False,
-    kind: str = "model",
+    kind: Literal["agent", "model", "policy", "runtime"] = "model",
     reason: TerminationReason = TerminationReason.MODEL_ERROR,
 ) -> AgentTerminationError:
     return AgentTerminationError(
