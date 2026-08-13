@@ -111,6 +111,16 @@ Docker-socket argument. Both sides use a shared campaign directory for requests 
 This fallback is not the preferred topology on the current `gpu01`/`bmcpu07` cluster because both
 compute nodes now provide Docker.
 
+The three trusted GPU image launchers accept
+`VERIGYM_GPU_DOCKER_SECCOMP_PROFILE=unconfined` as an explicit compatibility switch for legacy
+Docker/seccomp stacks where `nvidia-smi` works but CUDA initialization fails with error 304. The
+default remains Docker's built-in seccomp profile. Before using the switch, reproduce the failure
+with an exact image ID and scheduler-owned GPU IDs. The switch does not enable privileged mode:
+the launcher still drops every capability, sets `no-new-privileges`, uses a read-only root
+filesystem and a non-root UID, and exposes only the scheduler allocation. It is restricted to the
+digest-locked vLLM service, SFT trainer, and adapter reload images. Never propagate it to the
+rollout controller or a benchmark sandbox, whose inputs and repository contents are untrusted.
+
 Some HPC sites replace `docker` with a wrapper that delegates to a sibling executable. In that
 case the broker launcher accepts `--docker-helper` only together with
 `--expected-docker-helper-sha256`, verifies that it is a distinct sibling of the selected Docker

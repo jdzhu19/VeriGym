@@ -23,6 +23,15 @@ output_root=$(realpath "$4")
 cache_root=$(realpath "$5")
 empty_home=$(realpath "$6")
 gpu_devices=${VERIGYM_GPU_DEVICE_IDS:-}
+seccomp_arguments=()
+case ${VERIGYM_GPU_DOCKER_SECCOMP_PROFILE:-default} in
+  default) ;;
+  unconfined) seccomp_arguments=(--security-opt seccomp=unconfined) ;;
+  *)
+    echo "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE must be 'default' or 'unconfined'" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || \
   [[ $(docker image inspect "$image_id" --format '{{.Id}}') != "$image_id" ]]; then
@@ -61,6 +70,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
+  "${seccomp_arguments[@]}" \
   --pids-limit 8192 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \

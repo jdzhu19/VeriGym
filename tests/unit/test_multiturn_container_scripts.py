@@ -58,6 +58,8 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "--read-only" in runner
     assert "--cap-drop ALL" in runner
     assert "no-new-privileges" in runner
+    assert "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE" in runner
+    assert "seccomp_arguments=(--security-opt seccomp=unconfined)" in runner
     assert "--ipc host" not in runner
     assert "docker.sock" not in runner
     assert "--privileged" not in runner
@@ -80,6 +82,8 @@ def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None
     assert "--shm-size 16g" in runner
     assert "--read-only" in runner
     assert "--cap-drop ALL" in runner
+    assert "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE" in runner
+    assert '"${seccomp_arguments[@]}"' in runner
     assert "$HOME" not in runner
     assert "python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py" in runner
 
@@ -95,6 +99,8 @@ def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
     assert '--gpus "\\"device=$gpu_devices\\""' in reload_runner
     assert "--nproc-per-node=4" in reload_runner
     assert "--read-only" in reload_runner
+    assert "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE" in reload_runner
+    assert '"${seccomp_arguments[@]}"' in reload_runner
     assert "docker.sock" not in reload_runner
     assert "--privileged" not in reload_runner
     assert '--network "$network_name"' in native_runner
