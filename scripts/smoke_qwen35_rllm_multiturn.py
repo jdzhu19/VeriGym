@@ -70,6 +70,9 @@ async def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "top_p": 0.95,
             "seed": 484,
             "logprobs": 1,
+            # OpenAIEngine otherwise re-tokenizes the rendered tool-call text.  That is
+            # not lossless for Qwen special tokens and can misalign on-policy logprobs.
+            "extra_body": {"return_token_ids": True},
         },
         accumulate_reasoning=False,
     )

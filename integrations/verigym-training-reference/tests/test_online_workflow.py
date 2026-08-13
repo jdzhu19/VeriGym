@@ -79,6 +79,7 @@ def test_repository_native_smoke_requests_completion_logprobs() -> None:
     )
 
     assert '"logprobs": 1' in source
+    assert '"extra_body": {"return_token_ids": True}' in source
     assert '"optimizer_updates": 0' in source
     assert '"grpo_optimizer_executed": False' in source
 
