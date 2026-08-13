@@ -7,12 +7,12 @@ RepoDigest for `vllm/vllm-openai:v0.22.1`; the build script additionally seals r
 commit into image labels.
 
 The vLLM image is reused as a CUDA/PyTorch layer and as the separately launched model-service
-image. The SFT process does not use vLLM. Its Python package, OpenCV, and CuPy are removed from the
-trainer layer before veRL is installed because veRL 0.8.0 requires NumPy 1.x while the vLLM 0.22.1
-service stack requires NumPy 2.x. Keeping model serving and SFT in separate interpreters lets both
-environments pass their own dependency checks. The trainer binds the external service version in
-its environment and report; the build still verifies the exact vLLM package before deriving the
-trainer layer.
+image. The SFT process does not use vLLM. Its Python package, LMCache, OpenCV, and CuPy are removed
+from the trainer layer before veRL is installed because veRL 0.8.0 requires NumPy 1.x while the
+vLLM 0.22.1 service stack requires NumPy 2.x. Keeping model serving and SFT in separate interpreters
+lets both environments pass their own dependency checks. The trainer binds the external service
+version in its environment and report; the build still verifies the exact vLLM package before
+deriving the trainer layer.
 
 Build with `scripts/build_multiturn_trainer_image.sh`. Run only through
 `scripts/run_multiturn_sft_container.sh`, which requires an immutable image ID, four explicit

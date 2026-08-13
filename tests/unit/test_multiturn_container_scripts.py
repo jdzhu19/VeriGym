@@ -10,7 +10,7 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
 
     assert "verl==0.8.0" in dockerfile
     assert "VERIGYM_VLLM_SERVICE_VERSION=0.22.1" in dockerfile
-    assert "vllm opencv-python-headless cupy-cuda13x pygobject" in dockerfile
+    assert "vllm lmcache opencv-python-headless cupy-cuda13x pygobject" in dockerfile
     assert "1d1109a655e291b3001d8526d7c9ecc5b9328226" in dockerfile
     assert "COPY rllm /opt/rllm" in dockerfile
     assert "COPY wheels /opt/verigym/wheels" in dockerfile

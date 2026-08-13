@@ -16,7 +16,7 @@ COPY wheels /opt/verigym/wheels
 COPY train_qwen35_multiturn_sft.py /opt/verigym/bin/train_qwen35_multiturn_sft.py
 
 RUN python3 -m pip uninstall --yes \
-      vllm opencv-python-headless cupy-cuda13x pygobject && \
+      vllm lmcache opencv-python-headless cupy-cuda13x pygobject && \
     python3 -m pip install --no-cache-dir "verl==0.8.0" /opt/rllm /opt/verigym/wheels/*.whl && \
     python3 -m pip check && \
     python3 -c 'import importlib.metadata,subprocess; \
