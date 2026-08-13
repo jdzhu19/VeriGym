@@ -43,6 +43,9 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "VERIGYM_COMMIT" in dockerfile
     assert "VERIGYM_COMMIT=$verigym_commit" in build
     assert "vllm-service-pip-freeze.txt" in dockerfile
+    assert "torchvision==0.26.0+cu129" in dockerfile
+    assert "torchaudio==2.11.0+cu129" in dockerfile
+    assert "import importlib.metadata,torch,torchaudio,torchvision,vllm" in build
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
     assert '--gpus "\\"device=$gpu_devices\\""' in runner

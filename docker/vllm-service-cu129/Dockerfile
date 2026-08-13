@@ -31,6 +31,18 @@ assert torch.__version__.split("+")[0] == "2.11.0"; \
 assert torch.version.cuda == "12.9"; \
 assert vllm.__version__.split("+")[0] == "0.22.1"'
 
+# vLLM's dependency resolution uses the default index after the cu129 torch install. Re-seal the
+# compiled vision/audio extensions from the matching PyTorch index and import them so a metadata-
+# only `pip check` cannot hide a CUDA wheel ABI mismatch.
+RUN python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
+      --index-url https://download.pytorch.org/whl/cu129 \
+      "torchvision==0.26.0+cu129" \
+      "torchaudio==2.11.0+cu129" && \
+    python3 -c 'import torch,torchaudio,torchvision; \
+assert torch.__version__.split("+")[0] == "2.11.0"; \
+assert torchvision.__version__ == "0.26.0+cu129"; \
+assert torchaudio.__version__ == "2.11.0+cu129"'
+
 RUN mkdir -p /opt/verigym && \
     python3 -m pip freeze --all | LC_ALL=C sort > /opt/verigym/vllm-service-pip-freeze.txt
 

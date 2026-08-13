@@ -52,5 +52,5 @@ if [[ $(docker image inspect "$python_base" --format '{{.Id}}') != "$base_id" ]]
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
 docker run --rm --network none --entrypoint python3 "$image_id" -c \
-  'import importlib.metadata,torch,vllm; assert importlib.metadata.version("vllm").split("+")[0] == "0.22.1"; assert torch.__version__.split("+")[0] == "2.11.0"; assert torch.version.cuda == "12.9"; assert vllm.__version__.split("+")[0] == "0.22.1"'
+  'import importlib.metadata,torch,torchaudio,torchvision,vllm; assert importlib.metadata.version("vllm").split("+")[0] == "0.22.1"; assert torch.__version__.split("+")[0] == "2.11.0"; assert torch.version.cuda == "12.9"; assert torchvision.__version__ == "0.26.0+cu129"; assert torchaudio.__version__ == "2.11.0+cu129"; assert vllm.__version__.split("+")[0] == "0.22.1"'
 printf '%s\n' "$image_id"
