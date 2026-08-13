@@ -3,8 +3,6 @@ FROM ${PYTHON_BASE}
 
 ARG PYTHON_BASE_ID
 ARG VLLM_WHEEL_SHA256
-ARG GCC_PACKAGE_VERSION
-ARG LIBC6_DEV_PACKAGE_VERSION
 
 LABEL org.opencontainers.image.title="VeriGym vLLM 0.22.1 CUDA 12.9 service" \
       org.opencontainers.image.source="https://github.com/jdzhu19/VeriGym" \
@@ -47,6 +45,8 @@ assert torchaudio.__version__ == "2.11.0+cu129"'
 
 # Triton compiles small launchers and model-specific kernels when vLLM initializes the engine.
 # Keep the minimum C toolchain in the runtime image and pin its requested Debian package versions.
+ARG GCC_PACKAGE_VERSION
+ARG LIBC6_DEV_PACKAGE_VERSION
 LABEL io.verigym.runtime.gcc_package_version="${GCC_PACKAGE_VERSION}" \
       io.verigym.runtime.libc6_dev_package_version="${LIBC6_DEV_PACKAGE_VERSION}"
 RUN apt-get update && \
