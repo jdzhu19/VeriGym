@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -ne 5 ]]; then
-  echo "usage: $0 VERIGYM_CHECKOUT RLLM_CHECKOUT VLLM_BASE_REPODIGEST IMAGE_TAG BUILD_ROOT" >&2
+  echo "usage: $0 VERIGYM_CHECKOUT RLLM_CHECKOUT VLLM_SERVICE_IMAGE_ID IMAGE_TAG BUILD_ROOT" >&2
   exit 2
 fi
 
@@ -13,8 +13,8 @@ image_tag=$4
 build_parent=$(realpath "$5")
 rllm_commit=1d1109a655e291b3001d8526d7c9ecc5b9328226
 
-if [[ ! $vllm_base =~ ^vllm/vllm-openai@sha256:[0-9a-f]{64}$ ]]; then
-  echo "vLLM base must be an immutable vllm/vllm-openai RepoDigest" >&2
+if [[ ! $vllm_base =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "vLLM service base must be an immutable local image ID" >&2
   exit 2
 fi
 if [[ -n $(cd "$verigym_checkout" && git status --porcelain) ]]; then
@@ -32,10 +32,10 @@ if [[ ! $base_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "vLLM base has no immutable local image ID" >&2
   exit 2
 fi
-observed_vllm=$(docker run --rm --network none --entrypoint python3 "$base_id" \
-  -c 'import importlib.metadata; print(importlib.metadata.version("vllm"))')
-if [[ $observed_vllm != 0.22.1 ]]; then
-  echo "vLLM base does not contain vllm==0.22.1" >&2
+observed_runtime=$(docker run --rm --network none --entrypoint python3 "$base_id" \
+  -c 'import importlib.metadata,torch; print(importlib.metadata.version("vllm").split("+")[0], torch.version.cuda)')
+if [[ $observed_runtime != "0.22.1 12.9" ]]; then
+  echo "vLLM service base must contain vllm==0.22.1 with CUDA 12.9" >&2
   exit 2
 fi
 
@@ -66,5 +66,5 @@ if [[ $(docker image inspect "$vllm_base" --format '{{.Id}}') != "$base_id" ]]; 
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
 docker run --rm --network none --entrypoint python3 "$image_id" -c \
-  'import importlib.metadata,os; assert importlib.metadata.version("verl") == "0.8.0"; assert os.environ["VERIGYM_VLLM_SERVICE_VERSION"] == "0.22.1"; assert "vllm" not in {str(item.metadata["Name"]).lower() for item in importlib.metadata.distributions()}'
+  'import importlib.metadata,os,torch; assert importlib.metadata.version("verl") == "0.8.0"; assert os.environ["VERIGYM_VLLM_SERVICE_VERSION"] == "0.22.1"; assert torch.version.cuda == "12.9"; assert "vllm" not in {str(item.metadata["Name"]).lower() for item in importlib.metadata.distributions()}'
 printf '%s\n' "$image_id"

@@ -1,0 +1,13 @@
+# vLLM 0.22.1 CUDA 12.9 service image
+
+This image is the GPU model-serving boundary for Qwen3.5. It uses the upstream vLLM 0.22.1
+CUDA 12.9 release wheel because the upstream default CUDA 13 image cannot run on the R525 driver
+installed on `gpu01`. The build freezes the Python base RepoDigest and verifies the upstream wheel
+SHA256, installed vLLM version, PyTorch version, CUDA variant, and dependency consistency.
+
+Models, caches, credentials, experiment outputs, source trees, and Docker sockets are not embedded.
+Build with `scripts/build_vllm_service_image.sh`. Run with
+`scripts/run_vllm_service_container.sh`, which requires an exact image ID, four LSF-assigned GPU
+indices, a read-only model mount, a dedicated cache, a synthetic empty home, and an existing
+user-defined bridge. It publishes the API only on host loopback for colocated OpenHands/rLLM
+clients. It never uses `--privileged`, host IPC, the default Docker bridge, or a Docker socket.
