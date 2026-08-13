@@ -108,6 +108,8 @@ docker run --rm \
   ${seccomp_arguments[@]+"${seccomp_arguments[@]}"} \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
+  --env LOGNAME=verigym \
+  --env USER=verigym \
   --env HF_HUB_OFFLINE=1 \
   --env TRANSFORMERS_OFFLINE=1 \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=8g \

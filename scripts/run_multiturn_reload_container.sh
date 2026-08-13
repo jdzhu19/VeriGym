@@ -73,6 +73,8 @@ docker run --rm \
   --pids-limit 4096 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
+  --env LOGNAME=verigym \
+  --env USER=verigym \
   --env TMPDIR=/cache/tmp \
   --env VERIGYM_RUN_QWEN35_MULTITURN_RELOAD=1 \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g \
