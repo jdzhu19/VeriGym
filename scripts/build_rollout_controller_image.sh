@@ -40,6 +40,9 @@ for image_id in "$python_base_id" "$docker_cli_base_id"; do
   fi
 done
 
+runtime_check_home=$(mktemp -d "$build_parent/verigym-controller-check-home.XXXXXXXX")
+trap 'rmdir "$runtime_check_home"' EXIT
+
 context=$(mktemp -d "$build_parent/verigym-rollout-controller.XXXXXXXX")
 mkdir -p "$context/wheels"
 cp "$verigym_checkout/docker/rollout-controller/Dockerfile" "$context/Dockerfile"
@@ -67,8 +70,16 @@ if [[ $(docker image inspect "$python_base" --format '{{.Id}}') != "$python_base
   exit 2
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
-docker run --rm --network none --entrypoint python3 "$image_id" -c \
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
+  --env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 \
+  --env PYTHONDONTWRITEBYTECODE=1 --volume "$runtime_check_home:/work/home:ro" \
+  --entrypoint python3 "$image_id" -c \
   'import platform,threading,verigym,verigym_hwe_bench,verigym_training_reference; assert platform.libc_ver() == ("glibc", "2.31"); thread = threading.Thread(target=lambda: None); thread.start(); thread.join()'
-docker run --rm --network none --entrypoint docker "$image_id" --version | \
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
+  --volume "$runtime_check_home:/work/home:ro" --entrypoint docker "$image_id" --version | \
   grep -F 'Docker version 19.03.14'
 printf '%s\n' "$image_id"

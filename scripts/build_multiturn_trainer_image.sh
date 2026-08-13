@@ -32,7 +32,13 @@ if [[ ! $base_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "vLLM base has no immutable local image ID" >&2
   exit 2
 fi
-observed_runtime=$(docker run --rm --network none --entrypoint python3 "$base_id" \
+base_check_home=$(mktemp -d "$build_parent/verigym-trainer-base-home.XXXXXXXX")
+trap 'rmdir "$base_check_home"' EXIT
+observed_runtime=$(docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
+  --env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 \
+  --volume "$base_check_home:/work/home:ro" --entrypoint python3 "$base_id" \
   -c 'import importlib.metadata,torch; print(importlib.metadata.version("vllm").split("+")[0], torch.version.cuda)')
 if [[ $observed_runtime != "0.22.1 12.9" ]]; then
   echo "vLLM service base must contain vllm==0.22.1 with CUDA 12.9" >&2
@@ -69,6 +75,11 @@ if [[ $(docker image inspect "$vllm_base" --format '{{.Id}}') != "$base_id" ]]; 
   exit 2
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
-docker run --rm --network none --entrypoint python3 "$image_id" -c \
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+  --env HOME=/work/home --env LOGNAME=verigym --env USER=verigym \
+  --env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 \
+  --env PYTHONDONTWRITEBYTECODE=1 --volume "$base_check_home:/work/home:ro" \
+  --entrypoint python3 "$image_id" -c \
   'import importlib.metadata,os,torch; assert importlib.metadata.version("verl") == "0.8.0"; assert os.environ["VERIGYM_VLLM_SERVICE_VERSION"] == "0.22.1"; assert torch.version.cuda == "12.9"; assert "vllm" not in {str(item.metadata["Name"]).lower() for item in importlib.metadata.distributions()}'
 printf '%s\n' "$image_id"

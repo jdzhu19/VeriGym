@@ -35,6 +35,10 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "DOCKER_CLI_BASE_REPODIGEST" in build
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
+    assert "verigym-controller-check-home" in build
+    assert '--volume "$runtime_check_home:/work/home:ro"' in build
+    assert build.count("--read-only --cap-drop ALL") == 2
+    assert "--env OPENBLAS_NUM_THREADS=1" in build
     assert "seccomp=unconfined" not in build
 
 

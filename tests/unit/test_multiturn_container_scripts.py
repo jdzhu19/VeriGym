@@ -27,6 +27,11 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
     assert "--entrypoint python3" in build
+    assert "verigym-trainer-base-home" in build
+    assert '--volume "$base_check_home:/work/home:ro"' in build
+    assert "--read-only --cap-drop ALL" in build
+    assert "--env OPENBLAS_NUM_THREADS=1" in build
+    assert "--env OMP_NUM_THREADS=1" in build
     assert "python3 -m pip install" in dockerfile
     assert '"vllm" not in' in build
 
