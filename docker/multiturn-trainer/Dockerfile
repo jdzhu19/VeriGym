@@ -15,9 +15,9 @@ COPY rllm /opt/rllm
 COPY wheels /opt/verigym/wheels
 COPY train_qwen35_multiturn_sft.py /opt/verigym/bin/train_qwen35_multiturn_sft.py
 
-RUN python -m pip install --no-cache-dir "verl==0.8.0" /opt/rllm /opt/verigym/wheels/*.whl && \
-    python -m pip check && \
-    python -c 'import importlib.metadata,subprocess; \
+RUN python3 -m pip install --no-cache-dir "verl==0.8.0" /opt/rllm /opt/verigym/wheels/*.whl && \
+    python3 -m pip check && \
+    python3 -c 'import importlib.metadata,subprocess; \
 assert importlib.metadata.version("verl") == "0.8.0"; \
 assert importlib.metadata.version("vllm") == "0.22.1"; \
 assert subprocess.check_output(["git", "-C", "/opt/rllm", "rev-parse", "HEAD"], \
@@ -32,4 +32,4 @@ ENV HF_HOME=/cache/huggingface \
 
 WORKDIR /work
 ENTRYPOINT []
-CMD ["python", "/opt/verigym/bin/train_qwen35_multiturn_sft.py", "--help"]
+CMD ["python3", "/opt/verigym/bin/train_qwen35_multiturn_sft.py", "--help"]

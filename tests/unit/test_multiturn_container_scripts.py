@@ -17,6 +17,8 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "docker.sock" not in dockerfile
     assert "VLLM_BASE_REPODIGEST" in build
     assert "--network verigym-hwe-net" in build
+    assert "--entrypoint python3" in build
+    assert "RUN python3 -m pip install" in dockerfile
 
 
 def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None:
@@ -33,3 +35,4 @@ def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None
     assert "docker.sock" not in runner
     assert "--privileged" not in runner
     assert "$HOME" not in runner
+    assert "python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py" in runner

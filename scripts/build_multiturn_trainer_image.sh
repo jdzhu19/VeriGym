@@ -32,7 +32,7 @@ if [[ ! $base_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "vLLM base has no immutable local image ID" >&2
   exit 2
 fi
-observed_vllm=$(docker run --rm --network none --entrypoint python "$base_id" \
+observed_vllm=$(docker run --rm --network none --entrypoint python3 "$base_id" \
   -c 'import importlib.metadata; print(importlib.metadata.version("vllm"))')
 if [[ $observed_vllm != 0.22.1 ]]; then
   echo "vLLM base does not contain vllm==0.22.1" >&2
@@ -64,6 +64,6 @@ if [[ $(docker image inspect "$vllm_base" --format '{{.Id}}') != "$base_id" ]]; 
   exit 2
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
-docker run --rm --network none --entrypoint python "$image_id" -c \
+docker run --rm --network none --entrypoint python3 "$image_id" -c \
   'import importlib.metadata; assert importlib.metadata.version("verl") == "0.8.0"; assert importlib.metadata.version("vllm") == "0.22.1"'
 printf '%s\n' "$image_id"

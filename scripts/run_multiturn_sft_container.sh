@@ -56,7 +56,7 @@ docker run --rm \
   --volume "$output_root:/output" \
   --volume "$cache_root:/cache" \
   "$image_id" \
-  python /opt/verigym/bin/train_qwen35_multiturn_sft.py \
+  python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py \
   --dataset /dataset \
   --model-root /model \
   --output /output \
