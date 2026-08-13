@@ -65,5 +65,5 @@ if [[ $(docker image inspect "$vllm_base" --format '{{.Id}}') != "$base_id" ]]; 
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
 docker run --rm --network none --entrypoint python3 "$image_id" -c \
-  'import importlib.metadata; assert importlib.metadata.version("verl") == "0.8.0"; assert importlib.metadata.version("vllm") == "0.22.1"'
+  'import importlib.metadata,os; assert importlib.metadata.version("verl") == "0.8.0"; assert os.environ["VERIGYM_VLLM_SERVICE_VERSION"] == "0.22.1"; assert "vllm" not in {str(item.metadata["Name"]).lower() for item in importlib.metadata.distributions()}'
 printf '%s\n' "$image_id"

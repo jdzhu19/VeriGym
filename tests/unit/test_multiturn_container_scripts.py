@@ -9,7 +9,8 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     build = (root / "scripts/build_multiturn_trainer_image.sh").read_text(encoding="utf-8")
 
     assert "verl==0.8.0" in dockerfile
-    assert 'version("vllm") == "0.22.1"' in dockerfile
+    assert "VERIGYM_VLLM_SERVICE_VERSION=0.22.1" in dockerfile
+    assert "vllm opencv-python-headless cupy-cuda13x pygobject" in dockerfile
     assert "1d1109a655e291b3001d8526d7c9ecc5b9328226" in dockerfile
     assert "COPY rllm /opt/rllm" in dockerfile
     assert "COPY wheels /opt/verigym/wheels" in dockerfile
@@ -19,7 +20,8 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
     assert "--entrypoint python3" in build
-    assert "RUN python3 -m pip install" in dockerfile
+    assert "python3 -m pip install" in dockerfile
+    assert '"vllm" not in' in build
 
 
 def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None:

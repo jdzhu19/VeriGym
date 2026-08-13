@@ -140,7 +140,7 @@ def sft_spec_kwargs(
 
 
 def validate_runtime_pins(rllm_source: Path) -> dict[str, str]:
-    """Require the frozen rLLM checkout and package versions before GPU work."""
+    """Require the frozen trainer and separately bound model-service versions."""
 
     source = _safe_directory(rllm_source, "rLLM source")
     try:
@@ -157,10 +157,16 @@ def validate_runtime_pins(rllm_source: Path) -> dict[str, str]:
     commit = result.stdout.strip()
     if commit != RLLM_COMMIT:
         raise ConfigurationError(f"rLLM commit must be {RLLM_COMMIT}; found {commit}")
+    try:
+        importlib.metadata.version("vllm")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    else:
+        raise ConfigurationError("the SFT interpreter must not embed the vLLM service package")
     versions = {
         "rllm_commit": commit,
         "verl": _package_version("verl"),
-        "vllm": _package_version("vllm"),
+        "vllm": os.environ.get("VERIGYM_VLLM_SERVICE_VERSION", ""),
     }
     if versions["verl"] != VERL_VERSION or versions["vllm"] != VLLM_VERSION:
         raise ConfigurationError(

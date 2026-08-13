@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.metadata
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +34,7 @@ from verigym_training_reference.multiturn_sft_training import (
     assert_resolved_verl_config,
     load_frozen_multiturn_dataset,
     sft_spec_kwargs,
+    validate_runtime_pins,
 )
 from verigym_training_reference.verl_lora_dropout import wrap_lora_config
 
@@ -199,6 +202,39 @@ def test_verl_lora_compat_injects_frozen_dropout_and_rejects_conflicts() -> None
     assert wrap_lora_config(wrapped) is wrapped
     with pytest.raises(RuntimeError, match="requires lora_dropout"):
         wrapped(r=8, lora_dropout=0.1)
+
+
+def test_runtime_pins_bind_separate_vllm_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "rllm"
+    source.mkdir()
+    monkeypatch.setattr(
+        "verigym_training_reference.multiturn_sft_training.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout="1d1109a655e291b3001d8526d7c9ecc5b9328226\n"
+        ),
+    )
+    package_version = "verigym_training_reference.multiturn_sft_training._package_version"
+    monkeypatch.setattr(package_version, lambda name: "0.8.0" if name == "verl" else "")
+    metadata_version = (
+        "verigym_training_reference.multiturn_sft_training.importlib.metadata.version"
+    )
+
+    def absent_vllm(name: str) -> str:
+        if name == "vllm":
+            raise importlib.metadata.PackageNotFoundError(name)
+        raise AssertionError(name)
+
+    monkeypatch.setattr(metadata_version, absent_vllm)
+    monkeypatch.setenv("VERIGYM_VLLM_SERVICE_VERSION", "0.22.1")
+    assert validate_runtime_pins(source)["vllm"] == "0.22.1"
+    monkeypatch.setenv("VERIGYM_VLLM_SERVICE_VERSION", "0.22.0")
+    with pytest.raises(ConfigurationError, match="vllm==0.22.0"):
+        validate_runtime_pins(source)
+
+    monkeypatch.delenv("VERIGYM_VLLM_SERVICE_VERSION")
+    assert "VERIGYM_VLLM_SERVICE_VERSION" not in os.environ
 
 
 def test_collection_receipt_resolves_only_bound_relative_paths(tmp_path: Path) -> None:
