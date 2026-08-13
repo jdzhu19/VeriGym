@@ -35,6 +35,8 @@ _OPTIONS = {
     "agent_version_id",
     "agent_version_hash",
     "agent_version_manifest_json",
+    "campaign_role",
+    "capture_training_transcript",
 }
 _PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v1"
 _AUTH_IDENTITIES = {
@@ -74,6 +76,8 @@ class ClaudeSettings:
     expected_context_window_tokens: int | None
     agent_version_id: str | None
     agent_version_hash: str | None
+    campaign_role: str
+    capture_training_transcript: bool
     configuration_fingerprint: str
 
     def safe_configuration(self, capabilities: CapabilityReport) -> dict[str, JsonValue]:
@@ -101,6 +105,8 @@ class ClaudeSettings:
             "expected_context_window_tokens": self.expected_context_window_tokens,
             "agent_version_id": self.agent_version_id,
             "agent_version_hash": self.agent_version_hash,
+            "campaign_role": self.campaign_role,
+            "capture_training_transcript": self.capture_training_transcript,
             "cli_version": capabilities.version_output,
             "cli_executable_sha256": capabilities.executable_sha256,
             "capability_fingerprint": capabilities.capability_fingerprint,
@@ -148,6 +154,14 @@ def agent_settings(
     if max_output < 1024 or max_output > 16 * 1024 * 1024:
         raise ValueError("Claude evidence byte bound must be between 1 KiB and 16 MiB")
     allow_proxy = _boolean(options.get("allow_proxy_environment", False), "allow_proxy_environment")
+    campaign_role = _identifier(options.get("campaign_role", "ordinary"), "campaign_role", 32)
+    if campaign_role not in {"ordinary", "training", "development", "heldout"}:
+        raise ValueError("Claude campaign_role is unsupported")
+    capture_transcript = _boolean(
+        options.get("capture_training_transcript", False), "capture_training_transcript"
+    )
+    if capture_transcript and campaign_role != "training":
+        raise ValueError("Claude transcript capture is permitted only for the training split")
     expected_context = options.get("expected_context_window")
     if expected_context is not None:
         expected_context = _integer(expected_context, "expected_context_window")
@@ -206,6 +220,8 @@ def agent_settings(
         "expected_context_window_tokens": expected_context,
         "agent_version_id": version_id,
         "agent_version_hash": version_hash,
+        "campaign_role": campaign_role,
+        "capture_training_transcript": capture_transcript,
         "capability_fingerprint": capabilities.capability_fingerprint,
         "internal_turn_limit": None,
         "model_call_limit": None,
@@ -236,6 +252,8 @@ def agent_settings(
         expected_context_window_tokens=expected_context,
         agent_version_id=version_id,
         agent_version_hash=version_hash,
+        campaign_role=campaign_role,
+        capture_training_transcript=capture_transcript,
         configuration_fingerprint=content_hash(safe),
     )
 

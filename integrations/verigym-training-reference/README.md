@@ -152,3 +152,27 @@ For schedulers where the GPU node cannot access Docker, use the split native pat
 Docker verification, while the GPU-side Conda process runs only the rLLM/veRL trainer. The native
 runtime manifest binds its package inventory and resolved 4/6/8-GPU topology; rollout group size
 scales with world size so no worker is assigned an empty GRPO group.
+
+## Verified multi-turn SFT mainline
+
+The current SFT path is separate from the legacy one-record smoke. `export-multiturn-sft` accepts
+only integrity-bound training-split transcripts and verified runs, applies the local Qwen chat
+template with rLLM's `hf_template` segmentation, and fails instead of truncating beyond 16,384
+tokens. `scripts/train_qwen35_multiturn_sft.py` then requires exactly eight sealed records and the
+frozen rLLM/veRL/vLLM versions before launching `AgentSFTTrainer` for six optimizer steps.
+
+The supporting real-run sequence is:
+
+1. `scripts/qualify_cva6_multiturn_pool.py` freezes 11 training candidates and two development
+   validation tasks after zero-model base-FAIL/reference-PASS qualification.
+2. `scripts/collect_cva6_multiturn_teachers.py` runs three independent Claude/DeepSeek MCP-only
+   samples per task and one Codex/GPT-5.4 fallback, stopping after eight eligible successes.
+3. `verigym-training-reference export-multiturn-sft --collection-root <collection>` resolves the
+   campaign receipt and seals the mixed-provider training JSONL.
+4. `scripts/train_qwen35_multiturn_sft.py` trains the adapter, and
+   `scripts/smoke_reload_qwen35_multiturn_adapter.py` performs the required four-A30 reload.
+5. `scripts/smoke_qwen35_rllm_multiturn.py` exercises the native future-rollout interface with
+   zero optimizer/GRPO updates.
+
+Every real command is explicitly opt in. Incomplete qualification or fewer than eight eligible
+training trajectories ends with a report and does not start SFT.

@@ -14,6 +14,7 @@ from .auth import (
 )
 from .preflight import AuthPreflightResult, run_auth_preflight
 from .readonly_agent import CodexCliReadonlyAgentAdapter
+from .teacher_agent import CodexCliMcpTeacherAdapter
 
 __all__ = [
     "AUTH_MODE_ALIASES",
@@ -24,6 +25,7 @@ __all__ = [
     "AuthSemanticId",
     "CodexCliAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
+    "CodexCliMcpTeacherAdapter",
     "RequestedAuthMode",
     "ResolvedAuthMode",
     "__version__",

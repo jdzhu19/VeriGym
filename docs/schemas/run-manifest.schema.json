@@ -342,7 +342,8 @@
             {
               "enum": [
                 "codex_cli",
-                "claude_cli"
+                "claude_cli",
+                "openhands_sdk"
               ],
               "type": "string"
             },
@@ -466,7 +467,8 @@
             {
               "enum": [
                 "codex_cli",
-                "claude_cli"
+                "claude_cli",
+                "openhands_sdk"
               ],
               "type": "string"
             },
@@ -535,7 +537,8 @@
               "enum": [
                 "codex_cli_readonly_single_turn_agent",
                 "codex_cli_external_agent",
-                "claude_cli_external_agent"
+                "claude_cli_external_agent",
+                "openhands_sdk_agent"
               ],
               "type": "string"
             },
@@ -551,7 +554,8 @@
             {
               "enum": [
                 "cli_agent_single_turn_readonly",
-                "cli_agent_workspace_writing"
+                "cli_agent_workspace_writing",
+                "sdk_agent_broker_tools"
               ],
               "type": "string"
             },
@@ -583,7 +587,10 @@
         "model_client_kind": {
           "anyOf": [
             {
-              "const": "cli_agent_mediated",
+              "enum": [
+                "cli_agent_mediated",
+                "sdk_agent_mediated"
+              ],
               "type": "string"
             },
             {

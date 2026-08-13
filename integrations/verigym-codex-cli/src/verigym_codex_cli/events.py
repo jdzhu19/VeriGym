@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from verigym.protocols.repository_action import canonical_action_json
+from verigym.schemas.multiturn_sft import MultiTurnSftMessage
+
 from .util import redact_value
 
 _MAX_LINE_BYTES = 1024 * 1024
@@ -237,6 +240,156 @@ def parse_partial_event_stream(
         diagnostic_only=True,
         canonical_stream_complete=False,
     )
+
+
+def normalize_training_messages(
+    stdout: str,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> list[MultiTurnSftMessage]:
+    """Convert only completed VeriGym MCP calls; never infer shell semantics."""
+
+    messages = [
+        MultiTurnSftMessage(role="system", content=system_prompt),
+        MultiTurnSftMessage(role="user", content=user_prompt),
+    ]
+    final_text: str | None = None
+    canonical_tools = {
+        "list_files",
+        "read_file",
+        "apply_patch",
+        "run_public_test",
+        "inspect_diff",
+        "finish",
+    }
+    for line in stdout.splitlines():
+        if not line.strip():
+            raise EventParseError("Codex training stream contains a blank line")
+        try:
+            event = json.loads(line, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise EventParseError("Codex training stream is malformed") from exc
+        if not isinstance(event, dict):
+            raise EventParseError("Codex training event must be an object")
+        event_type = event.get("type")
+        if event_type in {"item.started", "item.updated", "item.completed"}:
+            item = event.get("item")
+            if not isinstance(item, dict):
+                raise EventParseError("Codex training item is malformed")
+            item_type = str(item.get("type", "")).lower().replace(".", "_")
+            if item_type in {"reasoning", "reasoning_summary"}:
+                continue
+            if item_type in {"agent_message", "message"}:
+                if event_type != "item.completed":
+                    continue
+                text = _item_text(item)
+                if text.strip():
+                    if final_text is not None:
+                        raise EventParseError("Codex emitted multiple final assistant messages")
+                    final_text = text
+                continue
+            if item_type == "mcp_tool_call":
+                if event_type != "item.completed":
+                    continue
+                server = _first_string(item, ("server", "server_name"))
+                raw_name = _first_string(item, ("tool", "name"))
+                call_id = _first_string(item, ("id", "call_id"))
+                arguments = item.get("arguments")
+                if raw_name is not None and raw_name.startswith("mcp__verigym__"):
+                    raw_name = raw_name.removeprefix("mcp__verigym__")
+                if (
+                    server not in {None, "verigym"}
+                    or raw_name not in canonical_tools
+                    or call_id is None
+                    or not isinstance(arguments, dict)
+                ):
+                    raise EventParseError("Codex MCP training call is outside VeriGym")
+                envelope = json.loads(canonical_action_json(raw_name, arguments))
+                canonical_arguments = json.dumps(
+                    envelope["arguments"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                messages.append(
+                    MultiTurnSftMessage.model_validate(
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": raw_name,
+                                        "arguments": canonical_arguments,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                )
+                messages.append(
+                    MultiTurnSftMessage(
+                        role="tool",
+                        content=_codex_mcp_result_text(item),
+                        tool_call_id=call_id,
+                        name=raw_name,
+                    )
+                )
+                continue
+            if item_type in {
+                "command_execution",
+                "command",
+                "file_change",
+                "patch",
+                "patch_application",
+                "file_read",
+                "read_file",
+                "file_write",
+                "write_file",
+                "tool_call",
+                "web_search",
+                "plan",
+                "plan_update",
+                "update_plan",
+            }:
+                raise EventParseError("Codex used a non-MCP tool in teacher mode")
+            raise EventParseError("Codex teacher stream contains an unsupported item type")
+        elif event_type in {
+            "command_started",
+            "command_completed",
+            "file_read",
+            "file_write",
+            "patch_applied",
+            "tool_call",
+            "web_search",
+            "plan_update",
+            "update_plan",
+        }:
+            raise EventParseError("Codex used a non-MCP tool in teacher mode")
+        elif event_type in {"thread.started", "turn.started", "turn.completed"}:
+            continue
+        else:
+            raise EventParseError("Codex teacher stream contains an unsupported event type")
+    if final_text is None:
+        raise EventParseError("Codex teacher stream has no final assistant message")
+    messages.append(MultiTurnSftMessage(role="assistant", content=final_text))
+    return messages
+
+
+def _codex_mcp_result_text(item: dict[str, Any]) -> str:
+    result = item.get("result")
+    if isinstance(result, str) and result:
+        return result
+    if isinstance(result, dict):
+        content = result.get("content")
+        if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
+            text = content[0].get("text")
+            if content[0].get("type") == "text" and isinstance(text, str) and text:
+                return text
+    raise EventParseError("Codex MCP call omits one public text observation")
 
 
 def raw_event_records(
@@ -554,4 +707,5 @@ __all__ = [
     "parse_event_stream",
     "parse_partial_event_stream",
     "raw_event_records",
+    "normalize_training_messages",
 ]

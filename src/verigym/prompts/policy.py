@@ -271,6 +271,10 @@ def _resolve_versioned_context(
         if raw_memory is not None or version.memory_pack_hash is not None:
             raise ValueError("base prompt version must remain memory-free")
         return version_id, version_hash, None, version.prompt_contract_hash
+    if version.update_type in {"external_checkpoint", "external_adapter"}:
+        if raw_memory is not None or version.memory_pack_hash is not None:
+            raise ValueError("weight-backed prompt versions must remain memory-free")
+        return version_id, version_hash, None, version.prompt_contract_hash
     if version.update_type != "context_memory" or raw_memory is None:
         raise ValueError("evolved prompt version requires its frozen memory pack")
     try:

@@ -12,7 +12,11 @@ from verigym_codex_cli import (
 from verigym_codex_cli.capabilities import discover_capabilities
 from verigym_codex_cli.cli import main
 from verigym_codex_cli.config import readonly_agent_settings
-from verigym_codex_cli.process import CodexProcessError, auth_configuration
+from verigym_codex_cli.process import (
+    CodexProcessError,
+    auth_configuration,
+    auth_identity_configuration,
+)
 
 from verigym.core.loaders import load_model
 from verigym.reporting.aggregate import _auth_comparison_identity
@@ -80,6 +84,19 @@ def test_unknown_case_and_whitespace_authentication_labels_are_rejected(
 ) -> None:
     with pytest.raises(AuthModeError):
         resolve_auth_mode(unsupported)
+
+
+def test_unset_runtime_auth_mode_reuses_the_logged_in_codex_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VERIGYM_CODEX_AUTH_MODE", raising=False)
+
+    resolution, credential_env = auth_identity_configuration()
+
+    assert resolution.requested_auth_mode == "inherited_codex_login"
+    assert resolution.resolved_auth_mode == "inherited_codex_login"
+    assert resolution.auth_alias_used is False
+    assert credential_env is None
 
 
 def test_alias_preserves_provenance_but_shares_semantic_comparison(

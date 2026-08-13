@@ -73,12 +73,16 @@ def _external_agent_artifact_namespace(agent_name: str) -> str:
         return "codex_cli"
     if agent_name.startswith("claude-cli-"):
         return "claude_cli"
+    if agent_name.startswith("openhands-"):
+        return "openhands_sdk"
     return "external_agent"
 
 
 def _external_agent_isolation_label(agent_name: str, execution_backend: str) -> str:
     if agent_name.startswith("claude-cli-"):
         return "host_claude_control_plane_runtime_mcp_delegated"
+    if agent_name.startswith("openhands-"):
+        return "host_openhands_sdk_control_plane_runtime_mcp_delegated"
     if execution_backend == "docker_outer_runtime_delegated":
         return "docker_outer_runtime_delegated"
     return "codex_cli_sandbox_on_trusted_host"

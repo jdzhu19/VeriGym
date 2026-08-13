@@ -16,6 +16,10 @@ from verigym.schemas.options import JsonValue
 
 from .campaign import load_campaign_spec, run_training_campaign
 from .heldout import RepositoryHeldoutRequest, freeze_repository_heldout
+from .multiturn_sft_exporter import (
+    TranscriptRunBinding,
+    export_verified_multiturn_sft,
+)
 from .online_policy import export_online_policy_version
 from .pipeline import (
     exclusion_counts,
@@ -91,6 +95,21 @@ def _parser() -> argparse.ArgumentParser:
     )
     export_sft.add_argument("--sampling-root", type=Path, required=True)
     export_sft.add_argument("--output", type=Path, required=True)
+
+    export_multiturn = subparsers.add_parser(
+        "export-multiturn-sft",
+        help="export verified training-split tool trajectories for rLLM AgentSFTTrainer",
+    )
+    export_source = export_multiturn.add_mutually_exclusive_group(required=True)
+    export_source.add_argument(
+        "--binding",
+        action="append",
+        metavar="TRANSCRIPT::RUN_DIR",
+    )
+    export_source.add_argument("--collection-root", type=Path)
+    export_multiturn.add_argument("--split-manifest", type=Path, required=True)
+    export_multiturn.add_argument("--tokenizer", type=Path, required=True)
+    export_multiturn.add_argument("--output", type=Path, required=True)
 
     policy = subparsers.add_parser(
         "register-policy-version",
@@ -245,6 +264,40 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "task_ids": sft_manifest.task_ids,
             "source_model_ids": sft_manifest.source_model_ids,
             "manifest_hash": sft_manifest.manifest_hash,
+        }
+    if arguments.command == "export-multiturn-sft":
+        from transformers import AutoTokenizer  # type: ignore[import-not-found]
+
+        from .multiturn_sft_exporter import bindings_from_cva6_collection
+
+        bindings: list[TranscriptRunBinding] = []
+        if arguments.collection_root is not None:
+            bindings = bindings_from_cva6_collection(
+                arguments.collection_root,
+                split_manifest_path=arguments.split_manifest,
+            )
+        else:
+            for raw in arguments.binding or []:
+                transcript, separator, run = raw.partition("::")
+                if not separator or not transcript or not run:
+                    raise ConfigurationError("--binding must use TRANSCRIPT::RUN_DIR")
+                bindings.append(TranscriptRunBinding(transcript=Path(transcript), run=Path(run)))
+        tokenizer = AutoTokenizer.from_pretrained(
+            arguments.tokenizer.resolve(strict=True), local_files_only=True
+        )
+        multiturn_manifest = export_verified_multiturn_sft(
+            bindings,
+            split_manifest_path=arguments.split_manifest,
+            tokenizer=tokenizer,
+            tokenizer_root=arguments.tokenizer,
+            output=arguments.output,
+        )
+        return {
+            "status": "exported",
+            "format_id": multiturn_manifest.format_id,
+            "record_count": multiturn_manifest.record_count,
+            "task_ids": multiturn_manifest.task_ids,
+            "manifest_hash": multiturn_manifest.manifest_hash,
         }
     if arguments.command == "register-policy-version":
         policy_version = register_training_policy_version(

@@ -1,0 +1,17 @@
+{
+  "image": "verigym/rtl-iverilog:12.0",
+  "expected_image_id": "sha256:5b95472e7fbfa80eb0cf173099254ef5285fcd78f7c3c78b42678ae9181dd96e",
+  "pull_policy": "never",
+  "network_mode": "none",
+  "run_as_user": "1004:100",
+  "read_only_rootfs": true,
+  "memory_bytes": 4294967296,
+  "cpus": 4.0,
+  "pids_limit": 512,
+  "tmpfs_bytes": 268435456,
+  "stop_timeout_s": 5,
+  "max_command_time_s": 1800,
+  "max_artifact_file_bytes": 33554432,
+  "max_artifact_bytes": 268435456,
+  "environment_allowlist": []
+}

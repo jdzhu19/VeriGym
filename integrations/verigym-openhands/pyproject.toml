@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-openhands"
+version = "0.1.0"
+description = "OpenHands SDK repository-agent integration for VeriGym."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = ["openhands-sdk==1.42.1", "verigym==0.1.0"]
+
+[project.entry-points."verigym.agents"]
+openhands-repository-agent = "verigym_openhands:OpenHandsRepositoryAgentAdapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_openhands = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = ["openhands_real: requires OpenHands, a model server, Docker, and credentials"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["verigym_openhands"]

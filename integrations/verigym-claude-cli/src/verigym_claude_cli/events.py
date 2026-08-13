@@ -8,6 +8,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from verigym.protocols.repository_action import canonical_action_json
+from verigym.schemas.multiturn_sft import MultiTurnSftMessage
+
 from .mcp_tools import CLAUDE_TOOL_NAMES
 
 _MAX_LINE_BYTES = 2 * 1024 * 1024
@@ -214,6 +217,128 @@ def parse_event_stream(
     )
 
 
+def normalize_training_messages(
+    stdout: str,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> list[MultiTurnSftMessage]:
+    """Losslessly normalize public Claude MCP events while dropping thinking blocks."""
+
+    messages = [
+        MultiTurnSftMessage(role="system", content=system_prompt),
+        MultiTurnSftMessage(role="user", content=user_prompt),
+    ]
+    final_text: str | None = None
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise EventParseError("Claude training event is malformed") from exc
+        if not isinstance(event, dict):
+            raise EventParseError("Claude training event must be an object")
+        event_type = event.get("type")
+        if event_type == "assistant":
+            message = event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                raise EventParseError("Claude assistant training message is malformed")
+            calls: list[MultiTurnSftMessage] = []
+            text_blocks: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    raise EventParseError("Claude assistant training block is malformed")
+                block_type = block.get("type")
+                if block_type in {"thinking", "redacted_thinking"}:
+                    continue
+                if block_type == "text":
+                    text = block.get("text")
+                    if isinstance(text, str) and text.strip():
+                        text_blocks.append(text)
+                    continue
+                if block_type != "tool_use":
+                    raise EventParseError("Claude training stream contains an unsupported block")
+                raw_name = block.get("name")
+                call_id = block.get("id")
+                arguments = block.get("input")
+                prefix = "mcp__verigym__"
+                if (
+                    not isinstance(raw_name, str)
+                    or not raw_name.startswith(prefix)
+                    or raw_name not in CLAUDE_TOOL_NAMES
+                    or not isinstance(call_id, str)
+                    or not isinstance(arguments, dict)
+                ):
+                    raise EventParseError("Claude training tool call is not canonical MCP")
+                name = raw_name.removeprefix(prefix)
+                envelope = json.loads(canonical_action_json(name, arguments))
+                canonical_arguments = json.dumps(
+                    envelope["arguments"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                calls.append(
+                    MultiTurnSftMessage.model_validate(
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": canonical_arguments,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                )
+            if calls and text_blocks:
+                raise EventParseError("Claude mixed prose with a training tool-call turn")
+            if len(calls) > 1:
+                raise EventParseError("Claude emitted multiple repository actions in one turn")
+            if calls:
+                messages.extend(calls)
+            elif text_blocks:
+                if final_text is not None:
+                    raise EventParseError("Claude emitted multiple final assistant messages")
+                final_text = "\n".join(text_blocks)
+        elif event_type == "user":
+            message = event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                raise EventParseError("Claude user training message is malformed")
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    raise EventParseError("Claude injected a non-tool user training message")
+                call_id = block.get("tool_use_id")
+                if not isinstance(call_id, str):
+                    raise EventParseError("Claude tool result omits its call ID")
+                text = _tool_result_text(block.get("content"))
+                name = _pending_tool_name(messages, call_id)
+                messages.append(
+                    MultiTurnSftMessage(
+                        role="tool",
+                        content=text,
+                        tool_call_id=call_id,
+                        name=name,
+                    )
+                )
+        elif event_type == "result" and final_text is None:
+            result = event.get("result")
+            if isinstance(result, str) and result.strip():
+                final_text = result
+    if final_text is None:
+        raise EventParseError("Claude training stream has no final assistant content")
+    messages.append(MultiTurnSftMessage(role="assistant", content=final_text))
+    return messages
+
+
 def _select_observed_model(values: list[str], requested: str) -> str | None:
     if not values:
         return None
@@ -238,4 +363,38 @@ def _usage_int(payload: dict[str, Any], key: str) -> int | None:
     return _optional_nonnegative_int(payload.get(key))
 
 
-__all__ = ["EventParseError", "EventSummary", "ParsedEventStream", "parse_event_stream"]
+def _tool_result_text(value: Any) -> str:
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict):
+        text = value[0].get("text")
+        if value[0].get("type") == "text" and isinstance(text, str) and text:
+            return text
+    raise EventParseError("Claude training tool result is not one public text observation")
+
+
+def _pending_tool_name(messages: list[MultiTurnSftMessage], call_id: str) -> str:
+    if not messages or messages[-1].role != "assistant" or not messages[-1].tool_calls:
+        raise EventParseError("Claude tool result has no preceding assistant call")
+    call = messages[-1].tool_calls[0]
+    if call.id != call_id:
+        raise EventParseError("Claude tool result call ID changed")
+    return call.function.name
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+__all__ = [
+    "EventParseError",
+    "EventSummary",
+    "ParsedEventStream",
+    "normalize_training_messages",
+    "parse_event_stream",
+]

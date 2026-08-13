@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -42,18 +43,44 @@ def test_repository_workflow_uses_rollout_tokens_and_no_training_side_runtime() 
         Path(__file__).parents[1] / "src" / "verigym_training_reference" / "repository_workflow.py"
     ).read_text(encoding="utf-8")
 
-    assert "class VeriGymRepositoryWorkflow(Workflow)" in source
-    assert "rollout_engine.get_model_response" in source
+    tree = ast.parse(source)
+    workflow = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "VeriGymRepositoryWorkflow"
+    )
+
+    assert [base.id for base in workflow.bases if isinstance(base, ast.Name)] == [
+        "MultiTurnWorkflow"
+    ]
+    assert not any(
+        isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == "run"
+        for node in workflow.body
+    )
+    assert "class VeriGymRepositoryAgent(BaseAgent)" in source
+    assert "class VeriGymBrokerEnvironment(BaseEnv)" in source
+    assert "super().timed_llm_call" in source
     assert "prompt_ids" in source and "completion_ids" in source and "logprobs" in source
     assert "RepositoryBrokerClient" in source
     assert "await_model_or_terminal" in source
     assert "terminal_task.cancel()" in source
-    assert "repository_turn_messages" in source
-    assert "messages.extend" not in source
+    assert "activate_rllm_verl_grpo_group_compatibility" not in source
+    assert "repository_native_tool_messages" in source
+    assert "model_output=output" in source
     assert "import docker" not in source
     assert "import subprocess" not in source
     assert "DockerRuntime" not in source
     assert "source_root=" not in source
+
+
+def test_repository_native_smoke_requests_completion_logprobs() -> None:
+    source = (Path(__file__).parents[3] / "scripts" / "smoke_qwen35_rllm_multiturn.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"logprobs": 1' in source
+    assert '"optimizer_updates": 0' in source
+    assert '"grpo_optimizer_executed": False' in source
 
 
 def test_extract_rtl_candidate_prefers_explicit_tags() -> None:

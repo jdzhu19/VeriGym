@@ -342,7 +342,9 @@ def auth_identity_configuration(
     default_credential_env: str | None = None,
 ) -> tuple[AuthModeResolution, str | None]:
     try:
-        resolution = resolve_auth_mode(os.environ.get("VERIGYM_CODEX_AUTH_MODE", ""))
+        resolution = resolve_auth_mode(
+            os.environ.get("VERIGYM_CODEX_AUTH_MODE", INHERITED_CODEX_LOGIN)
+        )
     except AuthModeError as exc:
         raise CodexProcessError("VERIGYM_CODEX_AUTH_MODE is unsupported") from exc
     credential_env = default_credential_env

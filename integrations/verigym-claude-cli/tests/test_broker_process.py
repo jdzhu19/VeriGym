@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 from verigym.plugin_api import (
     AgentContext,
-    CommandSpec,
     CompletedCommand,
     ErrorCategory,
     ExternalAgentAccounting,
@@ -49,7 +48,6 @@ class FakeBridge:
     def __init__(self, root: Path | None = None) -> None:
         self.workspace_root = root or Path("/workspace")
         self.artifact_root = (root / "artifacts") if root is not None else Path("/artifacts")
-        self.commands: list[CommandSpec] = []
         self.events: list[tuple[str, dict[str, JsonValue]]] = []
         self.accounting: ExternalAgentAccounting | None = None
 
@@ -63,10 +61,6 @@ class FakeBridge:
             category=ErrorCategory.SUCCESS,
             stdout=json.dumps(request, sort_keys=True),
         )
-
-    def execute_command(self, command: CommandSpec) -> CompletedCommand:
-        self.commands.append(command)
-        return CompletedCommand(argv=command.argv, cwd=command.cwd, exit_code=0, stdout="ok")
 
     def execute_public_test(self, test_id: str) -> CompletedCommand:
         return CompletedCommand(argv=["verigym-public-test", "run", test_id], cwd=".", exit_code=0)
@@ -84,7 +78,8 @@ class ExplodingBridge(FakeBridge):
 
 
 class PolicyRejectingBridge(FakeBridge):
-    def execute_command(self, command: CommandSpec) -> CompletedCommand:
+    def invoke_workspace_tool(self, tool_name: str, request: dict[str, JsonValue]) -> ToolResult:
+        del tool_name, request
         raise PathPolicyError("simulated absolute-path policy rejection")
 
 
@@ -116,23 +111,34 @@ def test_broker_routes_only_typed_workspace_and_runtime_calls(tmp_path: Path) ->
         assert (
             _call(
                 broker.socket_path,
-                "run_command",
-                {"argv": ["make", "lint"], "cwd": "repository", "timeout_s": 12},
+                "apply_patch",
+                {
+                    "patch": (
+                        "*** Begin Patch\n*** Update File: repository/a.sv\n"
+                        "@@\n-a\n+b\n*** End Patch"
+                    )
+                },
             )["isError"]
             is False
         )
         assert (
             _call(broker.socket_path, "run_public_test", {"test_id": "smoke"})["isError"] is False
         )
+        assert _call(broker.socket_path, "inspect_diff", {})["isError"] is False
+        assert _call(broker.socket_path, "finish", {"message": "done"})["isError"] is False
+        assert _call(broker.socket_path, "run_command", {"argv": ["id"]})["isError"] is True
         assert _call(broker.socket_path, "Bash", {"command": "id"})["isError"] is True
     finally:
         broker.stop()
     stats = broker.stats()
-    assert stats.tool_calls == 3
-    assert stats.command_calls == 1
+    assert stats.tool_calls == 5
+    assert stats.command_calls == 0
     assert stats.public_test_calls == 1
     assert stats.file_reads == 1
-    assert bridge.commands == [CommandSpec(argv=["make", "lint"], cwd="repository", timeout_s=12)]
+    assert stats.patches == 1
+    assert stats.diff_inspections == 1
+    assert stats.finish_calls == 1
+    assert stats.finished is True
 
 
 def test_unexpected_bridge_exception_is_infrastructure_not_policy(tmp_path: Path) -> None:
@@ -159,11 +165,7 @@ def test_bridge_path_rejection_is_policy_not_infrastructure(tmp_path: Path) -> N
     )
     broker.start()
     try:
-        assert _call(
-            broker.socket_path,
-            "run_command",
-            {"argv": ["iverilog", "/workspace/rtl/a.v"], "cwd": "."},
-        )["isError"]
+        assert _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"]
     finally:
         broker.stop()
     stats = broker.stats()

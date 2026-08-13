@@ -111,6 +111,97 @@ _ACTION_MAPPINGS = {
     "finish": "final_submission",
 }
 
+_ACTION_DESCRIPTIONS = {
+    "list_files": "List visible task-workspace files using safe relative paths.",
+    "read_file": "Read one visible UTF-8 task-workspace file by relative path.",
+    "apply_patch": "Apply one unified diff to editable repository paths.",
+    "run_public_test": "Run one exact task-declared public test.",
+    "inspect_diff": "Inspect the current canonical candidate diff.",
+    "finish": "Finish after applying a patch and inspecting the candidate diff.",
+}
+
+
+def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, Any]]:
+    """Derive provider tool definitions from the canonical action registry.
+
+    The returned schemas are intentionally copies of the registry schemas. Providers may
+    rename their surrounding fields, but they do not get a second independently maintained
+    argument contract.
+    """
+
+    registry = action_registry()["actions"]
+    if not isinstance(registry, dict):  # pragma: no cover - action_registry is local and typed
+        raise RuntimeError("repository action registry is malformed")
+    definitions: list[dict[str, Any]] = []
+    for name in sorted(registry):
+        entry = registry[name]
+        if not isinstance(entry, dict) or not isinstance(entry.get("arguments_schema"), dict):
+            raise RuntimeError("repository action registry entry is malformed")
+        schema = json.loads(json.dumps(entry["arguments_schema"]))
+        if dialect == "openai":
+            definitions.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": _ACTION_DESCRIPTIONS[name],
+                        "parameters": schema,
+                    },
+                }
+            )
+        elif dialect == "mcp":
+            definitions.append(
+                {
+                    "name": name,
+                    "description": _ACTION_DESCRIPTIONS[name],
+                    "inputSchema": schema,
+                }
+            )
+        else:
+            raise ValueError("repository tool dialect must be 'openai' or 'mcp'")
+    return definitions
+
+
+def canonical_action_json(name: str, arguments: Mapping[str, Any]) -> str:
+    """Serialize one provider-native call as a ``repository_action.v2`` envelope."""
+
+    if name not in _ARGUMENT_MODELS:
+        raise RepositoryActionProtocolViolation(
+            "agent_unknown_action", "provider requested an unregistered repository action"
+        )
+    try:
+        parsed = _ARGUMENT_MODELS[name].model_validate(dict(arguments))
+    except ValidationError as exc:
+        raise RepositoryActionProtocolViolation(
+            "agent_invalid_arguments", "repository action arguments do not match the registry"
+        ) from exc
+    value = {
+        "protocol": "repository_action.v2",
+        "action": name,
+        "arguments": parsed.model_dump(mode="json"),
+    }
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def canonical_tool_observation(
+    name: str,
+    payload: Mapping[str, Any],
+    *,
+    is_error: bool,
+) -> str:
+    """Serialize a bounded public tool result identically for every harness."""
+
+    if name not in _ARGUMENT_MODELS:
+        raise ValueError("cannot serialize an observation for an unknown repository tool")
+    value = {
+        "schema_version": "1.0",
+        "protocol": "repository_action.v2",
+        "tool": name,
+        "is_error": is_error,
+        "result": dict(payload),
+    }
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
 
 def prompt_contract(
     state_machine_id: RepositoryActionStateMachine = "repository_action_state_machine_v2",
@@ -585,10 +676,13 @@ __all__ = [
     "RunPublicTestArguments",
     "action_registry",
     "bounded_tool_result_identity",
+    "canonical_action_json",
     "canonical_repository_action_to_agent_action",
+    "canonical_tool_observation",
     "extract_json_content",
     "extract_transport_action",
     "prompt_contract",
+    "repository_tool_definitions",
     "repository_action_state_failure",
     "resolve_repository_action_protocol",
     "task_requires_public_test",

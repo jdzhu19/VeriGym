@@ -184,6 +184,59 @@ def repository_turn_messages(
     ]
 
 
+def repository_native_tool_messages(
+    *,
+    task_id: str,
+    task_description: object,
+    contract: dict[str, Any],
+    public_test_ids: object,
+    observation: object,
+    broker_observation_truncated: bool,
+) -> list[dict[str, str]]:
+    """Build the initial prompt for a provider-native repository tool loop."""
+
+    projected, projected_truncated = project_repository_observation(observation)
+    bounded_description, task_description_truncated = _optional_text(
+        task_description, _TASK_DESCRIPTION_BYTES
+    )
+    payload = {
+        "task": {
+            "id": task_id,
+            "description": bounded_description,
+            "submission_kind": "patch",
+        },
+        "repository_action_contract": contract,
+        "transport": "provider_native_tool_call",
+        "public_test_ids": public_test_ids if isinstance(public_test_ids, list) else [],
+        "initial_observation": projected,
+        "context_policy": {
+            "format_id": "verigym_repository_native_tool_context_v1",
+            "broker_observation_truncated": broker_observation_truncated,
+            "projected_observation_truncated": projected_truncated,
+            "task_description_truncated": task_description_truncated,
+            "hidden_assets_included": False,
+        },
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a bounded repository repair agent. Use exactly one supplied repository "
+                "function per turn and do not mix prose with a tool call. Read visible files "
+                "before editing, use only declared public tests, inspect the candidate diff, "
+                "then call finish. Shell, network, hidden assets, and reference solutions are "
+                "unavailable."
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ),
+        },
+    ]
+
+
 def previous_repository_action(raw_action: str, response: dict[str, Any]) -> dict[str, Any]:
     """Keep the immediately preceding action identifiable without replaying full history."""
 

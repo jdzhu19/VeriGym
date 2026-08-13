@@ -616,20 +616,22 @@ class ExternalAgentCallIdentity(StrictModel):
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
             "claude_cli_external_agent",
+            "openhands_sdk_agent",
         ]
         | None
     ) = None
-    execution_surface: Literal["codex_cli", "claude_cli"] | None = None
+    execution_surface: Literal["codex_cli", "claude_cli", "openhands_sdk"] | None = None
     interaction_class: (
         Literal[
             "cli_agent_single_turn_readonly",
             "cli_agent_workspace_writing",
+            "sdk_agent_broker_tools",
         ]
         | None
     ) = None
     harness_id: str | None = Field(default=None, min_length=1, max_length=128)
-    model_client_kind: Literal["cli_agent_mediated"] | None = None
-    agent_harness_kind: Literal["codex_cli", "claude_cli"] | None = None
+    model_client_kind: Literal["cli_agent_mediated", "sdk_agent_mediated"] | None = None
+    agent_harness_kind: Literal["codex_cli", "claude_cli", "openhands_sdk"] | None = None
     tool_availability_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_use_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_event_count: int | None = Field(default=None, ge=0)

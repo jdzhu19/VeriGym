@@ -26,7 +26,7 @@ from verigym.schemas.tool import CommandSpec, CompletedCommand, ToolResult
 from verigym.tools.base import ToolContext
 from verigym.tools.file_tools import builtin_file_tools
 
-_EVENT_TYPE = re.compile(r"^(?:codex|claude)_cli_[a-z0-9_]{1,80}$")
+_EVENT_TYPE = re.compile(r"^(?:(?:codex|claude)_cli|openhands_sdk)_[a-z0-9_]{1,80}$")
 _MAX_EVENT_BYTES = 256 * 1024
 _MAX_TOOL_OUTPUT_BYTES = 256 * 1024
 _WORKSPACE_TOOLS = {tool.descriptor.name: tool for tool in builtin_file_tools()}

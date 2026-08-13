@@ -14,6 +14,7 @@ dependencies = ["verigym==0.1.0"]
 [project.entry-points."verigym.agents"]
 codex-cli-agent = "verigym_codex_cli:CodexCliAgentAdapter"
 codex-cli-readonly-agent = "verigym_codex_cli:CodexCliReadonlyAgentAdapter"
+codex-cli-mcp-teacher = "verigym_codex_cli:CodexCliMcpTeacherAdapter"
 
 [project.scripts]
 verigym-codex = "verigym_codex_cli.cli:main"

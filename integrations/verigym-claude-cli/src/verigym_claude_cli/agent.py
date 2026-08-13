@@ -7,6 +7,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from verigym.evolution.training_transcript import build_teacher_transcript
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -27,13 +28,19 @@ from verigym.plugin_api import (
     TerminationReason,
     validate_prompt_text,
 )
+from verigym.protocols.repository_action import repository_tool_definitions
 
 from ._version import __version__
 from .artifacts import update_summary, write_evidence
 from .broker import BrokerStats, ClaudeToolBroker
 from .capabilities import CapabilityReport, runtime_capabilities
 from .config import ClaudeSettings, agent_settings
-from .events import EventParseError, ParsedEventStream, parse_event_stream
+from .events import (
+    EventParseError,
+    ParsedEventStream,
+    normalize_training_messages,
+    parse_event_stream,
+)
 from .invocation import build_arguments, sanitized_invocation
 from .process import (
     ClaudeCliProcessRunner,
@@ -43,7 +50,7 @@ from .process import (
     configured_broker_root,
     provider_environment,
 )
-from .util import redact_text
+from .util import atomic_json, redact_text
 
 
 class ClaudeCliAgentAdapter(AgentAdapter):
@@ -226,6 +233,38 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 message="Claude tool events differ from private broker accounting",
                 infrastructure=True,
             )
+        training_transcript: dict[str, object] | None = None
+        if failure is None and parsed is not None and settings.capture_training_transcript:
+            try:
+                messages = normalize_training_messages(
+                    process.stdout,
+                    system_prompt=_training_system_prompt(),
+                    user_prompt=prompt,
+                )
+                training_transcript = build_teacher_transcript(
+                    campaign_role="training",
+                    task_id=context.task.id,
+                    provider="anthropic-compatible",
+                    model_id=settings.model_id,
+                    reasoning_effort="max",
+                    client_kind="cli",
+                    client_name="claude-code",
+                    client_version=capabilities.version_output.strip(),
+                    harness_identity={
+                        "harness": "verigym-claude-mcp-external-agent-bridge-v2",
+                        "configuration_fingerprint": settings.configuration_fingerprint,
+                        "tools": repository_tool_definitions(dialect="openai"),
+                    },
+                    messages=messages,
+                )
+            except (EventParseError, ValueError) as exc:
+                failure = _termination(
+                    TerminationReason.MODEL_ERROR,
+                    kind="model",
+                    category="training_transcript_ineligible",
+                    message=str(exc),
+                    infrastructure=False,
+                )
         identity = _identity(settings, capabilities, parsed, broker_stats)
         accounting = _accounting(process, parsed, broker_stats)
         if parsed is not None:
@@ -280,9 +319,12 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 "model_call_limit_configured": False,
                 "model_token_limit_configured": False,
                 "budget_limit_configured": False,
+                "training_transcript_captured": training_transcript is not None,
             },
             roots_to_redact=(bridge.workspace_root,),
         )
+        if training_transcript is not None:
+            atomic_json(bridge.artifact_root / "training-transcript.json", training_transcript)
         if failure is not None:
             raise failure
         return FinalSubmissionAction(
@@ -368,12 +410,10 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
         "instructions": [
             "Solve the task by using only the mcp__verigym__* tools supplied in this session.",
             "Begin by listing and reading visible files; paths are relative to /workspace.",
-            "Use apply_patch or write_file only for paths permitted by editable_globs.",
-            "Use run_command only for argument-array checks inside the network-none task Docker.",
-            "Use only relative MCP paths and command arguments; never send /workspace or another "
-            "absolute path.",
+            "Use apply_patch only for paths permitted by editable_globs.",
+            "Use only relative MCP paths; never send /workspace or another absolute path.",
             "Use run_public_test only with an ID listed in public_test_ids.",
-            "Inspect the final diff before finishing.",
+            "Inspect the final diff, then call finish exactly once.",
             "Do not access the host cwd, home, credentials, settings, hidden tests, or network.",
             "Do not ask questions; finish after producing one candidate.",
             "VeriGym, not this CLI, freezes and verifies the final candidate.",
@@ -383,6 +423,15 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
         '<verigym_external_agent_task schema_version="1.0">\n'
         + json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
         + "\n</verigym_external_agent_task>\n"
+    )
+
+
+def _training_system_prompt() -> str:
+    return (
+        "You are a bounded repository repair agent. Use exactly one supplied repository "
+        "function per turn and do not mix prose with a tool call. Read visible files before "
+        "editing, use only declared public tests, inspect the candidate diff, then call finish. "
+        "Shell, network, hidden assets, and golden repair artifacts are unavailable."
     )
 
 
