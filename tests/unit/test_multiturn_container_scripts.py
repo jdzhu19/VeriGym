@@ -44,6 +44,7 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert '"libc6-dev=${LIBC6_DEV_PACKAGE_VERSION}"' in dockerfile
     assert "cc -shared -fPIC" in dockerfile
     assert "vllm-service-os-packages.txt" in dockerfile
+    assert dockerfile.count("--progress-bar off") == 3
     assert "gcc_package_version=4:12.2.0-3" in build
     assert "libc6_dev_package_version=2.36-9+deb12u14" in build
     assert 'torch.version.cuda == "12.9"' in dockerfile

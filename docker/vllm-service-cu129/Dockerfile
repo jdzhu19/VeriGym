@@ -18,10 +18,10 @@ urllib.request.urlretrieve( \
 "/opt/vllm-0.22.1+cu129-cp38-abi3-manylinux_2_28_x86_64.whl")' && \
     echo "365ee929afd73bb5d146235b65053fa948788ec2ee00a2c3e957d3f43bf2b0cd  /opt/vllm-0.22.1+cu129-cp38-abi3-manylinux_2_28_x86_64.whl" \
       | sha256sum --check --strict && \
-    python3 -m pip install --no-cache-dir \
+    python3 -m pip install --no-cache-dir --progress-bar off \
       --index-url https://download.pytorch.org/whl/cu129 \
       "torch==2.11.0+cu129" && \
-    python3 -m pip install --no-cache-dir \
+    python3 -m pip install --no-cache-dir --progress-bar off \
       /opt/vllm-0.22.1+cu129-cp38-abi3-manylinux_2_28_x86_64.whl && \
     rm /opt/vllm-0.22.1+cu129-cp38-abi3-manylinux_2_28_x86_64.whl && \
     python3 -m pip check && \
@@ -34,7 +34,7 @@ assert vllm.__version__.split("+")[0] == "0.22.1"'
 # vLLM's dependency resolution uses the default index after the cu129 torch install. Re-seal the
 # compiled vision/audio extensions from the matching PyTorch index and import them so a metadata-
 # only `pip check` cannot hide a CUDA wheel ABI mismatch.
-RUN python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
+RUN python3 -m pip install --no-cache-dir --progress-bar off --force-reinstall --no-deps \
       --index-url https://download.pytorch.org/whl/cu129 \
       "torchvision==0.26.0+cu129" \
       "torchaudio==2.11.0+cu129" && \
