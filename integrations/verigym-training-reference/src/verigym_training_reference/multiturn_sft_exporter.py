@@ -22,6 +22,7 @@ from verigym.schemas.multiturn_sft import (
     VerifiedMultiTurnSftExample,
     seal_multi_turn_example,
 )
+from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.run import RunManifest
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.task import VeriTask
@@ -131,7 +132,7 @@ def export_verified_multiturn_sft(
         if task_id in seen_tasks:
             raise ConfigurationError("multi-turn SFT accepts only one trajectory per task")
         seen_tasks.add(task_id)
-        run, scorecard, task = _validated_run(binding.run, binding.transcript)
+        run, scorecard, task, provenance = _validated_run(binding.run, binding.transcript)
         entry = training[task_id]
         _validate_split_binding(entry, run, task)
         if task.id != task_id or run.task_id != task_id:
@@ -156,8 +157,8 @@ def export_verified_multiturn_sft(
             "source_hash": run.source_hash,
             "candidate_hash": run.candidate_hash,
             "verifier_hash": scorecard.reproducibility.verifier_hash,
-            "verigym_source_commit": run.build_provenance.source_commit,
-            "verigym_source_tree_hash": run.build_provenance.source_tree_hash,
+            "verigym_source_commit": provenance.source_commit,
+            "verigym_source_tree_hash": provenance.source_tree_hash,
             "provider": transcript["provider"],
             "model_id": transcript["model_id"],
             "reasoning_effort": transcript["reasoning_effort"],
@@ -259,7 +260,7 @@ def rllm_hf_template_token_count(
 
 def _validated_run(
     run_path: Path, transcript_path: Path
-) -> tuple[RunManifest, ScoreCard, VeriTask]:
+) -> tuple[RunManifest, ScoreCard, VeriTask, BuildProvenance]:
     run_root = _safe_directory(run_path, label="verified run")
     transcript = transcript_path.resolve(strict=True)
     if not transcript.is_relative_to(run_root):
@@ -274,10 +275,12 @@ def _validated_run(
         raise ConfigurationError("multi-turn SFT run is rejected or infrastructure-invalid")
     if manifest.candidate_hash is None:
         raise ConfigurationError("verified run omits its candidate identity")
+    provenance = manifest.build_provenance
     if (
-        manifest.build_provenance.dirty
-        or manifest.build_provenance.source_commit is None
-        or manifest.build_provenance.source_tree_hash is None
+        provenance is None
+        or provenance.dirty
+        or provenance.source_commit is None
+        or provenance.source_tree_hash is None
     ):
         raise ConfigurationError("verified run does not have clean source-code lineage")
     if (
@@ -285,7 +288,7 @@ def _validated_run(
         or manifest.verifier_hash != scorecard.reproducibility.verifier_hash
     ):
         raise ConfigurationError("verified run identities disagree")
-    return manifest, scorecard, task
+    return manifest, scorecard, task, provenance
 
 
 def _validate_split_binding(
