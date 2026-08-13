@@ -17,6 +17,13 @@ do not route ordinary verification through it. Keep the existing LSF/tmux alloca
 | OpenHands SDK inference | Rollout node | Dedicated Python 3.12 env, broker tools only |
 | Checkout, image transfer, scheduling | Login VM | No benchmark execution by default |
 
+On hosts older than manylinux 2.28, build `litellm==1.93.0` from its hash-checked source archive
+for the OpenHands Python 3.12 interpreter and pass that wheel through
+`VERIGYM_OPENHANDS_LITELLM_WHEEL`. The environment preparation script constrains the matching
+OpenTelemetry 1.39.1/0.60b1 family because unconstrained resolution can combine incompatible beta
+semantic-convention releases. The local wheel is installed only into the OpenHands environment;
+it is not copied into model, trainer, controller, or benchmark images.
+
 ```mermaid
 flowchart LR
   vm["Login VM<br/>control and image relay"] --> gpu

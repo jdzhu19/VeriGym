@@ -1,0 +1,12 @@
+# Compatibility closure for openhands-sdk 1.42.1. lmnr 0.7.x requires the
+# 0.60b1 semantic conventions, so the matching OpenTelemetry family must be
+# selected together instead of letting pip combine incompatible beta lines.
+litellm==1.93.0
+lmnr==0.7.59
+opentelemetry-api==1.39.1
+opentelemetry-sdk==1.39.1
+opentelemetry-exporter-otlp-proto-http==1.39.1
+opentelemetry-exporter-otlp-proto-grpc==1.39.1
+opentelemetry-instrumentation==0.60b1
+opentelemetry-instrumentation-threading==0.60b1
+opentelemetry-semantic-conventions==0.60b1

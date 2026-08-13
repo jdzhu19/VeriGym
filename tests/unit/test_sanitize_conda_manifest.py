@@ -46,6 +46,14 @@ def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment(
     assert "pip install --upgrade" not in prepare
     assert '"vllm==0.22.1"' not in prepare
     assert '"verl==0.8.0"' not in prepare
+    assert "openhands_sdk_1.42.1_constraints.txt" in prepare
+    assert "VERIGYM_OPENHANDS_LITELLM_WHEEL" in prepare
+    assert "openhands-litellm-wheel.sha256" in prepare
+    assert 'importlib.metadata.version("litellm") == "1.93.0"' in prepare
+    constraints = (
+        Path(__file__).parents[2] / "configs/runtime/openhands_sdk_1.42.1_constraints.txt"
+    ).read_text(encoding="utf-8")
+    assert "opentelemetry-semantic-conventions==0.60b1" in constraints
     assert (
         '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
     )
