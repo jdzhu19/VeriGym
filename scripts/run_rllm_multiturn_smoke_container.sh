@@ -73,6 +73,8 @@ docker run --rm \
   --pids-limit 2048 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
+  --env LOGNAME=verigym \
+  --env USER=verigym \
   --env TMPDIR=/cache/tmp \
   --env OPENBLAS_NUM_THREADS=1 \
   --env OMP_NUM_THREADS=1 \

@@ -138,6 +138,8 @@ def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
     assert "--env OMP_NUM_THREADS=1" in native_runner
     assert "--env MKL_NUM_THREADS=1" in native_runner
     assert "--env NUMEXPR_NUM_THREADS=1" in native_runner
+    assert "--env LOGNAME=verigym" in native_runner
+    assert "--env USER=verigym" in native_runner
     assert "--read-only" in native_runner
     assert "docker.sock" not in native_runner
     assert "--privileged" not in native_runner
