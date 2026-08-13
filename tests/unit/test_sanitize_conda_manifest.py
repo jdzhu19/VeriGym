@@ -43,6 +43,8 @@ def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment(
     assert '"$conda_executable" run --no-capture-output -n agent python -' in inventory
     assert '"$conda_executable" run --no-capture-output -n agent python -' in prepare
     assert 'git -C "$rllm_checkout"' not in prepare
+    assert "components < (2, 28)" in prepare
+    assert "--only-binary vllm" in prepare
     assert (
         '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
     )
