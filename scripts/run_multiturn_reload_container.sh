@@ -1,32 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ ${VERIGYM_RUN_QWEN35_MULTITURN_SFT:-} != 1 ]]; then
-  echo "VERIGYM_RUN_QWEN35_MULTITURN_SFT=1 is required" >&2
+if [[ ${VERIGYM_RUN_QWEN35_MULTITURN_RELOAD:-} != 1 ]]; then
+  echo "VERIGYM_RUN_QWEN35_MULTITURN_RELOAD=1 is required" >&2
   exit 2
 fi
-if [[ $# -ne 6 ]]; then
-  echo "usage: $0 IMAGE_ID MODEL_ROOT DATASET_ROOT OUTPUT_ROOT CACHE_ROOT EMPTY_HOME" >&2
+if [[ $# -ne 5 ]]; then
+  echo "usage: $0 IMAGE_ID MODEL_ROOT TRAINING_OUTPUT CACHE_ROOT EMPTY_HOME" >&2
   exit 2
 fi
 
 image_id=$1
-for path in "$2" "$3" "$4" "$5" "$6"; do
+for path in "$2" "$3" "$4" "$5"; do
   if [[ -L $path ]]; then
-    echo "trainer mounts cannot be symlinks" >&2
+    echo "reload mounts cannot be symlinks" >&2
     exit 2
   fi
 done
 model_root=$(realpath "$2")
-dataset_root=$(realpath "$3")
-output_root=$(realpath "$4")
-cache_root=$(realpath "$5")
-empty_home=$(realpath "$6")
+training_output=$(realpath "$3")
+cache_root=$(realpath "$4")
+empty_home=$(realpath "$5")
 gpu_devices=${VERIGYM_GPU_DEVICE_IDS:-}
 
 if [[ ! $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || \
   [[ $(docker image inspect "$image_id" --format '{{.Id}}') != "$image_id" ]]; then
-  echo "trainer image must be an exact local Docker image ID" >&2
+  echo "reload image must be an exact local Docker image ID" >&2
   exit 2
 fi
 if [[ ! $gpu_devices =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]] || \
@@ -35,22 +34,22 @@ if [[ ! $gpu_devices =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]] || \
   exit 2
 fi
 if [[ -z ${CUDA_VISIBLE_DEVICES:-} ]] || [[ $CUDA_VISIBLE_DEVICES != "$gpu_devices" ]]; then
-  echo "explicit container GPU IDs must match the LSF CUDA_VISIBLE_DEVICES allocation" >&2
+  echo "explicit reload GPU IDs must match the LSF CUDA_VISIBLE_DEVICES allocation" >&2
   exit 2
 fi
-for path in "$model_root" "$dataset_root" "$output_root" "$cache_root" "$empty_home"; do
+for path in "$model_root" "$training_output" "$cache_root" "$empty_home"; do
   if [[ -L $path || ! -d $path ]]; then
-    echo "all trainer mounts must be existing non-symlink directories" >&2
+    echo "all reload mounts must be existing non-symlink directories" >&2
     exit 2
   fi
 done
 if [[ -n $(find "$empty_home" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
-  echo "trainer synthetic home must be empty" >&2
+  echo "reload synthetic home must be empty" >&2
   exit 2
 fi
 mkdir -p "$cache_root/tmp"
 if [[ -L $cache_root/tmp || ! -d $cache_root/tmp ]]; then
-  echo "trainer cache temporary directory is unsafe" >&2
+  echo "reload cache temporary directory is unsafe" >&2
   exit 2
 fi
 
@@ -61,20 +60,20 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  --pids-limit 8192 \
+  --pids-limit 4096 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \
   --env TMPDIR=/cache/tmp \
-  --env VERIGYM_RUN_QWEN35_MULTITURN_SFT=1 \
+  --env VERIGYM_RUN_QWEN35_MULTITURN_RELOAD=1 \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g \
   --volume "$empty_home:/work/home" \
   --volume "$model_root:/model:ro" \
-  --volume "$dataset_root:/dataset:ro" \
-  --volume "$output_root:/output" \
+  --volume "$training_output:/output" \
   --volume "$cache_root:/cache" \
   "$image_id" \
-  python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py \
-  --dataset /dataset \
+  python3 -m torch.distributed.run \
+  --standalone \
+  --nproc-per-node=4 \
+  /opt/verigym/bin/smoke_reload_qwen35_multiturn_adapter.py \
   --model-root /model \
-  --output /output \
-  --rllm-source /opt/rllm
+  --training-output /output

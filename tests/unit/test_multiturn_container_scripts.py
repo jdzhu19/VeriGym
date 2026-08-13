@@ -17,6 +17,8 @@ def test_trainer_image_excludes_runtime_data_and_freezes_versions() -> None:
     assert '"$context/rllm/.verigym-rllm-commit"' in build
     assert 'subprocess.check_output(["git"' not in dockerfile
     assert "COPY wheels /opt/verigym/wheels" in dockerfile
+    assert "smoke_reload_qwen35_multiturn_adapter.py" in dockerfile
+    assert "smoke_qwen35_rllm_multiturn.py" in dockerfile
     assert "models" not in dockerfile.lower()
     assert "docker.sock" not in dockerfile
     assert "VLLM_SERVICE_IMAGE_ID" in build
@@ -46,6 +48,10 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert '--gpus "\\"device=$gpu_devices\\""' in runner
     assert '--publish "127.0.0.1:$port:8000"' in runner
     assert '--network "$network_name"' in runner
+    assert "ADAPTER_ROOT_OR_DASH" in runner
+    assert "--enable-lora" in runner
+    assert '--lora-modules "$served_model_id=/adapter"' in runner
+    assert "$adapter_root:/adapter:ro" in runner
     assert "--read-only" in runner
     assert "--cap-drop ALL" in runner
     assert "no-new-privileges" in runner
@@ -67,5 +73,32 @@ def test_trainer_runner_is_offline_and_limits_gpu_and_mount_visibility() -> None
     assert "$cache_root:/cache" in runner
     assert "docker.sock" not in runner
     assert "--privileged" not in runner
+    assert "--ipc host" not in runner
+    assert "--shm-size 16g" in runner
+    assert "--read-only" in runner
+    assert "--cap-drop ALL" in runner
     assert "$HOME" not in runner
     assert "python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py" in runner
+
+
+def test_reload_and_native_smoke_runners_preserve_boundaries() -> None:
+    root = Path(__file__).parents[2]
+    reload_runner = (root / "scripts/run_multiturn_reload_container.sh").read_text(encoding="utf-8")
+    native_runner = (root / "scripts/run_rllm_multiturn_smoke_container.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--network none" in reload_runner
+    assert '--gpus "\\"device=$gpu_devices\\""' in reload_runner
+    assert "--nproc-per-node=4" in reload_runner
+    assert "--read-only" in reload_runner
+    assert "docker.sock" not in reload_runner
+    assert "--privileged" not in reload_runner
+    assert '--network "$network_name"' in native_runner
+    assert "verigym-qwen35-vllm:8000/v1" in native_runner
+    assert "--gpus" not in native_runner
+    assert "$task:/input/task.json:ro" in native_runner
+    assert "$model_root:/model:ro" in native_runner
+    assert "--read-only" in native_runner
+    assert "docker.sock" not in native_runner
+    assert "--privileged" not in native_runner

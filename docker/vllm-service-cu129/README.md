@@ -11,3 +11,7 @@ Build with `scripts/build_vllm_service_image.sh`. Run with
 indices, a read-only model mount, a dedicated cache, a synthetic empty home, and an existing
 user-defined bridge. It publishes the API only on host loopback for colocated OpenHands/rLLM
 clients. It never uses `--privileged`, host IPC, the default Docker bridge, or a Docker socket.
+
+Pass `-` as `ADAPTER_ROOT_OR_DASH` and repeat the base identity as `SERVED_MODEL_ID` for a base
+service. For the development adapter run, pass the read-only adapter directory and a distinct
+served identity; the runner enables vLLM LoRA serving without copying adapter bytes into the image.

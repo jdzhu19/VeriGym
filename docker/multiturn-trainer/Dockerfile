@@ -14,6 +14,9 @@ LABEL org.opencontainers.image.title="VeriGym Qwen multi-turn SFT trainer" \
 COPY rllm /opt/rllm
 COPY wheels /opt/verigym/wheels
 COPY train_qwen35_multiturn_sft.py /opt/verigym/bin/train_qwen35_multiturn_sft.py
+COPY smoke_reload_qwen35_multiturn_adapter.py \
+  /opt/verigym/bin/smoke_reload_qwen35_multiturn_adapter.py
+COPY smoke_qwen35_rllm_multiturn.py /opt/verigym/bin/smoke_qwen35_rllm_multiturn.py
 
 RUN python3 -m pip uninstall --yes \
       vllm lmcache opencv-python-headless cupy-cuda12x cupy-cuda13x pygobject && \

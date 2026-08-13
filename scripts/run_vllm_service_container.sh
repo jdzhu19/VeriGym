@@ -5,18 +5,26 @@ if [[ ${VERIGYM_RUN_QWEN35_VLLM_SERVICE:-} != 1 ]]; then
   echo "VERIGYM_RUN_QWEN35_VLLM_SERVICE=1 is required" >&2
   exit 2
 fi
-if [[ $# -ne 7 ]]; then
-  echo "usage: $0 IMAGE_ID MODEL_ROOT CACHE_ROOT EMPTY_HOME NETWORK PORT MODEL_ID" >&2
+if [[ $# -ne 9 ]]; then
+  echo "usage: $0 IMAGE_ID MODEL_ROOT CACHE_ROOT EMPTY_HOME NETWORK PORT BASE_MODEL_ID ADAPTER_ROOT_OR_DASH SERVED_MODEL_ID" >&2
   exit 2
 fi
 
 image_id=$1
+for path in "$2" "$3" "$4"; do
+  if [[ -L $path ]]; then
+    echo "service mounts cannot be symlinks" >&2
+    exit 2
+  fi
+done
 model_root=$(realpath "$2")
 cache_root=$(realpath "$3")
 empty_home=$(realpath "$4")
 network_name=$5
 port=$6
-model_id=$7
+base_model_id=$7
+adapter_input=$8
+served_model_id=$9
 gpu_devices=${VERIGYM_GPU_DEVICE_IDS:-}
 
 if [[ ! $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || \
@@ -53,9 +61,30 @@ if [[ ! $port =~ ^[0-9]{2,5}$ ]] || ((port < 1024 || port > 65535)); then
   echo "service port must be between 1024 and 65535" >&2
   exit 2
 fi
-if [[ ! $model_id =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]; then
-  echo "model ID contains unsafe characters" >&2
+if [[ ! $base_model_id =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]] || \
+  [[ ! $served_model_id =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]; then
+  echo "base or served model ID contains unsafe characters" >&2
   exit 2
+fi
+adapter_arguments=()
+adapter_mount=()
+if [[ $adapter_input == - ]]; then
+  if [[ $served_model_id != "$base_model_id" ]]; then
+    echo "base service must use the base model identity" >&2
+    exit 2
+  fi
+else
+  if [[ -L $adapter_input || ! -d $adapter_input ]]; then
+    echo "adapter root must be a real directory or '-'" >&2
+    exit 2
+  fi
+  adapter_root=$(realpath "$adapter_input")
+  if [[ $served_model_id == "$base_model_id" ]]; then
+    echo "adapter service identity must differ from the base model identity" >&2
+    exit 2
+  fi
+  adapter_mount=(--volume "$adapter_root:/adapter:ro")
+  adapter_arguments=(--enable-lora --lora-modules "$served_model_id=/adapter")
 fi
 
 docker run --rm \
@@ -75,10 +104,12 @@ docker run --rm \
   --volume "$empty_home:/work/home" \
   --volume "$model_root:/model:ro" \
   --volume "$cache_root:/cache" \
+  "${adapter_mount[@]}" \
   "$image_id" \
   python3 -m vllm.entrypoints.openai.api_server \
   --model /model \
-  --served-model-name "$model_id" \
+  --served-model-name "$base_model_id" \
+  "${adapter_arguments[@]}" \
   --tensor-parallel-size 4 \
   --host 0.0.0.0 \
   --port 8000

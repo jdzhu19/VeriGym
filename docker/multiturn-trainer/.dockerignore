@@ -4,3 +4,5 @@
 !wheels
 !wheels/*.whl
 !train_qwen35_multiturn_sft.py
+!smoke_reload_qwen35_multiturn_adapter.py
+!smoke_qwen35_rllm_multiturn.py
