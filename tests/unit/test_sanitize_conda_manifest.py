@@ -50,10 +50,13 @@ def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment(
     assert "VERIGYM_OPENHANDS_LITELLM_WHEEL" in prepare
     assert "openhands-litellm-wheel.sha256" in prepare
     assert 'importlib.metadata.version("litellm") == "1.93.0"' in prepare
+    assert "conda-forge pillow=12.1.1" in prepare
+    assert 'importlib.metadata.version("pillow") == "12.1.1"' in prepare
     constraints = (
         Path(__file__).parents[2] / "configs/runtime/openhands_sdk_1.42.1_constraints.txt"
     ).read_text(encoding="utf-8")
     assert "opentelemetry-semantic-conventions==0.60b1" in constraints
+    assert "pillow==12.1.1" in constraints
     assert (
         '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
     )

@@ -56,6 +56,9 @@ mkdir -p "$HF_HOME" "$VLLM_CACHE_ROOT" "$RLLM_HOME" "$VERIGYM_EXPERIMENT_ROOT"
 if ! "$conda_executable" env list | awk '{print $1}' | grep -Fxq verigym-openhands-py312; then
   "$conda_executable" create -y -n verigym-openhands-py312 python=3.12 pip
 fi
+# The OpenHands floor has no glibc-2.17-compatible PyPI wheel. Keep Pillow and its image
+# libraries inside the dedicated Conda environment instead of modifying the compute node.
+"$conda_executable" install -y -n verigym-openhands-py312 -c conda-forge pillow=12.1.1
 if [[ -n ${VERIGYM_OPENHANDS_LITELLM_WHEEL:-} ]]; then
   if [[ -L $VERIGYM_OPENHANDS_LITELLM_WHEEL || \
     ! -f $VERIGYM_OPENHANDS_LITELLM_WHEEL ]]; then
@@ -83,6 +86,7 @@ import importlib.metadata
 
 assert importlib.metadata.version("openhands-sdk") == "1.42.1"
 assert importlib.metadata.version("litellm") == "1.93.0"
+assert importlib.metadata.version("pillow") == "12.1.1"
 assert importlib.metadata.version("opentelemetry-semantic-conventions") == "0.60b1"
 PY
 
