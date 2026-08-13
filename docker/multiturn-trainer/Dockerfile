@@ -18,9 +18,12 @@ COPY smoke_reload_qwen35_multiturn_adapter.py \
   /opt/verigym/bin/smoke_reload_qwen35_multiturn_adapter.py
 COPY smoke_qwen35_rllm_multiturn.py /opt/verigym/bin/smoke_qwen35_rllm_multiturn.py
 
-RUN python3 -m pip uninstall --yes \
+RUN export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+      NUMEXPR_NUM_THREADS=1 PIP_PROGRESS_BAR=off PIP_DISABLE_PIP_VERSION_CHECK=1 && \
+    python3 -m pip uninstall --yes \
       vllm lmcache opencv-python-headless cupy-cuda12x cupy-cuda13x pygobject && \
-    python3 -m pip install --no-cache-dir "verl==0.8.0" /opt/rllm /opt/verigym/wheels/*.whl && \
+    python3 -m pip install --no-cache-dir --progress-bar off \
+      "verl==0.8.0" /opt/rllm /opt/verigym/wheels/*.whl && \
     python3 -m pip check && \
     python3 -c 'import importlib.metadata,pathlib; \
 assert importlib.metadata.version("verl") == "0.8.0"; \
