@@ -142,6 +142,14 @@ Weight synchronization remains enabled, and the completion report still requires
 adapter.
 The pinned rLLM release interprets `workflow.retry_limit` as the total attempt count, so the
 repository smoke uses `retry_limit=1` for exactly one attempt and no retry.
+Repository responses are append-only: ordinary `turn-N.json` observations remain immutable and
+the broker publishes one independent `terminal.json`. The workflow races every generation against
+that terminal and cancels an obsolete generation when the environment finishes first. The HWE
+task's 3600-second wall budget is measured once from session start rather than restarted for each
+action. The trainer allows 300 seconds for terminal publication and another 300 seconds for outer
+workflow cleanup (3600/3900/4200 seconds respectively). A model that fails to provide the next
+action before the episode deadline is an evaluable zero-reward model timeout, not an
+infrastructure-invalid verifier outcome.
 
 Native execution is opt-in. First freeze the Conda package inventory, verify a CUDA tensor, NCCL
 collective, and vLLM load on the selected node, then run the zero-model base-FAIL/reference-PASS

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -9,10 +10,13 @@ import stat
 import tempfile
 import time
 import uuid
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 _MAX_MESSAGE_BYTES = 2 * 1024 * 1024
+_TERMINAL_RESPONSE = "terminal.json"
+_T = TypeVar("_T")
 
 
 def canonical_hash(value: dict[str, Any]) -> str:
@@ -34,6 +38,23 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def atomic_json_new(path: Path, value: dict[str, Any]) -> None:
+    """Publish one JSON file atomically without replacing an existing message."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2, sort_keys=True, ensure_ascii=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def hashed_message(base: dict[str, Any], *, hash_field: str) -> dict[str, Any]:
@@ -127,17 +148,38 @@ class RepositoryBrokerClient:
             "raw_action_sha256": hashlib.sha256(encoded).hexdigest(),
         }
         name = f"turn-{turn:04d}.json"
+        terminal = self.poll_terminal()
+        if terminal is not None:
+            return terminal
         atomic_json(self.request_root / name, hashed_message(base, hash_field="request_hash"))
         return self._wait(self.response_root / name)
 
+    def poll_terminal(self) -> dict[str, Any] | None:
+        """Return the immutable terminal response when it has been published."""
+
+        path = self.response_root / _TERMINAL_RESPONSE
+        if not path.is_file():
+            return None
+        response = self._read_response(path)
+        if response.get("terminal") is not True:
+            raise RuntimeError("repository broker terminal file is not terminal")
+        return response
+
     def _wait(self, path: Path) -> dict[str, Any]:
         deadline = time.monotonic() + self.timeout_s
-        while not path.is_file():
+        while True:
+            terminal = self.poll_terminal()
+            if terminal is not None:
+                return terminal
+            if path.is_file():
+                return self._read_response(path)
             if (self.root / "STOP").is_file():
                 raise RuntimeError("repository broker stopped before returning a response")
             if time.monotonic() >= deadline:
                 raise RuntimeError("repository broker response timed out")
             time.sleep(0.05)
+
+    def _read_response(self, path: Path) -> dict[str, Any]:
         response = read_hashed_message(path, hash_field="response_hash")
         if (
             response.get("format_id") != "verigym_online_repository_response_v1"
@@ -149,9 +191,29 @@ class RepositoryBrokerClient:
         return response
 
 
+async def await_model_or_terminal(
+    model_response: Awaitable[_T],
+    terminal_task: asyncio.Task[dict[str, Any]],
+) -> tuple[_T | None, dict[str, Any] | None]:
+    """Prefer an asynchronous broker terminal and cancel an obsolete model response."""
+
+    model_task = asyncio.ensure_future(model_response)
+    completed, _pending = await asyncio.wait(
+        {model_task, terminal_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+    if terminal_task in completed:
+        if not model_task.done():
+            model_task.cancel()
+        await asyncio.gather(model_task, return_exceptions=True)
+        return None, terminal_task.result()
+    return model_task.result(), None
+
+
 __all__ = [
     "RepositoryBrokerClient",
     "atomic_json",
+    "atomic_json_new",
+    "await_model_or_terminal",
     "canonical_hash",
     "hashed_message",
     "read_hashed_message",

@@ -49,6 +49,16 @@ prepared source root, Docker socket, hidden assets, nor reference patch; it rece
 public observations and the final sparse outcome. veRL remains the training backend through the
 existing rLLM `AgentTrainer` path.
 
+Turn responses and episode termination use distinct immutable files. A turn response is never
+replaced after the trainer has consumed it; the broker publishes the sparse outcome once as
+`terminal.json`. The workflow waits for that terminal concurrently with every model generation.
+If the host-owned episode ends while the model is producing its next action, the workflow cancels
+the now-obsolete generation and closes the trajectory from the terminal outcome. The HWE episode
+has one 3600-second session deadline, followed by a 3900-second broker-terminal grace and a
+4200-second outer workflow deadline. A missing model action at the episode deadline is a model
+timeout with reward zero, while a missing or invalid broker terminal remains an infrastructure
+failure.
+
 Large repositories use `verigym_repository_context_projection_v1`: the broker converts the full
 flat tree into a deterministic shallow directory outline and shallow-first bounded file sample,
 with exact included/omitted counts. Each turn is a self-contained rolling context containing the

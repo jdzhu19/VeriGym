@@ -301,7 +301,8 @@ def main(config: DictConfig) -> None:
         workflow_class = VeriGymRepositoryWorkflow
         workflow_args = {
             "repository_broker_root": selected_broker,
-            "broker_timeout_s": 3600,
+            "broker_timeout_s": 3900,
+            "timeout": 4200,
             "action_tokens": None,
         }
     trainer = AgentTrainer(

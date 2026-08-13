@@ -38,6 +38,7 @@ from verigym.schemas.suite import SuiteSourceConfig
 from .online_verifier import online_docker_runtime_config
 from .repository_broker_protocol import (
     atomic_json,
+    atomic_json_new,
     hashed_message,
     read_hashed_message,
 )
@@ -89,6 +90,7 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
         self._public_observed = False
         self._diff_observed = False
         self._pending_protocol_error: str | None = None
+        self._session_deadline: float | None = None
 
     @property
     def pending_turn(self) -> int | None:
@@ -104,6 +106,7 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
                 "online repository bridge cannot receive model or external-agent access"
             )
         self._context = context
+        self._session_deadline = time.monotonic() + context.task.budget.max_wall_time_s
         self._response_root.mkdir(mode=0o700, parents=True, exist_ok=False)
 
     def act(self, observation: Observation) -> AgentAction:
@@ -220,9 +223,11 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
                 ),
             },
         )
-        name = "initial.json" if turn is None else f"turn-{turn:04d}.json"
         message = hashed_message(payload, hash_field="response_hash")
-        atomic_json(self._response_root / name, message)
+        try:
+            atomic_json_new(self._response_root / "terminal.json", message)
+        except FileExistsError as exc:
+            raise RuntimeError("repository broker terminal response already exists") from exc
         return str(message["response_hash"])
 
     def _response_base(
@@ -296,7 +301,9 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
     def _wait_for_action(self, turn: int) -> dict[str, Any]:
         context = self._require_context()
         path = self._request_root / f"turn-{turn:04d}.json"
-        deadline = time.monotonic() + context.task.budget.max_wall_time_s
+        deadline = self._session_deadline
+        if deadline is None:
+            raise RuntimeError("repository bridge session deadline was not initialized")
         while not path.is_file():
             if (self._broker_root / "STOP").is_file():
                 raise AgentTerminationError(
@@ -312,10 +319,12 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
                 raise AgentTerminationError(
                     TerminationReason.WALL_TIME_EXHAUSTED,
                     EpisodeFailure(
-                        kind="runtime",
-                        category="repository_broker_action_timeout",
-                        message="online repository action did not arrive before the task deadline",
-                        infrastructure=True,
+                        kind="model",
+                        category="repository_agent_action_timeout",
+                        message=(
+                            "repository model action did not arrive before the episode deadline"
+                        ),
+                        infrastructure=False,
                     ),
                 )
             time.sleep(0.05)
@@ -405,11 +414,7 @@ def run_online_repository_session(
             base_seed=int(open_request.get("seed", 20260809)),
         )
     )
-    invalid = bool(
-        result.scorecard.status == "error"
-        or result.scorecard.correctness.infrastructure_error
-        or (result.scorecard.failure is not None and result.scorecard.failure.infrastructure)
-    )
+    invalid = _is_infrastructure_invalid(result.scorecard)
     terminal = {
         "infrastructure_valid": not invalid,
         "resolved": None if invalid else result.scorecard.resolved,
@@ -429,6 +434,15 @@ def run_online_repository_session(
         "resolved": terminal["resolved"],
         "terminal_hash": terminal_hash,
     }
+
+
+def _is_infrastructure_invalid(scorecard: Any) -> bool:
+    failure = scorecard.failure
+    return bool(
+        scorecard.correctness.infrastructure_error
+        or (failure is not None and failure.infrastructure)
+        or (scorecard.status == "error" and (failure is None or failure.kind == "runtime"))
+    )
 
 
 __all__ = ["OnlineRepositoryBrokerAgent", "run_online_repository_session"]

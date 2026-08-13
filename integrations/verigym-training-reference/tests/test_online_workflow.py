@@ -46,6 +46,8 @@ def test_repository_workflow_uses_rollout_tokens_and_no_training_side_runtime() 
     assert "rollout_engine.get_model_response" in source
     assert "prompt_ids" in source and "completion_ids" in source and "logprobs" in source
     assert "RepositoryBrokerClient" in source
+    assert "await_model_or_terminal" in source
+    assert "terminal_task.cancel()" in source
     assert "repository_turn_messages" in source
     assert "messages.extend" not in source
     assert "import docker" not in source

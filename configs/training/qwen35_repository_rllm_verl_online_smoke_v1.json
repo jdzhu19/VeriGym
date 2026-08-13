@@ -148,6 +148,7 @@
         "rllm.workflow.use_workflow=True",
         "rllm.workflow.n_parallel_tasks=4",
         "rllm.workflow.retry_limit=1",
+        "rllm.workflow.workflow_args.timeout=4200",
         "rllm.mask_truncated_samples=True",
         "rllm.stepwise_advantage.enable=False",
         "rllm.sdk.proxy.admin_token=EMPTY",

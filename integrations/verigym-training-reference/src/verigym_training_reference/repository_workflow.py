@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from rllm.workflows.workflow import (  # type: ignore[import-not-found]
     Workflow,
 )
 
-from .repository_broker_protocol import RepositoryBrokerClient
+from .repository_broker_protocol import RepositoryBrokerClient, await_model_or_terminal
 from .repository_context import repository_history_entry, repository_turn_messages
 from .rllm_grpo_compat import activate_rllm_verl_grpo_group_compatibility
 
@@ -31,15 +32,23 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
         rollout_engine: RolloutEngine,
         *,
         repository_broker_root: str,
-        broker_timeout_s: int = 3600,
+        broker_timeout_s: int = 3900,
+        terminal_poll_interval_s: float = 0.05,
         action_tokens: int | None = None,
         **kwargs: Any,
     ) -> None:
         if not activate_rllm_verl_grpo_group_compatibility():
             raise RuntimeError("rLLM-to-verl GRPO group bridge is unavailable in the Ray worker")
+        kwargs.setdefault("timeout", 4200)
+        workflow_timeout = float(kwargs["timeout"])
+        if broker_timeout_s <= 0 or terminal_poll_interval_s <= 0:
+            raise ValueError("repository broker timeouts must be positive")
+        if workflow_timeout <= broker_timeout_s:
+            raise ValueError("repository workflow timeout must exceed the broker terminal grace")
         super().__init__(rollout_engine, **kwargs)
         self.repository_broker_root = Path(repository_broker_root).resolve(strict=True)
         self.broker_timeout_s = broker_timeout_s
+        self.terminal_poll_interval_s = terminal_poll_interval_s
         self.action_tokens = action_tokens
 
     async def run(self, task: dict[str, Any], uid: str, **kwargs: Any) -> Episode:
@@ -74,61 +83,74 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
         terminal: dict[str, Any] | None = None
         response = initial
         history: list[dict[str, Any]] = []
-        for turn in range(maximum):
-            messages = repository_turn_messages(
-                task_id=task_id,
-                task_description=task.get("task_description"),
-                contract=contract,
-                public_test_ids=initial.get("public_test_ids", []),
-                observation=response.get("observation"),
-                broker_observation_truncated=response.get("observation_truncated") is True,
-                state=response.get("state"),
-                turn=turn,
-                previous_action=history[-1]["action"] if history else None,
-                history=history[:-1],
-            )
-            generation_options: dict[str, Any] = {
-                "application_id": f"{uid}:repository:{turn}",
-            }
-            if self.action_tokens is not None:
-                generation_options["max_tokens"] = self.action_tokens
-            model_output: ModelOutput = await self.rollout_engine.get_model_response(
-                messages,
-                **generation_options,
-            )
-            _validate_trainable_model_output(model_output)
-            raw_action = model_output.content or model_output.text
-            if not isinstance(raw_action, str) or not raw_action:
-                raise RuntimeError("repository rollout model returned no trainable action text")
-            response = await self.run_in_executor(client.act, turn, raw_action)
-            is_terminal = response.get("terminal") is True
-            reward = float(response.get("resolved") is True) if is_terminal else 0.0
-            assistant_message = {"role": "assistant", "content": raw_action}
-            steps.append(
-                Step(
-                    chat_completions=[*messages, assistant_message],
+        terminal_task = asyncio.create_task(self._wait_for_terminal(client))
+        try:
+            for turn in range(maximum):
+                messages = repository_turn_messages(
+                    task_id=task_id,
+                    task_description=task.get("task_description"),
+                    contract=contract,
+                    public_test_ids=initial.get("public_test_ids", []),
                     observation=response.get("observation"),
-                    action=Action(action=raw_action),
-                    model_response=raw_action,
-                    reward=reward,
-                    done=is_terminal,
-                    model_output=model_output,
-                    metadata={
-                        "turn": turn,
-                        "trainable": True,
-                        "repository_action_protocol": "repository_action.v2",
-                        "broker_response_hash": response["response_hash"],
-                        "action_name": response.get("action_name"),
-                        "protocol_error": response.get("protocol_error"),
-                        "terminal": is_terminal,
-                    },
+                    broker_observation_truncated=response.get("observation_truncated") is True,
+                    state=response.get("state"),
+                    turn=turn,
+                    previous_action=history[-1]["action"] if history else None,
+                    history=history[:-1],
                 )
-            )
-            if is_terminal:
-                self._require_valid_infrastructure(response)
-                terminal = response
-                break
-            history.append(repository_history_entry(raw_action, response))
+                generation_options: dict[str, Any] = {
+                    "application_id": f"{uid}:repository:{turn}",
+                }
+                if self.action_tokens is not None:
+                    generation_options["max_tokens"] = self.action_tokens
+                model_output_value, asynchronous_terminal = await await_model_or_terminal(
+                    self.rollout_engine.get_model_response(messages, **generation_options),
+                    terminal_task,
+                )
+                if asynchronous_terminal is not None:
+                    self._require_valid_infrastructure(asynchronous_terminal)
+                    terminal = asynchronous_terminal
+                    break
+                if model_output_value is None:
+                    raise RuntimeError("repository rollout returned no model output")
+                model_output = model_output_value
+                _validate_trainable_model_output(model_output)
+                raw_action = model_output.content or model_output.text
+                if not isinstance(raw_action, str) or not raw_action:
+                    raise RuntimeError("repository rollout model returned no trainable action text")
+                response = await self.run_in_executor(client.act, turn, raw_action)
+                is_terminal = response.get("terminal") is True
+                reward = float(response.get("resolved") is True) if is_terminal else 0.0
+                assistant_message = {"role": "assistant", "content": raw_action}
+                steps.append(
+                    Step(
+                        chat_completions=[*messages, assistant_message],
+                        observation=response.get("observation"),
+                        action=Action(action=raw_action),
+                        model_response=raw_action,
+                        reward=reward,
+                        done=is_terminal,
+                        model_output=model_output,
+                        metadata={
+                            "turn": turn,
+                            "trainable": True,
+                            "repository_action_protocol": "repository_action.v2",
+                            "broker_response_hash": response["response_hash"],
+                            "action_name": response.get("action_name"),
+                            "protocol_error": response.get("protocol_error"),
+                            "terminal": is_terminal,
+                        },
+                    )
+                )
+                if is_terminal:
+                    self._require_valid_infrastructure(response)
+                    terminal = response
+                    break
+                history.append(repository_history_entry(raw_action, response))
+        finally:
+            if not terminal_task.done():
+                terminal_task.cancel()
+            await asyncio.gather(terminal_task, return_exceptions=True)
         if terminal is None:
             raise RuntimeError(
                 "repository workflow exhausted its frozen turn budget without finish"
@@ -159,6 +181,18 @@ class VeriGymRepositoryWorkflow(Workflow):  # type: ignore[misc]
         )
         self.commit(trajectory=trajectory)
         raise TerminationEvent(TerminationReason.ENV_DONE)
+
+    async def _wait_for_terminal(self, client: RepositoryBrokerClient) -> dict[str, Any]:
+        deadline = asyncio.get_running_loop().time() + self.broker_timeout_s
+        while True:
+            terminal = client.poll_terminal()
+            if terminal is not None:
+                return terminal
+            if (client.root / "STOP").is_file():
+                raise RuntimeError("repository broker stopped without publishing a terminal")
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeError("repository broker terminal grace period expired")
+            await asyncio.sleep(self.terminal_poll_interval_s)
 
     @staticmethod
     def _require_valid_infrastructure(response: dict[str, Any]) -> None:

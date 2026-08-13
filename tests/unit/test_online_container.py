@@ -121,6 +121,7 @@ def test_repository_campaign_uses_multiturn_workflow_and_bounded_gpu_envelope() 
         in stage["argv"]
     )
     assert "rllm.workflow.retry_limit=1" in stage["argv"]
+    assert "rllm.workflow.workflow_args.timeout=4200" in stage["argv"]
     assert "online-repository-broker-report.json" in stage["expected_outputs"]
     assert stage["gpu_ids"] == [0, 1, 2, 3]
 
