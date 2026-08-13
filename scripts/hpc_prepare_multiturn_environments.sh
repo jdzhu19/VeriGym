@@ -35,34 +35,18 @@ fi
 
 "$verigym_checkout/scripts/hpc_inventory_training_env.sh" "$inventory_root"
 
-"$conda_executable" run --no-capture-output -n agent python - <<'PY'
-import platform
-
-libc_name, libc_version = platform.libc_ver()
-try:
-    components = tuple(int(part) for part in libc_version.split("."))
-except ValueError as exc:
-    raise SystemExit("cannot determine the glibc ABI required by vLLM 0.22.1") from exc
-if libc_name != "glibc" or components < (2, 28):
-    raise SystemExit(
-        "vLLM 0.22.1 requires its manylinux_2_28 wheel; refusing an incompatible "
-        "host or an unfrozen source build"
-    )
-PY
+docker_executable=$(command -v docker || true)
+if [[ -z "$docker_executable" || ! -x "$docker_executable" ]]; then
+  echo "Docker is unavailable on this compute node" >&2
+  exit 2
+fi
+docker version --format '{{.Client.Version}}' >/dev/null
 
 export HF_HOME=/hpc/home/connect.jzhu484/agent/models/huggingface
 export VLLM_CACHE_ROOT=/hpc/home/connect.jzhu484/agent/models/vllm
 export RLLM_HOME=/hpc/home/connect.jzhu484/agent/datasets/rllm
 export VERIGYM_EXPERIMENT_ROOT=/hpc/home/connect.jzhu484/agent/experiments
 mkdir -p "$HF_HOME" "$VLLM_CACHE_ROOT" "$RLLM_HOME" "$VERIGYM_EXPERIMENT_ROOT"
-
-"$conda_executable" run -n agent python -m pip install --upgrade \
-  --only-binary vllm \
-  "verl==0.8.0" \
-  "vllm==0.22.1" \
-  -e "$rllm_checkout" \
-  -e "$verigym_checkout" \
-  -e "$verigym_checkout/integrations/verigym-training-reference"
 
 if ! "$conda_executable" env list | awk '{print $1}' | grep -Fxq verigym-openhands-py312; then
   "$conda_executable" create -y -n verigym-openhands-py312 python=3.12 pip
@@ -72,16 +56,10 @@ fi
   -e "$verigym_checkout/integrations/verigym-hwe-bench" \
   -e "$verigym_checkout/integrations/verigym-openhands"
 
-"$conda_executable" run --no-capture-output -n agent python - <<'PY'
-import importlib.metadata
-
-assert importlib.metadata.version("verl") == "0.8.0"
-assert importlib.metadata.version("vllm") == "0.22.1"
-PY
 "$conda_executable" run --no-capture-output -n verigym-openhands-py312 python - <<'PY'
 import importlib.metadata
 
 assert importlib.metadata.version("openhands-sdk") == "1.42.1"
 PY
 
-echo "prepared pinned training and OpenHands environments; no allocation or daemon was changed"
+echo "inventoried agent env and prepared OpenHands; training/model stacks remain in pinned images"

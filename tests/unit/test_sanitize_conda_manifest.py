@@ -41,10 +41,11 @@ def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment(
 
     assert "conda_executable=${CONDA_EXE:-$(command -v conda || true)}" in inventory
     assert '"$conda_executable" run --no-capture-output -n agent python -' in inventory
-    assert '"$conda_executable" run --no-capture-output -n agent python -' in prepare
     assert 'git -C "$rllm_checkout"' not in prepare
-    assert "components < (2, 28)" in prepare
-    assert "--only-binary vllm" in prepare
+    assert "Docker is unavailable on this compute node" in prepare
+    assert "pip install --upgrade" not in prepare
+    assert '"vllm==0.22.1"' not in prepare
+    assert '"verl==0.8.0"' not in prepare
     assert (
         '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
     )

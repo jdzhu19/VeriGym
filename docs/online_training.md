@@ -14,6 +14,7 @@ do not route ordinary verification through it. Keep the existing LSF/tmux alloca
 | vLLM, SFT, adapter reload | `gpu01` | Separate containers, four assigned GPU IDs |
 | GPU-coupled online rollout | `gpu01` | Trusted controller plus sibling benchmark sandboxes |
 | Qualification and CPU verification | `bmcpu07` | Controller plus sibling sandboxes |
+| OpenHands SDK inference | Rollout node | Dedicated Python 3.12 env, broker tools only |
 | Checkout, image transfer, scheduling | Login VM | No benchmark execution by default |
 
 ```mermaid
