@@ -21,6 +21,7 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     build = (root / "scripts/build_rollout_controller_image.sh").read_text(encoding="utf-8")
 
     assert "FROM ${DOCKER_CLI_BASE} AS docker_cli" in dockerfile
+    assert dockerfile.index("ARG PYTHON_BASE") < dockerfile.index("FROM ${DOCKER_CLI_BASE}")
     assert "Docker version 19.03.14" in dockerfile
     assert "run_qwen35_online_repository_broker.py" in dockerfile
     assert "rllm" not in dockerfile.lower()
