@@ -68,7 +68,7 @@ if [[ $(docker image inspect "$python_base" --format '{{.Id}}') != "$python_base
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
 docker run --rm --network none --entrypoint python3 "$image_id" -c \
-  'import verigym,verigym_hwe_bench,verigym_training_reference'
+  'import platform,threading,verigym,verigym_hwe_bench,verigym_training_reference; assert platform.libc_ver() == ("glibc", "2.31"); thread = threading.Thread(target=lambda: None); thread.start(); thread.join()'
 docker run --rm --network none --entrypoint docker "$image_id" --version | \
   grep -F 'Docker version 19.03.14'
 printf '%s\n' "$image_id"

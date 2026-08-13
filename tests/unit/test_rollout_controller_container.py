@@ -23,6 +23,9 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "FROM ${DOCKER_CLI_BASE} AS docker_cli" in dockerfile
     assert dockerfile.index("ARG PYTHON_BASE") < dockerfile.index("FROM ${DOCKER_CLI_BASE}")
     assert "Docker version 19.03.14" in dockerfile
+    assert 'io.verigym.controller.glibc="2.31"' in dockerfile
+    assert 'platform.libc_ver() == ("glibc", "2.31")' in dockerfile
+    assert "threading.Thread" in dockerfile
     assert "run_qwen35_online_repository_broker.py" in dockerfile
     assert "rllm" not in dockerfile.lower()
     assert "vllm" not in dockerfile.lower()
@@ -32,6 +35,7 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "DOCKER_CLI_BASE_REPODIGEST" in build
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
+    assert "seccomp=unconfined" not in build
 
 
 def test_controller_runner_is_networkless_and_socket_is_controller_only() -> None:

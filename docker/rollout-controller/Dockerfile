@@ -10,7 +10,8 @@ LABEL org.opencontainers.image.title="VeriGym trusted rollout controller" \
       org.opencontainers.image.source="https://github.com/jdzhu19/VeriGym" \
       io.verigym.role="rollout-controller" \
       io.verigym.verigym.commit="${VERIGYM_COMMIT}" \
-      io.verigym.docker.client="19.03.14"
+      io.verigym.docker.client="19.03.14" \
+      io.verigym.controller.glibc="2.31"
 
 COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 COPY wheels /opt/verigym/wheels
@@ -22,6 +23,9 @@ RUN python3 -m pip install --no-cache-dir /opt/verigym/wheels/*.whl && \
 assert importlib.metadata.version("verigym") == "0.1.0"; \
 assert importlib.metadata.version("verigym-hwe-bench") == "0.1.0"; \
 assert importlib.metadata.version("verigym-training-reference") == "0.3.0"' && \
+    python3 -c 'import platform,threading; \
+assert platform.libc_ver() == ("glibc", "2.31"); \
+thread = threading.Thread(target=lambda: None); thread.start(); thread.join()' && \
     docker --version | grep -F 'Docker version 19.03.14'
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
