@@ -40,6 +40,12 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "v0.22.1" in dockerfile
     assert "torch==2.11.0+cu129" in dockerfile
     assert "365ee929afd73bb5d146235b65053fa948788ec2ee00a2c3e957d3f43bf2b0cd" in dockerfile
+    assert '"gcc=${GCC_PACKAGE_VERSION}"' in dockerfile
+    assert '"libc6-dev=${LIBC6_DEV_PACKAGE_VERSION}"' in dockerfile
+    assert "cc -shared -fPIC" in dockerfile
+    assert "vllm-service-os-packages.txt" in dockerfile
+    assert "gcc_package_version=4:12.2.0-3" in build
+    assert "libc6_dev_package_version=2.36-9+deb12u14" in build
     assert 'torch.version.cuda == "12.9"' in dockerfile
     assert "PYTHON_BASE_REPODIGEST" in build
     assert "VERIGYM_COMMIT" in dockerfile
@@ -47,7 +53,8 @@ def test_vllm_service_uses_frozen_cuda_129_wheel_and_restricted_runtime() -> Non
     assert "vllm-service-pip-freeze.txt" in dockerfile
     assert "torchvision==0.26.0+cu129" in dockerfile
     assert "torchaudio==2.11.0+cu129" in dockerfile
-    assert "import importlib.metadata,torch,torchaudio,torchvision,vllm" in build
+    assert "import importlib.metadata,shutil,torch,torchaudio,torchvision,vllm" in build
+    assert 'assert shutil.which("cc")' in build
     assert "--network verigym-hwe-net" in build
     assert "DOCKER_BUILDKIT=0 docker build" in build
     assert 'docker_gpu_devices=$(resolve_docker_gpu_device_ids "$gpu_devices")' in runner

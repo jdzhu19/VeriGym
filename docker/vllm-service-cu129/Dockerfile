@@ -3,13 +3,30 @@ FROM ${PYTHON_BASE}
 
 ARG PYTHON_BASE_ID
 ARG VLLM_WHEEL_SHA256
+ARG GCC_PACKAGE_VERSION
+ARG LIBC6_DEV_PACKAGE_VERSION
 
 LABEL org.opencontainers.image.title="VeriGym vLLM 0.22.1 CUDA 12.9 service" \
       org.opencontainers.image.source="https://github.com/jdzhu19/VeriGym" \
       io.verigym.python.base_id="${PYTHON_BASE_ID}" \
       io.verigym.vllm.version="0.22.1" \
       io.verigym.vllm.cuda_variant="cu129" \
-      io.verigym.vllm.wheel_sha256="${VLLM_WHEEL_SHA256}"
+      io.verigym.vllm.wheel_sha256="${VLLM_WHEEL_SHA256}" \
+      io.verigym.runtime.gcc_package_version="${GCC_PACKAGE_VERSION}" \
+      io.verigym.runtime.libc6_dev_package_version="${LIBC6_DEV_PACKAGE_VERSION}"
+
+# Triton compiles small launchers and model-specific kernels when vLLM initializes the engine.
+# Keep the minimum C toolchain in the runtime image and pin its requested Debian package versions.
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      "gcc=${GCC_PACKAGE_VERSION}" \
+      "libc6-dev=${LIBC6_DEV_PACKAGE_VERSION}" && \
+    rm -rf /var/lib/apt/lists/* && \
+    printf '#include <Python.h>\nint verigym_cc_smoke(void) { return 0; }\n' \
+      > /tmp/verigym-cc-smoke.c && \
+    cc -shared -fPIC $(python3-config --includes) \
+      /tmp/verigym-cc-smoke.c -o /tmp/verigym-cc-smoke.so && \
+    rm /tmp/verigym-cc-smoke.c /tmp/verigym-cc-smoke.so
 
 RUN python3 -c 'import urllib.request; \
 urllib.request.urlretrieve( \
@@ -44,7 +61,10 @@ assert torchvision.__version__ == "0.26.0+cu129"; \
 assert torchaudio.__version__ == "2.11.0+cu129"'
 
 RUN mkdir -p /opt/verigym && \
-    python3 -m pip freeze --all | LC_ALL=C sort > /opt/verigym/vllm-service-pip-freeze.txt
+    python3 -m pip freeze --all | LC_ALL=C sort > /opt/verigym/vllm-service-pip-freeze.txt && \
+    dpkg-query -W -f='${Package}\t${Version}\n' gcc libc6-dev \
+      > /opt/verigym/vllm-service-os-packages.txt && \
+    cc --version > /opt/verigym/vllm-service-compiler-version.txt
 
 ARG VERIGYM_COMMIT
 LABEL org.opencontainers.image.revision="${VERIGYM_COMMIT}"

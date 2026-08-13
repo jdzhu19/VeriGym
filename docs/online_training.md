@@ -129,6 +129,13 @@ UUIDs with `nvidia-smi`, rejects missing or duplicate identities, and gives Dock
 This prevents an apparently correct `device=0,1,2,3` request from selecting another job's physical
 GPUs after scheduler renumbering.
 
+The frozen vLLM service image also carries a version-pinned minimal C toolchain. vLLM 0.22.1 uses
+Triton to compile small launchers and Qwen3.5 model-specific kernels during engine initialization;
+having CUDA libraries alone is insufficient. The image build compiles a Python-header smoke
+library and records both the selected Debian package versions and compiler identity in its image
+inventory. The compiler is available only inside the trusted, digest-locked model-service image,
+not inside benchmark sandboxes.
+
 Some HPC sites replace `docker` with a wrapper that delegates to a sibling executable. In that
 case the broker launcher accepts `--docker-helper` only together with
 `--expected-docker-helper-sha256`, verifies that it is a distinct sibling of the selected Docker

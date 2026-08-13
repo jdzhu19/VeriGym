@@ -11,6 +11,8 @@ python_base=$2
 image_tag=$3
 build_parent=$(realpath "$4")
 wheel_sha256=365ee929afd73bb5d146235b65053fa948788ec2ee00a2c3e957d3f43bf2b0cd
+gcc_package_version=4:12.2.0-3
+libc6_dev_package_version=2.36-9+deb12u14
 
 if [[ ! $python_base =~ ^python@sha256:[0-9a-f]{64}$ ]]; then
   echo "Python base must be an immutable official-python RepoDigest" >&2
@@ -42,6 +44,8 @@ DOCKER_BUILDKIT=0 docker build \
   --build-arg "PYTHON_BASE=$python_base" \
   --build-arg "PYTHON_BASE_ID=$base_id" \
   --build-arg "VLLM_WHEEL_SHA256=$wheel_sha256" \
+  --build-arg "GCC_PACKAGE_VERSION=$gcc_package_version" \
+  --build-arg "LIBC6_DEV_PACKAGE_VERSION=$libc6_dev_package_version" \
   --build-arg "VERIGYM_COMMIT=$verigym_commit" \
   --tag "$image_tag" \
   "$context"
@@ -52,5 +56,5 @@ if [[ $(docker image inspect "$python_base" --format '{{.Id}}') != "$base_id" ]]
 fi
 image_id=$(docker image inspect "$image_tag" --format '{{.Id}}')
 docker run --rm --network none --entrypoint python3 "$image_id" -c \
-  'import importlib.metadata,torch,torchaudio,torchvision,vllm; assert importlib.metadata.version("vllm").split("+")[0] == "0.22.1"; assert torch.__version__.split("+")[0] == "2.11.0"; assert torch.version.cuda == "12.9"; assert torchvision.__version__ == "0.26.0+cu129"; assert torchaudio.__version__ == "2.11.0+cu129"; assert vllm.__version__.split("+")[0] == "0.22.1"'
+'import importlib.metadata,shutil,torch,torchaudio,torchvision,vllm; assert importlib.metadata.version("vllm").split("+")[0] == "0.22.1"; assert torch.__version__.split("+")[0] == "2.11.0"; assert torch.version.cuda == "12.9"; assert torchvision.__version__ == "0.26.0+cu129"; assert torchaudio.__version__ == "2.11.0+cu129"; assert vllm.__version__.split("+")[0] == "0.22.1"; assert shutil.which("cc")'
 printf '%s\n' "$image_id"
