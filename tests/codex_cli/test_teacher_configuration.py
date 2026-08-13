@@ -21,6 +21,12 @@ from verigym.protocols.repository_action import repository_tool_definitions
 pytestmark = pytest.mark.codex_cli
 
 
+def test_codex_distribution_excludes_test_sources() -> None:
+    manifest = Path("integrations/verigym-codex-cli/MANIFEST.in").read_text(encoding="utf-8")
+
+    assert manifest.splitlines() == ["prune tests"]
+
+
 def _timed_out_process() -> CodexProcessResult:
     return CodexProcessResult(
         arguments=("codex",),
