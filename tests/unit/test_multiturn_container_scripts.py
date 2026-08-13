@@ -145,7 +145,7 @@ def test_gpu_docker_device_helper_crosses_daemon_boundary_by_uuid(tmp_path: Path
         [
             "bash",
             "-c",
-            f"source {root / 'scripts/lib/gpu_docker_devices.sh'}; "
+            f"set -u; source {root / 'scripts/lib/gpu_docker_devices.sh'}; "
             "resolve_docker_gpu_device_ids 2,0,3,1",
         ],
         check=True,

@@ -14,15 +14,20 @@ resolve_docker_gpu_device_ids() {
     echo "cannot query scheduler-visible GPU UUIDs" >&2
     return 2
   fi
-  local resolved=()
+  local resolved=
+  local remaining=$requested
   local requested_id
-  local requested_ids=()
   local index
   local uuid
   local candidate_uuid
   local line
-  IFS=',' read -r -a requested_ids <<<"$requested"
-  for requested_id in "${requested_ids[@]}"; do
+  while :; do
+    requested_id=${remaining%%,*}
+    if [[ $remaining == *,* ]]; then
+      remaining=${remaining#*,}
+    else
+      remaining=
+    fi
     uuid=
     while IFS= read -r line; do
       IFS=',' read -r index candidate_uuid <<<"$line"
@@ -37,15 +42,17 @@ resolve_docker_gpu_device_ids() {
       echo "scheduler GPU index has no canonical visible UUID" >&2
       return 2
     fi
-    for candidate_uuid in "${resolved[@]}"; do
-      if [[ $candidate_uuid == "$uuid" ]]; then
-        echo "scheduler GPU indices resolve to duplicate UUIDs" >&2
-        return 2
-      fi
-    done
-    resolved+=("$uuid")
+    if [[ ,$resolved, == *,$uuid,* ]]; then
+      echo "scheduler GPU indices resolve to duplicate UUIDs" >&2
+      return 2
+    fi
+    if [[ -n $resolved ]]; then
+      resolved+=,
+    fi
+    resolved+=$uuid
+    if [[ -z $remaining ]]; then
+      break
+    fi
   done
-  local joined
-  joined=$(IFS=','; echo "${resolved[*]}")
-  printf '%s\n' "$joined"
+  printf '%s\n' "$resolved"
 }
