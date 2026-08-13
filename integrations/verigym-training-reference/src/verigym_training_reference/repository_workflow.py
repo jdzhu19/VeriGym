@@ -20,7 +20,6 @@ from rllm.workflows.workflow import (  # type: ignore[import-not-found]
     Workflow,
 )
 from verigym.protocols.repository_action import (
-    canonical_action_json,
     canonical_tool_observation,
     repository_tool_definitions,
 )
@@ -138,9 +137,20 @@ class VeriGymRepositoryAgent(BaseAgent):  # type: ignore[misc]
         call = calls[0]
         if not isinstance(call.name, str) or not isinstance(call.arguments, dict):
             raise RuntimeError("Qwen repository tool call is malformed")
-        raw_action = canonical_action_json(call.name, call.arguments)
-        envelope = json.loads(raw_action)
-        arguments = envelope["arguments"]
+        # Preserve the model's native arguments until the host-owned broker validates
+        # them.  Rejecting here would turn an ordinary model protocol failure into an
+        # rLLM workflow error and would bypass VeriGym's frozen termination semantics.
+        arguments = dict(call.arguments)
+        raw_action = json.dumps(
+            {
+                "protocol": "repository_action.v2",
+                "action": call.name,
+                "arguments": arguments,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
         call_id = _tool_call_id(self._turn, call.name, arguments)
         assistant_message = {
             "role": "assistant",
@@ -308,7 +318,9 @@ class VeriGymBrokerEnvironment(BaseEnv):  # type: ignore[misc]
                 "observation": response.get("observation"),
                 "terminal": done,
             },
-            is_error=response.get("accepted") is False,
+            is_error=(
+                response.get("accepted") is False or response.get("protocol_error") is not None
+            ),
         )
         return observation, reward, done, dict(response)
 

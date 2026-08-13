@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -59,6 +60,89 @@ def test_repository_agent_binds_complete_model_output_to_step() -> None:
     assert step.logprobs == [-0.1, -0.2]
     assert step.weight_version == 7
     assert step.chat_completions[-1]["tool_calls"][0]["id"].startswith("call_")
+
+
+def test_repository_agent_defers_invalid_arguments_to_broker() -> None:
+    agent = VeriGymRepositoryAgent()
+    agent.update_from_env(
+        {"visible_files": ["repository/a.sv"]},
+        0.0,
+        False,
+        {
+            "initial": True,
+            "task": {
+                "task_id": "suite/task",
+                "task_description": "repair it",
+                "record_hash": "a" * 64,
+            },
+            "prompt_contract": {"protocol": "repository_action.v2"},
+            "public_test_ids": [],
+            "observation_truncated": False,
+        },
+    )
+    output = ModelOutput(
+        text="native call",
+        content="",
+        tool_calls=[
+            ToolCall(
+                name="apply_patch",
+                arguments={"patch": "not a valid patch", "success": True},
+            )
+        ],
+        prompt_ids=[1],
+        completion_ids=[2],
+        logprobs=[-0.1],
+    )
+
+    agent.bind_model_output(output)
+    action = agent.update_from_model("")
+    raw_action = json.loads(action.action["raw_action"])
+
+    assert raw_action == {
+        "protocol": "repository_action.v2",
+        "action": "apply_patch",
+        "arguments": {"patch": "not a valid patch", "success": True},
+    }
+    assert agent.trajectory.steps[0].model_output is output
+
+
+def test_repository_environment_classifies_broker_protocol_terminal_as_tool_error(
+    tmp_path: Path,
+) -> None:
+    class TerminalClient:
+        def act(self, turn: int, raw_action: str) -> dict[str, object]:
+            assert turn == 0
+            assert json.loads(raw_action)["action"] == "apply_patch"
+            return {
+                "terminal": True,
+                "infrastructure_valid": True,
+                "resolved": False,
+                "protocol_error": "agent_invalid_arguments",
+                "state": "awaiting_action",
+                "observation": None,
+                "response_hash": "b" * 64,
+            }
+
+    environment = VeriGymBrokerEnvironment(repository_broker_root=str(tmp_path))
+    environment._client = TerminalClient()  # type: ignore[assignment]  # noqa: SLF001
+
+    observation, reward, done, info = environment.step(
+        {
+            "name": "apply_patch",
+            "raw_action": json.dumps(
+                {
+                    "protocol": "repository_action.v2",
+                    "action": "apply_patch",
+                    "arguments": {"patch": "bad", "success": True},
+                }
+            ),
+        }
+    )
+
+    assert done is True
+    assert reward == 0.0
+    assert info["infrastructure_valid"] is True
+    assert json.loads(observation)["is_error"] is True
 
 
 def test_repository_workflow_resets_broker_environment_once(
