@@ -25,6 +25,15 @@ cache_root=$(realpath "$6")
 empty_home=$(realpath "$7")
 network_name=$8
 model_id=$9
+seccomp_arguments=()
+case ${VERIGYM_GPU_DOCKER_SECCOMP_PROFILE:-default} in
+  default) ;;
+  unconfined) seccomp_arguments=(--security-opt seccomp=unconfined) ;;
+  *)
+    echo "VERIGYM_GPU_DOCKER_SECCOMP_PROFILE must be 'default' or 'unconfined'" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || \
   [[ $(docker image inspect "$image_id" --format '{{.Id}}') != "$image_id" ]]; then
@@ -70,6 +79,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
+  ${seccomp_arguments[@]+"${seccomp_arguments[@]}"} \
   --pids-limit 2048 \
   --user "$(id -u):$(id -g)" \
   --env HOME=/work/home \

@@ -186,6 +186,9 @@ and HTTP orchestration rather than CPU training; bounding these libraries avoids
 with a node-wide thread fan-out inside scheduler-constrained Docker without relaxing seccomp.
 The runner also supplies a synthetic `USER`/`LOGNAME` for scheduler UIDs that are intentionally
 absent from the image password database, so Torch cache discovery does not depend on host NSS.
+On legacy compute-node Docker, the same explicit `VERIGYM_GPU_DOCKER_SECCOMP_PROFILE=unconfined`
+compatibility switch used by the model and trainer containers is available for rLLM's required
+Python executor thread. It never enables privileged mode, adds capabilities, or mounts a socket.
 
 Every real command is explicitly opt in. Incomplete qualification or fewer than eight eligible
 training trajectories ends with a report and does not start SFT.
