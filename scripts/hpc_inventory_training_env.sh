@@ -13,11 +13,23 @@ if [[ -e "$inventory_root" ]]; then
 fi
 mkdir -p "$inventory_root"
 
-conda list --explicit -n agent | \
-  python "$(dirname "$0")/sanitize_conda_explicit_manifest.py" \
+conda_executable=${CONDA_EXE:-$(command -v conda || true)}
+if [[ -z "$conda_executable" && -x /hpc/home/connect.jzhu484/miniconda3/bin/conda ]]; then
+  conda_executable=/hpc/home/connect.jzhu484/miniconda3/bin/conda
+fi
+if [[ -z "$conda_executable" || ! -x "$conda_executable" ]]; then
+  echo "Conda executable is unavailable" >&2
+  exit 2
+fi
+
+"$conda_executable" list --explicit -n agent | \
+  "$conda_executable" run --no-capture-output -n agent \
+    python "$(dirname "$0")/sanitize_conda_explicit_manifest.py" \
   >"$inventory_root/conda-agent-explicit.sanitized.txt"
-conda run -n agent python -m pip list --format=json >"$inventory_root/pip-agent.json"
-conda run -n agent python - <<'PY' >"$inventory_root/key-versions.json"
+"$conda_executable" run -n agent python -m pip list --format=json \
+  >"$inventory_root/pip-agent.json"
+"$conda_executable" run --no-capture-output -n agent python - \
+  >"$inventory_root/key-versions.json" <<'PY'
 import importlib.metadata
 import json
 import platform
@@ -30,6 +42,9 @@ for name in ("rllm", "verl", "vllm", "torch", "transformers", "peft"):
         packages[name] = None
 print(json.dumps({"python": platform.python_version(), "packages": packages}, sort_keys=True))
 PY
+"$conda_executable" run -n agent python -c \
+  'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' \
+  "$inventory_root/key-versions.json"
 
 sha256sum \
   "$inventory_root/conda-agent-explicit.sanitized.txt" \

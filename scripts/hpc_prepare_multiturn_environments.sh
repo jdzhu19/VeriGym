@@ -14,7 +14,17 @@ verigym_checkout=$(realpath "$1")
 rllm_checkout=$(realpath "$2")
 inventory_root=$3
 
-if [[ $(git -C "$rllm_checkout" rev-parse HEAD) != 1d1109a655e291b3001d8526d7c9ecc5b9328226 ]]; then
+conda_executable=${CONDA_EXE:-$(command -v conda || true)}
+if [[ -z "$conda_executable" && -x /hpc/home/connect.jzhu484/miniconda3/bin/conda ]]; then
+  conda_executable=/hpc/home/connect.jzhu484/miniconda3/bin/conda
+fi
+if [[ -z "$conda_executable" || ! -x "$conda_executable" ]]; then
+  echo "Conda executable is unavailable" >&2
+  exit 2
+fi
+
+if [[ $(cd "$rllm_checkout" && git rev-parse HEAD) != \
+  1d1109a655e291b3001d8526d7c9ecc5b9328226 ]]; then
   echo "rLLM checkout differs from the frozen commit" >&2
   exit 2
 fi
@@ -31,28 +41,28 @@ export RLLM_HOME=/hpc/home/connect.jzhu484/agent/datasets/rllm
 export VERIGYM_EXPERIMENT_ROOT=/hpc/home/connect.jzhu484/agent/experiments
 mkdir -p "$HF_HOME" "$VLLM_CACHE_ROOT" "$RLLM_HOME" "$VERIGYM_EXPERIMENT_ROOT"
 
-conda run -n agent python -m pip install --upgrade \
+"$conda_executable" run -n agent python -m pip install --upgrade \
   "verl==0.8.0" \
   "vllm==0.22.1" \
   -e "$rllm_checkout" \
   -e "$verigym_checkout" \
   -e "$verigym_checkout/integrations/verigym-training-reference"
 
-if ! conda env list | awk '{print $1}' | grep -Fxq verigym-openhands-py312; then
-  conda create -y -n verigym-openhands-py312 python=3.12 pip
+if ! "$conda_executable" env list | awk '{print $1}' | grep -Fxq verigym-openhands-py312; then
+  "$conda_executable" create -y -n verigym-openhands-py312 python=3.12 pip
 fi
-conda run -n verigym-openhands-py312 python -m pip install \
+"$conda_executable" run -n verigym-openhands-py312 python -m pip install \
   -e "$verigym_checkout" \
   -e "$verigym_checkout/integrations/verigym-hwe-bench" \
   -e "$verigym_checkout/integrations/verigym-openhands"
 
-conda run -n agent python - <<'PY'
+"$conda_executable" run --no-capture-output -n agent python - <<'PY'
 import importlib.metadata
 
 assert importlib.metadata.version("verl") == "0.8.0"
 assert importlib.metadata.version("vllm") == "0.22.1"
 PY
-conda run -n verigym-openhands-py312 python - <<'PY'
+"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python - <<'PY'
 import importlib.metadata
 
 assert importlib.metadata.version("openhands-sdk") == "1.42.1"

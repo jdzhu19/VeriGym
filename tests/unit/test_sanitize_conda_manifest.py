@@ -32,3 +32,17 @@ def test_conda_manifest_sanitizer_removes_url_credentials_and_tokens() -> None:
 def test_conda_manifest_sanitizer_rejects_non_url_entries() -> None:
     with pytest.raises(ValueError, match="unsupported"):
         _module().sanitize_explicit_line("not-a-package-url")
+
+
+def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment() -> None:
+    scripts = Path(__file__).parents[2] / "scripts"
+    inventory = (scripts / "hpc_inventory_training_env.sh").read_text(encoding="utf-8")
+    prepare = (scripts / "hpc_prepare_multiturn_environments.sh").read_text(encoding="utf-8")
+
+    assert "conda_executable=${CONDA_EXE:-$(command -v conda || true)}" in inventory
+    assert '"$conda_executable" run --no-capture-output -n agent python -' in inventory
+    assert '"$conda_executable" run --no-capture-output -n agent python -' in prepare
+    assert 'git -C "$rllm_checkout"' not in prepare
+    assert (
+        '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
+    )
