@@ -38,6 +38,17 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "seccomp=unconfined" not in build
 
 
+def test_controller_broker_keeps_diagnostics_private_and_sanitized() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/run_qwen35_online_repository_broker.py"
+    ).read_text(encoding="utf-8")
+
+    assert "sanitize_diagnostic(" in source
+    assert "sensitive_paths=(str(source_root), str(broker_root), str(output))" in source
+    assert "file=sys.stderr" in source
+    assert '"diagnostic"' not in source
+
+
 def test_controller_runner_is_networkless_and_socket_is_controller_only() -> None:
     source = (Path(__file__).parents[2] / "scripts/run_repository_rollout_controller.py").read_text(
         encoding="utf-8"

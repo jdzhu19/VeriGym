@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 import threading
 import time
 from collections.abc import Sequence
@@ -20,6 +21,7 @@ from verigym_training_reference.repository_broker_protocol import (
 )
 
 from verigym.core.hashing import content_hash
+from verigym.runtimes.docker.errors import sanitize_diagnostic
 
 _SESSION_ID = re.compile(r"^[0-9a-f]{64}$")
 
@@ -121,6 +123,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output=output,
             )
         except Exception as exc:
+            diagnostic = sanitize_diagnostic(
+                str(exc),
+                sensitive_paths=(str(source_root), str(broker_root), str(output)),
+            )
+            print(
+                f"repository session {request['session_id'][:12]} failed: "
+                f"{type(exc).__name__}: {diagnostic}",
+                file=sys.stderr,
+                flush=True,
+            )
             _failure_response(
                 broker_root=broker_root,
                 request=request,
