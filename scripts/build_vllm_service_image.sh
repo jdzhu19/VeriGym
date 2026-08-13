@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -ne 4 ]]; then
-  echo "usage: $0 VERIGYM_CHECKOUT PYTHON_BASE_REPODIGEST IMAGE_TAG BUILD_ROOT" >&2
+  echo "usage: $0 VERIGYM_CHECKOUT PYTHON_BASE_DIGEST_OR_ID IMAGE_TAG BUILD_ROOT" >&2
   exit 2
 fi
 
@@ -14,8 +14,8 @@ wheel_sha256=365ee929afd73bb5d146235b65053fa948788ec2ee00a2c3e957d3f43bf2b0cd
 gcc_package_version=4:12.2.0-3
 libc6_dev_package_version=2.36-9+deb12u14
 
-if [[ ! $python_base =~ ^python@sha256:[0-9a-f]{64}$ ]]; then
-  echo "Python base must be an immutable official-python RepoDigest" >&2
+if [[ ! $python_base =~ ^(python@)?sha256:[0-9a-f]{64}$ ]]; then
+  echo "Python base must be an immutable official-python RepoDigest or exact local image ID" >&2
   exit 2
 fi
 if [[ -n $(cd "$verigym_checkout" && git status --porcelain) ]]; then
