@@ -147,11 +147,13 @@ PR2170 example. It requires a frozen training split and source-lock v2 source th
 is an explicit four-24-GiB-GPU smoke resource envelope; the workflow itself still delegates turn
 count to the task budget and sets no per-action token override.
 
-For schedulers where the GPU node cannot access Docker, use the split native path documented in
-`../../docs/online_training.md`. The trusted login-node broker container owns a private source volume and
-Docker verification, while the GPU-side Conda process runs only the rLLM/veRL trainer. The native
-runtime manifest binds its package inventory and resolved 4/6/8-GPU topology; rollout group size
-scales with world size so no worker is assigned an empty GRPO group.
+On the current cluster, run GPU service/training and GPU-coupled rollouts directly in the existing
+`gpu01` allocation; run CPU-only controller/verifier work in the existing `bmcpu07` allocation.
+Both nodes provide Docker. The login VM is only a control plane and image relay. The trusted
+controller container uses the node Docker socket to launch digest-locked sibling benchmark
+sandboxes; it never uses privileged Docker-in-Docker. For schedulers that truly expose Docker only
+on a login node, the older split native fallback remains documented in
+`../../docs/online_training.md`.
 
 ## Verified multi-turn SFT mainline
 

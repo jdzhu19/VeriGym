@@ -4,6 +4,43 @@ VeriGym keeps policy training outside the evaluator package while providing thre
 interfaces: frozen held-out evaluation, resumable campaign execution, and an optional rLLM/verl
 online workflow. None of these interfaces makes held-out samples eligible for training.
 
+## Deploy on the current HPC nodes
+
+Both `gpu01` and `bmcpu07` expose Docker. Use the login VM only as a control plane and image relay;
+do not route ordinary verification through it. Keep the existing LSF/tmux allocations alive.
+
+| Workload | Preferred node | Container boundary |
+| --- | --- | --- |
+| vLLM, SFT, adapter reload | `gpu01` | Separate containers, four assigned GPU IDs |
+| GPU-coupled online rollout | `gpu01` | Trusted controller plus sibling benchmark sandboxes |
+| Qualification and CPU verification | `bmcpu07` | Controller plus sibling sandboxes |
+| Checkout, image transfer, scheduling | Login VM | No benchmark execution by default |
+
+```mermaid
+flowchart LR
+  vm["Login VM<br/>control and image relay"] --> gpu
+  vm --> cpu
+  subgraph gpu["gpu01 LSF allocation"]
+    model["vLLM service<br/>no Docker socket"]
+    trainer["SFT or rLLM trainer<br/>no Docker socket"]
+    gpu_controller["Trusted controller<br/>host Docker socket"]
+    gpu_sandbox["Bench sandbox<br/>network none"]
+    gpu_controller --> gpu_sandbox
+    trainer --> model
+  end
+  subgraph cpu["bmcpu07 LSF allocation"]
+    cpu_controller["Trusted controller<br/>host Docker socket"]
+    cpu_sandbox["Bench sandbox<br/>network none"]
+    cpu_controller --> cpu_sandbox
+  end
+```
+
+This is sibling-container orchestration, not privileged Docker-in-Docker. Only the immutable,
+audited controller image receives `/var/run/docker.sock`; that socket is host-equivalent authority.
+OpenHands, provider CLIs, model servers, trainers, and benchmark sandboxes never receive it. Each
+episode selects a digest-locked benchmark image and retains its own filesystem, resource limits,
+network policy, ownership labels, and deterministic cleanup.
+
 ## Freeze and compare policies
 
 `configs/training/qwen35_heldout_v1.json` selects a fixed 12-task VerilogEval V2 set spanning
@@ -60,15 +97,18 @@ weight synchronization only when at least one rollout group has reward variance;
 convergence or benchmark claim. The pinned compatibility pair is rLLM `v0.3.0-pre` with verl
 `v0.7.1`, which includes the upstream Qwen3.5 FSDP2/vLLM path.
 
-## Split broker and native GPU trainer
+## Use the split broker fallback
 
-Clusters that expose Docker only on a login node can keep the same trust boundary by running
+Clusters that expose Docker only on a login node can still keep the same trust boundary by running
 `run_qwen35_online_broker_container.py` on that node and
 `run_qwen35_online_native.py` inside the scheduler-owned GPU allocation. The trusted broker keeps
 the prepared source in a role-labeled Docker volume and communicates through the existing
 hash-bound filesystem protocol. The native trainer receives only the public task manifest,
 bounded observations, sparse outcomes, model, adapter, and code; it receives no source-root or
 Docker-socket argument. Both sides use a shared campaign directory for requests and responses.
+
+This fallback is not the preferred topology on the current `gpu01`/`bmcpu07` cluster because both
+compute nodes now provide Docker.
 
 Some HPC sites replace `docker` with a wrapper that delegates to a sibling executable. In that
 case the broker launcher accepts `--docker-helper` only together with
