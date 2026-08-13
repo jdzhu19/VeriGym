@@ -6,9 +6,10 @@ sdist additionally contains source, tests, documentation, Docker recipes, script
 installable plugin-conformance fixture.
 
 First-party optional integrations under `integrations/` remain separate packages rather than part
-of the core wheel. Package CI builds `verigym-codex-cli` and
+of the core wheel. Package CI builds `verigym-codex-cli`, `verigym-openhands`, and
 `verigym-verilog-eval-codecomplete` independently and installs their wheels beside the core wheel.
-The alpha release audit additionally performs the Codex-specific credential and executable scan.
+The alpha release audit performs the Codex-specific credential and executable scan and a bounded
+secret/artifact scan of the OpenHands wheel and sdist.
 The `verigym-hwe-bench` wheel contains only adapter code: prepared JSONL records, golden patches,
 testbench scripts, extracted repositories, OCI archives, and per-PR images are forbidden members.
 

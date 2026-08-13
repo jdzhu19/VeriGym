@@ -752,6 +752,46 @@ class AuditRunner:
                 classification="blocked",
                 reason="Codex CLI build did not produce the required archives",
             )
+        openhands_wheel = self.packages / "verigym_openhands-0.1.0-py3-none-any.whl"
+        openhands_sdist = self.packages / "verigym_openhands-0.1.0.tar.gz"
+        for openhands_archive in (openhands_wheel, openhands_sdist):
+            openhands_archive.unlink(missing_ok=True)
+        self.run(
+            "package.openhands-build",
+            [
+                python,
+                "-m",
+                "build",
+                "integrations/verigym-openhands",
+                "--outdir",
+                str(self.packages),
+            ],
+            environment=_safe_environment(build_environment),
+            timeout=600,
+            identities=build_identities,
+            required_files=[openhands_wheel, openhands_sdist],
+        )
+        if openhands_wheel.is_file() and openhands_sdist.is_file():
+            self.run(
+                "package.openhands-distribution-scan",
+                [
+                    python,
+                    "scripts/audit_optional_plugin_distribution.py",
+                    "--policy",
+                    "openhands",
+                    "--wheel",
+                    str(openhands_wheel),
+                    "--sdist",
+                    str(openhands_sdist),
+                ],
+            )
+        else:
+            self.unavailable(
+                "package.openhands-distribution-scan",
+                [python, "scripts/audit_optional_plugin_distribution.py"],
+                classification="blocked",
+                reason="OpenHands build did not produce the required archives",
+            )
         wheel = self.packages / "verigym-0.1.0-py3-none-any.whl"
         sdist = self.packages / "verigym-0.1.0.tar.gz"
         if wheel.is_file() and sdist.is_file():

@@ -75,6 +75,18 @@ _POLICIES = {
             {".img", ".jsonl", ".oci", ".patch", ".sv", ".tar", ".v"}
         ),
     ),
+    "openhands": Policy(
+        distribution="verigym-openhands",
+        version="0.1.0",
+        module="verigym_openhands",
+        entry_markers=(
+            "[verigym.agents]",
+            "openhands-repository-agent = verigym_openhands:OpenHandsRepositoryAgentAdapter",
+        ),
+        forbidden_member_suffixes=frozenset(
+            {".db", ".jsonl", ".patch", ".pem", ".sqlite", ".trace"}
+        ),
+    ),
     "training_reference": Policy(
         distribution="verigym-training-reference",
         version="0.3.0",
