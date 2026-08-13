@@ -55,6 +55,8 @@ from .teacher_config import CodexTeacherSettings, teacher_settings
 from .teacher_invocation import build_teacher_arguments, sanitized_teacher_invocation
 from .util import atomic_json, redact_text
 
+_ACTIVE_TIMEOUT_MIN_TOOL_CALLS = 8
+
 
 class CodexCliMcpTeacherAdapter(AgentAdapter):
     """Collect one strict gpt-5.4/xhigh repository demonstration."""
@@ -166,9 +168,10 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
             raise _termination(
                 "codex_process_boundary", redact_text(str(exc)), infrastructure=True
             ) from exc
+        process_failure = _preparse_process_failure(process, broker_stats)
+        if process_failure is not None:
+            raise process_failure
         try:
-            if process.stdout_truncated or process.stderr_truncated:
-                raise EventParseError("Codex teacher output exceeded its byte bound")
             parsed = parse_event_stream(process.stdout)
             messages = normalize_training_messages(
                 process.stdout,
@@ -434,17 +437,63 @@ def _write_content_free_evidence(
 
 
 def _termination(
-    category: str, message: str, *, infrastructure: bool = False
+    category: str,
+    message: str,
+    *,
+    infrastructure: bool = False,
+    kind: str = "model",
+    reason: TerminationReason = TerminationReason.MODEL_ERROR,
 ) -> AgentTerminationError:
     return AgentTerminationError(
-        TerminationReason.MODEL_ERROR,
+        reason,
         EpisodeFailure(
-            kind="model",
+            kind=kind,
             category=category,
             message=redact_text(message)[:2000],
             infrastructure=infrastructure,
         ),
     )
+
+
+def _preparse_process_failure(
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+) -> AgentTerminationError | None:
+    if broker.policy_failure is not None:
+        return _termination(
+            "workspace_policy",
+            broker.policy_failure,
+            kind="policy",
+            reason=TerminationReason.POLICY_VIOLATION,
+        )
+    if broker.infrastructure_failure is not None:
+        return _termination(
+            "runtime_tool_infrastructure",
+            broker.infrastructure_failure,
+            infrastructure=True,
+            kind="runtime",
+            reason=TerminationReason.RUNTIME_ERROR,
+        )
+    if process.timed_out:
+        active_agent_timeout = broker.tool_calls >= _ACTIVE_TIMEOUT_MIN_TOOL_CALLS
+        return _termination(
+            "agent_timeout" if active_agent_timeout else "timeout",
+            (
+                "Codex agent exhausted its episode deadline after sustained broker activity"
+                if active_agent_timeout
+                else "Codex CLI MCP teacher process timed out"
+            ),
+            infrastructure=not active_agent_timeout,
+            kind="model" if active_agent_timeout else "runtime",
+        )
+    if process.stdout_truncated or process.stderr_truncated:
+        return _termination(
+            "output_limit",
+            "Codex CLI MCP teacher evidence stream exceeded the process byte bound",
+            infrastructure=True,
+            kind="runtime",
+        )
+    return None
 
 
 __all__ = ["CodexCliMcpTeacherAdapter"]

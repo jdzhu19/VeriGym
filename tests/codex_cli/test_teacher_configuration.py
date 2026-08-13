@@ -4,16 +4,62 @@ from pathlib import Path
 
 import pytest
 from verigym_codex_cli.capabilities import discover_capabilities
-from verigym_codex_cli.teacher_agent import CodexCliMcpTeacherAdapter
+from verigym_codex_cli.process import CodexProcessResult
+from verigym_codex_cli.teacher_agent import (
+    CodexCliMcpTeacherAdapter,
+    _preparse_process_failure,
+)
 from verigym_codex_cli.teacher_config import teacher_settings
 from verigym_codex_cli.teacher_invocation import (
     build_teacher_arguments,
     sanitized_teacher_invocation,
 )
 
+from verigym.core.repository_tool_broker import RepositoryToolBrokerStats
 from verigym.protocols.repository_action import repository_tool_definitions
 
 pytestmark = pytest.mark.codex_cli
+
+
+def _timed_out_process() -> CodexProcessResult:
+    return CodexProcessResult(
+        arguments=("codex",),
+        exit_code=143,
+        stdout="",
+        stderr="",
+        duration_s=1800.0,
+        timed_out=True,
+        stdout_truncated=True,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+
+
+def _broker_stats(*, tool_calls: int) -> RepositoryToolBrokerStats:
+    return RepositoryToolBrokerStats(
+        tool_calls=tool_calls,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=tool_calls,
+        file_writes=0,
+        patches=0,
+        policy_failure=None,
+        infrastructure_failure=None,
+    )
+
+
+def test_sustained_mcp_activity_makes_timeout_an_agent_failure() -> None:
+    active = _preparse_process_failure(_timed_out_process(), _broker_stats(tool_calls=8))
+    inactive = _preparse_process_failure(_timed_out_process(), _broker_stats(tool_calls=0))
+
+    assert active is not None
+    assert active.failure.kind == "model"
+    assert active.failure.category == "agent_timeout"
+    assert active.failure.infrastructure is False
+    assert inactive is not None
+    assert inactive.failure.kind == "runtime"
+    assert inactive.failure.category == "timeout"
+    assert inactive.failure.infrastructure is True
 
 
 def test_teacher_is_exact_gpt54_xhigh_required_mcp_only(
