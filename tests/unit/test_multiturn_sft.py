@@ -212,6 +212,42 @@ def test_observation_must_be_canonical_and_match_call_id() -> None:
         seal_multi_turn_example(payload)
 
 
+def test_public_source_path_literals_do_not_look_like_exported_host_paths() -> None:
+    public_source = canonical_tool_observation(
+        "read_file",
+        {
+            "success": True,
+            "message": "file read completed",
+            "stdout": "example configuration uses /home/example/cache",
+        },
+        is_error=False,
+    )
+    message = MultiTurnSftMessage(
+        role="tool",
+        name="read_file",
+        tool_call_id="call_read_1",
+        content=public_source,
+    )
+    assert "/home/example/cache" in (message.content or "")
+
+    leaked_metadata = canonical_tool_observation(
+        "read_file",
+        {
+            "success": False,
+            "message": "runtime opened /data/private/workspace",
+            "stdout": "",
+        },
+        is_error=True,
+    )
+    with pytest.raises(ValidationError, match="raw host path"):
+        MultiTurnSftMessage(
+            role="tool",
+            name="read_file",
+            tool_call_id="call_read_2",
+            content=leaked_metadata,
+        )
+
+
 def test_trajectory_requires_an_accepted_terminal_finish_as_the_last_tool() -> None:
     payload = _example_payload()
     messages = [message.model_dump(mode="json", exclude_none=True) for message in _messages()]

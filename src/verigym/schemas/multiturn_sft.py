@@ -18,10 +18,9 @@ from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _PORTABLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+@/\[\]-]{0,255}$")
 _CALL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_FORBIDDEN_CONTENT = re.compile(
+_RAW_HOST_PATH = re.compile(r"/(?:home|data|tmp|hpc)/|[A-Za-z]:\\", re.IGNORECASE)
+_FORBIDDEN_SENSITIVE_CONTENT = re.compile(
     r"(?:"
-    r"/(?:home|data|tmp|hpc)/|"
-    r"[A-Za-z]:\\|"
     r"\b(?:authorization|password|api[_ -]?key|access[_ -]?token)\s*[:=]|"
     r"\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|"
     r"\b(?:sk|ds)-[A-Za-z0-9_-]{12,}|"
@@ -86,7 +85,9 @@ class SftFunctionCall(StrictModel):
         )
         if self.arguments != canonical:
             raise ValueError("SFT tool arguments must use canonical JSON serialization")
-        if _FORBIDDEN_CONTENT.search(self.arguments):
+        if _FORBIDDEN_SENSITIVE_CONTENT.search(self.arguments) or _RAW_HOST_PATH.search(
+            self.arguments
+        ):
             raise ValueError("SFT tool arguments contain a forbidden private or credential marker")
         return self
 
@@ -145,8 +146,14 @@ class MultiTurnSftMessage(StrictModel):
         if self.content is not None:
             if len(self.content.encode("utf-8")) > 2 * 1024 * 1024:
                 raise ValueError("SFT message exceeds the content bound")
-            if _FORBIDDEN_CONTENT.search(self.content):
+            if _FORBIDDEN_SENSITIVE_CONTENT.search(self.content):
                 raise ValueError("SFT message contains a forbidden private or credential marker")
+            if _RAW_HOST_PATH.search(self.content) and (
+                self.role != "tool"
+                or self.name is None
+                or _observation_exposes_host_path(self.content, self.name)
+            ):
+                raise ValueError("SFT message contains a forbidden raw host path")
         return self
 
 
@@ -419,6 +426,22 @@ def _observation_value(content: str, expected_name: str) -> dict[str, Any]:
     ):
         raise ValueError("SFT tool observation differs from the canonical contract")
     return value
+
+
+def _observation_exposes_host_path(content: str, expected_name: str) -> bool:
+    """Ignore path-like literals only inside public source and diff payloads."""
+
+    value = _observation_value(content, expected_name)
+    result = dict(value["result"])
+    if value["is_error"] is False and expected_name in {"read_file", "inspect_diff"}:
+        result["stdout"] = ""
+    bounded = json.dumps(
+        {**value, "result": result},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return _RAW_HOST_PATH.search(bounded) is not None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

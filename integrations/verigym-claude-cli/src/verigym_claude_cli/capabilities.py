@@ -22,6 +22,7 @@ _REQUIRED_FLAGS = (
     "--allowedtools",
     "--bare",
     "--disable-slash-commands",
+    "--disallowedtools",
     "--effort",
     "--mcp-config",
     "--model",

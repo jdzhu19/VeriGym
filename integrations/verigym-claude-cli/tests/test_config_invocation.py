@@ -14,7 +14,11 @@ from verigym_claude_cli.broker import BrokerStats
 from verigym_claude_cli.capabilities import discover_capabilities
 from verigym_claude_cli.config import agent_settings
 from verigym_claude_cli.events import EventParseError, parse_event_stream
-from verigym_claude_cli.invocation import build_arguments, sanitized_invocation
+from verigym_claude_cli.invocation import (
+    CLAUDE_BUILTIN_TOOL_NAMES,
+    build_arguments,
+    sanitized_invocation,
+)
 from verigym_claude_cli.mcp_tools import CLAUDE_TOOL_NAMES
 from verigym_claude_cli.process import resolve_executable
 from verigym_claude_cli.util import redact_value
@@ -53,6 +57,9 @@ def test_capabilities_and_invocation_apply_no_agent_or_token_caps(
     invocation = sanitized_invocation(arguments, settings)
     assert arguments[arguments.index("--tools") + 1] == ""
     assert arguments[arguments.index("--allowedTools") + 1] == ",".join(CLAUDE_TOOL_NAMES)
+    assert arguments[arguments.index("--disallowedTools") + 1] == ",".join(
+        CLAUDE_BUILTIN_TOOL_NAMES
+    )
     mcp = json.loads(arguments[arguments.index("--mcp-config") + 1])
     assert mcp["mcpServers"]["verigym"]["command"] == "/usr/bin/env"
     mcp_arguments = mcp["mcpServers"]["verigym"]["args"]
@@ -259,6 +266,21 @@ def test_stream_parser_rejects_builtin_tool() -> None:
     with pytest.raises(EventParseError, match="outside the MCP allowlist"):
         parse_event_stream(
             "\n".join(json.dumps(event) for event in events),
+            requested_model_id="deepseek-v4-flash[1m]",
+            expected_context_window_tokens=None,
+        )
+
+
+def test_stream_parser_distinguishes_missing_mcp_inventory() -> None:
+    event = {
+        "type": "system",
+        "subtype": "init",
+        "model": "deepseek-v4-flash[1m]",
+        "tools": list(CLAUDE_TOOL_NAMES[:-1]),
+    }
+    with pytest.raises(EventParseError, match="omitted required"):
+        parse_event_stream(
+            json.dumps(event),
             requested_model_id="deepseek-v4-flash[1m]",
             expected_context_window_tokens=None,
         )

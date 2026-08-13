@@ -111,8 +111,17 @@ def parse_event_stream(
                 isinstance(value, str) for value in advertised
             ):
                 raise EventParseError("Claude init event omits its tool inventory")
-            if set(advertised) != set(CLAUDE_TOOL_NAMES):
-                raise EventParseError("Claude init event exposed tools outside the MCP allowlist")
+            unexpected = sorted(set(advertised) - set(CLAUDE_TOOL_NAMES))
+            missing = sorted(set(CLAUDE_TOOL_NAMES) - set(advertised))
+            if unexpected:
+                raise EventParseError(
+                    "Claude init event exposed tools outside the MCP allowlist: "
+                    + ", ".join(unexpected)
+                )
+            if missing:
+                raise EventParseError(
+                    "Claude init event omitted required VeriGym MCP tools: " + ", ".join(missing)
+                )
         elif event_type == "assistant":
             message = payload.get("message")
             if not isinstance(message, dict):

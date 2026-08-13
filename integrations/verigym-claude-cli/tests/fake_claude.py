@@ -6,7 +6,8 @@ import os
 import sys
 
 HELP = """
---allowedTools --bare --disable-slash-commands --effort --mcp-config --model --name
+--allowedTools --bare --disable-slash-commands --disallowedTools --effort
+--mcp-config --model --name
 --no-session-persistence --output-format stream-json --permission-mode dontAsk --print
 --strict-mcp-config --tools --verbose --no-chrome --prompt-suggestions
 """

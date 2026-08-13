@@ -12,6 +12,32 @@ from typing import Any
 from .config import ClaudeSettings
 from .mcp_tools import CLAUDE_TOOL_NAMES
 
+CLAUDE_BUILTIN_TOOL_NAMES = (
+    "Agent",
+    "AskUserQuestion",
+    "Bash",
+    "Edit",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "Glob",
+    "Grep",
+    "KillShell",
+    "ListMcpResourcesTool",
+    "NotebookEdit",
+    "NotebookRead",
+    "Read",
+    "ReadMcpResourceTool",
+    "SendUserMessage",
+    "Skill",
+    "Task",
+    "TaskOutput",
+    "TodoRead",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+    "Write",
+)
+
 
 def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str) -> list[str]:
     session_name = "verigym-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:12]
@@ -63,6 +89,8 @@ def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str)
         json.dumps(mcp_config, separators=(",", ":"), ensure_ascii=False),
         "--tools",
         "",
+        "--disallowedTools",
+        ",".join(CLAUDE_BUILTIN_TOOL_NAMES),
         "--allowedTools",
         ",".join(CLAUDE_TOOL_NAMES),
         "--permission-mode",
@@ -124,6 +152,12 @@ def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None
         raise ValueError("Claude built-in tools must be disabled")
     if "--allowedTools" not in arguments:
         raise ValueError("Claude invocation omits the MCP tool allowlist")
+    if (
+        "--disallowedTools" not in arguments
+        or tuple(arguments[arguments.index("--disallowedTools") + 1].split(","))
+        != CLAUDE_BUILTIN_TOOL_NAMES
+    ):
+        raise ValueError("Claude invocation omits the frozen built-in tool denylist")
     raw_mcp = arguments[arguments.index("--mcp-config") + 1]
     mcp = json.loads(raw_mcp)
     server = mcp.get("mcpServers", {}).get("verigym") if isinstance(mcp, dict) else None
@@ -163,4 +197,4 @@ def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None
         raise ValueError("Claude invocation unexpectedly contains an agent or token budget")
 
 
-__all__ = ["build_arguments", "sanitized_invocation"]
+__all__ = ["CLAUDE_BUILTIN_TOOL_NAMES", "build_arguments", "sanitized_invocation"]
