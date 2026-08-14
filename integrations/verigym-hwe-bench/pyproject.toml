@@ -28,7 +28,7 @@ verigym-hwe-bench = "verigym_hwe_bench.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-verigym_hwe_bench = ["py.typed"]
+verigym_hwe_bench = ["py.typed", "assets/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

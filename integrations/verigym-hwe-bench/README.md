@@ -42,3 +42,10 @@ different host does not qualify a compute-node daemon. The verifier supplies Git
 stage when reset, checkout, marker validation, or patch application fails. Such a failure is
 reported as infrastructure-invalid `sandbox_error`; only failures after the testbench-start
 boundary are candidate test failures.
+
+The verifier explicitly supplies Moby 19.03.14's Apache-2.0 default seccomp allowlist, pinned by
+its packaged SHA-256. This preserves Docker's syscall filtering while making unknown newer
+syscalls return the compatibility error expected by newer glibc inside official images. In
+particular, this fixes `clone3` thread fallback on legacy compute-node daemons without using
+`seccomp=unconfined` or privileged mode. The vendored profile comes from
+`moby/moby@v19.03.14/profiles/seccomp/default.json`; the only byte-level change is a final newline.

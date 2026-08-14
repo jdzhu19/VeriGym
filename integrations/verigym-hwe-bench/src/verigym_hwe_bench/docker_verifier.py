@@ -35,6 +35,8 @@ _CACHE_READY = "VERIGYM_HWE_CACHE_SEED_OK"
 _TESTBENCH_STARTED = "VERIGYM_HWE_TESTBENCH_STARTED"
 _SETUP_FAILURE = re.compile(r"^VERIGYM_HWE_SETUP_FAILURE:(?P<stage>[a-z_]{1,64})$")
 _MARKER = re.compile(r"^TEST:\s*(.{1,256}?)\s*\.\.\.\s*(PASS|FAIL|SKIP)\s*$")
+_SECCOMP_PROFILE = Path(__file__).parent / "assets" / "moby-v19.03.14-default-seccomp.json"
+_SECCOMP_PROFILE_SHA256 = "88e52e1f444c1012f3f8383d1aef701c654b9a317fb27089387ce024910a8082"
 
 _RUNNER = """#!/bin/bash
 set -Eeuo pipefail
@@ -192,6 +194,15 @@ def _setup_failure_stage(output: str) -> str | None:
     return None
 
 
+def _validated_seccomp_profile() -> Path:
+    """Return the pinned Moby allowlist after checking its packaged bytes."""
+
+    profile = _SECCOMP_PROFILE.resolve(strict=True)
+    if hash_bytes(profile.read_bytes()) != _SECCOMP_PROFILE_SHA256:
+        raise ValueError("the packaged HWE-Bench seccomp profile changed")
+    return profile
+
+
 class DockerHweVerifier:
     """Execute a candidate without exposing Docker or hidden scripts to the agent runtime."""
 
@@ -211,6 +222,17 @@ class DockerHweVerifier:
         artifact_dir = artifact_root / node.id
         artifact_dir.mkdir(parents=True, exist_ok=False)
         dependencies = entry.verifier_dependencies if isinstance(entry, ImageLockEntryV2) else []
+        try:
+            seccomp_profile = _validated_seccomp_profile()
+        except (OSError, ValueError):
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.UNSUPPORTED_VERSION,
+                message="The pinned HWE-Bench seccomp profile is unavailable or changed",
+            )
         try:
             dependency_root = _validate_dependency_root(verifier_dependency_root, dependencies)
         except (OSError, ValueError):
@@ -375,6 +397,8 @@ class DockerHweVerifier:
                 "ALL",
                 "--security-opt",
                 "no-new-privileges",
+                "--security-opt",
+                f"seccomp={seccomp_profile}",
                 "--pids-limit",
                 str(profile.verifier_limits.pids_limit),
                 "--memory",
@@ -494,6 +518,8 @@ class DockerHweVerifier:
                     "network_mode": "none",
                     "capabilities_dropped": "all",
                     "no_new_privileges": True,
+                    "seccomp_profile_sha256": _SECCOMP_PROFILE_SHA256,
+                    "seccomp_unconfined": False,
                     "container_user": "root",
                     "dependency_count": len(dependencies),
                     "dependency_inventory_hash": content_hash(dependencies),
@@ -533,6 +559,8 @@ class DockerHweVerifier:
                 "network_mode": "none",
                 "capabilities_dropped": "all",
                 "no_new_privileges": True,
+                "seccomp_profile_sha256": _SECCOMP_PROFILE_SHA256,
+                "seccomp_unconfined": False,
                 "container_user": "root",
                 "dependency_count": len(dependencies),
                 "dependency_inventory_hash": content_hash(dependencies),
