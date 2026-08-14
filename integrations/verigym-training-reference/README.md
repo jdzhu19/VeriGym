@@ -181,11 +181,15 @@ The supporting real-run sequence is:
 5. `scripts/smoke_qwen35_rllm_multiturn.py` exercises the native future-rollout interface with
    zero optimizer/GRPO updates.
 
-The collection command freezes its episode resource envelope into `collection-progress.json`:
-600 seconds, 32 broker tool calls, eight executed patch attempts, and three consecutive rejected
-calls. A resumed output directory must match all four values. Broker-limit exhaustion remains an
-infrastructure-valid agent failure and advances the bounded schedule; missing provider usage or
-another infrastructure-invalid result stops the complete batch while preserving progress.
+The collection command freezes its resource envelope into `collection-progress.json`: 600 seconds,
+32 broker tool calls, eight executed patch attempts, three consecutive rejected calls, a
+2,000,000-token cache-inclusive Claude threshold, and a native USD 2 Claude budget. It also stops
+the complete collection at 32,000,000 observed provider tokens or USD 40 of known cost. A resumed
+output directory must match every value. Broker/provider-limit exhaustion remains an
+infrastructure-valid agent failure and advances the bounded schedule; campaign-limit exhaustion
+produces an incomplete report, while missing provider usage or another infrastructure-invalid
+result stops the batch immediately. Provider token and dollar thresholds are response-granular,
+so one in-flight response can cross a threshold before it becomes observable.
 
 The native smoke client fixes BLAS, OpenMP, MKL, and NumExpr to one thread. It performs tokenizer
 and HTTP orchestration rather than CPU training; bounding these libraries avoids importing NumPy

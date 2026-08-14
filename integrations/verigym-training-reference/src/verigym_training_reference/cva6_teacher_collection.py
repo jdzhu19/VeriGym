@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from verigym.schemas.suite import SuiteSourceConfig
 from .multiturn_sft_exporter import ChatTemplateTokenizer, rllm_hf_template_token_count
 
 _CLAUDE_MODEL = "deepseek-v4-flash[1m]"
+_CLAUDE_CONTEXT_WINDOW = 1_000_000
 _CODEX_MODEL = "gpt-5.4"
 _BASE_SEED = 484
 _TARGET_SUCCESSES = 8
@@ -31,6 +33,10 @@ _MAX_PROCESS_TIME_S = 600
 _MAX_TOOL_CALLS = 32
 _MAX_PATCH_CALLS = 8
 _MAX_CONSECUTIVE_REJECTED_CALLS = 3
+_MAX_PROVIDER_TOKENS = 2_000_000
+_MAX_BUDGET_USD = 2.0
+_MAX_CAMPAIGN_PROVIDER_TOKENS = 32_000_000
+_MAX_CAMPAIGN_COST_USD = 40.0
 _OPT_IN_ENV = "VERIGYM_RUN_CVA6_TEACHER_COLLECTION"
 _DEFAULT_CAMPAIGN_ID = "cva6-verified-multiturn-teachers-v1"
 _CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
@@ -209,11 +215,33 @@ def collect_cva6_teacher_trajectories(
                 raise ConfigurationError(
                     f"teacher collection stopped on infrastructure-invalid {attempt_id}"
                 )
+            try:
+                attempt["provider_usage"] = _provider_usage(
+                    resolved_run,
+                    require_observed=provider == "claude",
+                )
+            except Exception as exc:
+                attempt.update(
+                    {
+                        "status": "infrastructure_invalid",
+                        "infrastructure_valid": False,
+                        "error_type": type(exc).__name__,
+                    }
+                )
+                attempts.append(attempt)
+                progress["status"] = "stopped_infrastructure_invalid"
+                progress["stop_reason"] = "provider_usage_artifact_invalid"
+                _save_progress(root, progress)
+                raise ConfigurationError(
+                    f"teacher collection stopped on infrastructure-invalid {attempt_id}"
+                ) from exc
             if not result.scorecard.resolved:
                 attempt["status"] = "verifier_rejected_or_agent_failed"
                 attempts.append(attempt)
                 attempted_ids.add(attempt_id)
                 _save_progress(root, progress)
+                if _stop_for_campaign_limit(root, progress):
+                    return progress
                 continue
             try:
                 transcript_path = _training_transcript(resolved_run)
@@ -245,6 +273,8 @@ def collect_cva6_teacher_trajectories(
                 attempts.append(attempt)
                 attempted_ids.add(attempt_id)
                 _save_progress(root, progress)
+                if _stop_for_campaign_limit(root, progress):
+                    return progress
                 continue
             attempt["status"] = "sft_eligible_success"
             attempts.append(attempt)
@@ -261,6 +291,8 @@ def collect_cva6_teacher_trajectories(
             successful_tasks.add(task_id)
             attempted_ids.add(attempt_id)
             _save_progress(root, progress)
+            if _stop_for_campaign_limit(root, progress):
+                return progress
 
     progress["status"] = (
         "completed" if len(successes) == _TARGET_SUCCESSES else "incomplete_training_pool_exhausted"
@@ -327,6 +359,7 @@ def _run_config(
             agent_options={
                 "model_id": _CLAUDE_MODEL,
                 "reasoning_effort": "max",
+                "expected_context_window": _CLAUDE_CONTEXT_WINDOW,
                 "max_process_time_s": max_process_time_s,
                 "max_output_bytes": _MAX_EVIDENCE_BYTES,
                 "allow_proxy_environment": True,
@@ -335,6 +368,8 @@ def _run_config(
                 "max_tool_calls": _MAX_TOOL_CALLS,
                 "max_patch_calls": _MAX_PATCH_CALLS,
                 "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
+                "max_provider_tokens": _MAX_PROVIDER_TOKENS,
+                "max_budget_usd": _MAX_BUDGET_USD,
             },
         )
     return RunConfig(
@@ -395,6 +430,8 @@ def _campaign_output(
             raise ConfigurationError("collection resume identity changed")
         if progress.get("status") == "stopped_infrastructure_invalid":
             raise ConfigurationError("infrastructure-invalid collection cannot auto-resume")
+        if progress.get("status") == "incomplete_campaign_resource_limit":
+            raise ConfigurationError("resource-exhausted collection cannot auto-resume")
         return root, progress
     expanded.mkdir(parents=True)
     root = expanded.resolve(strict=True)
@@ -424,18 +461,71 @@ def _campaign_output(
     return root, progress
 
 
-def _episode_limits(max_process_time_s: int) -> dict[str, int]:
+def _episode_limits(max_process_time_s: int) -> dict[str, int | float]:
     return {
         "max_process_time_s": max_process_time_s,
         "max_tool_calls": _MAX_TOOL_CALLS,
         "max_patch_calls": _MAX_PATCH_CALLS,
         "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
+        "claude_max_provider_tokens": _MAX_PROVIDER_TOKENS,
+        "claude_expected_context_window": _CLAUDE_CONTEXT_WINDOW,
+        "claude_max_budget_usd": _MAX_BUDGET_USD,
+        "max_campaign_provider_tokens": _MAX_CAMPAIGN_PROVIDER_TOKENS,
+        "max_campaign_cost_usd": _MAX_CAMPAIGN_COST_USD,
     }
 
 
 def _save_progress(root: Path, progress: dict[str, Any]) -> None:
     progress["eligible_success_count"] = len(progress["successes"])
+    progress["provider_usage_totals"] = _provider_usage_totals(progress["attempts"])
     atomic_dump_json(root / "collection-progress.json", progress)
+
+
+def _provider_usage_totals(attempts: Any) -> dict[str, int | float]:
+    billed_tokens = 0
+    known_cost_usd = 0.0
+    usage_records = 0
+    complete_records = 0
+    if isinstance(attempts, list):
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            usage = attempt.get("provider_usage")
+            if not isinstance(usage, dict):
+                continue
+            billed = usage.get("billed_tokens_observed")
+            cost = usage.get("cost_usd")
+            if isinstance(billed, int) and not isinstance(billed, bool) and billed >= 0:
+                billed_tokens += billed
+            if isinstance(cost, int | float) and not isinstance(cost, bool):
+                parsed_cost = float(cost)
+                if math.isfinite(parsed_cost) and parsed_cost >= 0:
+                    known_cost_usd += parsed_cost
+            usage_records += 1
+            complete_records += int(usage.get("usage_complete") is True)
+    return {
+        "usage_records": usage_records,
+        "complete_records": complete_records,
+        "billed_tokens_observed": billed_tokens,
+        "known_cost_usd": known_cost_usd,
+    }
+
+
+def _stop_for_campaign_limit(root: Path, progress: dict[str, Any]) -> bool:
+    if len(progress["successes"]) >= _TARGET_SUCCESSES:
+        return False
+    totals = _provider_usage_totals(progress["attempts"])
+    reason: str | None = None
+    if totals["billed_tokens_observed"] >= _MAX_CAMPAIGN_PROVIDER_TOKENS:
+        reason = "campaign_provider_token_limit"
+    elif totals["known_cost_usd"] >= _MAX_CAMPAIGN_COST_USD:
+        reason = "campaign_provider_budget_limit"
+    if reason is None:
+        return False
+    progress["status"] = "incomplete_campaign_resource_limit"
+    progress["stop_reason"] = reason
+    _save_progress(root, progress)
+    return True
 
 
 def _attempt_id(campaign_id: str, pool_index: int, provider: str, sample_index: int) -> str:
@@ -456,6 +546,60 @@ def _training_transcript(run: Path) -> Path:
     if len(matches) != 1 or matches[0].is_symlink():
         raise ConfigurationError("resolved teacher run has no unique training transcript")
     return matches[0]
+
+
+def _provider_usage(run: Path, *, require_observed: bool = True) -> dict[str, Any]:
+    matches = sorted(run.glob("artifacts/*/provider-usage.json"))
+    if len(matches) != 1 or matches[0].is_symlink():
+        raise ConfigurationError("teacher run has no unique provider usage artifact")
+    payload = json.loads(_regular_file(matches[0], 1024 * 1024))
+    if not isinstance(payload, dict):
+        raise ConfigurationError("provider usage artifact is malformed")
+
+    def token(name: str) -> int | None:
+        value = payload.get(name)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigurationError("provider usage token count is malformed")
+        return value
+
+    input_tokens = token("input_tokens")
+    output_tokens = token("output_tokens")
+    cache_creation = token("cache_creation_input_tokens")
+    cache_read = token("cache_read_input_tokens")
+    cached_input = token("cached_input_tokens")
+    billed = token("billed_tokens_observed")
+    components = (input_tokens, output_tokens, cache_creation, cache_read)
+    if billed is None and any(value is not None for value in components):
+        billed = sum(value or 0 for value in components)
+    if billed is None and require_observed:
+        raise ConfigurationError("provider usage artifact has no observed token count")
+    raw_cost = payload.get("cost_usd")
+    cost_usd: float | None = None
+    if raw_cost is not None:
+        if isinstance(raw_cost, bool) or not isinstance(raw_cost, int | float):
+            raise ConfigurationError("provider usage cost is malformed")
+        cost_usd = float(raw_cost)
+        if not math.isfinite(cost_usd) or cost_usd < 0:
+            raise ConfigurationError("provider usage cost is malformed")
+    limit_failure = payload.get("provider_limit_failure")
+    if limit_failure is not None and (
+        not isinstance(limit_failure, str)
+        or re.fullmatch(r"[a-z][a-z0-9_]{0,127}", limit_failure) is None
+    ):
+        raise ConfigurationError("provider usage limit failure is malformed")
+    return {
+        "usage_complete": payload.get("usage_complete") is True,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_creation_input_tokens": cache_creation,
+        "cache_read_input_tokens": cache_read,
+        "cached_input_tokens": cached_input,
+        "billed_tokens_observed": billed,
+        "cost_usd": cost_usd,
+        "provider_limit_failure": limit_failure,
+    }
 
 
 def _qualified_source(root: Path, relative: str) -> Path:

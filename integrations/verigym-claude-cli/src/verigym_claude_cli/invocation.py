@@ -80,6 +80,8 @@ def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str)
         settings.model_id,
         "--effort",
         settings.effective_reasoning_effort,
+        "--max-budget-usd",
+        format(settings.max_budget_usd, ".12g"),
         "--disable-slash-commands",
         "--no-chrome",
         "--prompt-suggestions",
@@ -125,8 +127,10 @@ def sanitized_invocation(arguments: list[str], settings: ClaudeSettings) -> dict
         "process_evidence_byte_bound": settings.max_output_bytes,
         "internal_turn_limit": None,
         "model_call_limit": None,
-        "model_token_limit": None,
-        "budget_limit": None,
+        "model_token_limit": settings.max_provider_tokens,
+        "model_token_limit_scope": "cache_inclusive_stream_observed",
+        "budget_limit": settings.max_budget_usd,
+        "budget_limit_currency": "USD",
         "broker_max_tool_calls": settings.max_tool_calls,
         "broker_max_patch_calls": settings.max_patch_calls,
         "broker_max_consecutive_rejected_calls": (settings.max_consecutive_rejected_calls),
@@ -143,7 +147,6 @@ def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None
         "--dangerously-skip-permissions",
         "--fallback-model",
         "--file",
-        "--max-budget-usd",
         "--plugin-dir",
         "--plugin-url",
         "--resume",
@@ -193,11 +196,18 @@ def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None
         raise ValueError("Claude model override is not exact")
     if arguments.count("--effort") != 1 or arguments[arguments.index("--effort") + 1] != "max":
         raise ValueError("Claude effort override is not exact")
+    if arguments.count("--max-budget-usd") != 1:
+        raise ValueError("Claude invocation omits its provider budget")
+    try:
+        observed_budget = float(arguments[arguments.index("--max-budget-usd") + 1])
+    except (IndexError, ValueError) as exc:
+        raise ValueError("Claude provider budget argument is malformed") from exc
+    if observed_budget != settings.max_budget_usd:
+        raise ValueError("Claude provider budget override is not exact")
     if any(
-        re.search(r"(?:max.turn|max.output.token|max.token|budget)", value, re.I)
-        for value in arguments
+        re.search(r"(?:max.turn|max.output.token|max.token)", value, re.I) for value in arguments
     ):
-        raise ValueError("Claude invocation unexpectedly contains an agent or token budget")
+        raise ValueError("Claude invocation unexpectedly contains an unsupported agent limit")
 
 
 __all__ = ["CLAUDE_BUILTIN_TOOL_NAMES", "build_arguments", "sanitized_invocation"]

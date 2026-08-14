@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,93 @@ class EventParseError(RuntimeError):
 
 class TranscriptNormalizationInfrastructureError(EventParseError):
     """Provider events disagreed with the broker-owned canonical transcript."""
+
+
+@dataclass(frozen=True)
+class ProviderTokenSnapshot:
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+
+    @property
+    def billed_tokens(self) -> int:
+        return (
+            self.input_tokens
+            + self.output_tokens
+            + self.cache_creation_input_tokens
+            + self.cache_read_input_tokens
+        )
+
+
+class ProviderTokenMonitor:
+    """Track cache-inclusive Claude usage from the live stream without retaining content."""
+
+    def __init__(self, maximum: int) -> None:
+        if maximum < 1:
+            raise ValueError("provider token limit must be positive")
+        self.maximum = maximum
+        self._messages: dict[str, ProviderTokenSnapshot] = {}
+        self._terminal: ProviderTokenSnapshot | None = None
+        self._lock = threading.Lock()
+
+    def observe(self, line: bytes) -> None:
+        if not line.strip() or len(line) > _MAX_LINE_BYTES:
+            return
+        try:
+            payload = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        event_type = payload.get("type")
+        if event_type == "assistant":
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                return
+            message_id = message.get("id")
+            usage = message.get("usage")
+            if (
+                not isinstance(message_id, str)
+                or not message_id
+                or len(message_id) > 512
+                or not isinstance(usage, dict)
+            ):
+                return
+            snapshot = _provider_token_snapshot(usage)
+            if snapshot is None:
+                return
+            with self._lock:
+                previous = self._messages.get(message_id)
+                self._messages[message_id] = _maximum_snapshot(previous, snapshot)
+        elif event_type == "result":
+            usage = payload.get("usage")
+            if not isinstance(usage, dict):
+                return
+            snapshot = _provider_token_snapshot(usage)
+            if snapshot is None:
+                return
+            with self._lock:
+                self._terminal = _maximum_snapshot(self._terminal, snapshot)
+
+    def snapshot(self) -> ProviderTokenSnapshot:
+        with self._lock:
+            messages = ProviderTokenSnapshot(0, 0, 0, 0)
+            for snapshot in self._messages.values():
+                messages = ProviderTokenSnapshot(
+                    input_tokens=messages.input_tokens + snapshot.input_tokens,
+                    output_tokens=messages.output_tokens + snapshot.output_tokens,
+                    cache_creation_input_tokens=(
+                        messages.cache_creation_input_tokens + snapshot.cache_creation_input_tokens
+                    ),
+                    cache_read_input_tokens=(
+                        messages.cache_read_input_tokens + snapshot.cache_read_input_tokens
+                    ),
+                )
+            return _maximum_snapshot(messages, self._terminal)
+
+    def exhausted(self) -> bool:
+        return self.snapshot().billed_tokens >= self.maximum
 
 
 @dataclass(frozen=True)
@@ -440,6 +528,35 @@ def _usage_float(payload: dict[str, Any], key: str) -> float | None:
     return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
+def _provider_token_snapshot(payload: dict[str, Any]) -> ProviderTokenSnapshot | None:
+    values = (
+        _usage_int(payload, "input_tokens"),
+        _usage_int(payload, "output_tokens"),
+        _usage_int(payload, "cache_creation_input_tokens"),
+        _usage_int(payload, "cache_read_input_tokens"),
+    )
+    if all(value is None for value in values):
+        return None
+    return ProviderTokenSnapshot(*(value or 0 for value in values))
+
+
+def _maximum_snapshot(
+    left: ProviderTokenSnapshot | None,
+    right: ProviderTokenSnapshot | None,
+) -> ProviderTokenSnapshot:
+    left = left or ProviderTokenSnapshot(0, 0, 0, 0)
+    right = right or ProviderTokenSnapshot(0, 0, 0, 0)
+    return ProviderTokenSnapshot(
+        input_tokens=max(left.input_tokens, right.input_tokens),
+        output_tokens=max(left.output_tokens, right.output_tokens),
+        cache_creation_input_tokens=max(
+            left.cache_creation_input_tokens,
+            right.cache_creation_input_tokens,
+        ),
+        cache_read_input_tokens=max(left.cache_read_input_tokens, right.cache_read_input_tokens),
+    )
+
+
 def _tool_result_text(value: Any) -> str:
     if isinstance(value, str) and value:
         return value
@@ -481,6 +598,8 @@ __all__ = [
     "EventParseError",
     "EventSummary",
     "ParsedEventStream",
+    "ProviderTokenMonitor",
+    "ProviderTokenSnapshot",
     "TranscriptNormalizationInfrastructureError",
     "normalize_training_messages",
     "parse_event_stream",

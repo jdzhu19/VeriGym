@@ -437,6 +437,63 @@ def test_successful_terminal_without_provider_usage_is_infrastructure_invalid() 
     assert failure.failure.infrastructure is True
 
 
+def test_native_provider_budget_exhaustion_is_an_infrastructure_valid_agent_failure() -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            (
+                json.dumps(
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "model": "deepseek-v4-flash[1m]",
+                        "tools": [
+                            "mcp__verigym__list_files",
+                            "mcp__verigym__read_file",
+                            "mcp__verigym__apply_patch",
+                            "mcp__verigym__run_public_test",
+                            "mcp__verigym__inspect_diff",
+                            "mcp__verigym__finish",
+                        ],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "result",
+                        "subtype": "success",
+                        "is_error": False,
+                        "usage": {"input_tokens": 10, "output_tokens": 10},
+                        "total_cost_usd": 2.0,
+                    }
+                ),
+            )
+        ),
+        requested_model_id="deepseek-v4-flash[1m]",
+        expected_context_window_tokens=None,
+    )
+    process = ClaudeProcessResult(
+        arguments=("claude",),
+        exit_code=0,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    failure = _process_failure(
+        process,
+        parsed,
+        None,
+        _broker_stats(tool_calls=1),
+        max_budget_usd=2.0,
+    )
+
+    assert failure is not None
+    assert failure.failure.category == "provider_resource_limit"
+    assert failure.failure.infrastructure is False
+
+
 def test_fake_process_receives_explicit_max_effort_without_output_token_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -494,6 +551,7 @@ def test_fake_process_receives_explicit_max_effort_without_output_token_override
     assert record["nonessential_traffic_disabled"] == "1"
     assert record["max_mcp_output_tokens"] == str(512 * 1024)
     assert record["max_output_environment_present"] is False
+    assert record["max_budget_usd"] == "2"
 
 
 def test_process_redacts_gateway_token_from_both_output_streams(
@@ -567,6 +625,46 @@ def test_process_runner_kills_the_process_group_when_the_broker_cancels(
     assert result.process_group_cleaned is True
 
 
+def test_process_runner_enforces_live_cache_inclusive_provider_tokens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable_path = Path(__file__).with_name("fake_claude.py")
+    monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
+    monkeypatch.setenv("VERIGYM_CLAUDE_TEST_MODE", "1")
+    monkeypatch.setenv("VERIGYM_FAKE_CLAUDE_SCENARIO", "provider-token-runaway")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-only-not-a-real-token")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://provider.invalid/api")
+    control = tmp_path / "control-provider-limit"
+    control.mkdir()
+    started = time.monotonic()
+    result = ClaudeCliProcessRunner(resolve_executable()).run(
+        ["--allowedTools", "unused", "--model", "unused"],
+        cwd=control,
+        timeout_s=10,
+        stdin_bytes=b"test",
+        environment=provider_environment(
+            control,
+            allow_proxy_environment=False,
+            include_auth=True,
+        ),
+        max_provider_tokens=250,
+    )
+
+    assert time.monotonic() - started < 3
+    assert result.provider_cancelled is True
+    assert result.provider_limit_failure == "claude_provider_token_limit"
+    assert result.observed_provider_billed_tokens is not None
+    assert result.observed_provider_billed_tokens >= 250
+    assert result.stream_monitor_failed is False
+    assert result.process_group_cleaned is True
+    failure = _process_failure(result, None, "missing terminal", _broker_stats(tool_calls=0))
+    assert failure is not None
+    assert failure.failure.category == "provider_resource_limit"
+    assert failure.failure.infrastructure is False
+
+
 def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -634,6 +732,7 @@ def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
     assert process_evidence["broker_cancelled"] is False
     usage = json.loads((bridge.artifact_root / "provider-usage.json").read_text(encoding="utf-8"))
     assert usage == {
+        "billed_tokens_observed": 26,
         "cache_creation_input_tokens": 5,
         "cache_read_input_tokens": 7,
         "cache_usage_reported": True,
@@ -642,6 +741,7 @@ def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
         "input_tokens": 11,
         "output_tokens": 3,
         "provider_report_scope": "claude_cli_terminal_result",
+        "provider_limit_failure": None,
         "schema_version": "1.0",
         "total_tokens": 14,
         "usage_complete": True,

@@ -1,4 +1,4 @@
-"""Strict, token-cap-free Claude CLI execution settings."""
+"""Strict Claude CLI execution settings with provider and broker resource caps."""
 
 from __future__ import annotations
 
@@ -40,6 +40,8 @@ _OPTIONS = {
     "max_tool_calls",
     "max_patch_calls",
     "max_consecutive_rejected_calls",
+    "max_provider_tokens",
+    "max_budget_usd",
 }
 _PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v1"
 _AUTH_IDENTITIES = {
@@ -84,6 +86,8 @@ class ClaudeSettings:
     max_tool_calls: int | None
     max_patch_calls: int | None
     max_consecutive_rejected_calls: int | None
+    max_provider_tokens: int
+    max_budget_usd: float
     configuration_fingerprint: str
 
     def safe_configuration(self, capabilities: CapabilityReport) -> dict[str, JsonValue]:
@@ -124,8 +128,11 @@ class ClaudeSettings:
             "process_evidence_byte_bound_configured": True,
             "internal_turn_limit_configured": False,
             "model_call_limit_configured": False,
-            "model_token_limit_configured": False,
-            "budget_limit_configured": False,
+            "model_token_limit_configured": True,
+            "model_token_limit": self.max_provider_tokens,
+            "model_token_limit_scope": "cache_inclusive_stream_observed",
+            "budget_limit_configured": True,
+            "budget_limit_usd": self.max_budget_usd,
             "broker_resource_limits_configured": self.max_tool_calls is not None,
             "max_tool_calls": self.max_tool_calls,
             "max_patch_calls": self.max_patch_calls,
@@ -192,6 +199,14 @@ def agent_settings(
         )
         if max_patch_calls > max_tool_calls:
             raise ValueError("Claude patch limit cannot exceed its tool-call limit")
+    max_provider_tokens = _integer(
+        options.get("max_provider_tokens", 2_000_000), "max_provider_tokens"
+    )
+    if not 1 <= max_provider_tokens <= 100_000_000:
+        raise ValueError("Claude provider token limit must be in [1, 100000000]")
+    max_budget_usd = _number(options.get("max_budget_usd", 2.0), "max_budget_usd")
+    if not 0.01 <= max_budget_usd <= 100.0:
+        raise ValueError("Claude provider budget must be in [0.01, 100] USD")
     expected_context = options.get("expected_context_window")
     if expected_context is not None:
         expected_context = _integer(expected_context, "expected_context_window")
@@ -255,11 +270,14 @@ def agent_settings(
         "max_tool_calls": max_tool_calls,
         "max_patch_calls": max_patch_calls,
         "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
+        "max_provider_tokens": max_provider_tokens,
+        "max_budget_usd": max_budget_usd,
         "capability_fingerprint": capabilities.capability_fingerprint,
         "internal_turn_limit": None,
         "model_call_limit": None,
-        "model_token_limit": None,
-        "budget_limit": None,
+        "model_token_limit": max_provider_tokens,
+        "model_token_limit_scope": "cache_inclusive_stream_observed",
+        "budget_limit": max_budget_usd,
     }
     return ClaudeSettings(
         integration_track="claude_cli_external_agent",
@@ -290,6 +308,8 @@ def agent_settings(
         max_tool_calls=max_tool_calls,
         max_patch_calls=max_patch_calls,
         max_consecutive_rejected_calls=max_consecutive_rejected_calls,
+        max_provider_tokens=max_provider_tokens,
+        max_budget_usd=max_budget_usd,
         configuration_fingerprint=content_hash(safe),
     )
 

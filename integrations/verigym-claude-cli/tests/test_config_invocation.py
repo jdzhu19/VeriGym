@@ -13,7 +13,7 @@ from verigym_claude_cli.agent import _identity
 from verigym_claude_cli.broker import BrokerStats
 from verigym_claude_cli.capabilities import discover_capabilities
 from verigym_claude_cli.config import agent_settings
-from verigym_claude_cli.events import EventParseError, parse_event_stream
+from verigym_claude_cli.events import EventParseError, ProviderTokenMonitor, parse_event_stream
 from verigym_claude_cli.invocation import (
     CLAUDE_BUILTIN_TOOL_NAMES,
     build_arguments,
@@ -37,7 +37,7 @@ def configured_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return broker_root
 
 
-def test_capabilities_and_invocation_apply_broker_limits_but_no_provider_token_caps(
+def test_capabilities_and_invocation_apply_broker_and_provider_limits(
     configured_fake: Path,
 ) -> None:
     executable, capabilities = discover_capabilities(resolve_executable(), force=True)
@@ -51,6 +51,8 @@ def test_capabilities_and_invocation_apply_broker_limits_but_no_provider_token_c
             "max_tool_calls": 32,
             "max_patch_calls": 8,
             "max_consecutive_rejected_calls": 3,
+            "max_provider_tokens": 2_000_000,
+            "max_budget_usd": 2.0,
         },
         capabilities,
         task_wall_time_s=1800,
@@ -77,15 +79,18 @@ def test_capabilities_and_invocation_apply_broker_limits_but_no_provider_token_c
         settings.provider_endpoint_sha256
         == hashlib.sha256(b"https://provider.invalid/api").hexdigest()
     )
-    assert "--max-budget-usd" not in arguments
+    assert arguments[arguments.index("--max-budget-usd") + 1] == "2"
     assert invocation["internal_turn_limit"] is None
     assert invocation["model_call_limit"] is None
-    assert invocation["model_token_limit"] is None
-    assert invocation["budget_limit"] is None
+    assert invocation["model_token_limit"] == 2_000_000
+    assert invocation["model_token_limit_scope"] == "cache_inclusive_stream_observed"
+    assert invocation["budget_limit"] == 2.0
     assert invocation["broker_max_tool_calls"] == 32
     assert invocation["broker_max_patch_calls"] == 8
     assert invocation["broker_max_consecutive_rejected_calls"] == 3
     assert settings.safe_configuration(capabilities)["broker_resource_limits_configured"] is True
+    assert settings.safe_configuration(capabilities)["model_token_limit_configured"] is True
+    assert settings.safe_configuration(capabilities)["budget_limit_configured"] is True
 
 
 @pytest.mark.parametrize(
@@ -216,7 +221,7 @@ def test_frozen_agent_version_binds_claude_model_effort_and_auth_semantic(
 
 @pytest.mark.parametrize(
     "option",
-    ["max_turns", "max_model_calls", "max_output_tokens", "max_total_tokens", "max_budget_usd"],
+    ["max_turns", "max_model_calls", "max_output_tokens", "max_total_tokens"],
 )
 def test_artificial_limit_options_are_rejected(
     configured_fake: Path,
@@ -226,6 +231,29 @@ def test_artificial_limit_options_are_rejected(
     with pytest.raises(ValueError, match="unknown Claude CLI agent options"):
         agent_settings(
             {"model_id": "deepseek-v4-flash[1m]", option: 1},
+            capabilities,
+            task_wall_time_s=1800,
+        )
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("max_provider_tokens", 0),
+        ("max_provider_tokens", 100_000_001),
+        ("max_budget_usd", 0),
+        ("max_budget_usd", 101),
+    ],
+)
+def test_provider_limits_are_positive_and_bounded(
+    configured_fake: Path,
+    option: str,
+    value: int,
+) -> None:
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    with pytest.raises(ValueError, match="provider.*(?:limit|budget)|must be in"):
+        agent_settings(
+            {"model_id": "deepseek-v4-flash[1m]", option: value},
             capabilities,
             task_wall_time_s=1800,
         )
@@ -293,6 +321,38 @@ def test_stream_parser_records_context_without_message_or_thinking_content() -> 
     assert "must never be persisted" not in json.dumps(
         [event.safe_dict() for event in parsed.events]
     )
+
+
+def test_live_provider_monitor_deduplicates_partial_messages_and_includes_cache() -> None:
+    monitor = ProviderTokenMonitor(1_000)
+
+    def event(message_id: str, output_tokens: int) -> bytes:
+        return json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": message_id,
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": output_tokens,
+                        "cache_creation_input_tokens": 20,
+                        "cache_read_input_tokens": 100,
+                    },
+                },
+            }
+        ).encode()
+
+    monitor.observe(event("message-1", 1))
+    monitor.observe(event("message-1", 5))
+    monitor.observe(event("message-2", 7))
+
+    snapshot = monitor.snapshot()
+    assert snapshot.input_tokens == 20
+    assert snapshot.output_tokens == 12
+    assert snapshot.cache_creation_input_tokens == 40
+    assert snapshot.cache_read_input_tokens == 200
+    assert snapshot.billed_tokens == 272
+    assert monitor.exhausted() is False
 
 
 def test_stream_parser_rejects_builtin_tool() -> None:

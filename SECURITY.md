@@ -102,13 +102,16 @@ read-only public-test path. A policy violation or runtime control-plane failure 
 terminal, and the ordinary candidate freeze and separate hidden verifier still run only after a
 structurally successful agent episode.
 
-The plugin sets an explicit model and `max` effort but does not configure a Claude turn limit,
-model-call limit, token limit, dollar budget, fallback model, retry, or best-of-K. The ordinary
-process wall timeout and bounded stdout/stderr capture remain safety and audit limits. Claude's
-observed context window and per-response maximum output are provenance, not VeriGym stopping
-conditions. Raw prompts, stdout events, message text, tool payloads, and thinking blocks are not
-persisted; only content-free event summaries, usage, hashes, policy outcomes, and bounded failure
-diagnostics are retained.
+The plugin sets an explicit model and `max` effort. It configures Claude's native print-mode dollar
+budget and independently monitors cache-inclusive provider token usage in the live stream. Usage is
+deduplicated by provider message ID; crossing the threshold terminates the complete process group
+and remains an infrastructure-valid agent failure. Because usage becomes observable only after a
+provider response, one in-flight response can cross either threshold before cancellation. The
+process wall timeout, bounded stdout/stderr capture, broker call limits, and campaign-wide observed
+token/cost thresholds provide independent backstops. No retry, fallback model, best-of-K, or hidden
+turn/model-call override is enabled. Raw prompts, stdout events, message text, tool payloads, and
+thinking blocks are not persisted; only content-free event summaries, numeric usage, hashes,
+policy outcomes, and bounded failure diagnostics are retained.
 
 The residual trusted computing base adds the installed Claude CLI binary and the reviewed MCP
 adapter/broker. Provider behavior and the CLI's own upstream response ceiling remain external

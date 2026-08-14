@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import BinaryIO
 from urllib.parse import urlsplit
 
+from .events import ProviderTokenMonitor
 from .util import redact_text
 
 _SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"
@@ -54,6 +55,14 @@ class ClaudeProcessResult:
     stderr_truncated: bool
     process_group_cleaned: bool
     broker_cancelled: bool = False
+    provider_cancelled: bool = False
+    provider_limit_failure: str | None = None
+    observed_provider_input_tokens: int | None = None
+    observed_provider_output_tokens: int | None = None
+    observed_provider_cache_creation_input_tokens: int | None = None
+    observed_provider_cache_read_input_tokens: int | None = None
+    observed_provider_billed_tokens: int | None = None
+    stream_monitor_failed: bool = False
 
 
 def sha256_file(path: Path) -> str:
@@ -219,7 +228,10 @@ class ClaudeCliProcessRunner:
         stdin_bytes: bytes | None,
         environment: dict[str, str],
         cancellation_event: threading.Event | None = None,
+        max_provider_tokens: int | None = None,
     ) -> ClaudeProcessResult:
+        if max_provider_tokens is not None and not 1 <= max_provider_tokens <= 100_000_000:
+            raise ClaudeProcessError("Claude provider token limit is outside the safety bound")
         self._assert_identity()
         self._validate_arguments(arguments)
         working_directory = cwd.resolve(strict=True)
@@ -228,6 +240,10 @@ class ClaudeCliProcessRunner:
         started = time.monotonic()
         timed_out = False
         broker_cancelled = False
+        provider_cancelled = False
+        provider_limit_failure: str | None = None
+        monitor = ProviderTokenMonitor(max_provider_tokens) if max_provider_tokens else None
+        monitor_failures: list[str] = []
         with (
             tempfile.TemporaryFile(dir=working_directory) as stdout_file,
             tempfile.TemporaryFile(dir=working_directory) as stderr_file,
@@ -238,7 +254,7 @@ class ClaudeCliProcessRunner:
                     cwd=working_directory,
                     env=environment,
                     stdin=subprocess.PIPE if stdin_bytes is not None else subprocess.DEVNULL,
-                    stdout=stdout_file,
+                    stdout=subprocess.PIPE,
                     stderr=stderr_file,
                     shell=False,
                     text=False,
@@ -249,6 +265,26 @@ class ClaudeCliProcessRunner:
                 raise ClaudeProcessError(
                     f"Claude process launch failed: {type(exc).__name__}"
                 ) from exc
+            if process.stdout is None:
+                self._terminate_group(process)
+                raise ClaudeProcessError("Claude stdout pipe was not created")
+
+            def drain_stdout() -> None:
+                assert process.stdout is not None
+                try:
+                    for line in iter(process.stdout.readline, b""):
+                        stdout_file.write(line)
+                        if monitor is not None:
+                            monitor.observe(line)
+                except Exception as exc:  # pragma: no cover - defensive pipe failure
+                    monitor_failures.append(type(exc).__name__)
+
+            stdout_thread = threading.Thread(
+                target=drain_stdout,
+                name="verigym-claude-stdout",
+                daemon=True,
+            )
+            stdout_thread.start()
             if stdin_bytes is not None and process.stdin is not None:
                 try:
                     process.stdin.write(stdin_bytes)
@@ -257,6 +293,14 @@ class ClaudeCliProcessRunner:
                     pass
             deadline = started + timeout_s
             while process.poll() is None:
+                if monitor_failures:
+                    self._terminate_group(process)
+                    break
+                if monitor is not None and monitor.exhausted():
+                    provider_cancelled = True
+                    provider_limit_failure = "claude_provider_token_limit"
+                    self._terminate_group(process)
+                    break
                 if cancellation_event is not None and cancellation_event.is_set():
                     broker_cancelled = True
                     self._terminate_group(process)
@@ -276,7 +320,15 @@ class ClaudeCliProcessRunner:
                 except subprocess.TimeoutExpired:
                     self._kill_group(process)
                     process.wait()
+            stdout_thread.join(timeout=2.0)
+            if stdout_thread.is_alive():
+                process.stdout.close()
+                stdout_thread.join(timeout=1.0)
+                monitor_failures.append("stdout_reader_join_timeout")
             group_cleaned = self._cleanup_group(process.pid)
+            provider_usage = monitor.snapshot() if monitor is not None else None
+            if monitor is not None and monitor.exhausted():
+                provider_limit_failure = "claude_provider_token_limit"
             stdout, stdout_truncated = self._read_bounded(stdout_file)
             stderr, stderr_truncated = self._read_bounded(stderr_file)
         self._assert_identity()
@@ -296,6 +348,24 @@ class ClaudeCliProcessRunner:
             stderr_truncated=stderr_truncated,
             process_group_cleaned=group_cleaned,
             broker_cancelled=broker_cancelled,
+            provider_cancelled=provider_cancelled,
+            provider_limit_failure=provider_limit_failure,
+            observed_provider_input_tokens=(
+                provider_usage.input_tokens if provider_usage is not None else None
+            ),
+            observed_provider_output_tokens=(
+                provider_usage.output_tokens if provider_usage is not None else None
+            ),
+            observed_provider_cache_creation_input_tokens=(
+                provider_usage.cache_creation_input_tokens if provider_usage is not None else None
+            ),
+            observed_provider_cache_read_input_tokens=(
+                provider_usage.cache_read_input_tokens if provider_usage is not None else None
+            ),
+            observed_provider_billed_tokens=(
+                provider_usage.billed_tokens if provider_usage is not None else None
+            ),
+            stream_monitor_failed=bool(monitor_failures),
         )
 
     @staticmethod

@@ -33,6 +33,29 @@ def write_evidence(
     usage_complete = bool(
         parsed is not None and parsed.input_tokens is not None and parsed.output_tokens is not None
     )
+    input_tokens = parsed.input_tokens if parsed is not None else None
+    output_tokens = parsed.output_tokens if parsed is not None else None
+    cache_creation_input_tokens = parsed.cache_creation_input_tokens if parsed is not None else None
+    cache_read_input_tokens = parsed.cache_read_input_tokens if parsed is not None else None
+    if input_tokens is None:
+        input_tokens = process.observed_provider_input_tokens
+    if output_tokens is None:
+        output_tokens = process.observed_provider_output_tokens
+    if cache_creation_input_tokens is None:
+        cache_creation_input_tokens = process.observed_provider_cache_creation_input_tokens
+    if cache_read_input_tokens is None:
+        cache_read_input_tokens = process.observed_provider_cache_read_input_tokens
+    usage_values = (
+        input_tokens,
+        output_tokens,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
+    )
+    billed_tokens_observed = (
+        sum(value or 0 for value in usage_values)
+        if any(value is not None for value in usage_values)
+        else None
+    )
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", redact_value(invocation, roots=roots_to_redact))
     atomic_json(
@@ -45,6 +68,10 @@ def write_evidence(
             "stderr_truncated": process.stderr_truncated,
             "process_group_cleaned": process.process_group_cleaned,
             "broker_cancelled": process.broker_cancelled,
+            "provider_cancelled": process.provider_cancelled,
+            "provider_limit_failure": process.provider_limit_failure,
+            "observed_provider_billed_tokens": process.observed_provider_billed_tokens,
+            "stream_monitor_failed": process.stream_monitor_failed,
             "raw_stdout_persisted": False,
             "prompt_persisted": False,
             "message_content_persisted": False,
@@ -73,21 +100,27 @@ def write_evidence(
             "schema_version": "1.0",
             "usage_complete": usage_complete,
             "usage_missing": not usage_complete,
-            "input_tokens": parsed.input_tokens if parsed else None,
-            "output_tokens": parsed.output_tokens if parsed else None,
-            "total_tokens": parsed.total_tokens if parsed else None,
-            "cache_creation_input_tokens": (parsed.cache_creation_input_tokens if parsed else None),
-            "cache_read_input_tokens": parsed.cache_read_input_tokens if parsed else None,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": (
+                input_tokens + output_tokens
+                if input_tokens is not None and output_tokens is not None
+                else None
+            ),
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "billed_tokens_observed": billed_tokens_observed,
             "cache_usage_reported": bool(
-                parsed is not None
-                and (
-                    parsed.cache_creation_input_tokens is not None
-                    or parsed.cache_read_input_tokens is not None
-                )
+                cache_creation_input_tokens is not None or cache_read_input_tokens is not None
             ),
             "cost_usd": parsed.cost_usd if parsed else None,
             "currency": "USD" if parsed is not None and parsed.cost_usd is not None else None,
-            "provider_report_scope": "claude_cli_terminal_result",
+            "provider_report_scope": (
+                "claude_cli_terminal_result"
+                if usage_complete
+                else "claude_cli_stream_observed_lower_bound"
+            ),
+            "provider_limit_failure": process.provider_limit_failure,
         },
     )
     atomic_json(root / "summary.json", redact_value(summary, roots=roots_to_redact))

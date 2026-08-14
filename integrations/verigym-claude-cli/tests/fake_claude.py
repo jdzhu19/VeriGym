@@ -8,7 +8,7 @@ import time
 
 HELP = """
 --allowedTools --bare --disable-slash-commands --disallowedTools --effort
---mcp-config --model --name
+--mcp-config --max-budget-usd --model --name
 --no-session-persistence --output-format stream-json --permission-mode dontAsk --print
 --strict-mcp-config --tools --verbose --no-chrome --prompt-suggestions
 """
@@ -35,6 +35,9 @@ def main() -> None:
             ),
             "max_mcp_output_tokens": os.environ.get("MAX_MCP_OUTPUT_TOKENS"),
             "max_output_environment_present": "CLAUDE_CODE_MAX_OUTPUT_TOKENS" in os.environ,
+            "max_budget_usd": arguments[arguments.index("--max-budget-usd") + 1]
+            if "--max-budget-usd" in arguments
+            else None,
         }
         with open(log, "w", encoding="utf-8") as stream:
             json.dump(record, stream)
@@ -46,6 +49,30 @@ def main() -> None:
         print(credential, file=sys.stderr)
         return
     if os.environ.get("VERIGYM_FAKE_CLAUDE_SCENARIO") == "sleep":
+        time.sleep(30)
+        return
+    if os.environ.get("VERIGYM_FAKE_CLAUDE_SCENARIO") == "provider-token-runaway":
+        for index in range(10):
+            print(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "id": f"msg-{index}",
+                            "usage": {
+                                "input_tokens": 1,
+                                "output_tokens": 1,
+                                "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 100,
+                            },
+                            "content": [],
+                        },
+                    },
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+            time.sleep(0.02)
         time.sleep(30)
         return
     allowed = arguments[arguments.index("--allowedTools") + 1].split(",")

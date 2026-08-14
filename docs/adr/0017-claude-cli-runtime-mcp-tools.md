@@ -21,10 +21,12 @@ core-owned policy-checked file tools or argument-array commands in the selected 
 Docker session. Public tests remain separate declared calls. The hidden verifier is never mounted
 in the agent session and runs only after candidate freeze.
 
-Set the requested model and `max` effort explicitly. Do not configure internal turn, model-call,
-token, dollar, fallback, retry, or best-of-K limits. Retain the ordinary 1800-second maximum
-process wall boundary and bounded process-output evidence. Treat the CLI/provider-reported context
-window and per-response output maximum as observed provenance.
+Set the requested model and `max` effort explicitly. Configure Claude's native dollar budget and a
+separate cache-inclusive live-stream token threshold. Do not configure a hidden internal-turn or
+model-call override, fallback, retry, or best-of-K. Retain the ordinary process wall boundary,
+bounded process-output evidence, and broker limits. Treat the CLI/provider-reported context window
+and per-response output maximum as observed provenance; one in-flight response can cross a
+response-granular provider threshold before cancellation.
 
 Persist no raw prompt, stream event, assistant/tool content, or thinking content. Store only
 executable/configuration identity, content-free event summaries, usage, broker accounting, hashes,
@@ -37,12 +39,14 @@ child environment.
 
 Disable Claude's nonessential telemetry, error/bug reporting, and auto-update traffic. Raise the
 CLI's MCP-output allowance above the broker's fixed 512-KiB response bound so the CLI does not add
-a lower tool-output truncation threshold; this does not impose a model-token limit.
+a lower tool-output truncation threshold. Model usage is bounded separately by a native dollar
+budget and a cache-inclusive live-stream token monitor.
 
 ## Consequences
 
 This creates a distinct `claude_cli_external_agent` identity and `artifacts/claude_cli` namespace.
 It cannot be substituted into a frozen Codex or direct-API campaign. The trusted computing base
 includes Claude CLI and the MCP adapter/broker, while repository commands and verification retain
-the official Docker isolation. Provider or CLI service limits can still invalidate a sample and
-must be reported as infrastructure rather than verifier rejection.
+the official Docker isolation. A configured provider/broker resource threshold is an
+infrastructure-valid agent failure. Provider authentication, transport, service, or malformed
+usage failures remain infrastructure-invalid and must never be reported as verifier rejection.

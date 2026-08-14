@@ -15,7 +15,7 @@ export VERIGYM_CLAUDE_BROKER_ROOT=/data/jzhu484/Agent/.vgpt
 
 The adapter runs `--version` and `--help` before any model call, hashes the resolved executable,
 and rejects a CLI that lacks `--bare`, strict MCP, stream JSON, explicit model/effort, disabled
-session persistence, or exact tool controls. `VERIGYM_CLAUDE_BROKER_ROOT` must be a short,
+session persistence, `--max-budget-usd`, or exact tool controls. `VERIGYM_CLAUDE_BROKER_ROOT` must be a short,
 mode-0700 directory; no socket or large scratch artifact is placed in `/tmp` by the real path.
 
 Bare provider authentication requires a credential-free HTTPS `ANTHROPIC_BASE_URL` and exactly one
@@ -40,13 +40,21 @@ Every run requires an explicit model. The current frozen effort policy is `max`:
 --agent-option 'reasoning_effort="max"'
 --agent-option 'expected_context_window=1000000'
 --agent-option 'max_process_time_s=1800'
+--agent-option 'max_provider_tokens=2000000'
+--agent-option 'max_budget_usd=2.0'
 ```
 
-No agent-turn, model-call, model-token, dollar-budget, retry, fallback-model, or best-of-K setting
-is accepted. `max_process_time_s` is the outer process wall timeout. `max_output_bytes` (8 MiB by
-default) bounds captured process evidence, not model tokens. For the currently observed custom
-DeepSeek route, Claude reports a 1,000,000-token context window and a 32,000-token per-response
-maximum; both are recorded as upstream provenance and are not additional VeriGym limits.
+`max_process_time_s` is the outer process wall timeout. `max_output_bytes` (8 MiB by default)
+bounds captured process evidence, not model tokens. `max_provider_tokens` counts input, output,
+cache-creation, and cache-read tokens from live provider messages, deduplicated by message ID.
+`max_budget_usd` is also passed to Claude's native print-mode budget control. The defaults are
+2,000,000 cache-inclusive tokens and USD 2 per episode. No hidden turn/model-call override, retry,
+fallback model, or best-of-K setting is accepted.
+
+Both provider thresholds are checked after each response becomes observable, so one in-flight
+response can overshoot a threshold. For the current DeepSeek route, the campaign also freezes the
+observed 1,000,000-token context window; the 32,000-token per-response maximum remains recorded
+upstream provenance.
 
 Training campaigns can additionally configure all three broker limits together:
 
@@ -56,11 +64,12 @@ Training campaigns can additionally configure all three broker limits together:
 --agent-option 'max_consecutive_rejected_calls=3'
 ```
 
-The broker signals the process runner as soon as a limit becomes terminal; the runner terminates
-the complete Claude process group. A limit is an infrastructure-valid agent failure named
-`broker_resource_limit`, not a verifier or infrastructure failure. Successful training episodes
-must include provider-reported input and output token counts. Missing usage is fail-closed as
-`provider_usage_missing` so a paid campaign cannot silently accept an unaccounted trajectory.
+The broker and provider monitors signal the process runner as soon as a limit becomes terminal;
+the runner terminates the complete Claude process group. These are infrastructure-valid agent
+failures named `broker_resource_limit` or `provider_resource_limit`, not verifier or infrastructure
+failures. Successful training episodes must include provider-reported input and output token
+counts. Missing usage is fail-closed as `provider_usage_missing` so a paid campaign cannot silently
+accept an unaccounted trajectory.
 
 A formal campaign must freeze a distinct `AgentVersionManifest` with
 `base_agent_id=claude-cli-agent`, the exact model, `max` effort, and the effective auth semantic.
@@ -81,5 +90,6 @@ Artifacts live under `artifacts/claude_cli/`. They contain executable/configurat
 content-free event summaries, broker counts, observed context/output ceilings, failure
 classification, and final-verifier status. `provider-usage.json` records input, output, total,
 cache-creation, cache-read, and cost fields when the provider supplies them, plus explicit
-completeness flags. Prompts, raw stdout, messages, tool arguments/results, source contents, and
-thinking text are deliberately excluded.
+completeness flags, the cache-inclusive observed total, and any provider-limit termination.
+Prompts, raw stdout, messages, tool arguments/results, source contents, and thinking text are
+deliberately excluded.

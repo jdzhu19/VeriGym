@@ -58,7 +58,7 @@ _ACTIVE_TIMEOUT_MIN_TOOL_CALLS = 8
 
 
 class ClaudeCliAgentAdapter(AgentAdapter):
-    """Run one outer episode while Claude performs an uncapped internal agent loop."""
+    """Run one bounded outer episode while Claude performs its internal agent loop."""
 
     requires_model = False
     prompt_policy_spec = AgentPromptPolicySpec(
@@ -205,8 +205,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                         "effective_reasoning_effort": settings.effective_reasoning_effort,
                         "builtin_tools_available": False,
                         "internal_turn_limit": None,
-                        "model_token_limit": None,
-                        "budget_limit": None,
+                        "model_token_limit": settings.max_provider_tokens,
+                        "model_token_limit_scope": "cache_inclusive_stream_observed",
+                        "budget_limit": settings.max_budget_usd,
+                        "budget_limit_currency": "USD",
                         "broker_max_tool_calls": settings.max_tool_calls,
                         "broker_max_patch_calls": settings.max_patch_calls,
                         "broker_max_consecutive_rejected_calls": (
@@ -223,6 +225,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                         stdin_bytes=prompt.encode("utf-8"),
                         environment=environment,
                         cancellation_event=broker.cancellation_event,
+                        max_provider_tokens=settings.max_provider_tokens,
                     )
                 finally:
                     broker.stop()
@@ -248,7 +251,13 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 )
             except EventParseError as exc:
                 parse_failure = str(exc)
-        failure = _process_failure(process, parsed, parse_failure, broker_stats)
+        failure = _process_failure(
+            process,
+            parsed,
+            parse_failure,
+            broker_stats,
+            max_budget_usd=settings.max_budget_usd,
+        )
         if (
             failure is None
             and parsed is not None
@@ -325,6 +334,9 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 "timed_out": process.timed_out,
                 "event_count": len(parsed.events) if parsed is not None else 0,
                 "tool_call_count": broker_stats.tool_calls,
+                "provider_cancelled": process.provider_cancelled,
+                "provider_limit_failure": process.provider_limit_failure,
+                "observed_provider_billed_tokens": process.observed_provider_billed_tokens,
             },
         )
         bridge.emit_event("claude_cli_identity_observed", identity.model_dump(mode="json"))
@@ -354,8 +366,11 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 ),
                 "internal_turn_limit_configured": False,
                 "model_call_limit_configured": False,
-                "model_token_limit_configured": False,
-                "budget_limit_configured": False,
+                "model_token_limit_configured": True,
+                "model_token_limit": settings.max_provider_tokens,
+                "model_token_limit_scope": "cache_inclusive_stream_observed",
+                "budget_limit_configured": True,
+                "budget_limit_usd": settings.max_budget_usd,
                 "broker_resource_limits_configured": settings.max_tool_calls is not None,
                 "broker_max_tool_calls": settings.max_tool_calls,
                 "broker_max_patch_calls": settings.max_patch_calls,
@@ -504,6 +519,8 @@ def _process_failure(
     parsed: ParsedEventStream | None,
     parse_failure: str | None,
     broker: BrokerStats,
+    *,
+    max_budget_usd: float | None = None,
 ) -> AgentTerminationError | None:
     if broker.limit_failure is not None:
         return _termination(
@@ -511,6 +528,35 @@ def _process_failure(
             kind="agent",
             category="broker_resource_limit",
             message=broker.limit_failure,
+            infrastructure=False,
+        )
+    if process.provider_limit_failure is not None:
+        return _termination(
+            TerminationReason.MODEL_ERROR,
+            kind="agent",
+            category="provider_resource_limit",
+            message=process.provider_limit_failure,
+            infrastructure=False,
+        )
+    if process.stream_monitor_failed:
+        return _termination(
+            TerminationReason.RUNTIME_ERROR,
+            kind="runtime",
+            category="provider_usage_monitor",
+            message="Claude provider usage monitor failed",
+            infrastructure=True,
+        )
+    if (
+        max_budget_usd is not None
+        and parsed is not None
+        and parsed.cost_usd is not None
+        and parsed.cost_usd >= max_budget_usd
+    ):
+        return _termination(
+            TerminationReason.MODEL_ERROR,
+            kind="agent",
+            category="provider_resource_limit",
+            message="claude_provider_budget_limit",
             infrastructure=False,
         )
     if broker.policy_failure is not None:
@@ -569,6 +615,14 @@ def _process_failure(
             )
         return None
     text = (process.stderr + " " + (parsed.failure_message or "" if parsed else "")).lower()
+    if any(marker in text for marker in ("max budget", "budget exceeded", "budget limit")):
+        return _termination(
+            TerminationReason.MODEL_ERROR,
+            kind="agent",
+            category="provider_resource_limit",
+            message="claude_provider_budget_limit",
+            infrastructure=False,
+        )
     if any(marker in text for marker in ("unauthorized", "authentication", "api key", "401")):
         category = "authentication"
     elif any(marker in text for marker in ("rate limit", "too many requests", "429")):
@@ -653,6 +707,12 @@ def _accounting(
     parsed: ParsedEventStream | None,
     broker: BrokerStats,
 ) -> ExternalAgentAccounting:
+    input_tokens = parsed.input_tokens if parsed is not None else None
+    output_tokens = parsed.output_tokens if parsed is not None else None
+    if input_tokens is None:
+        input_tokens = process.observed_provider_input_tokens
+    if output_tokens is None:
+        output_tokens = process.observed_provider_output_tokens
     return ExternalAgentAccounting(
         process_wall_time_s=process.duration_s,
         cli_event_count=len(parsed.events) if parsed is not None else 0,
@@ -662,9 +722,13 @@ def _accounting(
         external_file_read_count=broker.file_reads,
         external_file_write_count=broker.file_writes,
         external_patch_count=broker.patches,
-        input_tokens=parsed.input_tokens if parsed is not None else None,
-        output_tokens=parsed.output_tokens if parsed is not None else None,
-        total_tokens=parsed.total_tokens if parsed is not None else None,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=(
+            input_tokens + output_tokens
+            if input_tokens is not None and output_tokens is not None
+            else None
+        ),
         cost=parsed.cost_usd if parsed is not None else None,
         currency=("USD" if parsed is not None and parsed.cost_usd is not None else None),
     )
