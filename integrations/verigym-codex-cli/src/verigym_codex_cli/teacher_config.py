@@ -25,6 +25,9 @@ _TEACHER_OPTIONS = {
     "expected_auth_semantic_id",
     "capture_training_transcript",
     "campaign_role",
+    "max_tool_calls",
+    "max_patch_calls",
+    "max_consecutive_rejected_calls",
 }
 
 
@@ -33,6 +36,9 @@ class CodexTeacherSettings:
     execution: CodexSettings
     campaign_role: str
     capture_training_transcript: bool
+    max_tool_calls: int | None
+    max_patch_calls: int | None
+    max_consecutive_rejected_calls: int | None
 
 
 def teacher_settings(
@@ -48,10 +54,35 @@ def teacher_settings(
     capture = options.get("capture_training_transcript")
     if role != "training" or capture is not True:
         raise ValueError("Codex MCP teacher is available only for captured training campaigns")
+    raw_limits = (
+        options.get("max_tool_calls"),
+        options.get("max_patch_calls"),
+        options.get("max_consecutive_rejected_calls"),
+    )
+    if any(value is not None for value in raw_limits) and not all(
+        value is not None for value in raw_limits
+    ):
+        raise ValueError("Codex teacher broker limits must be configured together")
+    max_tool_calls: int | None = None
+    max_patch_calls: int | None = None
+    max_consecutive_rejected_calls: int | None = None
+    if all(value is not None for value in raw_limits):
+        max_tool_calls = _limit(raw_limits[0], "max_tool_calls")
+        max_patch_calls = _limit(raw_limits[1], "max_patch_calls")
+        max_consecutive_rejected_calls = _limit(raw_limits[2], "max_consecutive_rejected_calls")
+        if max_patch_calls > max_tool_calls:
+            raise ValueError("Codex teacher patch limit cannot exceed its tool-call limit")
     base_options = {
         key: value
         for key, value in options.items()
-        if key not in {"campaign_role", "capture_training_transcript"}
+        if key
+        not in {
+            "campaign_role",
+            "capture_training_transcript",
+            "max_tool_calls",
+            "max_patch_calls",
+            "max_consecutive_rejected_calls",
+        }
     }
     base_options.setdefault("model_id", "gpt-5.4")
     base_options.setdefault("reasoning_effort", "xhigh")
@@ -71,6 +102,9 @@ def teacher_settings(
             "capture_training_transcript": True,
             "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v1",
             "tool_use_policy": "repository_action_state_machine_v2",
+            "max_tool_calls": max_tool_calls,
+            "max_patch_calls": max_patch_calls,
+            "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
         }
     )
     execution = replace(
@@ -84,7 +118,16 @@ def teacher_settings(
         execution=execution,
         campaign_role="training",
         capture_training_transcript=True,
+        max_tool_calls=max_tool_calls,
+        max_patch_calls=max_patch_calls,
+        max_consecutive_rejected_calls=max_consecutive_rejected_calls,
     )
+
+
+def _limit(value: JsonValue | None, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4096:
+        raise ValueError(f"Codex teacher {label} must be in [1, 4096]")
+    return value
 
 
 __all__ = ["CodexTeacherSettings", "teacher_settings"]

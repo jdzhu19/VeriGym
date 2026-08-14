@@ -37,7 +37,7 @@ def configured_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return broker_root
 
 
-def test_capabilities_and_invocation_apply_no_agent_or_token_caps(
+def test_capabilities_and_invocation_apply_broker_limits_but_no_provider_token_caps(
     configured_fake: Path,
 ) -> None:
     executable, capabilities = discover_capabilities(resolve_executable(), force=True)
@@ -48,6 +48,9 @@ def test_capabilities_and_invocation_apply_no_agent_or_token_caps(
             "model_id": "deepseek-v4-flash[1m]",
             "reasoning_effort": "max",
             "expected_context_window": 1_000_000,
+            "max_tool_calls": 32,
+            "max_patch_calls": 8,
+            "max_consecutive_rejected_calls": 3,
         },
         capabilities,
         task_wall_time_s=1800,
@@ -79,6 +82,40 @@ def test_capabilities_and_invocation_apply_no_agent_or_token_caps(
     assert invocation["model_call_limit"] is None
     assert invocation["model_token_limit"] is None
     assert invocation["budget_limit"] is None
+    assert invocation["broker_max_tool_calls"] == 32
+    assert invocation["broker_max_patch_calls"] == 8
+    assert invocation["broker_max_consecutive_rejected_calls"] == 3
+    assert settings.safe_configuration(capabilities)["broker_resource_limits_configured"] is True
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"max_tool_calls": 32},
+        {
+            "max_tool_calls": 8,
+            "max_patch_calls": 9,
+            "max_consecutive_rejected_calls": 3,
+        },
+        {
+            "max_tool_calls": 32,
+            "max_patch_calls": 8,
+            "max_consecutive_rejected_calls": 0,
+        },
+    ],
+)
+def test_broker_limits_are_all_or_none_and_bounded(
+    configured_fake: Path,
+    options: dict[str, int],
+) -> None:
+    del configured_fake
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    with pytest.raises(ValueError, match="limits|limit|must be in"):
+        agent_settings(
+            {"model_id": "deepseek-v4-flash[1m]", **options},
+            capabilities,
+            task_wall_time_s=600,
+        )
 
 
 def test_api_key_auth_keeps_a_distinct_frozen_semantic(
@@ -222,7 +259,13 @@ def test_stream_parser_records_context_without_message_or_thinking_content() -> 
             "is_error": False,
             "num_turns": 2,
             "result": "complete",
-            "usage": {"input_tokens": 100, "output_tokens": 20},
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_creation_input_tokens": 60,
+                "cache_read_input_tokens": 30,
+            },
+            "total_cost_usd": 1.25,
             "modelUsage": {
                 "deepseek-v4-flash": {
                     "contextWindow": 1_000_000,
@@ -240,6 +283,12 @@ def test_stream_parser_records_context_without_message_or_thinking_content() -> 
     assert parsed.observed_model_id == "deepseek-v4-flash"
     assert parsed.context_window_tokens == 1_000_000
     assert parsed.per_response_max_output_tokens == 32_000
+    assert parsed.input_tokens == 100
+    assert parsed.output_tokens == 20
+    assert parsed.total_tokens == 120
+    assert parsed.cache_creation_input_tokens == 60
+    assert parsed.cache_read_input_tokens == 30
+    assert parsed.cost_usd == 1.25
     assert parsed.thinking_block_count == 1
     assert "must never be persisted" not in json.dumps(
         [event.safe_dict() for event in parsed.events]

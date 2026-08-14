@@ -57,6 +57,32 @@ class RepositoryToolBrokerStats:
     finish_calls: int = 0
     rejected_calls: int = 0
     finished: bool = False
+    limit_failure: str | None = None
+    consecutive_rejected_calls: int = 0
+    maximum_consecutive_rejected_calls: int = 0
+    max_tool_calls: int | None = None
+    max_patch_calls: int | None = None
+    max_consecutive_rejected_calls: int | None = None
+
+
+@dataclass(frozen=True)
+class RepositoryToolBrokerLimits:
+    """Provider-neutral episode limits enforced at the canonical tool boundary."""
+
+    max_tool_calls: int
+    max_patch_calls: int
+    max_consecutive_rejected_calls: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("max_tool_calls", self.max_tool_calls),
+            ("max_patch_calls", self.max_patch_calls),
+            ("max_consecutive_rejected_calls", self.max_consecutive_rejected_calls),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4096:
+                raise ValueError(f"repository broker {label} must be in [1, 4096]")
+        if self.max_patch_calls > self.max_tool_calls:
+            raise ValueError("repository broker patch limit cannot exceed its tool-call limit")
 
 
 @dataclass(frozen=True)
@@ -79,6 +105,7 @@ class RepositoryToolBroker:
         public_test_ids: tuple[str, ...],
         capture_training_transcript: bool = False,
         campaign_role: str | None = None,
+        limits: RepositoryToolBrokerLimits | None = None,
     ) -> None:
         if capture_training_transcript and campaign_role != "training":
             raise ValueError("repository broker transcript capture is training-only")
@@ -96,12 +123,18 @@ class RepositoryToolBroker:
         self._diff_inspections = 0
         self._finish_calls = 0
         self._rejected_calls = 0
+        self._consecutive_rejected_calls = 0
+        self._maximum_consecutive_rejected_calls = 0
+        self._current_call_rejected = False
         self._patch_applied = False
         self._public_observed = False
         self._diff_observed = False
         self._finished = False
         self._policy_failure: str | None = None
         self._infrastructure_failure: str | None = None
+        self._limit_failure: str | None = None
+        self._limits = limits
+        self._cancellation = threading.Event()
         self._capture_training_transcript = capture_training_transcript
         self._training_turns: list[RepositoryToolBrokerTurn] = []
         self._training_capture_bytes = 0
@@ -153,7 +186,21 @@ class RepositoryToolBroker:
                 finished=self._finished,
                 policy_failure=self._policy_failure,
                 infrastructure_failure=self._infrastructure_failure,
+                limit_failure=self._limit_failure,
+                consecutive_rejected_calls=self._consecutive_rejected_calls,
+                maximum_consecutive_rejected_calls=(self._maximum_consecutive_rejected_calls),
+                max_tool_calls=self._limits.max_tool_calls if self._limits else None,
+                max_patch_calls=self._limits.max_patch_calls if self._limits else None,
+                max_consecutive_rejected_calls=(
+                    self._limits.max_consecutive_rejected_calls if self._limits else None
+                ),
             )
+
+    @property
+    def cancellation_event(self) -> threading.Event:
+        """Signal the owning process runner when a broker-owned limit becomes terminal."""
+
+        return self._cancellation
 
     def training_turns(self) -> tuple[RepositoryToolBrokerTurn, ...]:
         """Return canonical turns only when the broker was explicitly training-bound."""
@@ -216,15 +263,30 @@ class RepositoryToolBroker:
         if not isinstance(name, str) or name not in _TOOL_NAMES or not isinstance(arguments, dict):
             return self._error_result("unknown", "unknown or malformed tool request")
         with self._lock:
-            if self._policy_failure is not None or self._infrastructure_failure is not None:
+            if (
+                self._policy_failure is not None
+                or self._infrastructure_failure is not None
+                or self._limit_failure is not None
+            ):
                 return self._error_result(
                     name, "tool broker stopped after a terminal safety failure"
                 )
             self._tool_calls += 1
+            self._current_call_rejected = False
+            if (
+                name == "apply_patch"
+                and self._limits is not None
+                and self._patches >= self._limits.max_patch_calls
+            ):
+                self._record_rejection_locked()
+                self._trip_limit_locked("repository_patch_call_limit")
+                self._finalize_call_locked()
+                return self._error_result(name, "repository patch-call limit reached")
             try:
                 canonical_action = json.loads(canonical_action_json(name, arguments))
             except RepositoryActionProtocolViolation as exc:
-                self._rejected_calls += 1
+                self._record_rejection_locked()
+                self._finalize_call_locked()
                 return self._error_result(name, exc.subcategory)
             canonical_arguments = json.dumps(
                 canonical_action["arguments"],
@@ -242,7 +304,7 @@ class RepositoryToolBroker:
                 finished=self._finished,
             )
             if state_failure is not None:
-                self._rejected_calls += 1
+                self._record_rejection_locked()
                 state_response = self._error_result(name, state_failure)
             else:
                 state_response = None
@@ -308,35 +370,64 @@ class RepositoryToolBroker:
     def _capture_response(
         self, name: str, arguments_json: str, response: dict[str, Any]
     ) -> dict[str, Any]:
-        if not self._capture_training_transcript:
-            return response
-        content = response.get("content")
-        observation = (
-            content[0].get("text")
-            if isinstance(content, list)
-            and len(content) == 1
-            and isinstance(content[0], dict)
-            and content[0].get("type") == "text"
-            else None
-        )
-        if not isinstance(observation, str):
-            with self._lock:
-                self._infrastructure_failure = "canonical training observation was unavailable"
-            return response
-        capture_bytes = len(arguments_json.encode("utf-8")) + len(observation.encode("utf-8"))
-        with self._lock:
-            if self._training_capture_bytes + capture_bytes > _MAX_TRAINING_CAPTURE_BYTES:
-                self._infrastructure_failure = "canonical training capture exceeded its bound"
-                return response
-            self._training_turns.append(
-                RepositoryToolBrokerTurn(
-                    tool_name=name,
-                    arguments_json=arguments_json,
-                    observation_json=observation,
-                )
+        if self._capture_training_transcript:
+            content = response.get("content")
+            observation = (
+                content[0].get("text")
+                if isinstance(content, list)
+                and len(content) == 1
+                and isinstance(content[0], dict)
+                and content[0].get("type") == "text"
+                else None
             )
-            self._training_capture_bytes += capture_bytes
+            if not isinstance(observation, str):
+                with self._lock:
+                    self._infrastructure_failure = "canonical training observation was unavailable"
+                    self._finalize_call_locked()
+                return response
+            capture_bytes = len(arguments_json.encode("utf-8")) + len(observation.encode("utf-8"))
+            with self._lock:
+                if self._training_capture_bytes + capture_bytes > _MAX_TRAINING_CAPTURE_BYTES:
+                    self._infrastructure_failure = "canonical training capture exceeded its bound"
+                    self._finalize_call_locked()
+                    return response
+                self._training_turns.append(
+                    RepositoryToolBrokerTurn(
+                        tool_name=name,
+                        arguments_json=arguments_json,
+                        observation_json=observation,
+                    )
+                )
+                self._training_capture_bytes += capture_bytes
+        with self._lock:
+            self._finalize_call_locked()
         return response
+
+    def _record_rejection_locked(self) -> None:
+        self._rejected_calls += 1
+        self._current_call_rejected = True
+
+    def _finalize_call_locked(self) -> None:
+        if self._current_call_rejected:
+            self._consecutive_rejected_calls += 1
+            self._maximum_consecutive_rejected_calls = max(
+                self._maximum_consecutive_rejected_calls,
+                self._consecutive_rejected_calls,
+            )
+        else:
+            self._consecutive_rejected_calls = 0
+        self._current_call_rejected = False
+        if self._limits is None or self._finished:
+            return
+        if self._consecutive_rejected_calls >= self._limits.max_consecutive_rejected_calls:
+            self._trip_limit_locked("repository_consecutive_rejection_limit")
+        elif self._tool_calls >= self._limits.max_tool_calls:
+            self._trip_limit_locked("repository_tool_call_limit")
+
+    def _trip_limit_locked(self, reason: str) -> None:
+        if self._limit_failure is None:
+            self._limit_failure = reason
+            self._cancellation.set()
 
     def _workspace_result(
         self, name: str, tool_name: str, arguments: dict[str, Any]
@@ -357,7 +448,7 @@ class RepositoryToolBroker:
             message = result.message or result.stderr or result.category.value
             with self._lock:
                 if name == "apply_patch" and message.startswith(_RETRYABLE_PATCH_ERRORS):
-                    self._rejected_calls += 1
+                    self._record_rejection_locked()
                 else:
                     self._policy_failure = message
         elif not result.success and result.category.value == "internal_error":
@@ -368,9 +459,13 @@ class RepositoryToolBroker:
     def _run_public_test(self, arguments: dict[str, Any]) -> dict[str, Any]:
         name = "run_public_test"
         if set(arguments) != {"test_id"} or not isinstance(arguments.get("test_id"), str):
+            with self._lock:
+                self._record_rejection_locked()
             return self._error_result(name, "run_public_test requires one string test_id")
         test_id = arguments["test_id"]
         if test_id not in self._public_test_ids:
+            with self._lock:
+                self._record_rejection_locked()
             return self._error_result(name, "public-test ID is not declared for this task")
         with self._lock:
             self._public_test_calls += 1
@@ -420,6 +515,7 @@ def _safe_error(text: str) -> str:
 
 __all__ = [
     "RepositoryToolBroker",
+    "RepositoryToolBrokerLimits",
     "RepositoryToolBrokerStats",
     "RepositoryToolBrokerTurn",
 ]

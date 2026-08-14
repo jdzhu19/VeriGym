@@ -48,6 +48,20 @@ default) bounds captured process evidence, not model tokens. For the currently o
 DeepSeek route, Claude reports a 1,000,000-token context window and a 32,000-token per-response
 maximum; both are recorded as upstream provenance and are not additional VeriGym limits.
 
+Training campaigns can additionally configure all three broker limits together:
+
+```text
+--agent-option 'max_tool_calls=32'
+--agent-option 'max_patch_calls=8'
+--agent-option 'max_consecutive_rejected_calls=3'
+```
+
+The broker signals the process runner as soon as a limit becomes terminal; the runner terminates
+the complete Claude process group. A limit is an infrastructure-valid agent failure named
+`broker_resource_limit`, not a verifier or infrastructure failure. Successful training episodes
+must include provider-reported input and output token counts. Missing usage is fail-closed as
+`provider_usage_missing` so a paid campaign cannot silently accept an unaccounted trajectory.
+
 A formal campaign must freeze a distinct `AgentVersionManifest` with
 `base_agent_id=claude-cli-agent`, the exact model, `max` effort, and the effective auth semantic.
 For the current gateway token route that semantic is
@@ -58,12 +72,14 @@ DeepSeek identity.
 ## Tool and artifact boundary
 
 Claude runs from an empty private control directory with built-in tools disabled. The strict MCP
-server exposes only list/read/search, policy-checked patch/write, Docker `run_command`, declared
-`run_public_test`, and diff inspection. The MCP child is launched with provider and proxy variables
-removed. Repository commands execute in the selected official Docker image with networking off;
-the provider credential never enters that image.
+server exposes only `list_files`, `read_file`, `apply_patch`, `run_public_test`, `inspect_diff`, and
+`finish`. The MCP child is launched with provider and proxy variables removed. Repository commands
+execute in the selected official Docker image with networking off; the provider credential never
+enters that image.
 
 Artifacts live under `artifacts/claude_cli/`. They contain executable/configuration identities,
-content-free event summaries, broker counts, usage, observed context/output ceilings, failure
-classification, and final-verifier status. Prompts, raw stdout, messages, tool arguments/results,
-source contents, and thinking text are deliberately excluded.
+content-free event summaries, broker counts, observed context/output ceilings, failure
+classification, and final-verifier status. `provider-usage.json` records input, output, total,
+cache-creation, cache-read, and cost fields when the provider supplies them, plus explicit
+completeness flags. Prompts, raw stdout, messages, tool arguments/results, source contents, and
+thinking text are deliberately excluded.

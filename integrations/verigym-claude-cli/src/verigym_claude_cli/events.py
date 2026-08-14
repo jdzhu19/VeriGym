@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -59,6 +60,9 @@ class ParsedEventStream:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    cache_creation_input_tokens: int | None
+    cache_read_input_tokens: int | None
+    cost_usd: float | None
     context_window_tokens: int | None
     per_response_max_output_tokens: int | None
     num_turns: int | None
@@ -81,6 +85,9 @@ def parse_event_stream(
     tools: list[str] = []
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    cost_usd: float | None = None
     context_window: int | None = None
     per_response_max: int | None = None
     num_turns: int | None = None
@@ -173,6 +180,9 @@ def parse_event_stream(
             if isinstance(usage, dict):
                 input_tokens = _usage_int(usage, "input_tokens")
                 output_tokens = _usage_int(usage, "output_tokens")
+                cache_creation_input_tokens = _usage_int(usage, "cache_creation_input_tokens")
+                cache_read_input_tokens = _usage_int(usage, "cache_read_input_tokens")
+            cost_usd = _usage_float(payload, "total_cost_usd")
             model_usage = payload.get("modelUsage")
             if isinstance(model_usage, dict):
                 for model_name, model_payload in model_usage.items():
@@ -184,6 +194,14 @@ def parse_event_stream(
                         input_tokens = _usage_int(model_payload, "inputTokens")
                     if output_tokens is None:
                         output_tokens = _usage_int(model_payload, "outputTokens")
+                    if cache_creation_input_tokens is None:
+                        cache_creation_input_tokens = _usage_int(
+                            model_payload, "cacheCreationInputTokens"
+                        )
+                    if cache_read_input_tokens is None:
+                        cache_read_input_tokens = _usage_int(model_payload, "cacheReadInputTokens")
+                    if cost_usd is None:
+                        cost_usd = _usage_float(model_payload, "costUSD")
                     candidate_context = _usage_int(model_payload, "contextWindow")
                     candidate_output = _usage_int(model_payload, "maxOutputTokens")
                     if candidate_context is not None:
@@ -234,6 +252,9 @@ def parse_event_stream(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
+        cache_creation_input_tokens=cache_creation_input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
+        cost_usd=cost_usd,
         context_window_tokens=context_window,
         per_response_max_output_tokens=per_response_max,
         num_turns=num_turns,
@@ -409,6 +430,14 @@ def _optional_nonnegative_int(value: Any) -> int | None:
 
 def _usage_int(payload: dict[str, Any], key: str) -> int | None:
     return _optional_nonnegative_int(payload.get(key))
+
+
+def _usage_float(payload: dict[str, Any], key: str) -> float | None:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    parsed = float(value)
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
 def _tool_result_text(value: Any) -> str:

@@ -59,6 +59,7 @@ class ParsedEventStream:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    cached_input_tokens: int | None
     terminal_event_seen: bool
     error_messages: tuple[str, ...]
     diagnostic_only: bool
@@ -122,6 +123,7 @@ def parse_event_stream(
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    cached_input_tokens: int | None = None
     terminal = False
     for line_number, line in enumerate(lines, start=1):
         if len(line.encode("utf-8")) > _MAX_LINE_BYTES:
@@ -184,6 +186,15 @@ def parse_event_stream(
                 ("total_tokens", "total_token_count"),
                 fallback=total_tokens,
             )
+            cached_input_tokens = _integer_field(
+                usage,
+                (
+                    "cached_input_tokens",
+                    "cache_read_input_tokens",
+                    "input_cached_tokens",
+                ),
+                fallback=cached_input_tokens,
+            )
     if total_tokens is None and input_tokens is not None and output_tokens is not None:
         total_tokens = input_tokens + output_tokens
     return ParsedEventStream(
@@ -195,6 +206,7 @@ def parse_event_stream(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
+        cached_input_tokens=cached_input_tokens,
         terminal_event_seen=terminal,
         error_messages=tuple(errors),
         diagnostic_only=False,
@@ -235,6 +247,7 @@ def parse_partial_event_stream(
         input_tokens=None,
         output_tokens=None,
         total_tokens=None,
+        cached_input_tokens=None,
         terminal_event_seen=False,
         error_messages=tuple(errors),
         diagnostic_only=True,

@@ -27,6 +27,10 @@ _BASE_SEED = 484
 _TARGET_SUCCESSES = 8
 _MAX_TOKENS = 16_384
 _MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
+_MAX_PROCESS_TIME_S = 600
+_MAX_TOOL_CALLS = 32
+_MAX_PATCH_CALLS = 8
+_MAX_CONSECUTIVE_REJECTED_CALLS = 3
 _OPT_IN_ENV = "VERIGYM_RUN_CVA6_TEACHER_COLLECTION"
 _DEFAULT_CAMPAIGN_ID = "cva6-verified-multiturn-teachers-v1"
 _CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
@@ -38,7 +42,7 @@ def collect_cva6_teacher_trajectories(
     docker_config_path: Path,
     tokenizer: ChatTemplateTokenizer,
     output: Path,
-    max_process_time_s: int = 1800,
+    max_process_time_s: int = _MAX_PROCESS_TIME_S,
     campaign_id: str = _DEFAULT_CAMPAIGN_ID,
 ) -> dict[str, Any]:
     """Collect at most one eligible success per task and stop after eight."""
@@ -47,8 +51,8 @@ def collect_cva6_teacher_trajectories(
 
     if os.environ.get(_OPT_IN_ENV) != "1":
         raise ConfigurationError(f"{_OPT_IN_ENV}=1 is required")
-    if not 1 <= max_process_time_s <= 1800:
-        raise ConfigurationError("teacher process timeout must be in [1, 1800]")
+    if not 1 <= max_process_time_s <= _MAX_PROCESS_TIME_S:
+        raise ConfigurationError(f"teacher process timeout must be in [1, {_MAX_PROCESS_TIME_S}]")
     if _CAMPAIGN_ID.fullmatch(campaign_id) is None:
         raise ConfigurationError("teacher campaign ID is not a canonical public identifier")
     qualification = _safe_directory(qualification_root, "qualification")
@@ -82,6 +86,7 @@ def collect_cva6_teacher_trajectories(
         campaign_id=campaign_id,
         split_hash=split.manifest_hash,
         docker_config_hash=content_hash(docker_config),
+        max_process_time_s=max_process_time_s,
     )
     attempts = progress["attempts"]
     successes = progress["successes"]
@@ -327,6 +332,9 @@ def _run_config(
                 "allow_proxy_environment": True,
                 "campaign_role": "training",
                 "capture_training_transcript": True,
+                "max_tool_calls": _MAX_TOOL_CALLS,
+                "max_patch_calls": _MAX_PATCH_CALLS,
+                "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
             },
         )
     return RunConfig(
@@ -340,6 +348,9 @@ def _run_config(
             "allow_proxy_environment": True,
             "campaign_role": "training",
             "capture_training_transcript": True,
+            "max_tool_calls": _MAX_TOOL_CALLS,
+            "max_patch_calls": _MAX_PATCH_CALLS,
+            "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
         },
     )
 
@@ -360,7 +371,12 @@ def _ensure_plugins(registries: Any) -> None:
 
 
 def _campaign_output(
-    path: Path, *, campaign_id: str, split_hash: str, docker_config_hash: str
+    path: Path,
+    *,
+    campaign_id: str,
+    split_hash: str,
+    docker_config_hash: str,
+    max_process_time_s: int,
 ) -> tuple[Path, dict[str, Any]]:
     expanded = path.expanduser()
     progress_path = expanded / "collection-progress.json"
@@ -374,6 +390,7 @@ def _campaign_output(
             or progress.get("campaign_id") != campaign_id
             or progress.get("task_split_hash") != split_hash
             or progress.get("docker_config_hash") != docker_config_hash
+            or progress.get("episode_limits") != _episode_limits(max_process_time_s)
         ):
             raise ConfigurationError("collection resume identity changed")
         if progress.get("status") == "stopped_infrastructure_invalid":
@@ -395,6 +412,7 @@ def _campaign_output(
         "codex_fallback_effort": "xhigh",
         "base_seed": _BASE_SEED,
         "max_tokens": _MAX_TOKENS,
+        "episode_limits": _episode_limits(max_process_time_s),
         "attempts": [],
         "successes": [],
         "private_reasoning_exported": False,
@@ -404,6 +422,15 @@ def _campaign_output(
     }
     _save_progress(root, progress)
     return root, progress
+
+
+def _episode_limits(max_process_time_s: int) -> dict[str, int]:
+    return {
+        "max_process_time_s": max_process_time_s,
+        "max_tool_calls": _MAX_TOOL_CALLS,
+        "max_patch_calls": _MAX_PATCH_CALLS,
+        "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
+    }
 
 
 def _save_progress(root: Path, progress: dict[str, Any]) -> None:

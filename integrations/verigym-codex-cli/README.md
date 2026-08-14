@@ -1,6 +1,6 @@
 # VeriGym Codex CLI Integration
 
-This package provides two deliberately separate VeriGym agent plugins:
+This package provides two ordinary evaluation plugins plus an opt-in training-only teacher:
 
 - `codex-cli-readonly-agent` runs one `codex exec` process in a fresh empty directory under the
   CLI read-only sandbox. A typed fail-closed event policy permits only harness planning and
@@ -12,6 +12,9 @@ This package provides two deliberately separate VeriGym agent plugins:
   The CLI may edit visible task files; VeriGym then applies its ordinary workspace-policy check,
   candidate freeze, and hidden verifier. External CLI actions never increment VeriGym-native
   tool-call counters.
+- `codex-cli-mcp-teacher` is available only to captured training campaigns. It fixes GPT-5.4 with
+  `xhigh` reasoning, disables shell and web search, and exposes only the required VeriGym MCP
+  repository tools.
 
 Codex CLI 0.144.6 has no supported true no-tools mode, so the former
 `codex-cli-exec-model`/ChatEval identity is retired. Both current paths are CLI agent-harness
@@ -81,3 +84,14 @@ artifacts and the hidden verifier without launching Codex.
 
 Offline tests use `tests/fake_codex.py`. Real execution requires the explicit opt-in and fixed
 launchers documented in `docs/integrations/codex_cli.md`.
+
+## Run a bounded MCP teacher
+
+Configure all broker limits together. The current CVA6 collection freezes 32 total tool calls,
+eight executed patch attempts, three consecutive rejected calls, and a 600-second process wall
+timeout. Reaching a broker limit cancels the complete Codex process group and records an
+infrastructure-valid `broker_resource_limit` agent failure. A successful teacher stream without
+input/output usage is rejected as infrastructure-invalid `provider_usage_missing`.
+
+Successful teacher artifacts also include `provider-usage.json` with input, output, total, and
+cached-input tokens. The cost fields remain null when the Codex CLI does not report currency data.

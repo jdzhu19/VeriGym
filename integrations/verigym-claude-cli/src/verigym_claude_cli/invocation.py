@@ -127,6 +127,9 @@ def sanitized_invocation(arguments: list[str], settings: ClaudeSettings) -> dict
         "model_call_limit": None,
         "model_token_limit": None,
         "budget_limit": None,
+        "broker_max_tool_calls": settings.max_tool_calls,
+        "broker_max_patch_calls": settings.max_patch_calls,
+        "broker_max_consecutive_rejected_calls": (settings.max_consecutive_rejected_calls),
         "retry_count": 0,
         "best_of_k": 1,
     }

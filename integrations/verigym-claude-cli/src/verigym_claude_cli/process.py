@@ -11,6 +11,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +53,7 @@ class ClaudeProcessResult:
     stdout_truncated: bool
     stderr_truncated: bool
     process_group_cleaned: bool
+    broker_cancelled: bool = False
 
 
 def sha256_file(path: Path) -> str:
@@ -216,6 +218,7 @@ class ClaudeCliProcessRunner:
         timeout_s: float,
         stdin_bytes: bytes | None,
         environment: dict[str, str],
+        cancellation_event: threading.Event | None = None,
     ) -> ClaudeProcessResult:
         self._assert_identity()
         self._validate_arguments(arguments)
@@ -224,6 +227,7 @@ class ClaudeCliProcessRunner:
             raise ClaudeProcessError("Claude control working directory is invalid")
         started = time.monotonic()
         timed_out = False
+        broker_cancelled = False
         with (
             tempfile.TemporaryFile(dir=working_directory) as stdout_file,
             tempfile.TemporaryFile(dir=working_directory) as stderr_file,
@@ -245,16 +249,33 @@ class ClaudeCliProcessRunner:
                 raise ClaudeProcessError(
                     f"Claude process launch failed: {type(exc).__name__}"
                 ) from exc
-            try:
-                process.communicate(input=stdin_bytes, timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                self._terminate_group(process)
+            if stdin_bytes is not None and process.stdin is not None:
                 try:
-                    process.communicate(timeout=2.0)
+                    process.stdin.write(stdin_bytes)
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
+            deadline = started + timeout_s
+            while process.poll() is None:
+                if cancellation_event is not None and cancellation_event.is_set():
+                    broker_cancelled = True
+                    self._terminate_group(process)
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    self._terminate_group(process)
+                    break
+                try:
+                    process.wait(timeout=min(0.1, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
                     self._kill_group(process)
-                    process.communicate()
+                    process.wait()
             group_cleaned = self._cleanup_group(process.pid)
             stdout, stdout_truncated = self._read_bounded(stdout_file)
             stderr, stderr_truncated = self._read_bounded(stderr_file)
@@ -274,6 +295,7 @@ class ClaudeCliProcessRunner:
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
             process_group_cleaned=group_cleaned,
+            broker_cancelled=broker_cancelled,
         )
 
     @staticmethod

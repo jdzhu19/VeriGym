@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -73,6 +75,38 @@ def test_process_runner_explicitly_disables_shell() -> None:
     assert "shell=False" in source
     assert "start_new_session=True" in source
     assert "bash -lc" not in source
+
+
+def test_process_runner_kills_the_process_group_when_the_broker_cancels(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("timeout")
+    cwd = tmp_path / "cwd-cancel"
+    cwd.mkdir()
+    cancellation = threading.Event()
+    timer = threading.Timer(0.1, cancellation.set)
+    timer.start()
+    started = time.monotonic()
+    try:
+        result = CodexCliProcessRunner(
+            resolve_executable(),
+            auth_mode="inherited_codex_login",
+        ).run(
+            ["exec"],
+            cwd=cwd,
+            timeout_s=10,
+            stdin_bytes=b"bounded prompt",
+            cancellation_event=cancellation,
+        )
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started < 3
+    assert result.broker_cancelled is True
+    assert result.timed_out is False
+    assert result.process_group_cleaned is True
 
 
 def test_sealed_report_rejects_executable_substitution(

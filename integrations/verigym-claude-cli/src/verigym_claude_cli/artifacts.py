@@ -30,6 +30,9 @@ def write_evidence(
     roots_to_redact: tuple[Path, ...],
 ) -> None:
     _safe_existing_directory(root)
+    usage_complete = bool(
+        parsed is not None and parsed.input_tokens is not None and parsed.output_tokens is not None
+    )
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", redact_value(invocation, roots=roots_to_redact))
     atomic_json(
@@ -41,6 +44,7 @@ def write_evidence(
             "stdout_truncated": process.stdout_truncated,
             "stderr_truncated": process.stderr_truncated,
             "process_group_cleaned": process.process_group_cleaned,
+            "broker_cancelled": process.broker_cancelled,
             "raw_stdout_persisted": False,
             "prompt_persisted": False,
             "message_content_persisted": False,
@@ -63,6 +67,29 @@ def write_evidence(
     atomic_json(root / "broker.json", broker.__dict__)
     atomic_json(root / "identity.json", _dump(identity))
     atomic_json(root / "accounting.json", _dump(accounting))
+    atomic_json(
+        root / "provider-usage.json",
+        {
+            "schema_version": "1.0",
+            "usage_complete": usage_complete,
+            "usage_missing": not usage_complete,
+            "input_tokens": parsed.input_tokens if parsed else None,
+            "output_tokens": parsed.output_tokens if parsed else None,
+            "total_tokens": parsed.total_tokens if parsed else None,
+            "cache_creation_input_tokens": (parsed.cache_creation_input_tokens if parsed else None),
+            "cache_read_input_tokens": parsed.cache_read_input_tokens if parsed else None,
+            "cache_usage_reported": bool(
+                parsed is not None
+                and (
+                    parsed.cache_creation_input_tokens is not None
+                    or parsed.cache_read_input_tokens is not None
+                )
+            ),
+            "cost_usd": parsed.cost_usd if parsed else None,
+            "currency": "USD" if parsed is not None and parsed.cost_usd is not None else None,
+            "provider_report_scope": "claude_cli_terminal_result",
+        },
+    )
     atomic_json(root / "summary.json", redact_value(summary, roots=roots_to_redact))
 
 

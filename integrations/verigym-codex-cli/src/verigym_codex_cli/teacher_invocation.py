@@ -64,7 +64,7 @@ def build_teacher_arguments(
         "mcp_servers.verigym.required=true",
         'mcp_servers.verigym.default_tools_approval_mode="approve"',
         "mcp_servers.verigym.startup_timeout_sec=30",
-        "mcp_servers.verigym.tool_timeout_sec=1810",
+        f"mcp_servers.verigym.tool_timeout_sec={int(execution.effective_process_timeout_s) + 10}",
         f'model_reasoning_effort="{execution.effective_reasoning_effort}"',
     ]
     for override in overrides:
@@ -106,6 +106,9 @@ def sanitized_teacher_invocation(
         "mcp_tool_names": [
             definition["name"] for definition in repository_tool_definitions(dialect="mcp")
         ],
+        "broker_max_tool_calls": settings.max_tool_calls,
+        "broker_max_patch_calls": settings.max_patch_calls,
+        "broker_max_consecutive_rejected_calls": (settings.max_consecutive_rejected_calls),
     }
 
 

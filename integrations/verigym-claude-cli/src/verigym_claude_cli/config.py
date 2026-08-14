@@ -37,6 +37,9 @@ _OPTIONS = {
     "agent_version_manifest_json",
     "campaign_role",
     "capture_training_transcript",
+    "max_tool_calls",
+    "max_patch_calls",
+    "max_consecutive_rejected_calls",
 }
 _PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v1"
 _AUTH_IDENTITIES = {
@@ -78,6 +81,9 @@ class ClaudeSettings:
     agent_version_hash: str | None
     campaign_role: str
     capture_training_transcript: bool
+    max_tool_calls: int | None
+    max_patch_calls: int | None
+    max_consecutive_rejected_calls: int | None
     configuration_fingerprint: str
 
     def safe_configuration(self, capabilities: CapabilityReport) -> dict[str, JsonValue]:
@@ -120,6 +126,10 @@ class ClaudeSettings:
             "model_call_limit_configured": False,
             "model_token_limit_configured": False,
             "budget_limit_configured": False,
+            "broker_resource_limits_configured": self.max_tool_calls is not None,
+            "max_tool_calls": self.max_tool_calls,
+            "max_patch_calls": self.max_patch_calls,
+            "max_consecutive_rejected_calls": self.max_consecutive_rejected_calls,
         }
 
 
@@ -162,6 +172,26 @@ def agent_settings(
     )
     if capture_transcript and campaign_role != "training":
         raise ValueError("Claude transcript capture is permitted only for the training split")
+    raw_limits = (
+        options.get("max_tool_calls"),
+        options.get("max_patch_calls"),
+        options.get("max_consecutive_rejected_calls"),
+    )
+    if any(value is not None for value in raw_limits) and not all(
+        value is not None for value in raw_limits
+    ):
+        raise ValueError("Claude broker limits must be configured together")
+    max_tool_calls: int | None = None
+    max_patch_calls: int | None = None
+    max_consecutive_rejected_calls: int | None = None
+    if all(value is not None for value in raw_limits):
+        max_tool_calls = _bounded_limit(raw_limits[0], "max_tool_calls")
+        max_patch_calls = _bounded_limit(raw_limits[1], "max_patch_calls")
+        max_consecutive_rejected_calls = _bounded_limit(
+            raw_limits[2], "max_consecutive_rejected_calls"
+        )
+        if max_patch_calls > max_tool_calls:
+            raise ValueError("Claude patch limit cannot exceed its tool-call limit")
     expected_context = options.get("expected_context_window")
     if expected_context is not None:
         expected_context = _integer(expected_context, "expected_context_window")
@@ -222,6 +252,9 @@ def agent_settings(
         "agent_version_hash": version_hash,
         "campaign_role": campaign_role,
         "capture_training_transcript": capture_transcript,
+        "max_tool_calls": max_tool_calls,
+        "max_patch_calls": max_patch_calls,
+        "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
         "capability_fingerprint": capabilities.capability_fingerprint,
         "internal_turn_limit": None,
         "model_call_limit": None,
@@ -254,6 +287,9 @@ def agent_settings(
         agent_version_hash=version_hash,
         campaign_role=campaign_role,
         capture_training_transcript=capture_transcript,
+        max_tool_calls=max_tool_calls,
+        max_patch_calls=max_patch_calls,
+        max_consecutive_rejected_calls=max_consecutive_rejected_calls,
         configuration_fingerprint=content_hash(safe),
     )
 
@@ -335,6 +371,13 @@ def _integer(value: JsonValue, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{label} must be an integer")
     return value
+
+
+def _bounded_limit(value: JsonValue | None, label: str) -> int:
+    parsed = _integer(value, label)
+    if not 1 <= parsed <= 4096:
+        raise ValueError(f"{label} must be in [1, 4096]")
+    return parsed
 
 
 def _boolean(value: JsonValue, label: str) -> bool:

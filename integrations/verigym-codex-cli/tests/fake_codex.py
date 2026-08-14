@@ -335,7 +335,11 @@ def main():
                 "item": {"type": "agent_message", "text": "second final"},
             }
         )
-    usage = None if scenario == "unknown_usage" else {"input_tokens": 11, "output_tokens": 7}
+    usage = (
+        None
+        if scenario == "unknown_usage"
+        else {"input_tokens": 11, "output_tokens": 7, "cached_input_tokens": 5}
+    )
     completed = {"type": "turn.completed"}
     if usage is not None:
         completed["usage"] = usage

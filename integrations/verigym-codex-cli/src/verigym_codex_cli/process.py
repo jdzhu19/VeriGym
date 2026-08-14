@@ -10,6 +10,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +80,7 @@ class CodexProcessResult:
     stdout_truncated: bool
     stderr_truncated: bool
     process_group_cleaned: bool
+    broker_cancelled: bool = False
 
 
 def resolve_executable(raw: str | None = None) -> ExecutableIdentity:
@@ -134,6 +136,7 @@ class CodexCliProcessRunner:
         cwd: Path,
         timeout_s: float,
         stdin_bytes: bytes | None = None,
+        cancellation_event: threading.Event | None = None,
     ) -> CodexProcessResult:
         self._assert_executable_identity()
         self._validate_arguments(arguments)
@@ -141,6 +144,7 @@ class CodexCliProcessRunner:
         environment = self._environment()
         started = time.monotonic()
         timed_out = False
+        broker_cancelled = False
         exit_code: int | None = None
         group_cleaned = True
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
@@ -161,16 +165,33 @@ class CodexCliProcessRunner:
                 raise CodexProcessError(
                     f"Codex process launch failed: {type(exc).__name__}"
                 ) from exc
-            try:
-                process.communicate(input=stdin_bytes, timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                self._terminate_group(process)
+            if stdin_bytes is not None and process.stdin is not None:
                 try:
-                    process.communicate(timeout=2.0)
+                    process.stdin.write(stdin_bytes)
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
+            deadline = started + timeout_s
+            while process.poll() is None:
+                if cancellation_event is not None and cancellation_event.is_set():
+                    broker_cancelled = True
+                    self._terminate_group(process)
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    self._terminate_group(process)
+                    break
+                try:
+                    process.wait(timeout=min(0.1, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
                     self._kill_group(process)
-                    process.communicate()
+                    process.wait()
             exit_code = process.returncode
             group_cleaned = self._cleanup_orphans(process.pid)
             stdout, stdout_truncated = self._read_bounded(stdout_file)
@@ -188,6 +209,7 @@ class CodexCliProcessRunner:
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
             process_group_cleaned=group_cleaned,
+            broker_cancelled=broker_cancelled,
         )
 
     def _redact_process_output(self, value: str) -> str:

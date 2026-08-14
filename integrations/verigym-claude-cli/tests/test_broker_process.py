@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
+from verigym.core.repository_tool_broker import RepositoryToolBrokerLimits
 from verigym.plugin_api import (
     AgentContext,
     CompletedCommand,
@@ -281,6 +284,159 @@ def test_patch_context_error_is_retryable_not_terminal_policy(tmp_path: Path) ->
     assert stats.patches == 2
 
 
+def test_broker_stops_at_the_total_tool_call_limit(tmp_path: Path) -> None:
+    broker = ClaudeToolBroker(
+        bridge=FakeBridge(),
+        socket_path=tmp_path / "private" / "mcp.sock",
+        public_test_ids=(),
+        limits=RepositoryToolBrokerLimits(
+            max_tool_calls=3,
+            max_patch_calls=2,
+            max_consecutive_rejected_calls=2,
+        ),
+    )
+    broker.start()
+    try:
+        for _ in range(3):
+            assert (
+                _call(broker.socket_path, "list_files", {"path": "repository"})["isError"] is False
+            )
+        assert broker.cancellation_event.wait(timeout=1)
+        assert (
+            _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"] is True
+        )
+    finally:
+        broker.stop()
+    stats = broker.stats()
+    assert stats.tool_calls == 3
+    assert stats.limit_failure == "repository_tool_call_limit"
+    assert stats.max_tool_calls == 3
+
+
+def test_broker_rejects_the_ninth_patch_without_executing_it(tmp_path: Path) -> None:
+    bridge = FakeBridge()
+    broker = ClaudeToolBroker(
+        bridge=bridge,
+        socket_path=tmp_path / "private" / "mcp.sock",
+        public_test_ids=(),
+        limits=RepositoryToolBrokerLimits(
+            max_tool_calls=32,
+            max_patch_calls=8,
+            max_consecutive_rejected_calls=3,
+        ),
+    )
+    request = {"patch": "--- a/a.sv\n+++ b/a.sv\n@@ -1 +1 @@\n-a\n+b\n"}
+    broker.start()
+    try:
+        for _ in range(8):
+            assert _call(broker.socket_path, "apply_patch", request)["isError"] is False
+        assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert broker.cancellation_event.wait(timeout=1)
+    finally:
+        broker.stop()
+    stats = broker.stats()
+    assert stats.tool_calls == 9
+    assert stats.patches == 8
+    assert stats.rejected_calls == 1
+    assert stats.limit_failure == "repository_patch_call_limit"
+    assert len(bridge.events) == 0
+
+
+def test_broker_stops_after_three_consecutive_rejections_and_resets_on_success(
+    tmp_path: Path,
+) -> None:
+    broker = ClaudeToolBroker(
+        bridge=RetryablePatchBridge(),
+        socket_path=tmp_path / "private" / "mcp.sock",
+        public_test_ids=(),
+        limits=RepositoryToolBrokerLimits(
+            max_tool_calls=32,
+            max_patch_calls=8,
+            max_consecutive_rejected_calls=3,
+        ),
+    )
+    request = {"patch": "--- a/a.sv\n+++ b/a.sv\n@@ -1 +1 @@\n-a\n+b\n"}
+    broker.start()
+    try:
+        assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert (
+            _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"] is False
+        )
+        for _ in range(3):
+            assert _call(broker.socket_path, "apply_patch", request)["isError"] is True
+        assert broker.cancellation_event.wait(timeout=1)
+    finally:
+        broker.stop()
+    stats = broker.stats()
+    assert stats.rejected_calls == 5
+    assert stats.consecutive_rejected_calls == 3
+    assert stats.maximum_consecutive_rejected_calls == 3
+    assert stats.limit_failure == "repository_consecutive_rejection_limit"
+
+
+def test_broker_limit_is_an_infrastructure_valid_agent_failure() -> None:
+    stats = _broker_stats(tool_calls=32)
+    stats = BrokerStats(
+        **{
+            **stats.__dict__,
+            "limit_failure": "repository_tool_call_limit",
+            "max_tool_calls": 32,
+            "max_patch_calls": 8,
+            "max_consecutive_rejected_calls": 3,
+        }
+    )
+    failure = _process_failure(_timed_out_process(), None, None, stats)
+
+    assert failure is not None
+    assert failure.failure.kind == "agent"
+    assert failure.failure.category == "broker_resource_limit"
+    assert failure.failure.infrastructure is False
+
+
+def test_successful_terminal_without_provider_usage_is_infrastructure_invalid() -> None:
+    parsed = parse_event_stream(
+        "\n".join(
+            (
+                json.dumps(
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "model": "deepseek-v4-flash[1m]",
+                        "tools": [
+                            "mcp__verigym__list_files",
+                            "mcp__verigym__read_file",
+                            "mcp__verigym__apply_patch",
+                            "mcp__verigym__run_public_test",
+                            "mcp__verigym__inspect_diff",
+                            "mcp__verigym__finish",
+                        ],
+                    }
+                ),
+                json.dumps({"type": "result", "subtype": "success", "is_error": False}),
+            )
+        ),
+        requested_model_id="deepseek-v4-flash[1m]",
+        expected_context_window_tokens=None,
+    )
+    process = ClaudeProcessResult(
+        arguments=("claude",),
+        exit_code=0,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    failure = _process_failure(process, parsed, None, _broker_stats(tool_calls=1))
+
+    assert failure is not None
+    assert failure.failure.category == "provider_usage_missing"
+    assert failure.failure.infrastructure is True
+
+
 def test_fake_process_receives_explicit_max_effort_without_output_token_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -372,6 +528,45 @@ def test_process_redacts_gateway_token_from_both_output_streams(
     assert "<redacted-anthropic_auth_token>" in result.stderr
 
 
+def test_process_runner_kills_the_process_group_when_the_broker_cancels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable_path = Path(__file__).with_name("fake_claude.py")
+    monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
+    monkeypatch.setenv("VERIGYM_CLAUDE_TEST_MODE", "1")
+    monkeypatch.setenv("VERIGYM_FAKE_CLAUDE_SCENARIO", "sleep")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-only-not-a-real-token")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://provider.invalid/api")
+    control = tmp_path / "control-cancellation"
+    control.mkdir()
+    cancellation = threading.Event()
+    timer = threading.Timer(0.1, cancellation.set)
+    timer.start()
+    started = time.monotonic()
+    try:
+        result = ClaudeCliProcessRunner(resolve_executable()).run(
+            ["--allowedTools", "unused", "--model", "unused"],
+            cwd=control,
+            timeout_s=10,
+            stdin_bytes=b"test",
+            environment=provider_environment(
+                control,
+                allow_proxy_environment=False,
+                include_auth=True,
+            ),
+            cancellation_event=cancellation,
+        )
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started < 3
+    assert result.broker_cancelled is True
+    assert result.timed_out is False
+    assert result.process_group_cleaned is True
+
+
 def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -436,6 +631,22 @@ def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
     )
     assert process_evidence["raw_stdout_persisted"] is False
     assert process_evidence["stderr_content_persisted"] is False
+    assert process_evidence["broker_cancelled"] is False
+    usage = json.loads((bridge.artifact_root / "provider-usage.json").read_text(encoding="utf-8"))
+    assert usage == {
+        "cache_creation_input_tokens": 5,
+        "cache_read_input_tokens": 7,
+        "cache_usage_reported": True,
+        "cost_usd": 0.125,
+        "currency": "USD",
+        "input_tokens": 11,
+        "output_tokens": 3,
+        "provider_report_scope": "claude_cli_terminal_result",
+        "schema_version": "1.0",
+        "total_tokens": 14,
+        "usage_complete": True,
+        "usage_missing": False,
+    }
     summary = json.loads((bridge.artifact_root / "summary.json").read_text(encoding="utf-8"))
     assert summary["ordinary_hidden_verifier_pending"] is False
     assert summary["ordinary_verifier_resolved"] is False

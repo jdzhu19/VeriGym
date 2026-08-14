@@ -7,6 +7,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from verigym.core.repository_tool_broker import RepositoryToolBrokerLimits
 from verigym.evolution.training_transcript import build_teacher_transcript
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
@@ -169,6 +170,19 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     public_test_ids=public_test_ids,
                     capture_training_transcript=settings.capture_training_transcript,
                     campaign_role=settings.campaign_role,
+                    limits=(
+                        RepositoryToolBrokerLimits(
+                            max_tool_calls=settings.max_tool_calls,
+                            max_patch_calls=settings.max_patch_calls,
+                            max_consecutive_rejected_calls=(
+                                settings.max_consecutive_rejected_calls
+                            ),
+                        )
+                        if settings.max_tool_calls is not None
+                        and settings.max_patch_calls is not None
+                        and settings.max_consecutive_rejected_calls is not None
+                        else None
+                    ),
                 )
                 arguments = build_arguments(
                     settings, socket_path=socket_path, run_id=context.run_id
@@ -193,6 +207,11 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                         "internal_turn_limit": None,
                         "model_token_limit": None,
                         "budget_limit": None,
+                        "broker_max_tool_calls": settings.max_tool_calls,
+                        "broker_max_patch_calls": settings.max_patch_calls,
+                        "broker_max_consecutive_rejected_calls": (
+                            settings.max_consecutive_rejected_calls
+                        ),
                     },
                 )
                 broker.start()
@@ -203,6 +222,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                         timeout_s=settings.effective_process_timeout_s,
                         stdin_bytes=prompt.encode("utf-8"),
                         environment=environment,
+                        cancellation_event=broker.cancellation_event,
                     )
                 finally:
                     broker.stop()
@@ -336,6 +356,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                 "model_call_limit_configured": False,
                 "model_token_limit_configured": False,
                 "budget_limit_configured": False,
+                "broker_resource_limits_configured": settings.max_tool_calls is not None,
+                "broker_max_tool_calls": settings.max_tool_calls,
+                "broker_max_patch_calls": settings.max_patch_calls,
+                "broker_max_consecutive_rejected_calls": (settings.max_consecutive_rejected_calls),
                 "training_transcript_captured": training_transcript is not None,
             },
             roots_to_redact=(bridge.workspace_root,),
@@ -481,6 +505,14 @@ def _process_failure(
     parse_failure: str | None,
     broker: BrokerStats,
 ) -> AgentTerminationError | None:
+    if broker.limit_failure is not None:
+        return _termination(
+            TerminationReason.MODEL_ERROR,
+            kind="agent",
+            category="broker_resource_limit",
+            message=broker.limit_failure,
+            infrastructure=False,
+        )
     if broker.policy_failure is not None:
         return _termination(
             TerminationReason.POLICY_VIOLATION,
@@ -527,6 +559,14 @@ def _process_failure(
             infrastructure=True,
         )
     if process.exit_code == 0 and parsed is not None and parsed.successful:
+        if parsed.input_tokens is None or parsed.output_tokens is None:
+            return _termination(
+                TerminationReason.RUNTIME_ERROR,
+                kind="runtime",
+                category="provider_usage_missing",
+                message="Claude successful terminal result omitted provider token usage",
+                infrastructure=True,
+            )
         return None
     text = (process.stderr + " " + (parsed.failure_message or "" if parsed else "")).lower()
     if any(marker in text for marker in ("unauthorized", "authentication", "api key", "401")):
@@ -625,8 +665,8 @@ def _accounting(
         input_tokens=parsed.input_tokens if parsed is not None else None,
         output_tokens=parsed.output_tokens if parsed is not None else None,
         total_tokens=parsed.total_tokens if parsed is not None else None,
-        cost=None,
-        currency=None,
+        cost=parsed.cost_usd if parsed is not None else None,
+        currency=("USD" if parsed is not None and parsed.cost_usd is not None else None),
     )
 
 

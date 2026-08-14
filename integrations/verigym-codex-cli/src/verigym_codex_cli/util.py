@@ -27,6 +27,9 @@ _SAFE_USAGE_KEYS = {
     "input_token_count",
     "output_token_count",
     "total_token_count",
+    "cached_input_tokens",
+    "cache_read_input_tokens",
+    "input_cached_tokens",
 }
 _SAFE_REASONING_IDENTITIES = {
     "requested_reasoning_effort": {"max", "xhigh"},

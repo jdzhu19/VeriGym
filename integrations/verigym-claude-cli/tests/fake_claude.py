@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 
 HELP = """
 --allowedTools --bare --disable-slash-commands --disallowedTools --effort
@@ -44,6 +45,9 @@ def main() -> None:
         print(credential)
         print(credential, file=sys.stderr)
         return
+    if os.environ.get("VERIGYM_FAKE_CLAUDE_SCENARIO") == "sleep":
+        time.sleep(30)
+        return
     allowed = arguments[arguments.index("--allowedTools") + 1].split(",")
     model = arguments[arguments.index("--model") + 1]
     base_model = model[:-4] if model.endswith("[1m]") else model
@@ -67,7 +71,13 @@ def main() -> None:
             "is_error": False,
             "num_turns": 1,
             "result": "done",
-            "usage": {"input_tokens": 11, "output_tokens": 3},
+            "usage": {
+                "input_tokens": 11,
+                "output_tokens": 3,
+                "cache_creation_input_tokens": 5,
+                "cache_read_input_tokens": 7,
+            },
+            "total_cost_usd": 0.125,
             "modelUsage": {
                 base_model: {
                     "inputTokens": 11,

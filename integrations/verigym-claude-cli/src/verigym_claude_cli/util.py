@@ -18,6 +18,8 @@ _AUTH_HEADER = re.compile(r"(?i)(authorization[\"'=:\s]+)[^\s,\"'}]+")
 _PROXY_CREDENTIAL = re.compile(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@")
 _SAFE_TOKEN_METADATA_KEYS = {
     "context_window_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
     "expected_context_window_tokens",
     "input_tokens",
     "max_mcp_output_tokens",

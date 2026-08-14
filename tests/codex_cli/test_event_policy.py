@@ -165,6 +165,26 @@ def test_public_test_command_accounting_counts_only_exact_started_invocations() 
     assert parsed.public_test_command_count == 2
 
 
+def test_provider_usage_preserves_cached_input_tokens() -> None:
+    parsed = parse_event_stream(
+        json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "cached_input_tokens": 75,
+                },
+            }
+        )
+    )
+
+    assert parsed.input_tokens == 100
+    assert parsed.output_tokens == 20
+    assert parsed.total_tokens == 120
+    assert parsed.cached_input_tokens == 75
+
+
 def test_sanitized_historical_six_events_have_exact_readonly_classification(
     tmp_path: Path,
 ) -> None:

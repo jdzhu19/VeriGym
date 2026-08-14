@@ -12,6 +12,7 @@ from typing import Literal
 
 from verigym.core.repository_tool_broker import (
     RepositoryToolBroker,
+    RepositoryToolBrokerLimits,
     RepositoryToolBrokerStats,
 )
 from verigym.evolution.training_transcript import build_teacher_transcript
@@ -140,6 +141,19 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
                     bridge=bridge,
                     socket_path=control / "b" / "mcp.sock",
                     public_test_ids=_public_test_ids(context),
+                    limits=(
+                        RepositoryToolBrokerLimits(
+                            max_tool_calls=settings.max_tool_calls,
+                            max_patch_calls=settings.max_patch_calls,
+                            max_consecutive_rejected_calls=(
+                                settings.max_consecutive_rejected_calls
+                            ),
+                        )
+                        if settings.max_tool_calls is not None
+                        and settings.max_patch_calls is not None
+                        and settings.max_consecutive_rejected_calls is not None
+                        else None
+                    ),
                 )
                 arguments = build_teacher_arguments(
                     capabilities,
@@ -161,6 +175,7 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
                         cwd=cwd,
                         timeout_s=settings.execution.effective_process_timeout_s,
                         stdin_bytes=prompt.encode("utf-8"),
+                        cancellation_event=broker.cancellation_event,
                     )
                 finally:
                     broker.stop()
@@ -174,6 +189,12 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
             raise process_failure
         try:
             parsed = parse_event_stream(process.stdout)
+        except (EventParseError, ValueError) as exc:
+            raise _termination("training_transcript_ineligible", str(exc)) from exc
+        usage_failure = _provider_usage_failure(parsed)
+        if usage_failure is not None:
+            raise usage_failure
+        try:
             messages = normalize_training_messages(
                 process.stdout,
                 system_prompt=_training_system_prompt(),
@@ -234,6 +255,19 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
             broker=broker_stats.__dict__,
             identity=identity.model_dump(mode="json"),
             accounting=accounting.model_dump(mode="json"),
+            provider_usage={
+                "schema_version": "1.0",
+                "usage_complete": True,
+                "usage_missing": False,
+                "input_tokens": parsed.input_tokens,
+                "output_tokens": parsed.output_tokens,
+                "total_tokens": parsed.total_tokens,
+                "cached_input_tokens": parsed.cached_input_tokens,
+                "cache_usage_reported": parsed.cached_input_tokens is not None,
+                "cost_usd": None,
+                "currency": None,
+                "provider_report_scope": "codex_cli_terminal_event",
+            },
             transcript=transcript,
         )
         return FinalSubmissionAction(
@@ -403,6 +437,7 @@ def _write_content_free_evidence(
     broker: dict[str, object],
     identity: dict[str, object],
     accounting: dict[str, object],
+    provider_usage: dict[str, object],
     transcript: dict[str, object],
 ) -> None:
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
@@ -413,6 +448,7 @@ def _write_content_free_evidence(
             "exit_code": process.exit_code,
             "duration_s": process.duration_s,
             "timed_out": process.timed_out,
+            "broker_cancelled": process.broker_cancelled,
             "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
             "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest(),
             "raw_output_persisted": False,
@@ -424,6 +460,7 @@ def _write_content_free_evidence(
     atomic_json(root / "broker.json", broker)
     atomic_json(root / "identity.json", identity)
     atomic_json(root / "accounting.json", accounting)
+    atomic_json(root / "provider-usage.json", provider_usage)
     atomic_json(root / "training-transcript.json", transcript)
     atomic_json(
         root / "summary.json",
@@ -460,6 +497,12 @@ def _preparse_process_failure(
     process: CodexProcessResult,
     broker: RepositoryToolBrokerStats,
 ) -> AgentTerminationError | None:
+    if broker.limit_failure is not None:
+        return _termination(
+            "broker_resource_limit",
+            broker.limit_failure,
+            kind="agent",
+        )
     if broker.policy_failure is not None:
         return _termination(
             "workspace_policy",
@@ -495,6 +538,18 @@ def _preparse_process_failure(
             kind="runtime",
         )
     return None
+
+
+def _provider_usage_failure(parsed: ParsedEventStream) -> AgentTerminationError | None:
+    if parsed.input_tokens is not None and parsed.output_tokens is not None:
+        return None
+    return _termination(
+        "provider_usage_missing",
+        "Codex successful terminal stream omitted provider token usage",
+        infrastructure=True,
+        kind="runtime",
+        reason=TerminationReason.RUNTIME_ERROR,
+    )
 
 
 __all__ = ["CodexCliMcpTeacherAdapter"]

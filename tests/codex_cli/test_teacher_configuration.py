@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 from verigym_codex_cli.capabilities import discover_capabilities
+from verigym_codex_cli.events import parse_event_stream
 from verigym_codex_cli.process import CodexProcessResult
 from verigym_codex_cli.teacher_agent import (
     CodexCliMcpTeacherAdapter,
     _preparse_process_failure,
+    _provider_usage_failure,
 )
 from verigym_codex_cli.teacher_config import teacher_settings
 from verigym_codex_cli.teacher_invocation import (
@@ -82,6 +84,9 @@ def test_teacher_is_exact_gpt54_xhigh_required_mcp_only(
             "capture_training_transcript": True,
             "model_id": "gpt-5.4",
             "reasoning_effort": "xhigh",
+            "max_tool_calls": 32,
+            "max_patch_calls": 8,
+            "max_consecutive_rejected_calls": 3,
         },
         capabilities,
         task_wall_time_s=300,
@@ -101,6 +106,9 @@ def test_teacher_is_exact_gpt54_xhigh_required_mcp_only(
     ]
     assert safe["features_shell_tool"] is False
     assert safe["web_search_enabled"] is False
+    assert safe["broker_max_tool_calls"] == 32
+    assert safe["broker_max_patch_calls"] == 8
+    assert safe["broker_max_consecutive_rejected_calls"] == 3
     assert "<private-broker-launch>" in str(safe)
     assert CodexCliMcpTeacherAdapter.prompt_policy_spec.prompt_contract_id == (
         "codex_cli_mcp_repository_task_context_v1"
@@ -130,3 +138,59 @@ def test_teacher_refuses_non_training_or_model_substitution(
             capabilities,
             task_wall_time_s=300,
         )
+
+
+def test_teacher_broker_limits_are_all_or_none_and_bounded(
+    fake_codex: tuple[Path, Path, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del fake_codex
+    monkeypatch.setenv("VERIGYM_CODEX_AUTH_MODE", "inherited_codex_login")
+    _identity, capabilities = discover_capabilities(force=True)
+    common = {"campaign_role": "training", "capture_training_transcript": True}
+    with pytest.raises(ValueError, match="limits must be configured together"):
+        teacher_settings(
+            {**common, "max_tool_calls": 32},
+            capabilities,
+            task_wall_time_s=600,
+        )
+    with pytest.raises(ValueError, match="patch limit"):
+        teacher_settings(
+            {
+                **common,
+                "max_tool_calls": 8,
+                "max_patch_calls": 9,
+                "max_consecutive_rejected_calls": 3,
+            },
+            capabilities,
+            task_wall_time_s=600,
+        )
+
+
+def test_teacher_broker_limit_is_an_infrastructure_valid_agent_failure() -> None:
+    stats = _broker_stats(tool_calls=32)
+    stats = RepositoryToolBrokerStats(
+        **{
+            **stats.__dict__,
+            "limit_failure": "repository_tool_call_limit",
+            "max_tool_calls": 32,
+            "max_patch_calls": 8,
+            "max_consecutive_rejected_calls": 3,
+        }
+    )
+    failure = _preparse_process_failure(_timed_out_process(), stats)
+
+    assert failure is not None
+    assert failure.failure.kind == "agent"
+    assert failure.failure.category == "broker_resource_limit"
+    assert failure.failure.infrastructure is False
+
+
+def test_teacher_missing_provider_usage_is_infrastructure_invalid() -> None:
+    parsed = parse_event_stream('{"type":"turn.completed"}')
+    failure = _provider_usage_failure(parsed)
+
+    assert failure is not None
+    assert failure.failure.kind == "runtime"
+    assert failure.failure.category == "provider_usage_missing"
+    assert failure.failure.infrastructure is True
