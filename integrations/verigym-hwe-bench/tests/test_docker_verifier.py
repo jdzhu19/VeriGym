@@ -106,7 +106,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     assert result.status == VerifierStatus.PASSED
     assert result.tests_passed == result.tests_total == 1
     assert result.metadata["manifest_digest_observed"] is not airgapped
-    assert result.metadata["bash_env_disabled"] is True
+    assert result.metadata["image_environment_required"] is False
     assert result.metadata["seccomp_profile"] == "builtin"
     assert result.metadata["seccomp_unconfined"] is False
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
@@ -139,6 +139,7 @@ def test_runner_uses_repository_specific_base_commit_marker(tmp_path: Path) -> N
     assert "cd /home/cva6" in runner
     assert runner.count("git -c safe.directory=/home/cva6") == 5
     assert runner.count("-c core.preloadIndex=false") == 5
+    assert 'test "${CONDA_DEFAULT_ENV:-}" = "cva6"' in runner
     assert "VERIGYM_HWE_SETUP_FAILURE" in runner
     assert "VERIGYM_HWE_TESTBENCH_STARTED" in runner
     assert "/home/cva6_base_commit.txt" in runner
@@ -173,6 +174,7 @@ def test_v2_runner_uses_explicit_non_derived_rocket_marker() -> None:
     assert "cd /home/rocket-chip" in runner
     assert "/home/base_commit.txt" in runner
     assert "/home/rocket-chip_base_commit.txt" not in runner
+    assert "CONDA_DEFAULT_ENV" not in runner
 
 
 @pytest.mark.parametrize(
@@ -428,8 +430,7 @@ def test_verifier_uses_and_removes_an_isolated_offline_cache_volume(
     assert "no-new-privileges" in security_options
     seccomp_options = [value for value in security_options if value.startswith("seccomp=")]
     assert seccomp_options == []
-    assert "--env" in create_argv
-    assert create_argv[create_argv.index("--env") + 1] == "BASH_ENV=/dev/null"
+    assert "BASH_ENV=/dev/null" not in create_argv
     assert any("type=volume" in value and "/tools/coursier" in value for value in create_argv)
     assert dependency.sha256 in rendered_seed[0]
     assert ".checked" in rendered_seed[0]

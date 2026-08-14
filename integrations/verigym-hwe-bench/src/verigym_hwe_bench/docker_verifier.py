@@ -48,6 +48,8 @@ verigym_setup_failure() {
 trap verigym_setup_failure ERR
 verigym_stage=cache_seed
 __CACHE_SEED__
+verigym_stage=image_environment
+__IMAGE_ENV_CHECK__
 verigym_stage=repository_enter
 cd __REPOSITORY_HOME__
 verigym_stage=repository_reset
@@ -86,6 +88,14 @@ def _render_runner(entry: ImageLockEntryType) -> str:
             (
                 f"bash /home/verigym-cache-seed.sh\nprintf '{_CACHE_READY}\\n'"
                 if isinstance(entry, ImageLockEntryV2) and entry.verifier_dependencies
+                else ":"
+            ),
+        )
+        .replace(
+            "__IMAGE_ENV_CHECK__",
+            (
+                'test "${CONDA_DEFAULT_ENV:-}" = "cva6"'
+                if entry.repository_home == "/home/cva6"
                 else ":"
             ),
         )
@@ -214,6 +224,7 @@ class DockerHweVerifier:
         artifact_dir = artifact_root / node.id
         artifact_dir.mkdir(parents=True, exist_ok=False)
         dependencies = entry.verifier_dependencies if isinstance(entry, ImageLockEntryV2) else []
+        image_environment_required = entry.repository_home == "/home/cva6"
         try:
             dependency_root = _validate_dependency_root(verifier_dependency_root, dependencies)
         except (OSError, ValueError):
@@ -378,8 +389,6 @@ class DockerHweVerifier:
                 "ALL",
                 "--security-opt",
                 "no-new-privileges",
-                "--env",
-                "BASH_ENV=/dev/null",
                 "--pids-limit",
                 str(profile.verifier_limits.pids_limit),
                 "--memory",
@@ -499,7 +508,7 @@ class DockerHweVerifier:
                     "network_mode": "none",
                     "capabilities_dropped": "all",
                     "no_new_privileges": True,
-                    "bash_env_disabled": True,
+                    "image_environment_required": image_environment_required,
                     "seccomp_profile": "builtin",
                     "seccomp_unconfined": False,
                     "container_user": "root",
@@ -541,7 +550,7 @@ class DockerHweVerifier:
                 "network_mode": "none",
                 "capabilities_dropped": "all",
                 "no_new_privileges": True,
-                "bash_env_disabled": True,
+                "image_environment_required": image_environment_required,
                 "seccomp_profile": "builtin",
                 "seccomp_unconfined": False,
                 "container_user": "root",

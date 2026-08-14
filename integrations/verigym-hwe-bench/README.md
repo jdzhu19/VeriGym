@@ -44,8 +44,8 @@ reported as infrastructure-invalid `sandbox_error`; only failures after the test
 boundary are candidate test failures.
 
 The verifier retains Docker's built-in seccomp profile and never requests unconfined or privileged
-mode. It sets `BASH_ENV=/dev/null` so a digest-locked image cannot run an implicit shell startup
-hook before the trusted verifier runner, and its Git setup disables the optional threaded index
-preload. Besides making setup deterministic, those controls avoid unsupported `clone3` calls on
-legacy Docker/libseccomp compute nodes without weakening the syscall filter. Required tool paths
-must be established by the frozen testbench itself rather than ambient shell activation.
+mode. Its Git setup disables the optional threaded index preload, avoiding one unnecessary
+`clone3` path on legacy Docker/libseccomp compute nodes without weakening the syscall filter. The
+CVA6 profile also fails closed before Git or the hidden testbench unless its digest-locked `cva6`
+environment activated successfully. A legacy daemon that prevents that activation is therefore an
+infrastructure-invalid `image_environment` setup failure, not a candidate rejection.
