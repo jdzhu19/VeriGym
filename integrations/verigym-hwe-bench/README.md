@@ -35,3 +35,10 @@ public Maven files are copied into the source. Each verifier gets an independent
 initialized from the official image cache, receives those files, stays on `--network none`, and
 removes the volume afterward. The smoke runs exactly one no-op probe (expected FAIL) and the
 official reference candidate (expected PASS); it is not a full benchmark campaign.
+
+Run that zero-model smoke on the same Docker daemon that will execute the campaign. A PASS from a
+different host does not qualify a compute-node daemon. The verifier supplies Git's
+`safe.directory` explicitly for the immutable in-image repository and emits only a bounded setup
+stage when reset, checkout, marker validation, or patch application fails. Such a failure is
+reported as infrastructure-invalid `sandbox_error`; only failures after the testbench-start
+boundary are candidate test failures.

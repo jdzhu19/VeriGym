@@ -60,8 +60,8 @@ class ClaudeCliAgentAdapter(AgentAdapter):
 
     requires_model = False
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="claude_cli_workspace_repository_task_context_v1",
-        prompt_contract_version="1.0.0",
+        prompt_contract_id="claude_cli_workspace_repository_task_context_v2",
+        prompt_contract_version="2.0.0",
         task_context_policy="repository_visible_task_context_v1",
         base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v1",
         content_visibility_policy="public_task_context_and_mcp_workspace_only_v1",
@@ -446,6 +446,16 @@ def _bind_prompt_policy(context: AgentContext, settings: ClaudeSettings) -> None
 
 
 def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
+    editable_globs = sorted(bridge.editable_globs)
+    repository_prefix_required = bool(editable_globs) and all(
+        pattern == "repository" or pattern.startswith("repository/") for pattern in editable_globs
+    )
+    path_instruction = (
+        "This task requires the repository/ prefix: use paths such as "
+        "repository/core/decoder.sv, never core/decoder.sv."
+        if repository_prefix_required
+        else "Retain every directory prefix shown in editable_globs when constructing paths."
+    )
     payload = {
         "schema_version": "1.0",
         "task": {
@@ -454,16 +464,18 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "entrypoints": sorted(context.task.workspace.entrypoints),
         },
         "workspace_policy": {
-            "editable_globs": sorted(bridge.editable_globs),
+            "editable_globs": editable_globs,
             "readonly_globs": sorted(bridge.readonly_globs),
             "logical_root": "/workspace",
-            "tool_path_format": "relative_only_without_workspace_prefix",
+            "tool_path_format": "workspace_relative_with_declared_prefixes",
+            "repository_prefix_required": repository_prefix_required,
             "network": "disabled_for_all_workspace_commands",
         },
         "public_test_ids": list(_public_test_ids(context)),
         "instructions": [
             "Solve the task by using only the mcp__verigym__* tools supplied in this session.",
             "Begin by listing and reading visible files; paths are relative to /workspace.",
+            path_instruction,
             (
                 "Use apply_patch only for paths permitted by editable_globs. Its patch must "
                 "use --- a/path and +++ b/path file headers plus numbered "
@@ -488,7 +500,8 @@ def _training_system_prompt() -> str:
     return (
         "You are a bounded repository repair agent. Use exactly one supplied repository "
         "function per turn and do not mix prose with a tool call. Read visible files before "
-        "editing. apply_patch requires ---/+++ file headers and numbered @@ hunk headers; "
+        "editing. Preserve every workspace path prefix declared by the task. apply_patch "
+        "requires ---/+++ file headers and numbered @@ hunk headers; "
         "*** Update File syntax is invalid. Use only declared public tests, inspect the "
         "candidate diff, then call finish. "
         "Shell, network, hidden assets, and golden repair artifacts are unavailable."

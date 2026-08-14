@@ -32,21 +32,41 @@ from .models import (
 _START = "HWE_BENCH_RESULTS_START"
 _END = "HWE_BENCH_RESULTS_END"
 _CACHE_READY = "VERIGYM_HWE_CACHE_SEED_OK"
+_TESTBENCH_STARTED = "VERIGYM_HWE_TESTBENCH_STARTED"
+_SETUP_FAILURE = re.compile(r"^VERIGYM_HWE_SETUP_FAILURE:(?P<stage>[a-z_]{1,64})$")
 _MARKER = re.compile(r"^TEST:\s*(.{1,256}?)\s*\.\.\.\s*(PASS|FAIL|SKIP)\s*$")
 
 _RUNNER = """#!/bin/bash
-set -euo pipefail
+set -Eeuo pipefail
+verigym_stage=initialization
+verigym_setup_failure() {
+  status=$?
+  trap - ERR
+  printf 'VERIGYM_HWE_SETUP_FAILURE:%s\\n' "$verigym_stage"
+  exit "$status"
+}
+trap verigym_setup_failure ERR
+verigym_stage=cache_seed
 __CACHE_SEED__
+verigym_stage=repository_enter
 cd __REPOSITORY_HOME__
-git reset --hard >/dev/null
-git clean -fdx >/dev/null
+verigym_stage=repository_reset
+git -c __SAFE_DIRECTORY__ reset --hard >/dev/null
+verigym_stage=repository_clean
+git -c __SAFE_DIRECTORY__ clean -fdx >/dev/null
+verigym_stage=base_marker_check
 test -f __BASE_COMMIT_MARKER__
 test "$(cat __BASE_COMMIT_MARKER__)" = "__BASE_COMMIT__"
-git checkout "$(cat __BASE_COMMIT_MARKER__)" >/dev/null
+verigym_stage=base_checkout
+git -c __SAFE_DIRECTORY__ checkout "$(cat __BASE_COMMIT_MARKER__)" >/dev/null
 if [[ -s /home/verigym-candidate.patch ]]; then
-  git apply --check /home/verigym-candidate.patch
-  git apply /home/verigym-candidate.patch
+  verigym_stage=candidate_patch_check
+  git -c __SAFE_DIRECTORY__ apply --check /home/verigym-candidate.patch
+  verigym_stage=candidate_patch_apply
+  git -c __SAFE_DIRECTORY__ apply /home/verigym-candidate.patch
 fi
+trap - ERR
+printf 'VERIGYM_HWE_TESTBENCH_STARTED\\n'
 bash /home/verigym-tb-script.sh
 """
 
@@ -67,6 +87,7 @@ def _render_runner(entry: ImageLockEntryType) -> str:
             ),
         )
         .replace("__REPOSITORY_HOME__", entry.repository_home)
+        .replace("__SAFE_DIRECTORY__", f"safe.directory={entry.repository_home}")
         .replace("__BASE_COMMIT_MARKER__", marker)
         .replace("__BASE_COMMIT__", entry.base_commit)
     )
@@ -158,6 +179,17 @@ def _parse_markers(output: str) -> dict[str, str]:
         if match is not None:
             tests[match.group(1).strip()] = match.group(2)
     return tests
+
+
+def _setup_failure_stage(output: str) -> str | None:
+    """Return one trusted runner setup stage emitted before the testbench starts."""
+
+    pre_testbench = output.split(_TESTBENCH_STARTED, 1)[0]
+    for raw_line in pre_testbench.splitlines():
+        match = _SETUP_FAILURE.fullmatch(raw_line.strip())
+        if match is not None:
+            return match.group("stage")
+    return None
 
 
 class DockerHweVerifier:
@@ -441,6 +473,34 @@ class DockerHweVerifier:
                 stdout=stdout,
                 stderr=stderr,
                 exit_code=executed.returncode,
+            )
+        setup_failure_stage = _setup_failure_stage(combined_output)
+        if setup_failure_stage is not None:
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.SANDBOX_ERROR,
+                message="HWE-Bench verifier setup failed before test execution",
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=executed.returncode,
+                metadata={
+                    "failure_stage": setup_failure_stage,
+                    "image_id": entry.image_id,
+                    "manifest_digest": entry.manifest_digest,
+                    "manifest_digest_observed": manifest_digest_observed,
+                    "network_mode": "none",
+                    "capabilities_dropped": "all",
+                    "no_new_privileges": True,
+                    "container_user": "root",
+                    "dependency_count": len(dependencies),
+                    "dependency_inventory_hash": content_hash(dependencies),
+                    "ephemeral_cache_volume": bool(dependencies),
+                    "cache_volume_removed": cache_volume_removed,
+                    "output_persisted": False,
+                },
             )
         tests = _parse_markers(combined_output)
         expected_tests = set(instance.expected_test_ids)

@@ -27,7 +27,12 @@ from verigym.schemas.agent import BudgetRemaining, EpisodeResult, Observation
 from verigym.schemas.common import InteractionMode
 from verigym.suites.toy_rtl.adapter import ToyRtlSuite
 
-from verigym_claude_cli.agent import ClaudeCliAgentAdapter, _accounting, _process_failure
+from verigym_claude_cli.agent import (
+    ClaudeCliAgentAdapter,
+    _accounting,
+    _agent_prompt,
+    _process_failure,
+)
 from verigym_claude_cli.artifacts import write_evidence
 from verigym_claude_cli.broker import BrokerStats, ClaudeToolBroker
 from verigym_claude_cli.capabilities import discover_capabilities
@@ -82,6 +87,25 @@ def test_episode_deadline_is_an_agent_failure_with_or_without_broker_activity() 
     assert inactive.failure.kind == "model"
     assert inactive.failure.category == "agent_timeout"
     assert inactive.failure.infrastructure is False
+
+
+def test_repository_prompt_requires_the_workspace_relative_repository_prefix() -> None:
+    task = ToyRtlSuite().load_task(next(iter(ToyRtlSuite().discover())))
+    bridge = FakeBridge()
+    context = AgentContext(
+        run_id="prompt-fixture",
+        task=task,
+        seed=3,
+        agent_options={},
+        external_bridge=bridge,
+    )
+
+    prompt = _agent_prompt(context, bridge)
+
+    assert '"tool_path_format": "workspace_relative_with_declared_prefixes"' in prompt
+    assert '"repository_prefix_required": true' in prompt
+    assert "use paths such as repository/core/decoder.sv" in prompt
+    assert "never core/decoder.sv" in prompt
 
 
 class FakeBridge:

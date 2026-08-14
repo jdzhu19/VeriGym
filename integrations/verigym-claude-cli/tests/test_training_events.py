@@ -122,6 +122,97 @@ def test_claude_training_normalization_preserves_call_id_and_drops_thinking() ->
     assert "private" not in json.dumps([message.model_dump() for message in messages])
 
 
+def test_claude_training_normalization_repairs_provider_tool_result_id_rewrite() -> None:
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+    events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
+    events[1]["message"]["content"][0]["tool_use_id"] = "gateway_rewritten_id"
+
+    messages = normalize_training_messages(
+        "\n".join(_line(event) for event in events),
+        system_prompt="system",
+        user_prompt="user",
+        broker_turns=(_turn("finish", {"message": "done"}, observation),),
+    )
+
+    assert messages[2].tool_calls is not None
+    assert messages[2].tool_calls[0].id == "toolu_prompt_1"
+    assert messages[3].tool_call_id == "toolu_prompt_1"
+
+
+def test_claude_training_normalization_deduplicates_cumulative_final_snapshots() -> None:
+    events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
+    events.insert(
+        2,
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "comp"}]}},
+    )
+    events.insert(
+        3,
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "complete"}]},
+        },
+    )
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+
+    messages = normalize_training_messages(
+        "\n".join(_line(event) for event in events),
+        system_prompt="system",
+        user_prompt="user",
+        broker_turns=(_turn("finish", {"message": "done"}, observation),),
+    )
+
+    assert messages[-1].role == "assistant"
+    assert messages[-1].content == "complete"
+
+
+def test_claude_training_normalization_rejects_divergent_final_snapshots() -> None:
+    events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
+    events.insert(
+        2,
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "different"}]},
+        },
+    )
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+
+    with pytest.raises(EventParseError, match="snapshots differ"):
+        normalize_training_messages(
+            "\n".join(_line(event) for event in events),
+            system_prompt="system",
+            user_prompt="user",
+            broker_turns=(_turn("finish", {"message": "done"}, observation),),
+        )
+
+
+def test_claude_training_normalization_rejects_nonfinal_assistant_prose() -> None:
+    events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
+    events.insert(
+        0,
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "I will inspect first"}]},
+        },
+    )
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+
+    with pytest.raises(EventParseError, match="non-final assistant prose"):
+        normalize_training_messages(
+            "\n".join(_line(event) for event in events),
+            system_prompt="system",
+            user_prompt="user",
+            broker_turns=(_turn("finish", {"message": "done"}, observation),),
+        )
+
+
 def test_claude_training_normalization_rejects_non_registry_tool() -> None:
     stdout = _line(
         {

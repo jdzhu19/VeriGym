@@ -12,7 +12,7 @@ from typing import Any
 
 from verigym.core.repository_tool_broker import RepositoryToolBrokerTurn
 from verigym.protocols.repository_action import canonical_action_json
-from verigym.schemas.multiturn_sft import MultiTurnSftMessage
+from verigym.schemas.multiturn_sft import MultiTurnSftMessage, SftToolCall
 
 from .mcp_tools import CLAUDE_TOOL_NAMES
 
@@ -365,7 +365,9 @@ def normalize_training_messages(
         MultiTurnSftMessage(role="system", content=system_prompt),
         MultiTurnSftMessage(role="user", content=user_prompt),
     ]
-    final_text: str | None = None
+    assistant_text_snapshots: list[str] = []
+    terminal_text: str | None = None
+    terminal_seen = False
     broker_turn_index = 0
     for line in stdout.splitlines():
         if not line.strip():
@@ -442,9 +444,9 @@ def normalize_training_messages(
             if calls:
                 messages.extend(calls)
             elif text_blocks:
-                if final_text is not None:
-                    raise EventParseError("Claude emitted multiple final assistant messages")
-                final_text = "\n".join(text_blocks)
+                if broker_turn_index != len(broker_turns):
+                    raise EventParseError("Claude emitted non-final assistant prose")
+                assistant_text_snapshots.append("\n".join(text_blocks))
         elif event_type == "user":
             message = event.get("message")
             content = message.get("content") if isinstance(message, dict) else None
@@ -457,13 +459,14 @@ def normalize_training_messages(
                 if not isinstance(call_id, str):
                     raise EventParseError("Claude tool result omits its call ID")
                 _tool_result_text(block.get("content"))
-                name = _pending_tool_name(messages, call_id)
+                pending_call = _pending_tool_call(messages)
+                name = pending_call.function.name
                 if broker_turn_index >= len(broker_turns):
                     raise TranscriptNormalizationInfrastructureError(
                         "Claude tool result has no broker-owned observation"
                     )
                 turn = broker_turns[broker_turn_index]
-                arguments = _pending_tool_arguments(messages, call_id)
+                arguments = pending_call.function.arguments
                 if turn.tool_name != name or turn.arguments_json != arguments:
                     raise TranscriptNormalizationInfrastructureError(
                         "Claude tool event differs from the canonical broker turn"
@@ -473,7 +476,10 @@ def normalize_training_messages(
                         MultiTurnSftMessage(
                             role="tool",
                             content=turn.observation_json,
-                            tool_call_id=call_id,
+                            # Some Claude-compatible gateways rewrite the provider-rendered
+                            # tool-result ID. The assistant call ID is authoritative; ordered
+                            # broker name/argument matching still fails closed on semantic drift.
+                            tool_call_id=pending_call.id,
                             name=name,
                         )
                     )
@@ -482,10 +488,14 @@ def normalize_training_messages(
                         "broker-owned observation is not canonical SFT JSON"
                     ) from exc
                 broker_turn_index += 1
-        elif event_type == "result" and final_text is None:
+        elif event_type == "result":
+            if terminal_seen:
+                raise EventParseError("Claude training stream has multiple terminal results")
+            terminal_seen = True
             result = event.get("result")
             if isinstance(result, str) and result.strip():
-                final_text = result
+                terminal_text = result
+    final_text = _canonical_final_text(assistant_text_snapshots, terminal_text)
     if final_text is None:
         raise EventParseError("Claude training stream has no final assistant content")
     if broker_turn_index != len(broker_turns):
@@ -494,6 +504,23 @@ def normalize_training_messages(
         )
     messages.append(MultiTurnSftMessage(role="assistant", content=final_text))
     return messages
+
+
+def _canonical_final_text(snapshots: list[str], terminal: str | None) -> str | None:
+    """Deduplicate identical/cumulative final snapshots against the terminal result."""
+
+    if terminal is None:
+        if not snapshots:
+            return None
+        terminal = snapshots[-1]
+    previous = ""
+    for snapshot in snapshots:
+        if not snapshot.startswith(previous) or not terminal.startswith(snapshot):
+            raise EventParseError(
+                "Claude final assistant snapshots differ from its terminal result"
+            )
+        previous = snapshot
+    return terminal
 
 
 def _select_observed_model(values: list[str], requested: str) -> str | None:
@@ -567,22 +594,10 @@ def _tool_result_text(value: Any) -> str:
     raise EventParseError("Claude training tool result is not one public text observation")
 
 
-def _pending_tool_name(messages: list[MultiTurnSftMessage], call_id: str) -> str:
+def _pending_tool_call(messages: list[MultiTurnSftMessage]) -> SftToolCall:
     if not messages or messages[-1].role != "assistant" or not messages[-1].tool_calls:
         raise EventParseError("Claude tool result has no preceding assistant call")
-    call = messages[-1].tool_calls[0]
-    if call.id != call_id:
-        raise EventParseError("Claude tool result call ID changed")
-    return call.function.name
-
-
-def _pending_tool_arguments(messages: list[MultiTurnSftMessage], call_id: str) -> str:
-    if not messages or messages[-1].role != "assistant" or not messages[-1].tool_calls:
-        raise EventParseError("Claude tool result has no preceding assistant call")
-    call = messages[-1].tool_calls[0]
-    if call.id != call_id:
-        raise EventParseError("Claude tool result call ID changed")
-    return call.function.arguments
+    return messages[-1].tool_calls[0]
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

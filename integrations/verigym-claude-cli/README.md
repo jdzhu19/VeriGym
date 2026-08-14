@@ -94,6 +94,18 @@ server exposes only `list_files`, `read_file`, `apply_patch`, `run_public_test`,
 execute in the selected official Docker image with networking off; the provider credential never
 enters that image.
 
+Tool paths are relative to the logical `/workspace` root and retain every prefix declared by the
+task. In particular, HWE-Bench paths start with `repository/` (for example,
+`repository/core/decoder.sv`); `/workspace/repository/...` and `core/...` are both invalid. The v2
+prompt contract states this explicitly without normalizing an unsafe or ambiguous path.
+
+Training transcript normalization preserves the assistant's tool-call ID and verifies every
+ordered tool name and canonical argument object against the broker-owned turn. A gateway-rewritten
+tool-result ID is rebound to that verified assistant ID. Repeated final text is accepted only when
+it is an identical or cumulative prefix of Claude's terminal result; divergent or non-final prose
+still fails closed. Provider-rendered tool output and private thinking are never used as training
+observations.
+
 Artifacts live under `artifacts/claude_cli/`. They contain executable/configuration identities,
 content-free event summaries, broker counts, observed context/output ceilings, failure
 classification, and final-verifier status. `provider-usage.json` records input, output, total,
