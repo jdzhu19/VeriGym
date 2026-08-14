@@ -5,7 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from verigym.api import RunConfig
 from verigym.core.errors import ConfigurationError
+from verigym.schemas.runtime import DockerRuntimeConfig
+from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 
 from verigym_training_reference.cva6_teacher_collection import (
     _CLAUDE_CONTEXT_WINDOW,
@@ -22,6 +25,7 @@ from verigym_training_reference.cva6_teacher_collection import (
     _campaign_output,
     _is_infrastructure_invalid,
     _provider_usage,
+    _run_config,
     _stop_for_campaign_limit,
 )
 
@@ -39,10 +43,46 @@ def test_teacher_campaign_uses_the_maximum_bounded_cli_evidence_stream() -> None
     assert source.count('"max_tool_calls": _MAX_TOOL_CALLS') >= 2
     assert source.count('"max_patch_calls": _MAX_PATCH_CALLS') >= 2
     assert source.count('"max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS') >= 2
-    assert source.count('"max_provider_tokens": _MAX_PROVIDER_TOKENS') == 1
+    assert source.count('"max_provider_billed_units": _MAX_PROVIDER_TOKENS') == 1
     assert source.count('"max_budget_usd": _MAX_BUDGET_USD') == 1
     assert source.count('"expected_context_window": _CLAUDE_CONTEXT_WINDOW') == 1
     assert _MAX_PROCESS_TIME_S == 600
+
+
+def test_claude_run_config_uses_secret_safe_provider_limit_option(tmp_path: Path) -> None:
+    source = SuiteSourceConfig(source_root=tmp_path / "source", variant="repo-repair-v1")
+    snapshot = SuiteSourceSnapshot(
+        source_root=str(tmp_path / "source"),
+        dataset_root="instances.jsonl",
+        variant="repo-repair-v1",
+        native_layout="hwe-bench-v1",
+        strict_compatibility=True,
+        configuration_fingerprint="a" * 64,
+        dataset_content_hash="b" * 64,
+        synthetic_fixture=True,
+    )
+    config = _run_config(
+        attempt_id="campaign-00-claude-sample-0",
+        provider="claude",
+        sample_index=0,
+        task_id="cva6-example",
+        task_hash="c" * 64,
+        source_hash="d" * 64,
+        source=source,
+        source_snapshot=snapshot,
+        docker_config=DockerRuntimeConfig(image="verigym/example:test"),
+        output=tmp_path / "runs",
+        max_process_time_s=_MAX_PROCESS_TIME_S,
+        campaign_id="campaign",
+    )
+
+    assert config.agent_options["max_provider_billed_units"] == _MAX_PROVIDER_TOKENS
+    assert "max_provider_tokens" not in config.agent_options
+
+    unsafe = config.model_dump(mode="python")
+    unsafe["agent_options"] = {"max_provider_tokens": _MAX_PROVIDER_TOKENS}
+    with pytest.raises(ValueError, match="secret-bearing plugin option key"):
+        RunConfig.model_validate(unsafe)
 
 
 def test_campaign_identity_is_bound_into_progress_and_attempt_ids(tmp_path: Path) -> None:

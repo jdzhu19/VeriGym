@@ -40,12 +40,12 @@ Every run requires an explicit model. The current frozen effort policy is `max`:
 --agent-option 'reasoning_effort="max"'
 --agent-option 'expected_context_window=1000000'
 --agent-option 'max_process_time_s=1800'
---agent-option 'max_provider_tokens=2000000'
+--agent-option 'max_provider_billed_units=2000000'
 --agent-option 'max_budget_usd=2.0'
 ```
 
 `max_process_time_s` is the outer process wall timeout. `max_output_bytes` (8 MiB by default)
-bounds captured process evidence, not model tokens. `max_provider_tokens` counts input, output,
+bounds captured process evidence, not model tokens. `max_provider_billed_units` counts input, output,
 cache-creation, and cache-read tokens from live provider messages, deduplicated by message ID.
 `max_budget_usd` is also passed to Claude's native print-mode budget control. The defaults are
 2,000,000 cache-inclusive tokens and USD 2 per episode. No hidden turn/model-call override, retry,

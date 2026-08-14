@@ -40,7 +40,7 @@ _OPTIONS = {
     "max_tool_calls",
     "max_patch_calls",
     "max_consecutive_rejected_calls",
-    "max_provider_tokens",
+    "max_provider_billed_units",
     "max_budget_usd",
 }
 _PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v1"
@@ -200,7 +200,8 @@ def agent_settings(
         if max_patch_calls > max_tool_calls:
             raise ValueError("Claude patch limit cannot exceed its tool-call limit")
     max_provider_tokens = _integer(
-        options.get("max_provider_tokens", 2_000_000), "max_provider_tokens"
+        options.get("max_provider_billed_units", 2_000_000),
+        "max_provider_billed_units",
     )
     if not 1 <= max_provider_tokens <= 100_000_000:
         raise ValueError("Claude provider token limit must be in [1, 100000000]")
@@ -270,7 +271,7 @@ def agent_settings(
         "max_tool_calls": max_tool_calls,
         "max_patch_calls": max_patch_calls,
         "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
-        "max_provider_tokens": max_provider_tokens,
+        "max_provider_billed_units": max_provider_tokens,
         "max_budget_usd": max_budget_usd,
         "capability_fingerprint": capabilities.capability_fingerprint,
         "internal_turn_limit": None,

@@ -368,7 +368,7 @@ def _run_config(
                 "max_tool_calls": _MAX_TOOL_CALLS,
                 "max_patch_calls": _MAX_PATCH_CALLS,
                 "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
-                "max_provider_tokens": _MAX_PROVIDER_TOKENS,
+                "max_provider_billed_units": _MAX_PROVIDER_TOKENS,
                 "max_budget_usd": _MAX_BUDGET_USD,
             },
         )

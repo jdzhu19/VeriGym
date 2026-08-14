@@ -51,7 +51,7 @@ def test_capabilities_and_invocation_apply_broker_and_provider_limits(
             "max_tool_calls": 32,
             "max_patch_calls": 8,
             "max_consecutive_rejected_calls": 3,
-            "max_provider_tokens": 2_000_000,
+            "max_provider_billed_units": 2_000_000,
             "max_budget_usd": 2.0,
         },
         capabilities,
@@ -239,8 +239,8 @@ def test_artificial_limit_options_are_rejected(
 @pytest.mark.parametrize(
     ("option", "value"),
     [
-        ("max_provider_tokens", 0),
-        ("max_provider_tokens", 100_000_001),
+        ("max_provider_billed_units", 0),
+        ("max_provider_billed_units", 100_000_001),
         ("max_budget_usd", 0),
         ("max_budget_usd", 101),
     ],
