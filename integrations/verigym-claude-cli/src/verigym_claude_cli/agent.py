@@ -54,8 +54,6 @@ from .process import (
 )
 from .util import atomic_json, redact_text
 
-_ACTIVE_TIMEOUT_MIN_TOOL_CALLS = 8
-
 
 class ClaudeCliAgentAdapter(AgentAdapter):
     """Run one bounded outer episode while Claude performs its internal agent loop."""
@@ -576,17 +574,16 @@ def _process_failure(
             infrastructure=True,
         )
     if process.timed_out:
-        active_agent_timeout = broker.tool_calls >= _ACTIVE_TIMEOUT_MIN_TOOL_CALLS
         return _termination(
             TerminationReason.MODEL_ERROR,
-            kind="model" if active_agent_timeout else "runtime",
-            category="agent_timeout" if active_agent_timeout else "timeout",
+            kind="model",
+            category="agent_timeout",
             message=(
-                "Claude agent exhausted its episode deadline after sustained broker activity"
-                if active_agent_timeout
-                else "Claude CLI external-agent process timed out"
+                "Claude agent exhausted its episode deadline after broker activity"
+                if broker.tool_calls
+                else "Claude agent exhausted its episode deadline before using a broker tool"
             ),
-            infrastructure=not active_agent_timeout,
+            infrastructure=False,
         )
     if process.stdout_truncated or process.stderr_truncated:
         return _termination(

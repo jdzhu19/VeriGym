@@ -68,7 +68,7 @@ def _broker_stats(*, tool_calls: int) -> BrokerStats:
     )
 
 
-def test_sustained_broker_activity_makes_timeout_an_agent_failure() -> None:
+def test_episode_deadline_is_an_agent_failure_with_or_without_broker_activity() -> None:
     active = _process_failure(_timed_out_process(), None, None, _broker_stats(tool_calls=8))
     inactive = _process_failure(_timed_out_process(), None, None, _broker_stats(tool_calls=0))
 
@@ -77,9 +77,9 @@ def test_sustained_broker_activity_makes_timeout_an_agent_failure() -> None:
     assert active.failure.category == "agent_timeout"
     assert active.failure.infrastructure is False
     assert inactive is not None
-    assert inactive.failure.kind == "runtime"
-    assert inactive.failure.category == "timeout"
-    assert inactive.failure.infrastructure is True
+    assert inactive.failure.kind == "model"
+    assert inactive.failure.category == "agent_timeout"
+    assert inactive.failure.infrastructure is False
 
 
 class FakeBridge:

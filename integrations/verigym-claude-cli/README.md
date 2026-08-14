@@ -51,6 +51,10 @@ cache-creation, and cache-read tokens from live provider messages, deduplicated 
 2,000,000 cache-inclusive tokens and USD 2 per episode. No hidden turn/model-call override, retry,
 fallback model, or best-of-K setting is accepted.
 
+Once the Claude process launches, reaching its configured wall deadline is an infrastructure-valid
+`agent_timeout`, even if it has not used a broker tool. Process-launch, runtime-security, event
+protocol, and broker infrastructure failures remain infrastructure-invalid.
+
 Both provider thresholds are checked after each response becomes observable, so one in-flight
 response can overshoot a threshold. For the current DeepSeek route, the campaign also freezes the
 observed 1,000,000-token context window; the 32,000-token per-response maximum remains recorded

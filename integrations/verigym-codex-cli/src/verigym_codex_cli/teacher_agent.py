@@ -57,8 +57,6 @@ from .teacher_config import CodexTeacherSettings, teacher_settings
 from .teacher_invocation import build_teacher_arguments, sanitized_teacher_invocation
 from .util import atomic_json, redact_text
 
-_ACTIVE_TIMEOUT_MIN_TOOL_CALLS = 8
-
 
 class CodexCliMcpTeacherAdapter(AgentAdapter):
     """Collect one strict gpt-5.4/xhigh repository demonstration."""
@@ -186,6 +184,42 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
             ) from exc
         process_failure = _preparse_process_failure(process, broker_stats)
         if process_failure is not None:
+            accounting = ExternalAgentAccounting(
+                process_wall_time_s=process.duration_s,
+                cli_event_count=0,
+                external_tool_call_count=broker_stats.tool_calls,
+                external_command_count=0,
+                public_test_invocation_count=broker_stats.public_test_calls,
+                external_file_read_count=broker_stats.file_reads,
+                external_file_write_count=0,
+                external_patch_count=broker_stats.patches,
+            )
+            bridge.record_accounting(accounting)
+            _write_content_free_evidence(
+                bridge.artifact_root,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                event_summaries=[],
+                broker=broker_stats.__dict__,
+                identity=None,
+                accounting=accounting.model_dump(mode="json"),
+                provider_usage={
+                    "schema_version": "1.0",
+                    "usage_complete": False,
+                    "usage_missing": True,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "cached_input_tokens": None,
+                    "cache_usage_reported": False,
+                    "cost_usd": None,
+                    "currency": None,
+                    "provider_report_scope": "codex_cli_no_terminal_event",
+                },
+                transcript=None,
+                failure_category=process_failure.failure.category,
+            )
             raise process_failure
         try:
             parsed = parse_event_stream(process.stdout)
@@ -435,10 +469,11 @@ def _write_content_free_evidence(
     process: CodexProcessResult,
     event_summaries: list[dict[str, object]],
     broker: dict[str, object],
-    identity: dict[str, object],
-    accounting: dict[str, object],
+    identity: dict[str, object] | None,
+    accounting: dict[str, object] | None,
     provider_usage: dict[str, object],
-    transcript: dict[str, object],
+    transcript: dict[str, object] | None,
+    failure_category: str | None = None,
 ) -> None:
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", invocation)
@@ -449,6 +484,9 @@ def _write_content_free_evidence(
             "duration_s": process.duration_s,
             "timed_out": process.timed_out,
             "broker_cancelled": process.broker_cancelled,
+            "stdout_truncated": process.stdout_truncated,
+            "stderr_truncated": process.stderr_truncated,
+            "process_group_cleaned": process.process_group_cleaned,
             "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
             "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest(),
             "raw_output_persisted": False,
@@ -458,17 +496,21 @@ def _write_content_free_evidence(
     )
     atomic_json(root / "events.json", {"events": event_summaries})
     atomic_json(root / "broker.json", broker)
-    atomic_json(root / "identity.json", identity)
-    atomic_json(root / "accounting.json", accounting)
+    if identity is not None:
+        atomic_json(root / "identity.json", identity)
+    if accounting is not None:
+        atomic_json(root / "accounting.json", accounting)
     atomic_json(root / "provider-usage.json", provider_usage)
-    atomic_json(root / "training-transcript.json", transcript)
+    if transcript is not None:
+        atomic_json(root / "training-transcript.json", transcript)
     atomic_json(
         root / "summary.json",
         {
             "schema_version": "1.0",
             "integration_track": "codex_cli_mcp_teacher",
-            "training_transcript_captured": True,
-            "ordinary_hidden_verifier_pending": True,
+            "training_transcript_captured": transcript is not None,
+            "ordinary_hidden_verifier_pending": transcript is not None,
+            "failure_category": failure_category,
             "private_reasoning_persisted": False,
         },
     )
@@ -519,16 +561,15 @@ def _preparse_process_failure(
             reason=TerminationReason.RUNTIME_ERROR,
         )
     if process.timed_out:
-        active_agent_timeout = broker.tool_calls >= _ACTIVE_TIMEOUT_MIN_TOOL_CALLS
         return _termination(
-            "agent_timeout" if active_agent_timeout else "timeout",
+            "agent_timeout",
             (
-                "Codex agent exhausted its episode deadline after sustained broker activity"
-                if active_agent_timeout
-                else "Codex CLI MCP teacher process timed out"
+                "Codex agent exhausted its episode deadline after broker activity"
+                if broker.tool_calls
+                else "Codex agent exhausted its episode deadline before using a broker tool"
             ),
-            infrastructure=not active_agent_timeout,
-            kind="model" if active_agent_timeout else "runtime",
+            infrastructure=False,
+            kind="model",
         )
     if process.stdout_truncated or process.stderr_truncated:
         return _termination(

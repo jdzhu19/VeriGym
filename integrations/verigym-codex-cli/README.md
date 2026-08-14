@@ -90,8 +90,13 @@ launchers documented in `docs/integrations/codex_cli.md`.
 Configure all broker limits together. The current CVA6 collection freezes 32 total tool calls,
 eight executed patch attempts, three consecutive rejected calls, and a 600-second process wall
 timeout. Reaching a broker limit cancels the complete Codex process group and records an
-infrastructure-valid `broker_resource_limit` agent failure. A successful teacher stream without
-input/output usage is rejected as infrastructure-invalid `provider_usage_missing`.
+infrastructure-valid `broker_resource_limit` agent failure. Reaching the configured process wall
+deadline is likewise an infrastructure-valid `agent_timeout`, including when the model has not yet
+used a broker tool. Launch, runtime-security, and protocol failures remain infrastructure-invalid.
+A successful teacher stream without input/output usage is rejected as infrastructure-invalid
+`provider_usage_missing`.
 
 Successful teacher artifacts also include `provider-usage.json` with input, output, total, and
-cached-input tokens. The cost fields remain null when the Codex CLI does not report currency data.
+cached-input tokens. A deadline failure records an explicit incomplete usage artifact instead of
+inventing missing counts. The cost fields remain null when the Codex CLI does not report currency
+data.

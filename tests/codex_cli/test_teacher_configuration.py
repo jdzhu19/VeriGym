@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from verigym_codex_cli.teacher_agent import (
     CodexCliMcpTeacherAdapter,
     _preparse_process_failure,
     _provider_usage_failure,
+    _write_content_free_evidence,
 )
 from verigym_codex_cli.teacher_config import teacher_settings
 from verigym_codex_cli.teacher_invocation import (
@@ -56,7 +58,7 @@ def _broker_stats(*, tool_calls: int) -> RepositoryToolBrokerStats:
     )
 
 
-def test_sustained_mcp_activity_makes_timeout_an_agent_failure() -> None:
+def test_episode_deadline_is_an_agent_failure_with_or_without_mcp_activity() -> None:
     active = _preparse_process_failure(_timed_out_process(), _broker_stats(tool_calls=8))
     inactive = _preparse_process_failure(_timed_out_process(), _broker_stats(tool_calls=0))
 
@@ -65,9 +67,51 @@ def test_sustained_mcp_activity_makes_timeout_an_agent_failure() -> None:
     assert active.failure.category == "agent_timeout"
     assert active.failure.infrastructure is False
     assert inactive is not None
-    assert inactive.failure.kind == "runtime"
-    assert inactive.failure.category == "timeout"
-    assert inactive.failure.infrastructure is True
+    assert inactive.failure.kind == "model"
+    assert inactive.failure.category == "agent_timeout"
+    assert inactive.failure.infrastructure is False
+
+
+def test_timed_out_teacher_evidence_records_explicitly_missing_usage(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    del fake_codex
+    _executable, capabilities = discover_capabilities(force=True)
+    root = tmp_path / "evidence"
+    root.mkdir()
+
+    _write_content_free_evidence(
+        root,
+        capabilities=capabilities,
+        invocation={"model_id": "gpt-5.4", "reasoning_effort": "xhigh"},
+        process=_timed_out_process(),
+        event_summaries=[],
+        broker=_broker_stats(tool_calls=0).__dict__,
+        identity=None,
+        accounting=None,
+        provider_usage={
+            "usage_complete": False,
+            "usage_missing": True,
+            "input_tokens": None,
+            "output_tokens": None,
+            "cached_input_tokens": None,
+            "cost_usd": None,
+        },
+        transcript=None,
+        failure_category="agent_timeout",
+    )
+
+    usage = json.loads((root / "provider-usage.json").read_text(encoding="utf-8"))
+    summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+    process = json.loads((root / "process.json").read_text(encoding="utf-8"))
+    assert usage["usage_complete"] is False
+    assert usage["input_tokens"] is None
+    assert process["timed_out"] is True
+    assert summary["failure_category"] == "agent_timeout"
+    assert summary["training_transcript_captured"] is False
+    assert not (root / "training-transcript.json").exists()
+    assert not (root / "identity.json").exists()
 
 
 def test_teacher_is_exact_gpt54_xhigh_required_mcp_only(
