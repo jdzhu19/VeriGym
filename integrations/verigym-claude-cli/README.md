@@ -60,6 +60,10 @@ response can overshoot a threshold. For the current DeepSeek route, the campaign
 observed 1,000,000-token context window; the 32,000-token per-response maximum remains recorded
 upstream provenance.
 
+Usage evidence takes the component-wise maximum of terminal totals and live-stream observations,
+then preserves the larger observed billed total. A terminal event that lags the cancellation
+boundary therefore cannot reduce campaign accounting below the token count that triggered the cap.
+
 Training campaigns can additionally configure all three broker limits together:
 
 ```text

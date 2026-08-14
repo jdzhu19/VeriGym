@@ -704,12 +704,10 @@ def _accounting(
     parsed: ParsedEventStream | None,
     broker: BrokerStats,
 ) -> ExternalAgentAccounting:
-    input_tokens = parsed.input_tokens if parsed is not None else None
-    output_tokens = parsed.output_tokens if parsed is not None else None
-    if input_tokens is None:
-        input_tokens = process.observed_provider_input_tokens
-    if output_tokens is None:
-        output_tokens = process.observed_provider_output_tokens
+    parsed_input = parsed.input_tokens if parsed is not None else None
+    parsed_output = parsed.output_tokens if parsed is not None else None
+    input_tokens = _maximum_observed_count(parsed_input, process.observed_provider_input_tokens)
+    output_tokens = _maximum_observed_count(parsed_output, process.observed_provider_output_tokens)
     return ExternalAgentAccounting(
         process_wall_time_s=process.duration_s,
         cli_event_count=len(parsed.events) if parsed is not None else 0,
@@ -729,6 +727,14 @@ def _accounting(
         cost=parsed.cost_usd if parsed is not None else None,
         currency=("USD" if parsed is not None and parsed.cost_usd is not None else None),
     )
+
+
+def _maximum_observed_count(terminal: int | None, observed: int | None) -> int | None:
+    if terminal is None:
+        return observed
+    if observed is None:
+        return terminal
+    return max(terminal, observed)
 
 
 def _termination(

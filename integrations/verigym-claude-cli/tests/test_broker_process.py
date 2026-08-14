@@ -27,12 +27,14 @@ from verigym.schemas.agent import BudgetRemaining, EpisodeResult, Observation
 from verigym.schemas.common import InteractionMode
 from verigym.suites.toy_rtl.adapter import ToyRtlSuite
 
-from verigym_claude_cli.agent import ClaudeCliAgentAdapter, _process_failure
+from verigym_claude_cli.agent import ClaudeCliAgentAdapter, _accounting, _process_failure
+from verigym_claude_cli.artifacts import write_evidence
 from verigym_claude_cli.broker import BrokerStats, ClaudeToolBroker
 from verigym_claude_cli.capabilities import discover_capabilities
 from verigym_claude_cli.config import agent_settings
 from verigym_claude_cli.events import parse_event_stream
 from verigym_claude_cli.invocation import build_arguments
+from verigym_claude_cli.mcp_tools import CLAUDE_TOOL_NAMES
 from verigym_claude_cli.process import (
     ClaudeCliProcessRunner,
     ClaudeProcessResult,
@@ -663,6 +665,98 @@ def test_process_runner_enforces_live_cache_inclusive_provider_tokens(
     assert failure is not None
     assert failure.failure.category == "provider_resource_limit"
     assert failure.failure.infrastructure is False
+
+
+def test_evidence_keeps_live_usage_maximum_when_terminal_usage_lags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable_path = Path(__file__).with_name("fake_claude.py")
+    broker_root = tmp_path / "broker"
+    broker_root.mkdir(mode=0o700)
+    monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
+    monkeypatch.setenv("VERIGYM_CLAUDE_BROKER_ROOT", str(broker_root))
+    monkeypatch.setenv("VERIGYM_CLAUDE_TEST_MODE", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-only-not-a-real-token")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://provider.invalid/api")
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    parsed = parse_event_stream(
+        "\n".join(
+            (
+                json.dumps(
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "model": "deepseek-v4-flash[1m]",
+                        "tools": list(CLAUDE_TOOL_NAMES),
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "result",
+                        "subtype": "success",
+                        "is_error": False,
+                        "usage": {
+                            "input_tokens": 10,
+                            "output_tokens": 10,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 100,
+                        },
+                        "total_cost_usd": 0.5,
+                    }
+                ),
+            )
+        ),
+        requested_model_id="deepseek-v4-flash[1m]",
+        expected_context_window_tokens=None,
+    )
+    process = ClaudeProcessResult(
+        arguments=("claude",),
+        exit_code=143,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+        provider_cancelled=True,
+        provider_limit_failure="claude_provider_token_limit",
+        observed_provider_input_tokens=20,
+        observed_provider_output_tokens=30,
+        observed_provider_cache_creation_input_tokens=5,
+        observed_provider_cache_read_input_tokens=300,
+        observed_provider_billed_tokens=355,
+    )
+    root = tmp_path / "evidence"
+    root.mkdir()
+    broker = _broker_stats(tool_calls=0)
+
+    write_evidence(
+        root,
+        capabilities=capabilities,
+        invocation={},
+        process=process,
+        parsed=parsed,
+        broker=broker,
+        identity={},
+        accounting={},
+        summary={},
+        roots_to_redact=(),
+    )
+
+    usage = json.loads((root / "provider-usage.json").read_text(encoding="utf-8"))
+    assert usage["input_tokens"] == 20
+    assert usage["output_tokens"] == 30
+    assert usage["cache_creation_input_tokens"] == 5
+    assert usage["cache_read_input_tokens"] == 300
+    assert usage["billed_tokens_observed"] == 355
+    assert usage["provider_report_scope"] == ("claude_cli_terminal_result_plus_stream_observed_max")
+    accounting = _accounting(process, parsed, broker)
+    assert accounting.input_tokens == 20
+    assert accounting.output_tokens == 30
+    assert accounting.total_tokens == 50
 
 
 def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(

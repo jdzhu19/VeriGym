@@ -33,18 +33,24 @@ def write_evidence(
     usage_complete = bool(
         parsed is not None and parsed.input_tokens is not None and parsed.output_tokens is not None
     )
-    input_tokens = parsed.input_tokens if parsed is not None else None
-    output_tokens = parsed.output_tokens if parsed is not None else None
-    cache_creation_input_tokens = parsed.cache_creation_input_tokens if parsed is not None else None
-    cache_read_input_tokens = parsed.cache_read_input_tokens if parsed is not None else None
-    if input_tokens is None:
-        input_tokens = process.observed_provider_input_tokens
-    if output_tokens is None:
-        output_tokens = process.observed_provider_output_tokens
-    if cache_creation_input_tokens is None:
-        cache_creation_input_tokens = process.observed_provider_cache_creation_input_tokens
-    if cache_read_input_tokens is None:
-        cache_read_input_tokens = process.observed_provider_cache_read_input_tokens
+    terminal_input = parsed.input_tokens if parsed is not None else None
+    terminal_output = parsed.output_tokens if parsed is not None else None
+    terminal_cache_creation = parsed.cache_creation_input_tokens if parsed is not None else None
+    terminal_cache_read = parsed.cache_read_input_tokens if parsed is not None else None
+    pairs = (
+        (terminal_input, process.observed_provider_input_tokens),
+        (terminal_output, process.observed_provider_output_tokens),
+        (terminal_cache_creation, process.observed_provider_cache_creation_input_tokens),
+        (terminal_cache_read, process.observed_provider_cache_read_input_tokens),
+    )
+    stream_observed_max_used = any(
+        observed is not None and (terminal is None or observed > terminal)
+        for terminal, observed in pairs
+    )
+    input_tokens = _maximum_observed_count(*pairs[0])
+    output_tokens = _maximum_observed_count(*pairs[1])
+    cache_creation_input_tokens = _maximum_observed_count(*pairs[2])
+    cache_read_input_tokens = _maximum_observed_count(*pairs[3])
     usage_values = (
         input_tokens,
         output_tokens,
@@ -56,6 +62,12 @@ def write_evidence(
         if any(value is not None for value in usage_values)
         else None
     )
+    if process.observed_provider_billed_tokens is not None and (
+        billed_tokens_observed is None
+        or process.observed_provider_billed_tokens > billed_tokens_observed
+    ):
+        billed_tokens_observed = process.observed_provider_billed_tokens
+        stream_observed_max_used = True
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", redact_value(invocation, roots=roots_to_redact))
     atomic_json(
@@ -116,9 +128,13 @@ def write_evidence(
             "cost_usd": parsed.cost_usd if parsed else None,
             "currency": "USD" if parsed is not None and parsed.cost_usd is not None else None,
             "provider_report_scope": (
-                "claude_cli_terminal_result"
-                if usage_complete
-                else "claude_cli_stream_observed_lower_bound"
+                "claude_cli_terminal_result_plus_stream_observed_max"
+                if usage_complete and stream_observed_max_used
+                else (
+                    "claude_cli_terminal_result"
+                    if usage_complete
+                    else "claude_cli_stream_observed_lower_bound"
+                )
             ),
             "provider_limit_failure": process.provider_limit_failure,
         },
@@ -145,6 +161,14 @@ def _safe_existing_directory(path: Path) -> None:
 
 def _dump(value: Any) -> Any:
     return value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+
+
+def _maximum_observed_count(terminal: int | None, observed: int | None) -> int | None:
+    if terminal is None:
+        return observed
+    if observed is None:
+        return terminal
+    return max(terminal, observed)
 
 
 __all__ = ["update_summary", "write_evidence"]
