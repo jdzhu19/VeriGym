@@ -106,32 +106,11 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     assert result.status == VerifierStatus.PASSED
     assert result.tests_passed == result.tests_total == 1
     assert result.metadata["manifest_digest_observed"] is not airgapped
+    assert result.metadata["bash_env_disabled"] is True
+    assert result.metadata["seccomp_profile"] == "builtin"
     assert result.metadata["seccomp_unconfined"] is False
-    assert result.metadata["seccomp_profile_sha256"] == docker_verifier._SECCOMP_PROFILE_SHA256
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
     assert "SECRET_RUNTIME_OUTPUT" not in persisted
-
-
-def test_packaged_seccomp_profile_is_hash_bound_and_never_allows_by_default() -> None:
-    profile = docker_verifier._validated_seccomp_profile()
-    payload = json.loads(profile.read_text(encoding="utf-8"))
-
-    assert hash_bytes(profile.read_bytes()) == docker_verifier._SECCOMP_PROFILE_SHA256
-    assert payload["defaultAction"] == "SCMP_ACT_ERRNO"
-    assert "clone3" not in {
-        name for syscall in payload["syscalls"] for name in syscall.get("names", [])
-    }
-
-
-def test_packaged_seccomp_profile_tampering_fails_closed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    changed = tmp_path / "changed-seccomp.json"
-    changed.write_text('{"defaultAction":"SCMP_ACT_ALLOW"}\n', encoding="utf-8")
-    monkeypatch.setattr(docker_verifier, "_SECCOMP_PROFILE", changed)
-
-    with pytest.raises(ValueError, match="profile changed"):
-        docker_verifier._validated_seccomp_profile()
 
 
 def test_runner_uses_repository_specific_base_commit_marker(tmp_path: Path) -> None:
@@ -159,6 +138,7 @@ def test_runner_uses_repository_specific_base_commit_marker(tmp_path: Path) -> N
 
     assert "cd /home/cva6" in runner
     assert runner.count("git -c safe.directory=/home/cva6") == 5
+    assert runner.count("-c core.preloadIndex=false") == 5
     assert "VERIGYM_HWE_SETUP_FAILURE" in runner
     assert "VERIGYM_HWE_TESTBENCH_STARTED" in runner
     assert "/home/cva6_base_commit.txt" in runner
@@ -447,9 +427,9 @@ def test_verifier_uses_and_removes_an_isolated_offline_cache_volume(
     ]
     assert "no-new-privileges" in security_options
     seccomp_options = [value for value in security_options if value.startswith("seccomp=")]
-    assert len(seccomp_options) == 1
-    assert seccomp_options[0] != "seccomp=unconfined"
-    assert Path(seccomp_options[0].removeprefix("seccomp=")).is_file()
+    assert seccomp_options == []
+    assert "--env" in create_argv
+    assert create_argv[create_argv.index("--env") + 1] == "BASH_ENV=/dev/null"
     assert any("type=volume" in value and "/tools/coursier" in value for value in create_argv)
     assert dependency.sha256 in rendered_seed[0]
     assert ".checked" in rendered_seed[0]

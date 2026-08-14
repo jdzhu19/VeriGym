@@ -35,8 +35,6 @@ _CACHE_READY = "VERIGYM_HWE_CACHE_SEED_OK"
 _TESTBENCH_STARTED = "VERIGYM_HWE_TESTBENCH_STARTED"
 _SETUP_FAILURE = re.compile(r"^VERIGYM_HWE_SETUP_FAILURE:(?P<stage>[a-z_]{1,64})$")
 _MARKER = re.compile(r"^TEST:\s*(.{1,256}?)\s*\.\.\.\s*(PASS|FAIL|SKIP)\s*$")
-_SECCOMP_PROFILE = Path(__file__).parent / "assets" / "moby-v19.03.14-default-seccomp.json"
-_SECCOMP_PROFILE_SHA256 = "88e52e1f444c1012f3f8383d1aef701c654b9a317fb27089387ce024910a8082"
 
 _RUNNER = """#!/bin/bash
 set -Eeuo pipefail
@@ -53,19 +51,22 @@ __CACHE_SEED__
 verigym_stage=repository_enter
 cd __REPOSITORY_HOME__
 verigym_stage=repository_reset
-git -c __SAFE_DIRECTORY__ reset --hard >/dev/null
+git -c __SAFE_DIRECTORY__ -c core.preloadIndex=false reset --hard >/dev/null
 verigym_stage=repository_clean
-git -c __SAFE_DIRECTORY__ clean -fdx >/dev/null
+git -c __SAFE_DIRECTORY__ -c core.preloadIndex=false clean -fdx >/dev/null
 verigym_stage=base_marker_check
 test -f __BASE_COMMIT_MARKER__
 test "$(cat __BASE_COMMIT_MARKER__)" = "__BASE_COMMIT__"
 verigym_stage=base_checkout
-git -c __SAFE_DIRECTORY__ checkout "$(cat __BASE_COMMIT_MARKER__)" >/dev/null
+git -c __SAFE_DIRECTORY__ -c core.preloadIndex=false checkout \
+  "$(cat __BASE_COMMIT_MARKER__)" >/dev/null
 if [[ -s /home/verigym-candidate.patch ]]; then
   verigym_stage=candidate_patch_check
-  git -c __SAFE_DIRECTORY__ apply --check /home/verigym-candidate.patch
+  git -c __SAFE_DIRECTORY__ -c core.preloadIndex=false apply \
+    --check /home/verigym-candidate.patch
   verigym_stage=candidate_patch_apply
-  git -c __SAFE_DIRECTORY__ apply /home/verigym-candidate.patch
+  git -c __SAFE_DIRECTORY__ -c core.preloadIndex=false apply \
+    /home/verigym-candidate.patch
 fi
 trap - ERR
 printf 'VERIGYM_HWE_TESTBENCH_STARTED\\n'
@@ -194,15 +195,6 @@ def _setup_failure_stage(output: str) -> str | None:
     return None
 
 
-def _validated_seccomp_profile() -> Path:
-    """Return the pinned Moby allowlist after checking its packaged bytes."""
-
-    profile = _SECCOMP_PROFILE.resolve(strict=True)
-    if hash_bytes(profile.read_bytes()) != _SECCOMP_PROFILE_SHA256:
-        raise ValueError("the packaged HWE-Bench seccomp profile changed")
-    return profile
-
-
 class DockerHweVerifier:
     """Execute a candidate without exposing Docker or hidden scripts to the agent runtime."""
 
@@ -222,17 +214,6 @@ class DockerHweVerifier:
         artifact_dir = artifact_root / node.id
         artifact_dir.mkdir(parents=True, exist_ok=False)
         dependencies = entry.verifier_dependencies if isinstance(entry, ImageLockEntryV2) else []
-        try:
-            seccomp_profile = _validated_seccomp_profile()
-        except (OSError, ValueError):
-            return self._result(
-                node=node,
-                artifact_dir=artifact_dir,
-                started=started,
-                status=VerifierStatus.ERROR,
-                category=ErrorCategory.UNSUPPORTED_VERSION,
-                message="The pinned HWE-Bench seccomp profile is unavailable or changed",
-            )
         try:
             dependency_root = _validate_dependency_root(verifier_dependency_root, dependencies)
         except (OSError, ValueError):
@@ -397,8 +378,8 @@ class DockerHweVerifier:
                 "ALL",
                 "--security-opt",
                 "no-new-privileges",
-                "--security-opt",
-                f"seccomp={seccomp_profile}",
+                "--env",
+                "BASH_ENV=/dev/null",
                 "--pids-limit",
                 str(profile.verifier_limits.pids_limit),
                 "--memory",
@@ -518,7 +499,8 @@ class DockerHweVerifier:
                     "network_mode": "none",
                     "capabilities_dropped": "all",
                     "no_new_privileges": True,
-                    "seccomp_profile_sha256": _SECCOMP_PROFILE_SHA256,
+                    "bash_env_disabled": True,
+                    "seccomp_profile": "builtin",
                     "seccomp_unconfined": False,
                     "container_user": "root",
                     "dependency_count": len(dependencies),
@@ -559,7 +541,8 @@ class DockerHweVerifier:
                 "network_mode": "none",
                 "capabilities_dropped": "all",
                 "no_new_privileges": True,
-                "seccomp_profile_sha256": _SECCOMP_PROFILE_SHA256,
+                "bash_env_disabled": True,
+                "seccomp_profile": "builtin",
                 "seccomp_unconfined": False,
                 "container_user": "root",
                 "dependency_count": len(dependencies),
