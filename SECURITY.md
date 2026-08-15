@@ -117,6 +117,28 @@ The residual trusted computing base adds the installed Claude CLI binary and the
 adapter/broker. Provider behavior and the CLI's own upstream response ceiling remain external
 dependencies; Docker does not protect against compromise of the trusted host control plane.
 
+### Opt-in nested Docker boundary for HWE-Bench
+
+The HWE-Bench DinD launcher is a compatibility path for hosts whose daemon/runtime stack cannot
+start a frozen benchmark image. Only an official, immutable Docker 23.0.6 daemon sidecar receives
+outer `--privileged`. The launcher validates its official entrypoint, server version, `vfs` storage
+driver, `runc` default runtime, socket group, and empty container/volume inventory. The sidecar has
+`network=none`, never receives the host Docker socket, and uses a dedicated labeled data volume.
+
+The VeriGym project controller remains an unprivileged, non-root, networkless, read-only-root
+container. It receives only the nested socket and narrow source, scratch, task, verifier-output,
+and report mounts. It receives no host Docker socket, provider credential, provider configuration,
+host home, or `--privileged`. Inner benchmark containers keep their ordinary `network=none`,
+cap-drop, no-new-privileges, PID/memory/CPU limits, and built-in seccomp profile. The launcher does
+not use `seccomp=unconfined` or propagate sidecar privilege to either layer.
+
+The privileged daemon sidecar is trusted infrastructure, not a security boundary against the host
+kernel. Compromise can affect paths deliberately mounted into it, and its persistent data volume
+retains imported image layers. Operators must use a controlled worker, digest-locked images,
+narrow mounts, and a dedicated data volume; they must not mount the host home, repository root,
+credentials, hidden assets, or unrelated experiments. A nonempty inner runtime inventory or failed
+cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](docs/hwe_dind_runtime.md).
+
 ## Yosys and profile-specific protections
 
 Toolchain profile resolution is a verifier-side configuration step and completes before model

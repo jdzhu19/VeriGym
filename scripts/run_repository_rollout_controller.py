@@ -99,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         or not isinstance(labels, dict)
         or labels.get("io.verigym.role") != "rollout-controller"
         or labels.get("io.verigym.docker.client") != "19.03.14"
+        or labels.get("io.verigym.git.client") != "2.30.2"
     ):
         raise RuntimeError("controller image identity or role labels differ from policy")
 

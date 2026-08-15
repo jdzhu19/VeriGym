@@ -23,6 +23,8 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "FROM ${DOCKER_CLI_BASE} AS docker_cli" in dockerfile
     assert dockerfile.index("ARG PYTHON_BASE") < dockerfile.index("FROM ${DOCKER_CLI_BASE}")
     assert "Docker version 19.03.14" in dockerfile
+    assert "git version 2.30.2" in dockerfile
+    assert 'io.verigym.git.client="2.30.2"' in dockerfile
     assert 'io.verigym.controller.glibc="2.31"' in dockerfile
     assert 'platform.libc_ver() == ("glibc", "2.31")' in dockerfile
     assert "threading.Thread" in dockerfile
@@ -37,9 +39,9 @@ def test_controller_image_is_narrow_and_uses_sibling_docker_client() -> None:
     assert "DOCKER_BUILDKIT=0 docker build" in build
     assert "verigym-controller-check-home" in build
     assert '--volume "$runtime_check_home:/work/home:ro"' in build
-    assert build.count("--read-only --cap-drop ALL") == 2
+    assert build.count("--read-only --cap-drop ALL") == 3
     assert "--env OPENBLAS_NUM_THREADS=1" in build
-    assert build.count("--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m") == 2
+    assert build.count("--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m") == 3
     assert "seccomp=unconfined" not in build
 
 
