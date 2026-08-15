@@ -106,6 +106,8 @@ def test_repository_prompt_requires_the_workspace_relative_repository_prefix() -
     assert '"repository_prefix_required": true' in prompt
     assert "use paths such as repository/core/decoder.sv" in prompt
     assert "never core/decoder.sv" in prompt
+    assert "Every non-final response must contain exactly one MCP tool call and no text" in prompt
+    assert "Emit final assistant text only after the finish tool result" in prompt
 
 
 class FakeBridge:
@@ -522,11 +524,11 @@ def test_native_provider_budget_exhaustion_is_an_infrastructure_valid_agent_fail
 
 def test_fake_process_receives_explicit_max_effort_without_output_token_override(
     tmp_path: Path,
+    short_broker_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executable_path = Path(__file__).with_name("fake_claude.py")
-    broker_root = tmp_path / "broker"
-    broker_root.mkdir(mode=0o700)
+    broker_root = short_broker_root
     monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
     monkeypatch.setenv("VERIGYM_CLAUDE_BROKER_ROOT", str(broker_root))
     monkeypatch.setenv("VERIGYM_CLAUDE_TEST_MODE", "1")
@@ -693,11 +695,11 @@ def test_process_runner_enforces_live_cache_inclusive_provider_tokens(
 
 def test_evidence_keeps_live_usage_maximum_when_terminal_usage_lags(
     tmp_path: Path,
+    short_broker_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executable_path = Path(__file__).with_name("fake_claude.py")
-    broker_root = tmp_path / "broker"
-    broker_root.mkdir(mode=0o700)
+    broker_root = short_broker_root
     monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
     monkeypatch.setenv("VERIGYM_CLAUDE_BROKER_ROOT", str(broker_root))
     monkeypatch.setenv("VERIGYM_CLAUDE_TEST_MODE", "1")
@@ -785,11 +787,11 @@ def test_evidence_keeps_live_usage_maximum_when_terminal_usage_lags(
 
 def test_adapter_runs_one_outer_turn_and_writes_content_free_evidence(
     tmp_path: Path,
+    short_broker_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executable_path = Path(__file__).with_name("fake_claude.py")
-    broker_root = tmp_path / "broker"
-    broker_root.mkdir(mode=0o700)
+    broker_root = short_broker_root
     monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable_path))
     monkeypatch.setenv("VERIGYM_CLAUDE_BROKER_ROOT", str(broker_root))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

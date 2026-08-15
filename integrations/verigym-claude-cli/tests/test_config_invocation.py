@@ -25,10 +25,9 @@ from verigym_claude_cli.util import redact_value
 
 
 @pytest.fixture
-def configured_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def configured_fake(short_broker_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     executable = Path(__file__).with_name("fake_claude.py")
-    broker_root = tmp_path / "broker"
-    broker_root.mkdir(mode=0o700)
+    broker_root = short_broker_root
     monkeypatch.setenv("VERIGYM_CLAUDE_BINARY", str(executable))
     monkeypatch.setenv("VERIGYM_CLAUDE_BROKER_ROOT", str(broker_root))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

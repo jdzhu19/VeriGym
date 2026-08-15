@@ -60,10 +60,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
 
     requires_model = False
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="claude_cli_workspace_repository_task_context_v2",
-        prompt_contract_version="2.0.0",
+        prompt_contract_id="claude_cli_workspace_repository_task_context_v3",
+        prompt_contract_version="3.0.0",
         task_context_policy="repository_visible_task_context_v1",
-        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v1",
+        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v2",
         content_visibility_policy="public_task_context_and_mcp_workspace_only_v1",
         max_prompt_bytes=2 * 1024 * 1024,
         max_task_context_bytes=1024 * 1024,
@@ -484,6 +484,11 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Use only relative MCP paths; never send /workspace or another absolute path.",
             "Use run_public_test only with an ID listed in public_test_ids.",
             "Inspect the final diff, then call finish exactly once.",
+            (
+                "Every non-final response must contain exactly one MCP tool call and no text. "
+                "Never emit a standalone plan, progress update, explanation, or narration "
+                "between tool calls. Emit final assistant text only after the finish tool result."
+            ),
             "Do not access the host cwd, home, credentials, settings, hidden tests, or network.",
             "Do not ask questions; finish after producing one candidate.",
             "VeriGym, not this CLI, freezes and verifies the final candidate.",
@@ -498,12 +503,13 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
 
 def _training_system_prompt() -> str:
     return (
-        "You are a bounded repository repair agent. Use exactly one supplied repository "
-        "function per turn and do not mix prose with a tool call. Read visible files before "
-        "editing. Preserve every workspace path prefix declared by the task. apply_patch "
-        "requires ---/+++ file headers and numbered @@ hunk headers; "
-        "*** Update File syntax is invalid. Use only declared public tests, inspect the "
-        "candidate diff, then call finish. "
+        "You are a bounded repository repair agent. Every non-final response must contain "
+        "exactly one supplied repository function call and no text. Never emit a standalone "
+        "plan, progress update, explanation, or narration between tool calls. Emit final "
+        "assistant text only after the finish tool result. Read visible files before editing. "
+        "Preserve every workspace path prefix declared by the task. apply_patch requires "
+        "---/+++ file headers and numbered @@ hunk headers; *** Update File syntax is invalid. "
+        "Use only declared public tests, inspect the candidate diff, then call finish. "
         "Shell, network, hidden assets, and golden repair artifacts are unavailable."
     )
 

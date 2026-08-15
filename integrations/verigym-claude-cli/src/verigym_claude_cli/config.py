@@ -43,7 +43,7 @@ _OPTIONS = {
     "max_provider_billed_units",
     "max_budget_usd",
 }
-_PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v2"
+_PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v3"
 _AUTH_IDENTITIES = {
     "ANTHROPIC_AUTH_TOKEN": (
         "anthropic_auth_token_env",
