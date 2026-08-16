@@ -32,6 +32,7 @@ from verigym_claude_cli.agent import (
     _accounting,
     _agent_prompt,
     _process_failure,
+    _training_system_prompt,
 )
 from verigym_claude_cli.artifacts import write_evidence
 from verigym_claude_cli.broker import BrokerStats, ClaudeToolBroker
@@ -553,6 +554,7 @@ def test_fake_process_receives_explicit_max_effort_without_output_token_override
         settings,
         socket_path=tmp_path / "unused.sock",
         run_id="fake-run",
+        provider_system_prompt=_training_system_prompt(),
     )
     result = ClaudeCliProcessRunner(executable).run(
         arguments,
@@ -573,6 +575,10 @@ def test_fake_process_receives_explicit_max_effort_without_output_token_override
     )
     assert parsed.per_response_max_output_tokens == 32_000
     record = json.loads((tmp_path / "fake.json").read_text(encoding="utf-8"))
+    assert (
+        record["arguments"][record["arguments"].index("--append-system-prompt") + 1]
+        == _training_system_prompt()
+    )
     assert record["anthropic_api_key_present"] is False
     assert record["anthropic_auth_token_present"] is True
     assert record["anthropic_base_url_present"] is True

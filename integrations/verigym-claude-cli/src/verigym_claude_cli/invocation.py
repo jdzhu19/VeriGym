@@ -39,7 +39,13 @@ CLAUDE_BUILTIN_TOOL_NAMES = (
 )
 
 
-def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str) -> list[str]:
+def build_arguments(
+    settings: ClaudeSettings,
+    *,
+    socket_path: Path,
+    run_id: str,
+    provider_system_prompt: str,
+) -> list[str]:
     session_name = "verigym-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:12]
     mcp_config = {
         "mcpServers": {
@@ -86,6 +92,8 @@ def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str)
         "--no-chrome",
         "--prompt-suggestions",
         "false",
+        "--append-system-prompt",
+        provider_system_prompt,
         "--strict-mcp-config",
         "--mcp-config",
         json.dumps(mcp_config, separators=(",", ":"), ensure_ascii=False),
@@ -101,7 +109,7 @@ def build_arguments(settings: ClaudeSettings, *, socket_path: Path, run_id: str)
         "stream-json",
         "--verbose",
     ]
-    _validate_invocation(arguments, settings)
+    _validate_invocation(arguments, settings, provider_system_prompt=provider_system_prompt)
     return arguments
 
 
@@ -109,11 +117,19 @@ def sanitized_invocation(arguments: list[str], settings: ClaudeSettings) -> dict
     sanitized = list(arguments)
     config_index = sanitized.index("--mcp-config") + 1
     sanitized[config_index] = "<private-verigym-mcp-config>"
+    system_prompt_index = sanitized.index("--append-system-prompt") + 1
+    provider_system_prompt = sanitized[system_prompt_index]
+    system_prompt_sha256 = hashlib.sha256(provider_system_prompt.encode("utf-8")).hexdigest()
+    sanitized[system_prompt_index] = "<frozen-provider-system-prompt>"
     return {
         "schema_version": "1.0",
         "argv": sanitized,
         "stdin_transport": "pipe",
         "prompt_persisted_in_argv": False,
+        "provider_system_prompt_transport": "sanitized_cli_argument",
+        "provider_system_prompt_persisted_in_argv": True,
+        "provider_system_prompt_contains_task_context": False,
+        "provider_system_prompt_sha256": system_prompt_sha256,
         "control_working_directory": "private_ephemeral_non_workspace",
         "model_provider_transport_location": "trusted_host_claude_cli",
         "workspace_tool_transport": "strict_private_mcp",
@@ -139,7 +155,12 @@ def sanitized_invocation(arguments: list[str], settings: ClaudeSettings) -> dict
     }
 
 
-def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None:
+def _validate_invocation(
+    arguments: list[str],
+    settings: ClaudeSettings,
+    *,
+    provider_system_prompt: str,
+) -> None:
     forbidden = {
         "--add-dir",
         "--allow-dangerously-skip-permissions",
@@ -154,6 +175,12 @@ def _validate_invocation(arguments: list[str], settings: ClaudeSettings) -> None
     }
     if forbidden & set(arguments):
         raise ValueError("Claude invocation contains a forbidden capability")
+    if (
+        arguments.count("--append-system-prompt") != 1
+        or arguments[arguments.index("--append-system-prompt") + 1] != provider_system_prompt
+        or not provider_system_prompt.strip()
+    ):
+        raise ValueError("Claude invocation omits the frozen provider system prompt")
     if "--tools" not in arguments or arguments[arguments.index("--tools") + 1] != "":
         raise ValueError("Claude built-in tools must be disabled")
     if "--allowedTools" not in arguments:

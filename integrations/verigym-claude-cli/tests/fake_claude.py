@@ -11,6 +11,7 @@ HELP = """
 --mcp-config --max-budget-usd --model --name
 --no-session-persistence --output-format stream-json --permission-mode dontAsk --print
 --strict-mcp-config --tools --verbose --no-chrome --prompt-suggestions
+--append-system-prompt
 """
 
 

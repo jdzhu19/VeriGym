@@ -20,6 +20,7 @@ from .util import stable_hash
 _CACHE: dict[str, CapabilityReport] = {}
 _REQUIRED_FLAGS = (
     "--allowedtools",
+    "--append-system-prompt",
     "--bare",
     "--disable-slash-commands",
     "--disallowedtools",

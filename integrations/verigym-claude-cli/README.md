@@ -96,18 +96,21 @@ enters that image.
 
 Tool paths are relative to the logical `/workspace` root and retain every prefix declared by the
 task. In particular, HWE-Bench paths start with `repository/` (for example,
-`repository/core/decoder.sv`); `/workspace/repository/...` and `core/...` are both invalid. The v4
-prompt contract states this explicitly without normalizing an unsafe or ambiguous path.
+`repository/core/decoder.sv`); `/workspace/repository/...` and `core/...` are both invalid. The v5
+prompt contract states this explicitly without normalizing an unsafe or ambiguous path. Its frozen
+system instructions are supplied through Claude's supported `--append-system-prompt` option. The
+text is task-neutral and contains no source, credentials, or hidden context; sanitized evidence
+records only its content hash and an argument placeholder.
 
 Training transcript normalization preserves the assistant's tool-call ID and verifies every
 ordered tool name and canonical argument object against the broker-owned turn. A gateway-rewritten
 tool-result ID is rebound to that verified assistant ID. Repeated final text is accepted only when
 it is an identical or cumulative prefix of Claude's terminal result; divergent or non-final prose
-still fails closed. The v4 prompt contract requires every non-final response to contain exactly
+still fails closed. The v5 prompt contract requires every non-final response to contain exactly
 one MCP tool call and no text, prohibits standalone plans or progress narration between calls,
 forbids edits to `TASK.md` and `PUBLIC_TESTS.md`, and permits final assistant text only after the
 `finish` tool result. Existing v2/v3 campaigns retain their original identity and must not be
-resumed under v4. Provider-rendered tool output and
+resumed under v5. Provider-rendered tool output and
 private thinking are never used as training observations.
 
 Artifacts live under `artifacts/claude_cli/`. They contain executable/configuration identities,

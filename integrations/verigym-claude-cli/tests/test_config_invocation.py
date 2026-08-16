@@ -9,7 +9,7 @@ from verigym.core.hashing import canonical_json, content_hash
 from verigym.evolution.memory import build_agent_version
 from verigym.schemas.evolution import AgentVersionManifest
 
-from verigym_claude_cli.agent import _identity
+from verigym_claude_cli.agent import _identity, _training_system_prompt
 from verigym_claude_cli.broker import BrokerStats
 from verigym_claude_cli.capabilities import discover_capabilities
 from verigym_claude_cli.config import agent_settings
@@ -57,8 +57,22 @@ def test_capabilities_and_invocation_apply_broker_and_provider_limits(
         task_wall_time_s=1800,
     )
     socket_path = configured_fake / "run" / "mcp.sock"
-    arguments = build_arguments(settings, socket_path=socket_path, run_id="run-1")
+    arguments = build_arguments(
+        settings,
+        socket_path=socket_path,
+        run_id="run-1",
+        provider_system_prompt=_training_system_prompt(),
+    )
     invocation = sanitized_invocation(arguments, settings)
+    assert arguments[arguments.index("--append-system-prompt") + 1] == _training_system_prompt()
+    assert _training_system_prompt() not in canonical_json(invocation)
+    assert invocation["provider_system_prompt_transport"] == "sanitized_cli_argument"
+    assert invocation["provider_system_prompt_persisted_in_argv"] is True
+    assert invocation["provider_system_prompt_contains_task_context"] is False
+    assert (
+        invocation["provider_system_prompt_sha256"]
+        == hashlib.sha256(_training_system_prompt().encode("utf-8")).hexdigest()
+    )
     assert arguments[arguments.index("--tools") + 1] == ""
     assert arguments[arguments.index("--allowedTools") + 1] == ",".join(CLAUDE_TOOL_NAMES)
     assert arguments[arguments.index("--disallowedTools") + 1] == ",".join(
@@ -90,6 +104,24 @@ def test_capabilities_and_invocation_apply_broker_and_provider_limits(
     assert settings.safe_configuration(capabilities)["broker_resource_limits_configured"] is True
     assert settings.safe_configuration(capabilities)["model_token_limit_configured"] is True
     assert settings.safe_configuration(capabilities)["budget_limit_configured"] is True
+
+
+def test_invocation_rejects_an_empty_provider_system_prompt(
+    configured_fake: Path,
+) -> None:
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    settings = agent_settings(
+        {"model_id": "deepseek-v4-flash[1m]"},
+        capabilities,
+        task_wall_time_s=600,
+    )
+    with pytest.raises(ValueError, match="provider system prompt"):
+        build_arguments(
+            settings,
+            socket_path=configured_fake / "unused.sock",
+            run_id="missing-system-prompt",
+            provider_system_prompt="",
+        )
 
 
 @pytest.mark.parametrize(

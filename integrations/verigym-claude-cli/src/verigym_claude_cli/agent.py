@@ -60,10 +60,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
 
     requires_model = False
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="claude_cli_workspace_repository_task_context_v4",
-        prompt_contract_version="4.0.0",
+        prompt_contract_id="claude_cli_workspace_repository_task_context_v5",
+        prompt_contract_version="5.0.0",
         task_context_policy="repository_visible_task_context_v1",
-        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v3",
+        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v4",
         content_visibility_policy="public_task_context_and_mcp_workspace_only_v1",
         max_prompt_bytes=2 * 1024 * 1024,
         max_task_context_bytes=1024 * 1024,
@@ -183,7 +183,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     ),
                 )
                 arguments = build_arguments(
-                    settings, socket_path=socket_path, run_id=context.run_id
+                    settings,
+                    socket_path=socket_path,
+                    run_id=context.run_id,
+                    provider_system_prompt=_training_system_prompt(),
                 )
                 invocation = sanitized_invocation(arguments, settings)
                 environment = provider_environment(
