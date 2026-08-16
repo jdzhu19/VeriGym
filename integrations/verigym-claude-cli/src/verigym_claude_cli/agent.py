@@ -51,6 +51,7 @@ from .process import (
     ExecutableIdentity,
     configured_broker_root,
     provider_environment,
+    trusted_mcp_pythonpath,
 )
 from .util import atomic_json, redact_text
 
@@ -187,6 +188,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     socket_path=socket_path,
                     run_id=context.run_id,
                     provider_system_prompt=_training_system_prompt(),
+                    mcp_pythonpath=trusted_mcp_pythonpath(),
                 )
                 invocation = sanitized_invocation(arguments, settings)
                 environment = provider_environment(

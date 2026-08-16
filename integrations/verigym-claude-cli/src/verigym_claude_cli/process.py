@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -160,6 +161,45 @@ def provider_base_url() -> str:
     ):
         raise ClaudeProcessError("ANTHROPIC_BASE_URL must be a credential-free HTTPS URL")
     return base_url
+
+
+def trusted_mcp_pythonpath() -> str:
+    """Return import roots for the core and Claude MCP adapter packages.
+
+    The Claude process receives a deliberately rebuilt environment.  The MCP
+    child therefore cannot rely on an inherited ``PYTHONPATH`` when the
+    integration is mounted into a controller image instead of installed into
+    site-packages.  Resolve only the two packages owned by this integration and
+    pass their parent directories explicitly to the child.
+    """
+    roots: list[str] = []
+    for module_name in ("verigym", "verigym_claude_cli"):
+        spec = importlib.util.find_spec(module_name)
+        if spec is None:
+            raise ClaudeProcessError(f"Claude MCP package is unavailable: {module_name}")
+        locations = spec.submodule_search_locations
+        if locations:
+            candidates = [Path(location) for location in locations]
+        elif spec.origin is not None:
+            candidates = [Path(spec.origin).parent]
+        else:
+            raise ClaudeProcessError(f"Claude MCP package has no import location: {module_name}")
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise ClaudeProcessError("Claude MCP package path must not be a symlink")
+            try:
+                package_dir = candidate.resolve(strict=True)
+            except OSError as exc:
+                raise ClaudeProcessError("Claude MCP package path cannot be resolved") from exc
+            if not package_dir.is_dir():
+                raise ClaudeProcessError("Claude MCP package path is not a directory")
+            root = package_dir.parent
+            value = str(root)
+            if value not in roots:
+                roots.append(value)
+    if not roots:
+        raise ClaudeProcessError("Claude MCP package import roots are empty")
+    return os.pathsep.join(roots)
 
 
 def provider_environment(

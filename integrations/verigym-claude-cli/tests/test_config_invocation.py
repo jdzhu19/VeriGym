@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ from verigym_claude_cli.invocation import (
     sanitized_invocation,
 )
 from verigym_claude_cli.mcp_tools import CLAUDE_TOOL_NAMES
-from verigym_claude_cli.process import resolve_executable
+from verigym_claude_cli.process import resolve_executable, trusted_mcp_pythonpath
 from verigym_claude_cli.util import redact_value
 
 
@@ -104,6 +105,29 @@ def test_capabilities_and_invocation_apply_broker_and_provider_limits(
     assert settings.safe_configuration(capabilities)["broker_resource_limits_configured"] is True
     assert settings.safe_configuration(capabilities)["model_token_limit_configured"] is True
     assert settings.safe_configuration(capabilities)["budget_limit_configured"] is True
+
+
+def test_mcp_child_receives_only_the_resolved_verigym_import_roots(
+    configured_fake: Path,
+) -> None:
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    settings = agent_settings(
+        {"model_id": "deepseek-v4-flash[1m]"},
+        capabilities,
+        task_wall_time_s=600,
+    )
+    pythonpath = trusted_mcp_pythonpath()
+    arguments = build_arguments(
+        settings,
+        socket_path=configured_fake / "unused.sock",
+        run_id="mcp-pythonpath",
+        provider_system_prompt=_training_system_prompt(),
+        mcp_pythonpath=pythonpath,
+    )
+    mcp = json.loads(arguments[arguments.index("--mcp-config") + 1])
+    server_arguments = mcp["mcpServers"]["verigym"]["args"]
+    assert f"PYTHONPATH={pythonpath}" in server_arguments
+    assert all(value.startswith("/") for value in pythonpath.split(os.pathsep))
 
 
 def test_invocation_rejects_an_empty_provider_system_prompt(

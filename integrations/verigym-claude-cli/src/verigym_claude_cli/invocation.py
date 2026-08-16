@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -45,34 +46,52 @@ def build_arguments(
     socket_path: Path,
     run_id: str,
     provider_system_prompt: str,
+    mcp_pythonpath: str | None = None,
 ) -> list[str]:
     session_name = "verigym-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:12]
+    mcp_arguments = [
+        "-u",
+        "ANTHROPIC_API_KEY",
+        "-u",
+        "ANTHROPIC_AUTH_TOKEN",
+        "-u",
+        "ANTHROPIC_BASE_URL",
+        "-u",
+        "HTTP_PROXY",
+        "-u",
+        "HTTPS_PROXY",
+        "-u",
+        "NO_PROXY",
+        "-u",
+        "CLAUDE_CODE_EFFORT_LEVEL",
+    ]
+    if mcp_pythonpath is not None:
+        if (
+            not mcp_pythonpath
+            or "\x00" in mcp_pythonpath
+            or any(ord(character) < 32 or ord(character) == 127 for character in mcp_pythonpath)
+            or len(mcp_pythonpath.encode("utf-8")) > 16 * 1024
+            or any(
+                not value or not value.startswith("/") for value in mcp_pythonpath.split(os.pathsep)
+            )
+        ):
+            raise ValueError("Claude MCP PYTHONPATH is malformed")
+        mcp_arguments.append("PYTHONPATH=" + mcp_pythonpath)
+    mcp_arguments.extend(
+        [
+            sys.executable,
+            "-m",
+            "verigym_claude_cli.mcp_stdio",
+            "--socket",
+            str(socket_path),
+        ]
+    )
     mcp_config = {
         "mcpServers": {
             "verigym": {
                 "type": "stdio",
                 "command": "/usr/bin/env",
-                "args": [
-                    "-u",
-                    "ANTHROPIC_API_KEY",
-                    "-u",
-                    "ANTHROPIC_AUTH_TOKEN",
-                    "-u",
-                    "ANTHROPIC_BASE_URL",
-                    "-u",
-                    "HTTP_PROXY",
-                    "-u",
-                    "HTTPS_PROXY",
-                    "-u",
-                    "NO_PROXY",
-                    "-u",
-                    "CLAUDE_CODE_EFFORT_LEVEL",
-                    sys.executable,
-                    "-m",
-                    "verigym_claude_cli.mcp_stdio",
-                    "--socket",
-                    str(socket_path),
-                ],
+                "args": mcp_arguments,
             }
         }
     }
@@ -109,7 +128,12 @@ def build_arguments(
         "stream-json",
         "--verbose",
     ]
-    _validate_invocation(arguments, settings, provider_system_prompt=provider_system_prompt)
+    _validate_invocation(
+        arguments,
+        settings,
+        provider_system_prompt=provider_system_prompt,
+        mcp_pythonpath=mcp_pythonpath,
+    )
     return arguments
 
 
@@ -160,6 +184,7 @@ def _validate_invocation(
     settings: ClaudeSettings,
     *,
     provider_system_prompt: str,
+    mcp_pythonpath: str | None = None,
 ) -> None:
     forbidden = {
         "--add-dir",
@@ -213,6 +238,8 @@ def _validate_invocation(
             for index in range(len(server_arguments) - 1)
         ):
             raise ValueError("Claude MCP child credential scrubbing changed")
+    if mcp_pythonpath is not None and f"PYTHONPATH={mcp_pythonpath}" not in server_arguments:
+        raise ValueError("Claude MCP child import path changed")
     allowed = arguments[arguments.index("--allowedTools") + 1].split(",")
     if tuple(allowed) != CLAUDE_TOOL_NAMES:
         raise ValueError("Claude MCP tool allowlist changed")
