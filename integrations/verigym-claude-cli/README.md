@@ -105,9 +105,11 @@ records only its content hash and an argument placeholder.
 Training transcript normalization preserves the assistant's tool-call ID and verifies every
 ordered tool name and canonical argument object against the broker-owned turn. A gateway-rewritten
 tool-result ID is rebound to that verified assistant ID. Repeated final text is accepted only when
-it is an identical or cumulative prefix of Claude's terminal result; divergent or non-final prose
-still fails closed. The v5 prompt contract requires every non-final response to contain exactly
-one MCP tool call and no text, prohibits standalone plans or progress narration between calls,
+it is an identical or cumulative prefix of Claude's terminal result; divergent prose still fails
+closed. By default, non-final prose is also ineligible; a training-only
+`mask_nonfinal_assistant_prose=true` fallback may explicitly mask such provider narration (it is
+never exported or supervised). The v5 prompt contract still requires every non-final response to
+contain exactly one MCP tool call and no text, prohibits standalone plans or progress narration between calls,
 forbids edits to `TASK.md` and `PUBLIC_TESTS.md`, and permits final assistant text only after the
 `finish` tool result. Existing v2/v3 campaigns retain their original identity and must not be
 resumed under v5. Provider-rendered tool output and

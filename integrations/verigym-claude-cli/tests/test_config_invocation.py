@@ -178,6 +178,31 @@ def test_broker_limits_are_all_or_none_and_bounded(
         )
 
 
+def test_nonfinal_prose_masking_is_opt_in_training_only(configured_fake: Path) -> None:
+    _executable, capabilities = discover_capabilities(resolve_executable(), force=True)
+    settings = agent_settings(
+        {
+            "model_id": "deepseek-v4-flash",
+            "campaign_role": "training",
+            "capture_training_transcript": True,
+            "mask_nonfinal_assistant_prose": True,
+        },
+        capabilities,
+        task_wall_time_s=600,
+    )
+    assert settings.mask_nonfinal_assistant_prose is True
+    assert settings.safe_configuration(capabilities)["mask_nonfinal_assistant_prose"] is True
+    with pytest.raises(ValueError, match="requires capture_training_transcript"):
+        agent_settings(
+            {
+                "model_id": "deepseek-v4-flash",
+                "mask_nonfinal_assistant_prose": True,
+            },
+            capabilities,
+            task_wall_time_s=600,
+        )
+
+
 def test_api_key_auth_keeps_a_distinct_frozen_semantic(
     configured_fake: Path,
     monkeypatch: pytest.MonkeyPatch,

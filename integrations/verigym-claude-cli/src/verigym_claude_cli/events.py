@@ -358,8 +358,9 @@ def normalize_training_messages(
     system_prompt: str,
     user_prompt: str,
     broker_turns: tuple[RepositoryToolBrokerTurn, ...],
+    mask_nonfinal_assistant_prose: bool = False,
 ) -> list[MultiTurnSftMessage]:
-    """Losslessly normalize public Claude MCP events while dropping thinking blocks."""
+    """Normalize public Claude MCP events while dropping private or masked text blocks."""
 
     messages = [
         MultiTurnSftMessage(role="system", content=system_prompt),
@@ -445,6 +446,11 @@ def normalize_training_messages(
                 messages.extend(calls)
             elif text_blocks:
                 if broker_turn_index != len(broker_turns):
+                    if mask_nonfinal_assistant_prose:
+                        # Some compatible gateways surface short assistant narration as a
+                        # separate text event even when the tool-call contract forbids it.
+                        # It is deliberately omitted from SFT messages and never exported.
+                        continue
                     raise EventParseError("Claude emitted non-final assistant prose")
                 assistant_text_snapshots.append("\n".join(text_blocks))
         elif event_type == "user":

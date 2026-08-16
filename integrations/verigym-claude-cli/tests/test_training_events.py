@@ -213,6 +213,32 @@ def test_claude_training_normalization_rejects_nonfinal_assistant_prose() -> Non
         )
 
 
+def test_claude_training_normalization_masks_nonfinal_assistant_prose() -> None:
+    events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
+    events.insert(
+        0,
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "I will inspect first"}]},
+        },
+    )
+    observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+
+    messages = normalize_training_messages(
+        "\n".join(_line(event) for event in events),
+        system_prompt="system",
+        user_prompt="user",
+        broker_turns=(_turn("finish", {"message": "done"}, observation),),
+        mask_nonfinal_assistant_prose=True,
+    )
+
+    assert messages[-1].role == "assistant"
+    assert messages[-1].content == "complete"
+    assert all(message.content != "I will inspect first" for message in messages)
+
+
 def test_claude_training_normalization_rejects_non_registry_tool() -> None:
     stdout = _line(
         {

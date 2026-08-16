@@ -37,6 +37,7 @@ _OPTIONS = {
     "agent_version_manifest_json",
     "campaign_role",
     "capture_training_transcript",
+    "mask_nonfinal_assistant_prose",
     "max_tool_calls",
     "max_patch_calls",
     "max_consecutive_rejected_calls",
@@ -83,6 +84,7 @@ class ClaudeSettings:
     agent_version_hash: str | None
     campaign_role: str
     capture_training_transcript: bool
+    mask_nonfinal_assistant_prose: bool
     max_tool_calls: int | None
     max_patch_calls: int | None
     max_consecutive_rejected_calls: int | None
@@ -117,6 +119,7 @@ class ClaudeSettings:
             "agent_version_hash": self.agent_version_hash,
             "campaign_role": self.campaign_role,
             "capture_training_transcript": self.capture_training_transcript,
+            "mask_nonfinal_assistant_prose": self.mask_nonfinal_assistant_prose,
             "cli_version": capabilities.version_output,
             "cli_executable_sha256": capabilities.executable_sha256,
             "capability_fingerprint": capabilities.capability_fingerprint,
@@ -179,6 +182,12 @@ def agent_settings(
     )
     if capture_transcript and campaign_role != "training":
         raise ValueError("Claude transcript capture is permitted only for the training split")
+    mask_nonfinal_prose = _boolean(
+        options.get("mask_nonfinal_assistant_prose", False),
+        "mask_nonfinal_assistant_prose",
+    )
+    if mask_nonfinal_prose and not capture_transcript:
+        raise ValueError("mask_nonfinal_assistant_prose requires capture_training_transcript")
     raw_limits = (
         options.get("max_tool_calls"),
         options.get("max_patch_calls"),
@@ -268,6 +277,7 @@ def agent_settings(
         "agent_version_hash": version_hash,
         "campaign_role": campaign_role,
         "capture_training_transcript": capture_transcript,
+        "mask_nonfinal_assistant_prose": mask_nonfinal_prose,
         "max_tool_calls": max_tool_calls,
         "max_patch_calls": max_patch_calls,
         "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
@@ -306,6 +316,7 @@ def agent_settings(
         agent_version_hash=version_hash,
         campaign_role=campaign_role,
         capture_training_transcript=capture_transcript,
+        mask_nonfinal_assistant_prose=mask_nonfinal_prose,
         max_tool_calls=max_tool_calls,
         max_patch_calls=max_patch_calls,
         max_consecutive_rejected_calls=max_consecutive_rejected_calls,

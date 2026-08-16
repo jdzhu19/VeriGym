@@ -281,6 +281,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     system_prompt=_training_system_prompt(),
                     user_prompt=prompt,
                     broker_turns=broker_turns,
+                    mask_nonfinal_assistant_prose=settings.mask_nonfinal_assistant_prose,
                 )
                 training_transcript = build_teacher_transcript(
                     campaign_role="training",
@@ -294,6 +295,7 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     harness_identity={
                         "harness": "verigym-claude-mcp-external-agent-bridge-v2",
                         "configuration_fingerprint": settings.configuration_fingerprint,
+                        "mask_nonfinal_assistant_prose": (settings.mask_nonfinal_assistant_prose),
                         "tools": repository_tool_definitions(dialect="openai"),
                     },
                     messages=messages,
