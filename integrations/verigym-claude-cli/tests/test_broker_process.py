@@ -108,6 +108,7 @@ def test_repository_prompt_requires_the_workspace_relative_repository_prefix() -
     assert "never core/decoder.sv" in prompt
     assert "Every non-final response must contain exactly one MCP tool call and no text" in prompt
     assert "Emit final assistant text only after the finish tool result" in prompt
+    assert "TASK.md and PUBLIC_TESTS.md are read-only context" in prompt
 
 
 class FakeBridge:

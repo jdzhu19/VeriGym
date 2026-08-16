@@ -60,10 +60,10 @@ class ClaudeCliAgentAdapter(AgentAdapter):
 
     requires_model = False
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="claude_cli_workspace_repository_task_context_v3",
-        prompt_contract_version="3.0.0",
+        prompt_contract_id="claude_cli_workspace_repository_task_context_v4",
+        prompt_contract_version="4.0.0",
         task_context_policy="repository_visible_task_context_v1",
-        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v2",
+        base_instruction_policy="claude_cli_verigym_mcp_repository_agent_v3",
         content_visibility_policy="public_task_context_and_mcp_workspace_only_v1",
         max_prompt_bytes=2 * 1024 * 1024,
         max_task_context_bytes=1024 * 1024,
@@ -489,6 +489,11 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
                 "Never emit a standalone plan, progress update, explanation, or narration "
                 "between tool calls. Emit final assistant text only after the finish tool result."
             ),
+            (
+                "Never call apply_patch on any path in readonly_globs. TASK.md and "
+                "PUBLIC_TESTS.md are read-only context and must never be edited, even when "
+                "the task description mentions them."
+            ),
             "Do not access the host cwd, home, credentials, settings, hidden tests, or network.",
             "Do not ask questions; finish after producing one candidate.",
             "VeriGym, not this CLI, freezes and verifies the final candidate.",
@@ -506,7 +511,8 @@ def _training_system_prompt() -> str:
         "You are a bounded repository repair agent. Every non-final response must contain "
         "exactly one supplied repository function call and no text. Never emit a standalone "
         "plan, progress update, explanation, or narration between tool calls. Emit final "
-        "assistant text only after the finish tool result. Read visible files before editing. "
+        "assistant text only after the finish tool result. Never call apply_patch on TASK.md or "
+        "PUBLIC_TESTS.md; they are read-only context. Read visible files before editing. "
         "Preserve every workspace path prefix declared by the task. apply_patch requires "
         "---/+++ file headers and numbered @@ hunk headers; *** Update File syntax is invalid. "
         "Use only declared public tests, inspect the candidate diff, then call finish. "

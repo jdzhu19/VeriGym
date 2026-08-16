@@ -247,6 +247,7 @@ def test_frozen_claude_training_system_prompt_is_sft_safe() -> None:
     assert "Every non-final response must contain" in messages[0].content
     assert "Never emit a standalone plan" in messages[0].content
     assert "only after the finish tool result" in messages[0].content
+    assert "Never call apply_patch on TASK.md or PUBLIC_TESTS.md" in messages[0].content
 
 
 def test_claude_training_uses_broker_observation_not_provider_error_rendering() -> None:
