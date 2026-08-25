@@ -216,6 +216,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     native_tool_calling=True,
                     disable_vision=True,
                     reasoning_effort="none",
+                    litellm_extra_body={"thinking": {"type": "disabled"}},
                     capability_overrides={
                         "supports_reasoning_effort": False,
                         "supports_sampling_params": True,

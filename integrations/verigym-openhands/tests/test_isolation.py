@@ -107,6 +107,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "tool_concurrency_limit=1" in source
     assert "native_tool_calling=True" in source
     assert "num_retries=0" in source
+    assert 'litellm_extra_body={"thinking": {"type": "disabled"}}' in source
     assert "DeepSeekHarnessHweBroker" in source
     assert "deepseek_harness_tool_definitions" in mcp
     assert 'f"PYTHONPATH={mcp_pythonpath}"' in source
