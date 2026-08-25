@@ -129,6 +129,11 @@ def sanitized_runtime_invocation(
     """Describe the app-server/remote-environment path without host paths."""
 
     synthesized_names = ["NO_PROXY", "no_proxy"] if settings.allow_proxy_environment else []
+    workspace_root = (
+        "/workspace/repository"
+        if settings.integration_track == "codex_cli_hwe_native_shell"
+        else "/workspace"
+    )
     return {
         "schema_version": "1.0",
         "argv": ["<runtime-owned-codex>", "app-server", "--listen", "stdio://"],
@@ -136,7 +141,7 @@ def sanitized_runtime_invocation(
         "machine_event_protocol": "codex_app_server_notifications_v2",
         "remote_environment_protocol": "codex_exec_server_stdio_v1",
         "working_directory_policy": working_directory_policy,
-        "logical_workspace_root": "/workspace",
+        "logical_workspace_root": workspace_root,
         "execution_owner": "verigym_runtime",
         "execution_backend": "docker_outer_runtime_delegated",
         "sandbox_policy": "outer_runtime_delegated",

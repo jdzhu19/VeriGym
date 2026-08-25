@@ -11,6 +11,7 @@ from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationErro
 from verigym.core.episode import TerminationReason
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
+from verigym.core.repository_observation import REPOSITORY_OBSERVATION_POLICY_ID
 from verigym.protocols.repository_action import (
     RepositoryActionProtocolViolation,
     canonical_repository_action_to_agent_action,
@@ -412,6 +413,7 @@ def run_online_repository_session(
             plan_item_id=f"online-repository-{session_id[:20]}",
             system_id="qwen35-rllm-verl-repository-policy",
             base_seed=int(open_request.get("seed", 20260809)),
+            agent_options={"observation_policy_id": REPOSITORY_OBSERVATION_POLICY_ID},
         )
     )
     invalid = _is_infrastructure_invalid(result.scorecard)

@@ -317,9 +317,12 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "readonly_globs": sorted(bridge.readonly_globs),
             "path_format": "relative_only",
         },
+        "observation_policy": "repository_observation_v1",
         "public_test_ids": list(_public_test_ids(context)),
         "instructions": [
             "Use exactly one supplied repository function per turn.",
+            "Start with a shallow list_files view; use a bounded line range or concise read_file "
+            "view for large files. Omitted content is explicitly marked.",
             "Read visible files before editing and use apply_patch for changes.",
             "Run a declared public test when available.",
             "Inspect the diff, then call finish exactly once.",

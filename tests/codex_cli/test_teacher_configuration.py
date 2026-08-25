@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from verigym_codex_cli.capabilities import discover_capabilities
@@ -11,6 +12,7 @@ from verigym_codex_cli.teacher_agent import (
     CodexCliMcpTeacherAdapter,
     _preparse_process_failure,
     _provider_usage_failure,
+    _record_postparse_failure_evidence,
     _write_content_free_evidence,
 )
 from verigym_codex_cli.teacher_config import teacher_settings
@@ -112,6 +114,58 @@ def test_timed_out_teacher_evidence_records_explicitly_missing_usage(
     assert summary["training_transcript_captured"] is False
     assert not (root / "training-transcript.json").exists()
     assert not (root / "identity.json").exists()
+
+
+def test_postparse_failure_evidence_keeps_usage_without_transcript(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    del fake_codex
+    _executable, capabilities = discover_capabilities(force=True)
+    stdout = json.dumps(
+        {
+            "type": "turn.completed",
+            "model": "gpt-5.4",
+            "usage": {"input_tokens": 11, "output_tokens": 7},
+        },
+        separators=(",", ":"),
+    )
+    root = tmp_path / "evidence"
+    root.mkdir()
+    bridge = Mock()
+    bridge.artifact_root = root
+
+    _record_postparse_failure_evidence(
+        bridge,
+        capabilities=capabilities,
+        invocation={"model_id": "gpt-5.4", "reasoning_effort": "xhigh"},
+        process=CodexProcessResult(
+            arguments=("codex",),
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            duration_s=1.0,
+            timed_out=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+            process_group_cleaned=True,
+        ),
+        broker=_broker_stats(tool_calls=0),
+        parsed=parse_event_stream(stdout),
+        failure_category="training_transcript_ineligible",
+    )
+
+    usage = json.loads((root / "provider-usage.json").read_text(encoding="utf-8"))
+    accounting = json.loads((root / "accounting.json").read_text(encoding="utf-8"))
+    summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+    assert usage["usage_complete"] is True
+    assert usage["input_tokens"] == 11
+    assert usage["output_tokens"] == 7
+    assert accounting["total_tokens"] == 18
+    assert summary["failure_category"] == "training_transcript_ineligible"
+    assert summary["training_transcript_captured"] is False
+    assert not (root / "training-transcript.json").exists()
+    bridge.record_accounting.assert_called_once()
 
 
 def test_teacher_is_exact_gpt54_xhigh_required_mcp_only(

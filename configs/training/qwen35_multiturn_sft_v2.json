@@ -1,0 +1,51 @@
+{
+  "format_id": "verigym_qwen35_verified_multiturn_sft_config_v2",
+  "model_family": "Qwen3.5-9B",
+  "dataset": {
+    "format_id": "verigym_verified_multiturn_sft_dataset_v2",
+    "record_count": 8,
+    "split": "training",
+    "observation_policy_id": "repository_observation_v1",
+    "max_length": 32768,
+    "truncation": "error",
+    "verifier_resolved": true,
+    "infrastructure_valid": true,
+    "hidden_assets_exported": false,
+    "reference_solutions_exported": false,
+    "private_reasoning_exported": false,
+    "raw_observations_exported": false
+  },
+  "software": {
+    "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+    "verl_version": "0.8.0",
+    "vllm_version": "0.22.1",
+    "openhands_sdk_version": "1.42.1"
+  },
+  "trainer": {
+    "entrypoint": "rllm.AgentSFTTrainer",
+    "backend": "verl",
+    "tokenize_method": "hf_template",
+    "max_length": 32768,
+    "truncation": "error",
+    "precision": "bf16",
+    "strategy": "fsdp2",
+    "gradient_checkpointing": true,
+    "world_size": 4,
+    "gpu_model": "A30",
+    "micro_batch_size_per_gpu": 1,
+    "gradient_accumulation_steps": 1,
+    "global_batch_size": 4,
+    "epochs": 3,
+    "optimizer_steps": 6,
+    "learning_rate": 0.0001,
+    "seed": 484,
+    "lora": {
+      "rank": 8,
+      "alpha": 16,
+      "dropout": 0.05,
+      "target_modules": "all-linear"
+    }
+  },
+  "optimizer_scope": "sft_only",
+  "grpo_updates": 0
+}

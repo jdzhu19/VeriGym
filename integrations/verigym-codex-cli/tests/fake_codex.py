@@ -88,6 +88,22 @@ def main():
         _log(model_record)
         time.sleep(10)
         return 0
+    if scenario == "timeout_usage":
+        _emit({"type": "thread.started", "thread_id": "observed-thread", "model": model})
+        _emit({"type": "turn.started", "status": "inProgress"})
+        _emit(
+            {
+                "type": "usage",
+                "usage": {
+                    "input_tokens": 2743,
+                    "output_tokens": 217,
+                    "total_tokens": 2960,
+                },
+            }
+        )
+        _log(model_record)
+        time.sleep(10)
+        return 0
     _log(model_record)
     if scenario == "require_xhigh_override" and explicit_reasoning_effort != "xhigh":
         _emit(

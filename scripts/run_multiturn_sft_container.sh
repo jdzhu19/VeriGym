@@ -8,6 +8,12 @@ if [[ ${VERIGYM_RUN_QWEN35_MULTITURN_SFT:-} != 1 ]]; then
   echo "VERIGYM_RUN_QWEN35_MULTITURN_SFT=1 is required" >&2
   exit 2
 fi
+trainer_command=(python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py)
+case ${VERIGYM_MULTITURN_SFT_VERSION:-v1} in
+  v1) ;;
+  v2) trainer_command=(python3 /opt/verigym/bin/train_qwen35_multiturn_sft_v2.py) ;;
+  *) echo "VERIGYM_MULTITURN_SFT_VERSION must be v1 or v2" >&2; exit 2 ;;
+esac
 if [[ $# -ne 6 ]]; then
   echo "usage: $0 IMAGE_ID MODEL_ROOT DATASET_ROOT OUTPUT_ROOT CACHE_ROOT EMPTY_HOME" >&2
   exit 2
@@ -89,7 +95,7 @@ docker run --rm \
   --volume "$output_root:/output" \
   --volume "$cache_root:/cache" \
   "$image_id" \
-  python3 /opt/verigym/bin/train_qwen35_multiturn_sft.py \
+  "${trainer_command[@]}" \
   --dataset /dataset \
   --model-root /model \
   --output /output \

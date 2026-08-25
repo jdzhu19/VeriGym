@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 from verigym.core.artifact_policy import bound_text, bound_value
+from verigym.core.repository_observation import REPOSITORY_OBSERVATION_POLICY_ID
 
 REPOSITORY_OBSERVATION_MAX_BYTES = 32 * 1024
 
@@ -72,6 +73,7 @@ def project_repository_observation(
 
     projected: dict[str, Any] = {
         "schema_version": value.get("schema_version"),
+        "observation_policy_id": REPOSITORY_OBSERVATION_POLICY_ID,
         "task_id": value.get("task_id"),
         "task_description": task_description,
         "visible_directory_outline": directory_preview,
@@ -86,6 +88,7 @@ def project_repository_observation(
     }
     projection = {
         "format_id": "verigym_repository_context_projection_v1",
+        "observation_policy_id": REPOSITORY_OBSERVATION_POLICY_ID,
         "rolling_context": True,
         "visible_file_count": len(visible),
         "visible_file_included_count": len(visible_preview),
@@ -152,6 +155,7 @@ def repository_turn_messages(
         "observation": projected,
         "context_policy": {
             "format_id": "verigym_repository_rolling_context_v1",
+            "observation_policy_id": REPOSITORY_OBSERVATION_POLICY_ID,
             "broker_observation_truncated": broker_observation_truncated,
             "projected_observation_truncated": projected_truncated,
             "raw_action_history_included": False,

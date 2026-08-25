@@ -333,11 +333,38 @@ def test_track_b_timed_out_malformed_prefix_is_diagnostic_only(
     accounting = json.loads((artifact_root / "accounting.json").read_text(encoding="utf-8"))
     assert summary["diagnostic_only"] is True
     assert summary["canonical_stream_complete"] is False
-    assert identity["observed_model_id"] is None
-    assert identity["identity_confidence"] == "requested_only"
+    assert identity["observed_model_id"] == "fake-model"
+    assert identity["identity_confidence"] == "observed"
     assert accounting["cli_event_count"] == 1
+    assert accounting["model_call_count"] == 0
     assert accounting["external_tool_call_count"] is None
     assert accounting["input_tokens"] is None
+
+
+def test_track_b_timeout_records_observed_external_model_call_and_usage(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    _executable, _log, scenario = fake_codex
+    scenario("timeout_usage")
+    result = _run(tmp_path / "runs", max_process_time_s=0.5)
+    assert result.scorecard.failure is not None
+    assert result.scorecard.failure.category == "timeout"
+    efficiency = result.scorecard.efficiency
+    assert efficiency.model_calls == 0
+    assert efficiency.external_model_call_count == 1
+    assert efficiency.external_input_tokens == 2743
+    assert efficiency.external_output_tokens == 217
+    assert efficiency.external_total_tokens == 2960
+    artifact_root = result.run_dir / "artifacts" / "codex_cli"
+    identity = json.loads((artifact_root / "identity.json").read_text(encoding="utf-8"))
+    accounting = json.loads((artifact_root / "accounting.json").read_text(encoding="utf-8"))
+    assert identity["observed_model_id"] == "fake-model"
+    assert identity["identity_confidence"] == "observed"
+    assert accounting["model_call_count"] == 1
+    assert accounting["input_tokens"] == 2743
+    assert accounting["output_tokens"] == 217
+    assert accounting["total_tokens"] == 2960
 
 
 def test_track_b_output_overflow_precedes_event_parsing(

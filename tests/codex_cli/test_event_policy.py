@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 
 import pytest
+from verigym_codex_cli.agent import _parse_agent_process
 from verigym_codex_cli.event_policy import (
     EventPolicyContext,
     evaluate_event_policy,
 )
-from verigym_codex_cli.events import parse_event_stream
+from verigym_codex_cli.events import EventParseError, parse_event_stream, parse_partial_event_stream
+from verigym_codex_cli.process import CodexProcessResult
 
 pytestmark = [pytest.mark.codex_cli, pytest.mark.codex_cli_readonly_agent]
 
@@ -32,6 +34,36 @@ def _stream(*events: dict[str, object]) -> str:
 
 def _item(item_type: str, **values: object) -> dict[str, object]:
     return {"type": "item.completed", "item": {"type": item_type, **values}}
+
+
+def test_hwe_terminal_stream_does_not_require_filtered_provider_final_message(
+    tmp_path: Path,
+) -> None:
+    stdout = _stream(
+        {"type": "thread.started", "thread_id": "thread", "model": "gpt-5.4"},
+        {"type": "turn.started", "status": "inProgress"},
+        {
+            "type": "usage",
+            "usage": {"input_tokens": 120, "output_tokens": 8, "total_tokens": 128},
+        },
+    )
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=0,
+        stdout=stdout,
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    parsed = _parse_agent_process(process, tmp_path, require_final_message=False)
+    assert parsed.terminal_event_seen is True
+    assert parsed.model_call_count == 1
+    assert parsed.total_tokens == 128
+    with pytest.raises(EventParseError, match="no final message"):
+        _parse_agent_process(process, tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -183,6 +215,34 @@ def test_provider_usage_preserves_cached_input_tokens() -> None:
     assert parsed.output_tokens == 20
     assert parsed.total_tokens == 120
     assert parsed.cached_input_tokens == 75
+
+
+def test_partial_stream_preserves_observed_turn_model_and_usage() -> None:
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "thread", "model": "gpt-5.4"}),
+            json.dumps({"type": "turn.started", "status": "inProgress"}),
+            json.dumps(
+                {
+                    "type": "usage",
+                    "usage": {
+                        "input_tokens": 2743,
+                        "output_tokens": 217,
+                        "total_tokens": 2960,
+                    },
+                }
+            ),
+            "{malformed",
+        ]
+    )
+    parsed = parse_partial_event_stream(stdout)
+    assert parsed.diagnostic_only is True
+    assert parsed.canonical_stream_complete is False
+    assert parsed.observed_model_id == "gpt-5.4"
+    assert parsed.model_call_count == 1
+    assert parsed.input_tokens == 2743
+    assert parsed.output_tokens == 217
+    assert parsed.total_tokens == 2960
 
 
 def test_sanitized_historical_six_events_have_exact_readonly_classification(

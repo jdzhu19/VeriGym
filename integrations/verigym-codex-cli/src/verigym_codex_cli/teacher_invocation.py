@@ -109,6 +109,7 @@ def sanitized_teacher_invocation(
         "broker_max_tool_calls": settings.max_tool_calls,
         "broker_max_patch_calls": settings.max_patch_calls,
         "broker_max_consecutive_rejected_calls": (settings.max_consecutive_rejected_calls),
+        "observation_policy_id": settings.observation_policy_id,
     }
 
 

@@ -6,9 +6,13 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from verigym.core.repository_tool_broker import RepositoryToolBrokerLimits
-from verigym.evolution.training_transcript import build_teacher_transcript
+from verigym.evolution.training_transcript import (
+    build_teacher_transcript,
+    build_teacher_transcript_v2,
+)
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -283,22 +287,33 @@ class ClaudeCliAgentAdapter(AgentAdapter):
                     broker_turns=broker_turns,
                     mask_nonfinal_assistant_prose=settings.mask_nonfinal_assistant_prose,
                 )
-                training_transcript = build_teacher_transcript(
-                    campaign_role="training",
-                    task_id=context.task.id,
-                    provider="anthropic-compatible",
-                    model_id=settings.model_id,
-                    reasoning_effort="max",
-                    client_kind="cli",
-                    client_name="claude-code",
-                    client_version=capabilities.version_output.strip(),
-                    harness_identity={
+                transcript_builder: Any = (
+                    build_teacher_transcript_v2
+                    if settings.transcript_format == "v2"
+                    else build_teacher_transcript
+                )
+                transcript_kwargs: dict[str, Any] = {
+                    "campaign_role": "training",
+                    "task_id": context.task.id,
+                    "provider": "anthropic-compatible",
+                    "model_id": settings.model_id,
+                    "reasoning_effort": "max",
+                    "client_kind": "cli",
+                    "client_name": "claude-code",
+                    "client_version": capabilities.version_output.strip(),
+                    "harness_identity": {
                         "harness": "verigym-claude-mcp-external-agent-bridge-v2",
                         "configuration_fingerprint": settings.configuration_fingerprint,
-                        "mask_nonfinal_assistant_prose": (settings.mask_nonfinal_assistant_prose),
+                        "observation_policy_id": settings.observation_policy_id,
+                        "mask_nonfinal_assistant_prose": settings.mask_nonfinal_assistant_prose,
                         "tools": repository_tool_definitions(dialect="openai"),
                     },
-                    messages=messages,
+                    "messages": messages,
+                }
+                if settings.transcript_format == "v2":
+                    transcript_kwargs["observation_policy_id"] = settings.observation_policy_id
+                training_transcript = transcript_builder(
+                    **transcript_kwargs,
                 )
             except TranscriptNormalizationInfrastructureError as exc:
                 failure = _termination(

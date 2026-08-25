@@ -13,6 +13,7 @@ dependencies = ["verigym==0.1.0"]
 
 [project.entry-points."verigym.agents"]
 codex-cli-agent = "verigym_codex_cli:CodexCliAgentAdapter"
+codex-cli-hwe-agent = "verigym_codex_cli:CodexCliHweAgentAdapter"
 codex-cli-readonly-agent = "verigym_codex_cli:CodexCliReadonlyAgentAdapter"
 codex-cli-mcp-teacher = "verigym_codex_cli:CodexCliMcpTeacherAdapter"
 
@@ -21,6 +22,9 @@ verigym-codex = "verigym_codex_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_codex_cli = ["py.typed"]
 
 [tool.pytest.ini_options]
 markers = [

@@ -8,14 +8,17 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from verigym.core.repository_tool_broker import (
     RepositoryToolBroker,
     RepositoryToolBrokerLimits,
     RepositoryToolBrokerStats,
 )
-from verigym.evolution.training_transcript import build_teacher_transcript
+from verigym.evolution.training_transcript import (
+    build_teacher_transcript,
+    build_teacher_transcript_v2,
+)
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -224,9 +227,27 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
         try:
             parsed = parse_event_stream(process.stdout)
         except (EventParseError, ValueError) as exc:
+            _record_postparse_failure_evidence(
+                bridge,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                broker=broker_stats,
+                parsed=None,
+                failure_category="training_transcript_ineligible",
+            )
             raise _termination("training_transcript_ineligible", str(exc)) from exc
         usage_failure = _provider_usage_failure(parsed)
         if usage_failure is not None:
+            _record_postparse_failure_evidence(
+                bridge,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                broker=broker_stats,
+                parsed=parsed,
+                failure_category=usage_failure.failure.category,
+            )
             raise usage_failure
         try:
             messages = normalize_training_messages(
@@ -246,23 +267,41 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
                 or not broker_stats.finished
             ):
                 raise EventParseError("Codex teacher episode did not finish through canonical MCP")
-            transcript = build_teacher_transcript(
-                campaign_role="training",
-                task_id=context.task.id,
-                provider="openai",
-                model_id="gpt-5.4",
-                reasoning_effort="xhigh",
-                client_kind="cli",
-                client_name="codex-cli",
-                client_version=capabilities.version_output.strip(),
-                harness_identity={
+            transcript_builder: Any = (
+                build_teacher_transcript_v2
+                if settings.transcript_format == "v2"
+                else build_teacher_transcript
+            )
+            transcript_kwargs: dict[str, Any] = {
+                "campaign_role": "training",
+                "task_id": context.task.id,
+                "provider": "openai",
+                "model_id": "gpt-5.4",
+                "reasoning_effort": "xhigh",
+                "client_kind": "cli",
+                "client_name": "codex-cli",
+                "client_version": capabilities.version_output.strip(),
+                "harness_identity": {
                     "harness": "verigym-codex-required-mcp-teacher-v1",
                     "configuration_fingerprint": settings.execution.configuration_fingerprint,
+                    "observation_policy_id": settings.observation_policy_id,
                     "tools": repository_tool_definitions(dialect="openai"),
                 },
-                messages=messages,
-            )
+                "messages": messages,
+            }
+            if settings.transcript_format == "v2":
+                transcript_kwargs["observation_policy_id"] = settings.observation_policy_id
+            transcript = transcript_builder(**transcript_kwargs)
         except (EventParseError, ValueError) as exc:
+            _record_postparse_failure_evidence(
+                bridge,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                broker=broker_stats,
+                parsed=parsed,
+                failure_category="training_transcript_ineligible",
+            )
             raise _termination("training_transcript_ineligible", str(exc)) from exc
         identity = _identity(settings, capabilities, parsed, broker_stats)
         accounting = ExternalAgentAccounting(
@@ -409,10 +448,13 @@ def _teacher_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "readonly_globs": sorted(bridge.readonly_globs),
             "path_format": "relative_only",
         },
+        "observation_policy": "repository_observation_v1",
         "public_test_ids": list(_public_test_ids(context)),
         "instructions": [
             "Use only the VeriGym MCP repository tools.",
             "Use exactly one MCP tool per turn and no built-in tools.",
+            "Start with a shallow list_files view; use a bounded line range or concise read_file "
+            "view for large files. Omitted content is explicitly marked.",
             (
                 "Read visible files before editing. apply_patch requires --- a/path and "
                 "+++ b/path file headers plus numbered @@ -old,count +new,count @@ hunk "
@@ -429,7 +471,9 @@ def _teacher_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
 def _training_system_prompt() -> str:
     return (
         "You are a bounded repository repair agent. Use exactly one supplied repository "
-        "function per turn and do not mix prose with a tool call. Read visible files before "
+        "function per turn and do not mix prose with a tool call. Start with a shallow "
+        "list_files view and use bounded read_file ranges or concise views for large files; "
+        "omission markers are meaningful. Read visible files before "
         "editing. apply_patch requires ---/+++ file headers and numbered @@ hunk headers; "
         "*** Update File syntax is invalid. Use only declared public tests, inspect the "
         "candidate diff, then call finish. "
@@ -513,6 +557,66 @@ def _write_content_free_evidence(
             "failure_category": failure_category,
             "private_reasoning_persisted": False,
         },
+    )
+
+
+def _record_postparse_failure_evidence(
+    bridge: ExternalAgentBridge,
+    *,
+    capabilities: CapabilityReport,
+    invocation: dict[str, object],
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+    parsed: ParsedEventStream | None,
+    failure_category: str,
+) -> None:
+    """Persist bounded accounting even when the transcript cannot be built."""
+
+    accounting = ExternalAgentAccounting(
+        process_wall_time_s=process.duration_s,
+        cli_event_count=len(parsed.events) if parsed is not None else 0,
+        external_tool_call_count=broker.tool_calls,
+        external_command_count=0,
+        public_test_invocation_count=broker.public_test_calls,
+        external_file_read_count=broker.file_reads,
+        external_file_write_count=0,
+        external_patch_count=broker.patches,
+        input_tokens=parsed.input_tokens if parsed is not None else None,
+        output_tokens=parsed.output_tokens if parsed is not None else None,
+        total_tokens=parsed.total_tokens if parsed is not None else None,
+    )
+    bridge.record_accounting(accounting)
+    usage_complete = (
+        parsed is not None and parsed.input_tokens is not None and parsed.output_tokens is not None
+    )
+    _write_content_free_evidence(
+        bridge.artifact_root,
+        capabilities=capabilities,
+        invocation=invocation,
+        process=process,
+        event_summaries=[event.safe_dict() for event in parsed.events]
+        if parsed is not None
+        else [],
+        broker=broker.__dict__,
+        identity=None,
+        accounting=accounting.model_dump(mode="json"),
+        provider_usage={
+            "schema_version": "1.0",
+            "usage_complete": usage_complete,
+            "usage_missing": not usage_complete,
+            "input_tokens": parsed.input_tokens if parsed is not None else None,
+            "output_tokens": parsed.output_tokens if parsed is not None else None,
+            "total_tokens": parsed.total_tokens if parsed is not None else None,
+            "cached_input_tokens": parsed.cached_input_tokens if parsed is not None else None,
+            "cache_usage_reported": (parsed is not None and parsed.cached_input_tokens is not None),
+            "cost_usd": None,
+            "currency": None,
+            "provider_report_scope": (
+                "codex_cli_terminal_event" if parsed is not None else "codex_cli_no_terminal_event"
+            ),
+        },
+        transcript=None,
+        failure_category=failure_category,
     )
 
 

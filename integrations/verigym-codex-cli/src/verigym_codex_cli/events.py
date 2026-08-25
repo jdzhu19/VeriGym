@@ -103,6 +103,12 @@ class ParsedEventStream:
     def external_tool_count(self) -> int:
         return sum(event.category == "tool_call" for event in self.events)
 
+    @property
+    def model_call_count(self) -> int:
+        """Count observed provider turns without inferring calls from process launch."""
+
+        return sum(event.category == "turn_started" for event in self.events)
+
 
 def parse_event_stream(
     stdout: str,
@@ -223,6 +229,14 @@ def parse_partial_event_stream(
 
     events: list[NormalizedEvent] = []
     errors: list[str] = []
+    session_id: str | None = None
+    observed_model: str | None = None
+    system_fingerprint: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    terminal = False
     for line in stdout.splitlines()[:_MAX_EVENTS]:
         try:
             parsed_line = parse_event_stream(line, roots=roots)
@@ -238,17 +252,37 @@ def parse_partial_event_stream(
             )
         )
         errors.extend(parsed_line.error_messages)
+        session_id = session_id or parsed_line.session_id
+        observed_model = observed_model or parsed_line.observed_model_id
+        system_fingerprint = system_fingerprint or parsed_line.system_fingerprint
+        input_tokens = (
+            parsed_line.input_tokens if parsed_line.input_tokens is not None else input_tokens
+        )
+        output_tokens = (
+            parsed_line.output_tokens if parsed_line.output_tokens is not None else output_tokens
+        )
+        total_tokens = (
+            parsed_line.total_tokens if parsed_line.total_tokens is not None else total_tokens
+        )
+        cached_input_tokens = (
+            parsed_line.cached_input_tokens
+            if parsed_line.cached_input_tokens is not None
+            else cached_input_tokens
+        )
+        terminal = terminal or parsed_line.terminal_event_seen
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
     return ParsedEventStream(
         events=tuple(events),
         final_messages=(),
-        session_id=None,
-        observed_model_id=None,
-        system_fingerprint=None,
-        input_tokens=None,
-        output_tokens=None,
-        total_tokens=None,
-        cached_input_tokens=None,
-        terminal_event_seen=False,
+        session_id=session_id,
+        observed_model_id=observed_model,
+        system_fingerprint=system_fingerprint,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cached_input_tokens=cached_input_tokens,
+        terminal_event_seen=terminal,
         error_messages=tuple(errors),
         diagnostic_only=True,
         canonical_stream_complete=False,

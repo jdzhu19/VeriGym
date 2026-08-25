@@ -9,6 +9,8 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from verigym.evolution.memory import validate_agent_version, validate_memory_pack
+from verigym.hwe.campaign import HWE_CODEX_PROMPT_CONTRACT_ID
+from verigym.hwe.profiles import HWE_COLLECTION_PROFILE_V2_ID, HWE_TOOL_CONTRACT_V2_ID
 from verigym.plugin_api import JsonValue
 from verigym.schemas.evolution import AgentVersionManifest, MemoryPack
 
@@ -45,11 +47,14 @@ _AGENT_OPTIONS = {
     "agent_version_hash",
     "agent_version_manifest_json",
     "memory_pack",
+    "collection_profile_id",
+    "agent_image_lock_hash",
 }
 _CONFORMANCE_REASONING_EFFORT = "xhigh"
 _WORKSPACE_REASONING_EFFORTS = frozenset({"xhigh", "max"})
 _READONLY_PROMPT_CONTRACT = "codex_cli_readonly_verilog_task_context_v1"
 _WORKSPACE_PROMPT_CONTRACT = "codex_cli_workspace_verilog_task_context_v1"
+_HWE_PROMPT_CONTRACT = HWE_CODEX_PROMPT_CONTRACT_ID
 ReasoningEffortSource = Literal["verigym_explicit_cli_override"]
 _REASONING_EFFORT_SOURCE: ReasoningEffortSource = "verigym_explicit_cli_override"
 
@@ -232,6 +237,18 @@ def agent_settings(
     if not isinstance(model, str):
         raise ValueError("codex-cli-agent requires string agent option model_id")
     model_id = _model_id(model)
+    collection_profile = _optional_string(options, "collection_profile_id")
+    hwe_collection = collection_profile is not None
+    if hwe_collection and collection_profile != HWE_COLLECTION_PROFILE_V2_ID:
+        raise ValueError("Codex HWE collection profile is unsupported")
+    image_lock_hash = _optional_string(options, "agent_image_lock_hash")
+    if hwe_collection:
+        if image_lock_hash is None or not re.fullmatch(r"[0-9a-f]{64}", image_lock_hash):
+            raise ValueError("Codex HWE collection requires an agent-image lock hash")
+        if model_id != "gpt-5.4":
+            raise ValueError("Codex HWE collection freezes GPT-5.4")
+    elif image_lock_hash is not None:
+        raise ValueError("agent-image lock hash is HWE-only")
     sandbox = _string(options, "sandbox", "workspace-write")
     if sandbox != "workspace-write" or sandbox not in capabilities.supported_sandbox_modes:
         raise ValueError("Track B requires the supported workspace-write sandbox")
@@ -243,7 +260,7 @@ def agent_settings(
         options,
         capabilities,
         auth_resolution,
-        prompt_contract_id=_WORKSPACE_PROMPT_CONTRACT,
+        prompt_contract_id=_HWE_PROMPT_CONTRACT if hwe_collection else _WORKSPACE_PROMPT_CONTRACT,
     )
     requested_timeout = _number(
         options,
@@ -251,24 +268,23 @@ def agent_settings(
         float(task_wall_time_s),
     )
     task_wall_time = float(task_wall_time_s)
+    effort = _reasoning_effort(
+        options,
+        allowed=frozenset({"xhigh"}) if hwe_collection else _WORKSPACE_REASONING_EFFORTS,
+        integration="HWE native-shell" if hwe_collection else "workspace agent",
+    )
     agent_version_id, agent_version_hash, memory_pack = _versioned_context(
         options,
         model_id=model_id,
-        reasoning_effort=_reasoning_effort(
-            options,
-            allowed=_WORKSPACE_REASONING_EFFORTS,
-            integration="workspace agent",
-        ),
+        reasoning_effort=effort,
         auth_semantic_id=auth_resolution.auth_semantic_id,
     )
     return _settings(
-        integration_track="codex_cli_external_agent",
-        model_id=model_id,
-        reasoning_effort=_reasoning_effort(
-            options,
-            allowed=_WORKSPACE_REASONING_EFFORTS,
-            integration="workspace agent",
+        integration_track=(
+            "codex_cli_hwe_native_shell" if hwe_collection else "codex_cli_external_agent"
         ),
+        model_id=model_id,
+        reasoning_effort=effort,
         sandbox=sandbox,
         sandbox_backend="codex_cli_default",
         sandbox_backend_source="codex_cli_default",
@@ -276,13 +292,21 @@ def agent_settings(
         requested_timeout=requested_timeout,
         task_wall_time=task_wall_time,
         effective_timeout=min(requested_timeout, task_wall_time),
-        max_output=_integer(options, "max_output_bytes", 8 * 1024 * 1024),
-        tool_availability_policy="codex_cli_visible_workspace_tools",
-        tool_use_policy="visible_task_workspace_policy_v2",
+        max_output=_integer(
+            options,
+            "max_output_bytes",
+            32 * 1024 * 1024 if hwe_collection else 8 * 1024 * 1024,
+        ),
+        tool_availability_policy=(
+            HWE_TOOL_CONTRACT_V2_ID if hwe_collection else "codex_cli_visible_workspace_tools"
+        ),
+        tool_use_policy=(
+            HWE_COLLECTION_PROFILE_V2_ID if hwe_collection else "visible_task_workspace_policy_v2"
+        ),
         auth_resolution=auth_resolution,
         credential_env=credential_env,
         allow_proxy=_boolean(options, "allow_proxy_environment", False),
-        prompt_contract_id=_WORKSPACE_PROMPT_CONTRACT,
+        prompt_contract_id=_HWE_PROMPT_CONTRACT if hwe_collection else _WORKSPACE_PROMPT_CONTRACT,
         expected_execution_backend=_optional_string(
             options,
             "expected_execution_backend",
@@ -309,6 +333,11 @@ def settings_for_execution_backend(
         return settings
     if execution_backend != "docker_outer_runtime_delegated":
         raise ValueError(f"unsupported external-agent execution backend: {execution_backend}")
+    runtime_tool_policy = (
+        "hwe_standard_v2"
+        if settings.integration_track == "codex_cli_hwe_native_shell"
+        else "docker_runtime_isolated_workspace_policy_v3"
+    )
     fingerprint = stable_hash(
         {
             "base_configuration_fingerprint": settings.configuration_fingerprint,
@@ -316,7 +345,7 @@ def settings_for_execution_backend(
             "sandbox_policy": "outer_runtime_delegated",
             "sandbox_backend": "verigym_docker_outer_runtime",
             "sandbox_backend_source": "verigym_runtime_effective_controls",
-            "tool_use_policy": "docker_runtime_isolated_workspace_policy_v3",
+            "tool_use_policy": runtime_tool_policy,
         }
     )
     return replace(
@@ -324,7 +353,7 @@ def settings_for_execution_backend(
         sandbox_policy="outer_runtime_delegated",
         sandbox_backend="verigym_docker_outer_runtime",
         sandbox_backend_source="verigym_runtime_effective_controls",
-        tool_use_policy="docker_runtime_isolated_workspace_policy_v3",
+        tool_use_policy=runtime_tool_policy,
         configuration_fingerprint=fingerprint,
     )
 
@@ -354,12 +383,18 @@ def _settings(
     memory_pack_hash: str | None,
     capabilities: CapabilityReport,
 ) -> CodexSettings:
-    if requested_timeout <= 0 or requested_timeout > 1800:
-        raise ValueError("Codex process timeout must be in (0, 1800] seconds")
+    max_timeout = 3600 if integration_track == "codex_cli_hwe_native_shell" else 1800
+    if requested_timeout <= 0 or requested_timeout > max_timeout:
+        raise ValueError(f"Codex process timeout must be in (0, {max_timeout}] seconds")
     if task_wall_time <= 0 or effective_timeout <= 0:
         raise ValueError("Codex task wall-time budget must be positive")
-    if max_output < 1024 or max_output > 16 * 1024 * 1024:
-        raise ValueError("Codex output bound must be between 1 KiB and 16 MiB")
+    max_output_limit = (
+        32 * 1024 * 1024 if integration_track == "codex_cli_hwe_native_shell" else 16 * 1024 * 1024
+    )
+    if max_output < 1024 or max_output > max_output_limit:
+        raise ValueError(
+            f"Codex output bound must be between 1 KiB and {max_output_limit // (1024 * 1024)} MiB"
+        )
     forwarded_proxy_names = forwarded_proxy_environment_names(allow_proxy)
     runtime_forwarded_proxy_names = forwarded_runtime_proxy_environment_names(allow_proxy)
     timeout_clamped = effective_timeout != requested_timeout

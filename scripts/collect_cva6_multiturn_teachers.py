@@ -23,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
-        default="cva6-verified-multiturn-teachers-v1",
+        default="cva6-verified-multiturn-teachers-v2",
         help="Frozen public campaign identifier; use a new value after an invalidated batch.",
     )
     parser.add_argument("--max-process-time-s", type=int, default=600)

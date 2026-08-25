@@ -1,0 +1,52 @@
+{
+  "format_id": "verigym_qwen35_hwe_verified_multiturn_sft_config_v2",
+  "model_family": "Qwen3.5-9B",
+  "dataset": {
+    "format_id": "verigym_hwe_verified_multiturn_sft_dataset_v2",
+    "record_count": 8,
+    "split": "training",
+    "collection_profile_id": "hwe_standard_v1",
+    "observation_policy_id": "hwe_repository_observation_v1",
+    "tool_contract_id": "hwe_native_shell_v1",
+    "max_length": 32768,
+    "truncation": "error",
+    "supervised_roles": ["assistant"],
+    "masked_roles": ["system", "user", "tool"],
+    "enable_long_context_bucket": false,
+    "verifier_resolved": true,
+    "infrastructure_valid": true,
+    "raw_provider_events_exported": false,
+    "raw_observations_exported": false,
+    "hidden_assets_exported": false,
+    "reference_solutions_exported": false,
+    "private_reasoning_exported": false
+  },
+  "trainer": {
+    "entrypoint": "rllm.AgentSFTTrainer",
+    "backend": "verl",
+    "tokenize_method": "hf_template",
+    "max_length": 32768,
+    "truncation": "error",
+    "precision": "bf16",
+    "strategy": "fsdp2",
+    "gradient_checkpointing": true,
+    "world_size": 4,
+    "gpu_model": "A30",
+    "micro_batch_size_per_gpu": 1,
+    "gradient_accumulation_steps": 1,
+    "global_batch_size": 4,
+    "epochs": 3,
+    "optimizer_steps": 6,
+    "learning_rate": 0.0001,
+    "seed": 484,
+    "lora": {
+      "rank": 8,
+      "alpha": 16,
+      "dropout": 0.05,
+      "target_modules": "all-linear"
+    }
+  },
+  "optimizer_scope": "sft_only",
+  "grpo_updates": 0,
+  "hpc_jobs_submitted": false
+}

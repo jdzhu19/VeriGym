@@ -19,6 +19,7 @@ from rllm.workflows.workflow import (  # type: ignore[import-not-found]
     TerminationReason,
     Workflow,
 )
+from verigym.core.repository_observation import REPOSITORY_OBSERVATION_POLICY_ID
 from verigym.protocols.repository_action import (
     canonical_tool_observation,
     repository_tool_definitions,
@@ -321,6 +322,7 @@ class VeriGymBrokerEnvironment(BaseEnv):  # type: ignore[misc]
             is_error=(
                 response.get("accepted") is False or response.get("protocol_error") is not None
             ),
+            observation_policy_id=REPOSITORY_OBSERVATION_POLICY_ID,
         )
         return observation, reward, done, dict(response)
 

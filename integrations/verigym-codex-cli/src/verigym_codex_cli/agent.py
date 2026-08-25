@@ -4,9 +4,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
+from verigym.core.hashing import content_hash
 from verigym.evolution.memory import validate_memory_pack
+from verigym.experiments.state import atomic_dump_json
+from verigym.hwe.campaign import (
+    HWE_CODEX_BASE_INSTRUCTION_POLICY,
+    HWE_CODEX_PROMPT_CONTRACT_ID,
+    HWE_CODEX_PROMPT_CONTRACT_VERSION,
+)
+from verigym.hwe.codex_normalization import (
+    HweCausalValidationError,
+    normalize_codex_hwe_events,
+)
+from verigym.hwe.observation import TiktokenO200kCounter
+from verigym.hwe.profiles import (
+    HWE_COLLECTION_PROFILE_V2_ID,
+    HWE_OBSERVATION_POLICY_V2_ID,
+    HWE_TOOL_CONTRACT_V2_ID,
+)
+from verigym.hwe.trajectory import build_hwe_teacher_transcript
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -106,6 +124,11 @@ class CodexCliAgentAdapter(AgentAdapter):
         self._launched = False
         self._artifact_root: Path | None = None
         self._workspace_before: WorkspaceSnapshot | None = None
+        self._hwe_counter: TiktokenO200kCounter | None = None
+        self._hwe_runtime_result: ExternalProcessResult | None = None
+        self._hwe_process_stdout: str | None = None
+        self._hwe_api_input_tokens = 0
+        self._hwe_api_output_tokens = 0
 
     def start(self, context: AgentContext) -> None:
         bridge = context.external_bridge
@@ -132,7 +155,12 @@ class CodexCliAgentAdapter(AgentAdapter):
             settings,
             versioned_context_allowed=True,
         )
-        prompt = validate_prompt_text(_agent_prompt(context, bridge), prompt_policy)
+        hwe_collection = settings.integration_track == "codex_cli_hwe_native_shell"
+        if hwe_collection and bridge.execution_backend != "docker_outer_runtime_delegated":
+            raise ValueError("HWE native-shell collection requires the Docker runtime backend")
+        prompt = validate_prompt_text(
+            _agent_prompt(context, bridge, hwe_collection=hwe_collection), prompt_policy
+        )
         self._context = context
         self._bridge = bridge
         self._executable = executable
@@ -142,6 +170,11 @@ class CodexCliAgentAdapter(AgentAdapter):
         self._launched = False
         self._artifact_root = bridge.artifact_root
         self._workspace_before = workspace_before
+        self._hwe_counter = TiktokenO200kCounter() if hwe_collection else None
+        self._hwe_runtime_result = None
+        self._hwe_process_stdout = None
+        self._hwe_api_input_tokens = 0
+        self._hwe_api_output_tokens = 0
         bridge.emit_event(
             "codex_cli_prompt_policy_bound",
             {
@@ -254,17 +287,35 @@ class CodexCliAgentAdapter(AgentAdapter):
                 infrastructure=True,
             )
         if runtime_result is not None and not _runtime_security_complete(runtime_result):
-            failure = _agent_failure(
-                TerminationReason.MODEL_ERROR,
-                "runtime_security_controls",
-                "Docker external-agent effective controls or cleanup were incomplete",
-                infrastructure=True,
-            )
+            protocol_reason = runtime_result.failure_reason
+            if isinstance(protocol_reason, str) and protocol_reason.startswith("hwe_protocol_"):
+                failure = _agent_failure(
+                    TerminationReason.MODEL_ERROR,
+                    "protocol_error",
+                    "HWE exec-server protocol failed closed during runtime cleanup",
+                    infrastructure=True,
+                    protocol_error_subcategory=protocol_reason,
+                )
+            else:
+                failure = _agent_failure(
+                    TerminationReason.MODEL_ERROR,
+                    "runtime_security_controls",
+                    "Docker external-agent effective controls or cleanup were incomplete",
+                    infrastructure=True,
+                )
+        if failure is not None and process.stdout:
+            parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
         if failure is None:
             backend_category = sandbox_backend_failure(process.stdout, process.stderr)
             if backend_category is not None:
                 try:
-                    parsed = _parse_agent_process(process, workspace)
+                    parsed = _parse_agent_process(
+                        process,
+                        workspace,
+                        require_final_message=(
+                            settings.integration_track != "codex_cli_hwe_native_shell"
+                        ),
+                    )
                 except EventParseError:
                     parsed = parse_partial_event_stream(process.stdout, roots=(workspace,))
                 failure = _agent_failure(
@@ -286,7 +337,13 @@ class CodexCliAgentAdapter(AgentAdapter):
                 failure = _process_failure(process, parsed, runtime_result)
             else:
                 try:
-                    parsed = _parse_agent_process(process, workspace)
+                    parsed = _parse_agent_process(
+                        process,
+                        workspace,
+                        require_final_message=(
+                            settings.integration_track != "codex_cli_hwe_native_shell"
+                        ),
+                    )
                     if runtime_delegated:
                         validate_runtime_isolated_external_events(
                             parsed,
@@ -422,6 +479,20 @@ class CodexCliAgentAdapter(AgentAdapter):
         evidence.write(bridge.artifact_root, create=False)
         if failure is not None:
             raise failure
+        if settings.integration_track == "codex_cli_hwe_native_shell":
+            if runtime_result is None or not runtime_result.hwe_protocol_records:
+                raise _agent_failure(
+                    TerminationReason.MODEL_ERROR,
+                    "hwe_protocol_evidence_missing",
+                    "HWE native-shell episode produced no correlated protocol evidence",
+                    infrastructure=True,
+                )
+            self._hwe_runtime_result = runtime_result
+            self._hwe_process_stdout = process.stdout
+            self._hwe_api_input_tokens = int(parsed.input_tokens or 0) if parsed is not None else 0
+            self._hwe_api_output_tokens = (
+                int(parsed.output_tokens or 0) if parsed is not None else 0
+            )
         return FinalSubmissionAction(
             message=(
                 "External Codex CLI episode ended; candidate submitted to the ordinary "
@@ -441,6 +512,93 @@ class CodexCliAgentAdapter(AgentAdapter):
                     "candidate_modified_during_finish": False,
                 },
             )
+        if self._hwe_counter is not None and result.resolved:
+            self._write_hwe_transcript(result)
+
+    def _write_hwe_transcript(self, result: EpisodeResult) -> None:
+        context, bridge, executable, capabilities, settings, prompt = self._configured()
+        runtime_result = self._hwe_runtime_result
+        stdout = self._hwe_process_stdout
+        if runtime_result is None or stdout is None:
+            raise RuntimeError("resolved HWE episode lacks its native-shell evidence")
+        raw_manifest = runtime_result.hwe_private_audit_manifest
+        if not isinstance(raw_manifest, dict) or not isinstance(raw_manifest.get("sha256"), str):
+            raise RuntimeError("resolved HWE episode lacks its frozen private raw manifest")
+        raw_layer_hash = cast(str, raw_manifest["sha256"])
+        counter = self._hwe_counter
+        if counter is None:
+            raise RuntimeError("resolved HWE episode lacks its frozen tokenizer")
+        try:
+            events, turns = normalize_codex_hwe_events(
+                protocol_records=runtime_result.hwe_protocol_records,
+                app_server_jsonl=stdout,
+                terminal_success=(
+                    runtime_result.terminal_event_seen and runtime_result.exit_code == 0
+                ),
+                profile_id=HWE_COLLECTION_PROFILE_V2_ID,
+            )
+        except HweCausalValidationError as exc:
+            base = {
+                "schema_version": "1.0",
+                "format_id": "verigym_hwe_materialization_rejection_v1",
+                "collection_profile_id": HWE_COLLECTION_PROFILE_V2_ID,
+                "task_id": context.task.id,
+                "reason": exc.reason,
+                "ordinary_verifier_resolved": result.resolved,
+                "terminal_event_seen": runtime_result.terminal_event_seen,
+                "protocol_record_count": len(runtime_result.hwe_protocol_records),
+                "raw_layer_hash": raw_layer_hash,
+            }
+            rejection = {**base, "rejection_hash": content_hash(base)}
+            atomic_dump_json(bridge.artifact_root / "hwe_materialization_rejection.json", rejection)
+            update_summary(
+                bridge.artifact_root,
+                {
+                    "hwe_collection_profile_id": HWE_COLLECTION_PROFILE_V2_ID,
+                    "hwe_materialization_rejected": True,
+                    "hwe_materialization_rejection_reason": exc.reason,
+                    "hwe_materialization_rejection_hash": rejection["rejection_hash"],
+                    "ordinary_verifier_resolved": result.resolved,
+                },
+            )
+            return
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Operate only through the selected external Docker environment. Never "
+                    "request permissions, network, MCP, apps, plugins, or other agents."
+                ),
+            },
+            {"role": "user", "content": prompt},
+            *turns,
+        ]
+        transcript = build_hwe_teacher_transcript(
+            task_id=context.task.id,
+            model_id=settings.model_id,
+            client_version=capabilities.version_output.strip(),
+            client_sha256=executable.sha256,
+            agent_image_lock_hash=str(context.agent_options["agent_image_lock_hash"]),
+            messages=messages,
+            normalized_events=events,
+            counter=counter,
+            api_input_tokens=self._hwe_api_input_tokens,
+            api_output_tokens=self._hwe_api_output_tokens,
+            raw_layer_hash=raw_layer_hash,
+            profile_id=HWE_COLLECTION_PROFILE_V2_ID,
+        )
+        atomic_dump_json(bridge.artifact_root / "hwe_teacher_transcript.json", transcript)
+        update_summary(
+            bridge.artifact_root,
+            {
+                "hwe_collection_profile_id": HWE_COLLECTION_PROFILE_V2_ID,
+                "hwe_transcript_format": transcript["format_id"],
+                "hwe_transcript_hash": transcript["transcript_hash"],
+                "hwe_sft_bucket": transcript["sft_bucket"],
+                "hwe_primary_eligible": transcript["primary_eligible"],
+                "ordinary_verifier_resolved": result.resolved,
+            },
+        )
 
     def _configured(
         self,
@@ -471,13 +629,56 @@ class CodexCliAgentAdapter(AgentAdapter):
         )
 
 
-def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
+class CodexCliHweAgentAdapter(CodexCliAgentAdapter):
+    """Codex 0.147 production collector using the isolated HWE native-shell contract."""
+
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id=HWE_CODEX_PROMPT_CONTRACT_ID,
+        prompt_contract_version=HWE_CODEX_PROMPT_CONTRACT_VERSION,
+        task_context_policy="hwe_bounded_repository_context_v2",
+        base_instruction_policy=HWE_CODEX_BASE_INSTRUCTION_POLICY,
+        content_visibility_policy="public_task_workspace_no_hidden_reference_v1",
+        max_prompt_bytes=2 * 1024 * 1024,
+        max_task_context_bytes=1024 * 1024,
+        versioned_context_allowed=False,
+    )
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="codex-cli-hwe-agent",
+        version=__version__,
+        api_version=PLUGIN_API_VERSION,
+        provider="openai-codex-cli",
+        capabilities=[
+            "external_coding_agent",
+            "workspace_editing",
+            "machine_readable_events",
+            "single_external_episode",
+            "hwe_native_shell_collection",
+        ],
+    )
+
+    def start(self, context: AgentContext) -> None:
+        if context.agent_options.get("collection_profile_id") != HWE_COLLECTION_PROFILE_V2_ID:
+            raise ValueError("codex-cli-hwe-agent requires collection_profile_id=hwe_standard_v2")
+        super().start(context)
+
+
+def _agent_prompt(
+    context: AgentContext,
+    bridge: ExternalAgentBridge,
+    *,
+    hwe_collection: bool = False,
+) -> str:
     workspace = bridge.workspace_root.resolve(strict=True)
-    visible_files = [
-        path.relative_to(workspace).as_posix()
-        for path in sorted(workspace.rglob("*"))
-        if path.is_file() and ".verigym_internal" not in path.parts
-    ]
+    visible_files = (
+        _bounded_hwe_tree(workspace)
+        if hwe_collection
+        else [
+            path.relative_to(workspace).as_posix()
+            for path in sorted(workspace.rglob("*"))
+            if path.is_file() and ".verigym_internal" not in path.parts
+        ]
+    )
     visible_tools = sorted(
         tool
         for tool in context.task.interaction.allowed_tools
@@ -498,7 +699,9 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "editable_globs": sorted(bridge.editable_globs),
             "readonly_globs": sorted(bridge.readonly_globs),
             "network": "disabled",
-            "outside_workspace_access": "forbidden",
+            "outside_workspace_access": (
+                "isolated_container_read_only_allowed" if hwe_collection else "forbidden"
+            ),
         },
         "visible_verification_interfaces": visible_tools,
         "budget": {
@@ -515,6 +718,66 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Finish after one candidate; hidden verification happens only after submission.",
         ],
     }
+    if hwe_collection:
+        payload.update(
+            {
+                "collection_profile_id": HWE_COLLECTION_PROFILE_V2_ID,
+                "observation_policy_id": HWE_OBSERVATION_POLICY_V2_ID,
+                "tool_contract_id": HWE_TOOL_CONTRACT_V2_ID,
+                "initial_tree_contract": {
+                    "depth": 2,
+                    "entries": 200,
+                    "excluded_from_initial_expansion": [
+                        "build",
+                        "generated",
+                        "vendor",
+                        "third_party",
+                    ],
+                    "scoped_search_and_read_allowed": True,
+                },
+                "native_shell_contract": {
+                    "cwd": "workspace-relative only",
+                    "container_read_scope": "isolated agent container",
+                    "parent_paths": "allowed",
+                    "absolute_container_paths": "allowed",
+                    "candidate_write_scope": "/workspace/repository",
+                    "ephemeral_write_scope": "/tmp",
+                    "container_rootfs": "read-only",
+                    "environment_injection": "forbidden",
+                    "model_selected_timeout": "forbidden",
+                    "timeouts_s": {"ordinary": 60, "compile": 600, "simulation": 900},
+                },
+            }
+        )
+        payload["instructions"] = [
+            "Make candidate changes only in /workspace/repository.",
+            "TASK.md is at the workspace root; CVA6 source paths begin with repository/.",
+            "Start from the bounded shallow tree, then use scoped search/read commands.",
+            "Treat every omission marker as evidence that content exists but is not shown.",
+            "Container-native reads may use parent paths such as `find ..` and absolute paths; "
+            "the isolated image contains no hidden verifier or provider credentials.",
+            "The container root is read-only and /tmp is ephemeral; do not inject environment "
+            "variables or timeouts.",
+            "Do not probe environment variables or use $NAME expansions other than the frozen "
+            "allowlist $PWD, $RISCV, and $VERILATOR_ROOT; prefer fixed tool paths.",
+            "Never issue an empty or whitespace-only shell command; use `true` only when an "
+            "explicit no-op is necessary.",
+            "Do not assign shell or environment variables and do not use command substitution "
+            "(`$()` or backticks); use fixed paths and direct commands.",
+            "Do not write interactive stdin; a single interrupt of a stalled known process is "
+            "recorded as completion of that shell action.",
+            "Issue exactly one tool or process call at a time and wait for it to complete; never "
+            "run shell commands or edits in parallel.",
+            "Make persistent edits through concise shell commands so every mutation remains "
+            "attached to its completed shell action; do not use direct filesystem-write or "
+            "built-in patch operations.",
+            "Do not embed full file contents or previous command output in an edit command; use "
+            "a short targeted transformation (a single-quoted Python heredoc is allowed) and "
+            "then inspect the diff; never use a heredoc to reproduce an entire source file.",
+            "Run focused compile/simulation diagnostics and inspect the final diff.",
+            "Do not use network, MCP, apps, plugins, other agents, or hidden verifier assets.",
+            "Finish after one candidate; VeriGym owns verifier execution.",
+        ]
     repository_contract = context.task.metadata.get("repository_repair")
     if isinstance(repository_contract, dict):
         public_test_ids = repository_contract.get("public_test_ids")
@@ -522,33 +785,91 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             isinstance(value, str) for value in public_test_ids
         ):
             raise ValueError("repository task public-test identity is malformed")
-        payload["repository_repair"] = {
-            "repository_root": "repository",
-            "issue_file": "TASK.md",
-            "public_test_launcher": {
-                "list": ["verigym-public-test", "list"],
-                "run": ["verigym-public-test", "run", "<test-id>"],
-                "test_ids": sorted(public_test_ids),
-                "assets": "trusted read-only mount; direct asset access is forbidden",
-            },
-            "candidate_contract": {
-                "kind": "unified_repository_patch",
-                "freeze_owner": "verigym",
-                "candidate_repair": "forbidden",
-            },
-        }
-        payload["instructions"] = [
-            "Work only inside the current visible task workspace.",
-            "Read TASK.md and the visible repository before editing.",
-            "Edit only paths allowed by workspace_policy.editable_globs.",
-            "Use only `verigym-public-test list` and `verigym-public-test run <test-id>` "
-            "for public verification; do not inspect /verigym-public directly.",
-            "Do not access parent, home, source repository, credential, or hidden-verifier paths.",
-            "Do not use network, MCP, plugins, external repositories, or web search.",
-            "Do not ask the user questions.",
-            "Finish after one repository candidate; VeriGym freezes the patch "
-            "and runs hidden tests.",
-        ]
+        if hwe_collection:
+            payload["repository_repair"] = {
+                "repository_root": "repository",
+                "issue_file": "TASK.md",
+                "public_test_launcher": {
+                    "available": False,
+                    "execution_owner": "verigym_after_submission",
+                    "model_access": "unavailable",
+                },
+                "local_diagnostics": {
+                    "available_commands": ["rg", "make", "verilator"],
+                    "repository_scripts": "allowed within workspace policy",
+                },
+                "candidate_contract": {
+                    "kind": "unified_repository_patch",
+                    "freeze_owner": "verigym",
+                    "candidate_repair": "forbidden",
+                },
+            }
+            payload["instructions"] = [
+                "Make candidate changes only in /workspace/repository.",
+                "TASK.md is at the workspace root; CVA6 source paths begin with repository/.",
+                "Read TASK.md and the visible repository before editing.",
+                "Start from the bounded shallow tree, then use scoped search/read commands.",
+                "Treat every omission marker as evidence that content exists but is not shown.",
+                "Edit only paths allowed by workspace_policy.editable_globs.",
+                "The `verigym-public-test` launcher and verifier assets are unavailable; "
+                "do not invoke or inspect them.",
+                "Use available `rg`, `make`, `verilator`, and repository scripts for focused "
+                "local compile/simulation diagnostics.",
+                "Container-native reads may use parent paths such as `find ..` and absolute "
+                "container paths.",
+                "The container root is read-only and /tmp is ephemeral; do not inject "
+                "environment variables or timeouts.",
+                "Do not probe environment variables or use $NAME expansions other than the "
+                "frozen allowlist $PWD, $RISCV, and $VERILATOR_ROOT; prefer fixed tool paths.",
+                "Never issue an empty or whitespace-only shell command; use `true` only when an "
+                "explicit no-op is necessary.",
+                "Do not assign shell or environment variables and do not use command "
+                "substitution (`$()` or backticks); use fixed paths and direct commands.",
+                "Do not write interactive stdin; a single interrupt of a stalled known process "
+                "is recorded as completion of that shell action.",
+                "Issue exactly one tool or process call at a time and wait for it to complete; "
+                "never run shell commands or edits in parallel.",
+                "Make persistent edits through concise shell commands so every mutation remains "
+                "attached to its completed shell action; do not use direct filesystem-write or "
+                "built-in patch operations.",
+                "Do not embed full file contents or previous command output in an edit command; "
+                "use a short targeted transformation (a single-quoted Python heredoc is allowed) "
+                "and then inspect the diff; never use a heredoc to reproduce an entire source "
+                "file.",
+                "Inspect the final diff before finishing.",
+                "Do not use network, MCP, apps, plugins, other agents, or hidden verifier assets.",
+                "Do not ask the user questions.",
+                "Finish after one repository candidate; VeriGym owns verifier execution.",
+            ]
+        else:
+            payload["repository_repair"] = {
+                "repository_root": "repository",
+                "issue_file": "TASK.md",
+                "public_test_launcher": {
+                    "list": ["verigym-public-test", "list"],
+                    "run": ["verigym-public-test", "run", "<test-id>"],
+                    "test_ids": sorted(public_test_ids),
+                    "assets": "trusted read-only mount; direct asset access is forbidden",
+                },
+                "candidate_contract": {
+                    "kind": "unified_repository_patch",
+                    "freeze_owner": "verigym",
+                    "candidate_repair": "forbidden",
+                },
+            }
+            payload["instructions"] = [
+                "Work only inside the current visible task workspace.",
+                "Read TASK.md and the visible repository before editing.",
+                "Edit only paths allowed by workspace_policy.editable_globs.",
+                "Use only `verigym-public-test list` and `verigym-public-test run <test-id>` "
+                "for public verification; do not inspect /verigym-public directly.",
+                "Do not access parent, home, source repository, credential, or "
+                "hidden-verifier paths.",
+                "Do not use network, MCP, plugins, external repositories, or web search.",
+                "Do not ask the user questions.",
+                "Finish after one repository candidate; VeriGym freezes the patch "
+                "and runs hidden tests.",
+            ]
     task_artifact = (
         '<verigym_external_agent_task schema_version="1.0">\n'
         + json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
@@ -577,14 +898,30 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
     )
 
 
+def _bounded_hwe_tree(workspace: Path) -> list[str]:
+    excluded = {"build", "generated", "vendor", "third_party", ".git", ".verigym_internal"}
+    values: list[str] = []
+    for path in sorted(workspace.rglob("*")):
+        relative = path.relative_to(workspace)
+        if len(relative.parts) > 2 or any(part in excluded for part in relative.parts):
+            continue
+        values.append(relative.as_posix() + ("/" if path.is_dir() else ""))
+        if len(values) == 200:
+            values.append("[verigym-hwe omission: initial tree exceeds 200 entries]")
+            break
+    return values
+
+
 def _parse_agent_process(
     process: CodexProcessResult,
     workspace: Path,
+    *,
+    require_final_message: bool = True,
 ) -> ParsedEventStream:
     parsed = parse_event_stream(process.stdout, roots=(workspace,))
     if process.exit_code == 0 and not parsed.terminal_event_seen:
         raise EventParseError("Codex CLI external-agent stream has no terminal event")
-    if process.exit_code == 0 and not parsed.final_messages:
+    if process.exit_code == 0 and require_final_message and not parsed.final_messages:
         raise EventParseError("Codex CLI external-agent stream has no final message")
     return parsed
 
@@ -594,6 +931,18 @@ def _process_failure(
     parsed: ParsedEventStream | None,
     runtime_result: ExternalProcessResult | None = None,
 ) -> AgentTerminationError | None:
+    if (
+        runtime_result is not None
+        and isinstance(runtime_result.failure_reason, str)
+        and runtime_result.failure_reason.startswith("hwe_protocol_")
+    ):
+        return _agent_failure(
+            TerminationReason.MODEL_ERROR,
+            "protocol_error",
+            "HWE exec-server protocol failed closed",
+            infrastructure=True,
+            protocol_error_subcategory=runtime_result.failure_reason,
+        )
     if (
         runtime_result is not None
         and runtime_result.failure_reason == "control_plane_loopback_proxy"
@@ -694,7 +1043,11 @@ def _external_identity(
         else 0
     )
     return ExternalAgentCallIdentity(
-        adapter_name="codex-cli-agent",
+        adapter_name=(
+            "codex-cli-hwe-agent"
+            if settings.integration_track == "codex_cli_hwe_native_shell"
+            else "codex-cli-agent"
+        ),
         adapter_version=__version__,
         harness_name="verigym-external-agent-bridge",
         requested_model_id=settings.model_id,
@@ -711,7 +1064,16 @@ def _external_identity(
         invocation_count=1,
         identity_confidence="observed" if observed else "requested_only",
         reproducibility_scope="mutable_remote_observation",
-        integration_track="codex_cli_external_agent",
+        integration_track=cast(
+            Literal[
+                "codex_cli_readonly_single_turn_agent",
+                "codex_cli_external_agent",
+                "codex_cli_hwe_native_shell",
+                "claude_cli_external_agent",
+                "openhands_sdk_agent",
+            ],
+            settings.integration_track,
+        ),
         execution_surface="codex_cli",
         interaction_class="cli_agent_workspace_writing",
         harness_id="-".join(capabilities.version_output.strip().lower().split())[:128],
@@ -746,6 +1108,7 @@ def _external_accounting(
     return ExternalAgentAccounting(
         process_wall_time_s=process.duration_s,
         cli_event_count=len(parsed.events) if parsed is not None else 0,
+        model_call_count=parsed.model_call_count if parsed is not None else None,
         external_tool_call_count=(canonical.external_tool_count if canonical is not None else None),
         external_command_count=canonical.command_count if canonical is not None else None,
         public_test_invocation_count=(
@@ -754,9 +1117,9 @@ def _external_accounting(
         external_file_read_count=(canonical.file_read_count if canonical is not None else None),
         external_file_write_count=(canonical.file_write_count if canonical is not None else None),
         external_patch_count=canonical.patch_count if canonical is not None else None,
-        input_tokens=canonical.input_tokens if canonical is not None else None,
-        output_tokens=canonical.output_tokens if canonical is not None else None,
-        total_tokens=canonical.total_tokens if canonical is not None else None,
+        input_tokens=parsed.input_tokens if parsed is not None else None,
+        output_tokens=parsed.output_tokens if parsed is not None else None,
+        total_tokens=parsed.total_tokens if parsed is not None else None,
         cost=None,
         currency=None,
     )
@@ -793,6 +1156,7 @@ def _agent_failure(
     message: str,
     *,
     infrastructure: bool,
+    protocol_error_subcategory: str | None = None,
 ) -> AgentTerminationError:
     return AgentTerminationError(
         reason,
@@ -807,6 +1171,7 @@ def _agent_failure(
             category=category,
             message=redact_text(message)[:4096],
             infrastructure=infrastructure,
+            protocol_error_subcategory=protocol_error_subcategory,
         ),
     )
 

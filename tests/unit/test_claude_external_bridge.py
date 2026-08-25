@@ -87,7 +87,14 @@ def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
 def test_external_agent_artifacts_and_isolation_are_role_aware() -> None:
     assert _external_agent_artifact_namespace("codex-cli-agent") == "codex_cli"
     assert _external_agent_artifact_namespace("claude-cli-agent") == "claude_cli"
+    assert _external_agent_artifact_namespace("deepseek-harness-hwe-agent") == "deepseek_harness"
     assert (
         _external_agent_isolation_label("claude-cli-agent", "docker_outer_runtime_delegated")
         == "host_claude_control_plane_runtime_mcp_delegated"
+    )
+    assert (
+        _external_agent_isolation_label(
+            "deepseek-harness-hwe-agent", "docker_outer_runtime_delegated"
+        )
+        == "host_deepseek_harness_control_plane_runtime_tools_delegated"
     )

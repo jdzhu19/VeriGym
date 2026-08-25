@@ -45,6 +45,7 @@ def resolve_runtime_process_invocation_spec(
     if settings.integration_track not in {
         "codex_cli_readonly_single_turn_agent",
         "codex_cli_external_agent",
+        "codex_cli_hwe_native_shell",
     }:
         raise ValueError("runtime-owned execution requires a supported integration track")
     allowed_efforts = (
@@ -63,28 +64,35 @@ def resolve_runtime_process_invocation_spec(
             "terminal_output": "codex_jsonl_event_stream",
         }
     )
+    runtime_argv = ["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"]
+    workspace_root = (
+        "/workspace/repository"
+        if settings.integration_track == "codex_cli_hwe_native_shell"
+        else "/workspace"
+    )
     return resolve_external_process_invocation_spec(
         protocol="codex_app_server_remote_environment_v1",
         runtime_role="agent",
-        argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
-        logical_cwd="/workspace",
+        argv=runtime_argv,
+        logical_cwd=workspace_root,
         stdin_transport="runtime_protocol_adapter",
         network_policy="none",
         mount_policy=(
             "task_workspace_and_public_tests" if read_only_mounts else "task_workspace_only"
         ),
-        writable_destinations=["/workspace", "/tmp"],
+        writable_destinations=[workspace_root, "/tmp"],
         read_only_mounts=read_only_mounts,
         container_environment_names=[],
         integration_track=cast(
             Literal[
                 "codex_cli_readonly_single_turn_agent",
                 "codex_cli_external_agent",
+                "codex_cli_hwe_native_shell",
             ],
             settings.integration_track,
         ),
         workspace_mode=workspace_mode,
-        logical_workspace_root="/workspace",
+        logical_workspace_root=workspace_root,
         requested_model_id=settings.model_id,
         requested_reasoning_effort=settings.requested_reasoning_effort,
         executable_path_identity="verified_host_codex_cli",

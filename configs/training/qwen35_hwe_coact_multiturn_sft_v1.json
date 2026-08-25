@@ -1,0 +1,41 @@
+{
+  "format_id": "verigym_hwe_coact_multiturn_sft_config_v1",
+  "model": {
+    "id": "Qwen3.5-9B",
+    "path": "/data/jzhu484/Agent/datasets/Qwen3.5-9B",
+    "snapshot_hash_source": "training-handoff.json"
+  },
+  "dataset": {
+    "format_id": "verigym_hwe_coact_multiturn_sft_dataset_v1",
+    "root": "training-ready-dual-route-v1/coact",
+    "record_count": 8,
+    "trajectory_count": 8,
+    "max_length": 65536,
+    "truncation": "error",
+    "supervised_roles": [
+      "assistant"
+    ],
+    "custom_dataset_class": "VeriGymHfTemplateSFTDataset"
+  },
+  "recipe": {
+    "backend": "verl",
+    "entrypoint": "rllm.AgentSFTTrainer",
+    "seed": 484,
+    "epochs": 3,
+    "learning_rate": 0.0001,
+    "optimizer_updates": 6,
+    "gradient_grouping": "trajectory",
+    "target_token_normalization": true,
+    "lora": {
+      "rank": 8,
+      "alpha": 16,
+      "dropout": 0.05
+    }
+  },
+  "trainer": {
+    "enabled": true,
+    "start": false,
+    "hpc_jobs_submitted": false,
+    "heldout_evaluation_started": false
+  }
+}

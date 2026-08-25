@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from verigym.core.repository_observation import resolve_repository_observation_policy
 from verigym.evolution.memory import validate_agent_version
 from verigym.plugin_api import JsonValue, content_hash
 from verigym.schemas.evolution import AgentVersionManifest
@@ -43,6 +44,9 @@ _OPTIONS = {
     "max_consecutive_rejected_calls",
     "max_provider_billed_units",
     "max_budget_usd",
+    "observation_policy_id",
+    "observation_policy",
+    "transcript_format",
 }
 _PROMPT_CONTRACT = "claude_cli_workspace_repository_task_context_v5"
 _AUTH_IDENTITIES = {
@@ -90,6 +94,8 @@ class ClaudeSettings:
     max_consecutive_rejected_calls: int | None
     max_provider_tokens: int
     max_budget_usd: float
+    observation_policy_id: str
+    transcript_format: str
     configuration_fingerprint: str
 
     def safe_configuration(self, capabilities: CapabilityReport) -> dict[str, JsonValue]:
@@ -136,6 +142,8 @@ class ClaudeSettings:
             "model_token_limit_scope": "cache_inclusive_stream_observed",
             "budget_limit_configured": True,
             "budget_limit_usd": self.max_budget_usd,
+            "observation_policy_id": self.observation_policy_id,
+            "transcript_format": self.transcript_format,
             "broker_resource_limits_configured": self.max_tool_calls is not None,
             "max_tool_calls": self.max_tool_calls,
             "max_patch_calls": self.max_patch_calls,
@@ -217,6 +225,18 @@ def agent_settings(
     max_budget_usd = _number(options.get("max_budget_usd", 2.0), "max_budget_usd")
     if not 0.01 <= max_budget_usd <= 100.0:
         raise ValueError("Claude provider budget must be in [0.01, 100] USD")
+    raw_observation_policy = options.get(
+        "observation_policy_id", options.get("observation_policy", "repository_observation_v1")
+    )
+    observation_policy = resolve_repository_observation_policy(raw_observation_policy)
+    observation_policy_id = (
+        observation_policy.policy_id if observation_policy is not None else "legacy"
+    )
+    transcript_format = options.get("transcript_format", "v1")
+    if transcript_format not in {"v1", "v2"}:
+        raise ValueError("Claude transcript_format must be v1 or v2")
+    if transcript_format == "v2" and observation_policy is None:
+        raise ValueError("Claude transcript_format v2 requires the bounded observation policy")
     expected_context = options.get("expected_context_window")
     if expected_context is not None:
         expected_context = _integer(expected_context, "expected_context_window")
@@ -289,6 +309,8 @@ def agent_settings(
         "model_token_limit": max_provider_tokens,
         "model_token_limit_scope": "cache_inclusive_stream_observed",
         "budget_limit": max_budget_usd,
+        "observation_policy_id": observation_policy_id,
+        "transcript_format": transcript_format,
     }
     return ClaudeSettings(
         integration_track="claude_cli_external_agent",
@@ -322,6 +344,8 @@ def agent_settings(
         max_consecutive_rejected_calls=max_consecutive_rejected_calls,
         max_provider_tokens=max_provider_tokens,
         max_budget_usd=max_budget_usd,
+        observation_policy_id=observation_policy_id,
+        transcript_format=transcript_format,
         configuration_fingerprint=content_hash(safe),
     )
 

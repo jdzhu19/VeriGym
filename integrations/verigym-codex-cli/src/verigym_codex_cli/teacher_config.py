@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+from verigym.core.repository_observation import resolve_repository_observation_policy
 from verigym.plugin_api import JsonValue
 
 from .capabilities import CapabilityReport
@@ -28,6 +29,9 @@ _TEACHER_OPTIONS = {
     "max_tool_calls",
     "max_patch_calls",
     "max_consecutive_rejected_calls",
+    "observation_policy_id",
+    "observation_policy",
+    "transcript_format",
 }
 
 
@@ -39,6 +43,8 @@ class CodexTeacherSettings:
     max_tool_calls: int | None
     max_patch_calls: int | None
     max_consecutive_rejected_calls: int | None
+    observation_policy_id: str
+    transcript_format: str
 
 
 def teacher_settings(
@@ -72,6 +78,20 @@ def teacher_settings(
         max_consecutive_rejected_calls = _limit(raw_limits[2], "max_consecutive_rejected_calls")
         if max_patch_calls > max_tool_calls:
             raise ValueError("Codex teacher patch limit cannot exceed its tool-call limit")
+    raw_observation_policy = options.get(
+        "observation_policy_id", options.get("observation_policy", "repository_observation_v1")
+    )
+    observation_policy = resolve_repository_observation_policy(raw_observation_policy)
+    observation_policy_id = (
+        observation_policy.policy_id if observation_policy is not None else "legacy"
+    )
+    transcript_format = options.get("transcript_format", "v1")
+    if transcript_format not in {"v1", "v2"}:
+        raise ValueError("Codex teacher transcript_format must be v1 or v2")
+    if transcript_format == "v2" and observation_policy is None:
+        raise ValueError(
+            "Codex teacher transcript_format v2 requires the bounded observation policy"
+        )
     base_options = {
         key: value
         for key, value in options.items()
@@ -82,6 +102,9 @@ def teacher_settings(
             "max_tool_calls",
             "max_patch_calls",
             "max_consecutive_rejected_calls",
+            "observation_policy_id",
+            "observation_policy",
+            "transcript_format",
         }
     }
     base_options.setdefault("model_id", "gpt-5.4")
@@ -105,6 +128,8 @@ def teacher_settings(
             "max_tool_calls": max_tool_calls,
             "max_patch_calls": max_patch_calls,
             "max_consecutive_rejected_calls": max_consecutive_rejected_calls,
+            "observation_policy_id": observation_policy_id,
+            "transcript_format": transcript_format,
         }
     )
     execution = replace(
@@ -121,6 +146,8 @@ def teacher_settings(
         max_tool_calls=max_tool_calls,
         max_patch_calls=max_patch_calls,
         max_consecutive_rejected_calls=max_consecutive_rejected_calls,
+        observation_policy_id=observation_policy_id,
+        transcript_format=transcript_format,
     )
 
 

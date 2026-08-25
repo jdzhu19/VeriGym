@@ -141,6 +141,133 @@ def test_claude_training_normalization_repairs_provider_tool_result_id_rewrite()
     assert messages[3].tool_call_id == "toolu_prompt_1"
 
 
+def test_claude_training_normalization_pairs_queued_assistant_calls_in_order() -> None:
+    first_observation = canonical_tool_observation("list_files", {"files": []}, is_error=False)
+    second_observation = canonical_tool_observation("list_files", {"files": []}, is_error=False)
+    finish_observation = canonical_tool_observation(
+        "finish", {"accepted": True, "terminal": True}, is_error=False
+    )
+    stdout = "\n".join(
+        [
+            _line(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_queued_1",
+                                "name": "mcp__verigym__list_files",
+                                "input": {"path": ".", "max_depth": 3},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_queued_2",
+                                "name": "mcp__verigym__list_files",
+                                "input": {"path": "repository/config", "max_depth": 3},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_queued_1",
+                                "content": first_observation,
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_queued_2",
+                                "content": second_observation,
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_queued_finish",
+                                "name": "mcp__verigym__finish",
+                                "input": {"message": "done"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_queued_finish",
+                                "content": finish_observation,
+                            }
+                        ]
+                    },
+                }
+            ),
+            _line({"type": "result", "result": "complete"}),
+        ]
+    )
+
+    messages = normalize_training_messages(
+        stdout,
+        system_prompt="system",
+        user_prompt="user",
+        broker_turns=(
+            _turn("list_files", {"path": ".", "max_depth": 3}, first_observation),
+            _turn("list_files", {"path": "repository/config", "max_depth": 3}, second_observation),
+            _turn("finish", {"message": "done"}, finish_observation),
+        ),
+    )
+
+    assert [message.role for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert messages[2].tool_calls is not None
+    assert messages[2].tool_calls[0].id == "toolu_queued_1"
+    assert messages[4].tool_calls is not None
+    assert messages[4].tool_calls[0].id == "toolu_queued_2"
+
+
 def test_claude_training_normalization_deduplicates_cumulative_final_snapshots() -> None:
     events = [json.loads(line) for line in _successful_finish_stream().splitlines()]
     events.insert(
@@ -299,10 +426,18 @@ def test_claude_training_fails_closed_on_broker_event_mismatch() -> None:
         "finish", {"accepted": True, "terminal": True}, is_error=False
     )
 
-    with pytest.raises(TranscriptNormalizationInfrastructureError, match="differs"):
+    with pytest.raises(TranscriptNormalizationInfrastructureError, match="differs") as exc_info:
         normalize_training_messages(
             _successful_finish_stream(),
             system_prompt="system",
             user_prompt="user",
             broker_turns=(_turn("finish", {"message": "different"}, observation),),
         )
+
+    message = str(exc_info.value)
+    assert "index=0" in message
+    assert "expected_tool=finish actual_tool=finish" in message
+    assert "expected_arguments=bytes=" in message
+    assert "actual_arguments=bytes=" in message
+    assert "sha256=" in message
+    assert "different" not in message

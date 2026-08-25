@@ -370,6 +370,7 @@ def normalize_training_messages(
     terminal_text: str | None = None
     terminal_seen = False
     broker_turn_index = 0
+    pending_calls: list[SftToolCall] = []
     for line in stdout.splitlines():
         if not line.strip():
             continue
@@ -443,7 +444,13 @@ def normalize_training_messages(
             if len(calls) > 1:
                 raise EventParseError("Claude emitted multiple repository actions in one turn")
             if calls:
-                messages.extend(calls)
+                # Claude-compatible gateways may emit successive assistant tool-call
+                # events before returning the corresponding MCP results. Keep those
+                # calls ordered until the broker-owned observations arrive instead of
+                # treating the newest call as the only pending one.
+                tool_calls = calls[0].tool_calls
+                assert tool_calls is not None
+                pending_calls.append(tool_calls[0])
             elif text_blocks:
                 if broker_turn_index != len(broker_turns):
                     if mask_nonfinal_assistant_prose:
@@ -465,7 +472,11 @@ def normalize_training_messages(
                 if not isinstance(call_id, str):
                     raise EventParseError("Claude tool result omits its call ID")
                 _tool_result_text(block.get("content"))
-                pending_call = _pending_tool_call(messages)
+                if not pending_calls:
+                    raise TranscriptNormalizationInfrastructureError(
+                        "Claude tool result has no preceding assistant call"
+                    )
+                pending_call = pending_calls.pop(0)
                 name = pending_call.function.name
                 if broker_turn_index >= len(broker_turns):
                     raise TranscriptNormalizationInfrastructureError(
@@ -475,9 +486,22 @@ def normalize_training_messages(
                 arguments = pending_call.function.arguments
                 if turn.tool_name != name or turn.arguments_json != arguments:
                     raise TranscriptNormalizationInfrastructureError(
-                        "Claude tool event differs from the canonical broker turn"
+                        "Claude tool event differs from the canonical broker turn: "
+                        f"index={broker_turn_index} "
+                        f"expected_tool={turn.tool_name} actual_tool={name} "
+                        "expected_arguments="
+                        f"{_safe_argument_fingerprint(turn.arguments_json)} "
+                        "actual_arguments="
+                        f"{_safe_argument_fingerprint(arguments)}"
                     )
                 try:
+                    messages.append(
+                        MultiTurnSftMessage(
+                            role="assistant",
+                            content=None,
+                            tool_calls=[pending_call],
+                        )
+                    )
                     messages.append(
                         MultiTurnSftMessage(
                             role="tool",
@@ -504,6 +528,10 @@ def normalize_training_messages(
     final_text = _canonical_final_text(assistant_text_snapshots, terminal_text)
     if final_text is None:
         raise EventParseError("Claude training stream has no final assistant content")
+    if pending_calls:
+        raise TranscriptNormalizationInfrastructureError(
+            "Claude emitted tool calls without canonical broker results"
+        )
     if broker_turn_index != len(broker_turns):
         raise TranscriptNormalizationInfrastructureError(
             "canonical broker turn count differs from Claude tool results"
@@ -527,6 +555,13 @@ def _canonical_final_text(snapshots: list[str], terminal: str | None) -> str | N
             )
         previous = snapshot
     return terminal
+
+
+def _safe_argument_fingerprint(arguments: str) -> str:
+    """Describe canonical arguments without retaining or exposing their contents."""
+
+    encoded = arguments.encode("utf-8")
+    return f"bytes={len(encoded)} sha256={hashlib.sha256(encoded).hexdigest()}"
 
 
 def _select_observed_model(values: list[str], requested: str) -> str | None:
@@ -598,12 +633,6 @@ def _tool_result_text(value: Any) -> str:
         if value[0].get("type") == "text" and isinstance(text, str) and text:
             return text
     raise EventParseError("Claude training tool result is not one public text observation")
-
-
-def _pending_tool_call(messages: list[MultiTurnSftMessage]) -> SftToolCall:
-    if not messages or messages[-1].role != "assistant" or not messages[-1].tool_calls:
-        raise EventParseError("Claude tool result has no preceding assistant call")
-    return messages[-1].tool_calls[0]
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

@@ -21,8 +21,9 @@ LSF-assigned GPU indices, read-only model/dataset mounts, a dedicated writable c
 `--network none`, and a synthetic empty home mount. Docker sockets and real home directories are
 not mounted.
 
-After training, run `scripts/run_multiturn_reload_container.sh` against the same exact image ID
-for the four-A30 reload check. `scripts/run_rllm_multiturn_smoke_container.sh` uses that image as a
+Set `VERIGYM_MULTITURN_SFT_VERSION=v2` for the new bounded 32K trainer entrypoint; omit it to
+retain the legacy 16K trainer. After training, run `scripts/run_multiturn_reload_container.sh`
+against the same exact image ID for the four-A30 reload check. `scripts/run_rllm_multiturn_smoke_container.sh` uses that image as a
 CPU client on the vLLM service's dedicated bridge to exercise the native `MultiTurnWorkflow` with
 zero optimizer updates. It receives only a public task file, the broker exchange directory, and
 the read-only tokenizer/model tree; it receives no Docker socket or verifier source.

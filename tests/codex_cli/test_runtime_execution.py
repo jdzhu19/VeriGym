@@ -325,6 +325,40 @@ def test_plugin_delegates_model_process_to_runtime_without_launching_fake_codex(
     assert all(record["kind"] == "diagnostic" for record in records)
 
 
+def test_hwe_stdio_exec_server_does_not_enable_remote_registration_mode(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    del fake_codex
+    executable, capabilities = runtime_capabilities()
+    settings = agent_settings(
+        {
+            "model_id": "gpt-5.4",
+            "reasoning_effort": "xhigh",
+            "max_process_time_s": 3600,
+            "collection_profile_id": "hwe_standard_v2",
+            "agent_image_lock_hash": "a" * 64,
+        },
+        capabilities,
+        task_wall_time_s=3600,
+    )
+    settings = settings_for_execution_backend(settings, "docker_outer_runtime_delegated")
+    spec = resolve_runtime_process_invocation_spec(
+        bridge=RuntimeBridge(tmp_path),
+        executable=executable,
+        capabilities=capabilities,
+        settings=settings,
+        workspace_mode="visible_task_workspace",
+    )
+    assert spec.argv == [
+        "/usr/local/bin/codex",
+        "exec-server",
+        "--listen",
+        "stdio://",
+    ]
+    assert spec.logical_workspace_root == "/workspace/repository"
+
+
 def test_memory_builder_uses_one_fresh_empty_runtime_process_and_safe_evidence(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,

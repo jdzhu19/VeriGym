@@ -1,7 +1,7 @@
 """Separate Codex CLI integration package for VeriGym."""
 
 from ._version import __version__
-from .agent import CodexCliAgentAdapter
+from .agent import CodexCliAgentAdapter, CodexCliHweAgentAdapter
 from .auth import (
     AUTH_MODE_ALIASES,
     AUTH_SEMANTIC_IDS,
@@ -24,6 +24,7 @@ __all__ = [
     "AuthPreflightResult",
     "AuthSemanticId",
     "CodexCliAgentAdapter",
+    "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",
     "RequestedAuthMode",

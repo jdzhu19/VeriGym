@@ -11,7 +11,6 @@ from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 
 from verigym_training_reference.cva6_teacher_collection import (
-    _CLAUDE_CONTEXT_WINDOW,
     _MAX_BUDGET_USD,
     _MAX_CAMPAIGN_COST_USD,
     _MAX_CAMPAIGN_PROVIDER_TOKENS,
@@ -104,11 +103,11 @@ def test_campaign_identity_is_bound_into_progress_and_attempt_ids(tmp_path: Path
         "max_patch_calls": _MAX_PATCH_CALLS,
         "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
         "claude_max_provider_tokens": _MAX_PROVIDER_TOKENS,
-        "claude_expected_context_window": _CLAUDE_CONTEXT_WINDOW,
         "claude_max_budget_usd": _MAX_BUDGET_USD,
         "max_campaign_provider_tokens": _MAX_CAMPAIGN_PROVIDER_TOKENS,
         "max_campaign_cost_usd": _MAX_CAMPAIGN_COST_USD,
     }
+    assert "claude_expected_context_window" not in progress["episode_limits"]
     assert _attempt_id(campaign_id, 3, "codex", 0) == (
         "cva6-verified-multiturn-teachers-v2-03-codex-sample-0"
     )

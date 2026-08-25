@@ -22,12 +22,15 @@ from verigym.schemas.suite import SuiteSourceConfig
 
 from .multiturn_sft_exporter import ChatTemplateTokenizer, rllm_hf_template_token_count
 
-_CLAUDE_MODEL = "deepseek-v4-flash[1m]"
+# v2 records use the canonical provider model identity.  The suffixed identity is retained
+# only for explicitly named v1 campaign replay.
+_CLAUDE_MODEL = "deepseek-v4-flash"
+_LEGACY_CLAUDE_MODEL = "deepseek-v4-flash[1m]"
 _CLAUDE_CONTEXT_WINDOW = 1_000_000
 _CODEX_MODEL = "gpt-5.4"
 _BASE_SEED = 484
 _TARGET_SUCCESSES = 8
-_MAX_TOKENS = 16_384
+_MAX_TOKENS = 32_768
 _MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
 _MAX_PROCESS_TIME_S = 600
 _MAX_TOOL_CALLS = 32
@@ -38,7 +41,7 @@ _MAX_BUDGET_USD = 2.0
 _MAX_CAMPAIGN_PROVIDER_TOKENS = 32_000_000
 _MAX_CAMPAIGN_COST_USD = 40.0
 _OPT_IN_ENV = "VERIGYM_RUN_CVA6_TEACHER_COLLECTION"
-_DEFAULT_CAMPAIGN_ID = "cva6-verified-multiturn-teachers-v1"
+_DEFAULT_CAMPAIGN_ID = "cva6-verified-multiturn-teachers-v2"
 _CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
 
 
@@ -303,7 +306,7 @@ def collect_cva6_teacher_trajectories(
         atomic_dump_json(
             root / "successful-bindings.json",
             {
-                "format_id": "verigym_cva6_teacher_bindings_v1",
+                "format_id": _bindings_format_id(progress["format_id"]),
                 "task_split_hash": split.manifest_hash,
                 "record_count": _TARGET_SUCCESSES,
                 "bindings": successes,
@@ -314,6 +317,22 @@ def collect_cva6_teacher_trajectories(
             },
         )
     return progress
+
+
+def _collection_format_id(campaign_id: str) -> str:
+    return (
+        "verigym_cva6_teacher_collection_v1"
+        if campaign_id.endswith("-v1")
+        else "verigym_cva6_teacher_collection_v2"
+    )
+
+
+def _bindings_format_id(collection_format: object) -> str:
+    if collection_format == "verigym_cva6_teacher_collection_v1":
+        return "verigym_cva6_teacher_bindings_v1"
+    if collection_format == "verigym_cva6_teacher_collection_v2":
+        return "verigym_cva6_teacher_bindings_v2"
+    raise ConfigurationError("unsupported CVA6 teacher collection format")
 
 
 def _run_config(
@@ -352,25 +371,30 @@ def _run_config(
         "system_id": f"{provider}-mcp-teacher",
         "base_seed": _BASE_SEED,
     }
+    legacy_campaign = campaign_id.endswith("-v1")
     if provider == "claude":
+        claude_options: dict[str, Any] = {
+            "model_id": _LEGACY_CLAUDE_MODEL if legacy_campaign else _CLAUDE_MODEL,
+            "reasoning_effort": "max",
+            "max_process_time_s": max_process_time_s,
+            "max_output_bytes": _MAX_EVIDENCE_BYTES,
+            "allow_proxy_environment": True,
+            "campaign_role": "training",
+            "capture_training_transcript": True,
+            "transcript_format": "v1" if legacy_campaign else "v2",
+            "observation_policy_id": ("legacy" if legacy_campaign else "repository_observation_v1"),
+            "max_tool_calls": _MAX_TOOL_CALLS,
+            "max_patch_calls": _MAX_PATCH_CALLS,
+            "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
+            "max_provider_billed_units": _MAX_PROVIDER_TOKENS,
+            "max_budget_usd": _MAX_BUDGET_USD,
+        }
+        if legacy_campaign:
+            claude_options.update({"expected_context_window": _CLAUDE_CONTEXT_WINDOW})
         return RunConfig(
             **common,
             agent="claude-cli-agent",
-            agent_options={
-                "model_id": _CLAUDE_MODEL,
-                "reasoning_effort": "max",
-                "expected_context_window": _CLAUDE_CONTEXT_WINDOW,
-                "max_process_time_s": max_process_time_s,
-                "max_output_bytes": _MAX_EVIDENCE_BYTES,
-                "allow_proxy_environment": True,
-                "campaign_role": "training",
-                "capture_training_transcript": True,
-                "max_tool_calls": _MAX_TOOL_CALLS,
-                "max_patch_calls": _MAX_PATCH_CALLS,
-                "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
-                "max_provider_billed_units": _MAX_PROVIDER_TOKENS,
-                "max_budget_usd": _MAX_BUDGET_USD,
-            },
+            agent_options=claude_options,
         )
     return RunConfig(
         **common,
@@ -383,6 +407,8 @@ def _run_config(
             "allow_proxy_environment": True,
             "campaign_role": "training",
             "capture_training_transcript": True,
+            "transcript_format": "v1" if legacy_campaign else "v2",
+            "observation_policy_id": ("legacy" if legacy_campaign else "repository_observation_v1"),
             "max_tool_calls": _MAX_TOOL_CALLS,
             "max_patch_calls": _MAX_PATCH_CALLS,
             "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
@@ -421,11 +447,12 @@ def _campaign_output(
         root = expanded.resolve(strict=True)
         progress = json.loads(_regular_file(progress_path, 32 * 1024 * 1024))
         if (
-            progress.get("format_id") != "verigym_cva6_teacher_collection_v1"
+            progress.get("format_id") != _collection_format_id(campaign_id)
             or progress.get("campaign_id") != campaign_id
             or progress.get("task_split_hash") != split_hash
             or progress.get("docker_config_hash") != docker_config_hash
-            or progress.get("episode_limits") != _episode_limits(max_process_time_s)
+            or progress.get("episode_limits")
+            != _episode_limits(max_process_time_s, legacy_campaign=campaign_id.endswith("-v1"))
         ):
             raise ConfigurationError("collection resume identity changed")
         if progress.get("status") == "stopped_infrastructure_invalid":
@@ -436,20 +463,26 @@ def _campaign_output(
     expanded.mkdir(parents=True)
     root = expanded.resolve(strict=True)
     progress = {
-        "format_id": "verigym_cva6_teacher_collection_v1",
+        "format_id": _collection_format_id(campaign_id),
         "campaign_id": campaign_id,
         "status": "running",
         "task_split_hash": split_hash,
         "docker_config_hash": docker_config_hash,
         "target_success_count": _TARGET_SUCCESSES,
-        "claude_model": _CLAUDE_MODEL,
+        "claude_model": (_LEGACY_CLAUDE_MODEL if campaign_id.endswith("-v1") else _CLAUDE_MODEL),
         "claude_effort": "max",
         "claude_samples_per_task": 3,
         "codex_fallback_model": _CODEX_MODEL,
         "codex_fallback_effort": "xhigh",
         "base_seed": _BASE_SEED,
         "max_tokens": _MAX_TOKENS,
-        "episode_limits": _episode_limits(max_process_time_s),
+        "observation_policy_id": (
+            "legacy" if campaign_id.endswith("-v1") else "repository_observation_v1"
+        ),
+        "transcript_format": "v1" if campaign_id.endswith("-v1") else "v2",
+        "episode_limits": _episode_limits(
+            max_process_time_s, legacy_campaign=campaign_id.endswith("-v1")
+        ),
         "attempts": [],
         "successes": [],
         "private_reasoning_exported": False,
@@ -461,18 +494,22 @@ def _campaign_output(
     return root, progress
 
 
-def _episode_limits(max_process_time_s: int) -> dict[str, int | float]:
-    return {
+def _episode_limits(
+    max_process_time_s: int, *, legacy_campaign: bool = False
+) -> dict[str, int | float]:
+    limits: dict[str, int | float] = {
         "max_process_time_s": max_process_time_s,
         "max_tool_calls": _MAX_TOOL_CALLS,
         "max_patch_calls": _MAX_PATCH_CALLS,
         "max_consecutive_rejected_calls": _MAX_CONSECUTIVE_REJECTED_CALLS,
         "claude_max_provider_tokens": _MAX_PROVIDER_TOKENS,
-        "claude_expected_context_window": _CLAUDE_CONTEXT_WINDOW,
         "claude_max_budget_usd": _MAX_BUDGET_USD,
         "max_campaign_provider_tokens": _MAX_CAMPAIGN_PROVIDER_TOKENS,
         "max_campaign_cost_usd": _MAX_CAMPAIGN_COST_USD,
     }
+    if legacy_campaign:
+        limits["claude_expected_context_window"] = _CLAUDE_CONTEXT_WINDOW
+    return limits
 
 
 def _save_progress(root: Path, progress: dict[str, Any]) -> None:

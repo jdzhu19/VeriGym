@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from verigym.core.hashing import content_hash
+from verigym.core.repository_observation import resolve_repository_observation_policy
 from verigym.evolution.memory import validate_agent_version
 from verigym.plugin_api import JsonValue
 from verigym.schemas.evolution import AgentVersionManifest
@@ -26,6 +27,8 @@ _OPTIONS = {
     "agent_version_id",
     "agent_version_hash",
     "agent_version_manifest_json",
+    "observation_policy_id",
+    "observation_policy",
 }
 
 
@@ -39,6 +42,7 @@ class OpenHandsSettings:
     campaign_role: str
     agent_version_id: str | None
     agent_version_hash: str | None
+    observation_policy_id: str
     configuration_fingerprint: str
 
     def safe_dict(self) -> dict[str, JsonValue]:
@@ -58,6 +62,7 @@ class OpenHandsSettings:
             "client_tools": [],
             "workspace_policy": "private_empty_non_repository",
             "mcp_servers": ["verigym"],
+            "observation_policy_id": self.observation_policy_id,
             "configuration_fingerprint": self.configuration_fingerprint,
         }
 
@@ -111,6 +116,13 @@ def openhands_settings(
     ):
         raise ValueError("OpenHands agent version hash must be lowercase SHA-256")
     raw_manifest = options.get("agent_version_manifest_json")
+    raw_observation_policy = options.get(
+        "observation_policy_id", options.get("observation_policy", "repository_observation_v1")
+    )
+    observation_policy = resolve_repository_observation_policy(raw_observation_policy)
+    observation_policy_id = (
+        observation_policy.policy_id if observation_policy is not None else "legacy"
+    )
     if version_id is not None:
         if not isinstance(raw_manifest, str):
             raise ValueError("OpenHands versioned policy requires its manifest JSON")
@@ -144,6 +156,7 @@ def openhands_settings(
         "agent_version_id": version_id,
         "agent_version_hash": version_hash,
         "tools": "repository_action.v2",
+        "observation_policy_id": observation_policy_id,
     }
     return OpenHandsSettings(
         model_id=model_id,
@@ -154,6 +167,7 @@ def openhands_settings(
         campaign_role=role,
         agent_version_id=version_id,
         agent_version_hash=version_hash,
+        observation_policy_id=observation_policy_id,
         configuration_fingerprint=content_hash(safe),
     )
 
