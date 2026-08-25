@@ -18,10 +18,12 @@ dev = ["mypy>=1.10", "pytest>=8", "ruff>=0.6"]
 [project.entry-points."verigym.tools"]
 synopsys-vcs-simulate = "verigym_synopsys:VcsSimulationTool"
 synopsys-dc-synthesis = "verigym_synopsys:DesignCompilerSynthesisTool"
+synopsys-dc-mcp = "verigym_synopsys:McpDesignCompilerSynthesisTool"
 synopsys-formality-equivalence = "verigym_synopsys:FormalityEquivalenceTool"
 
 [project.scripts]
 verigym-synopsys-prepare-profile = "verigym_synopsys.prepare:main"
+verigym-synopsys-export-mcp-profile = "verigym_synopsys.export_mcp_profile:main"
 verigym-synopsys-mcp-server = "verigym_synopsys.mcp_server:main"
 
 [tool.setuptools.packages.find]

@@ -34,8 +34,8 @@ from .common import redact
 from .dc import DesignCompilerSynthesisTool, _safe_relative
 
 _PROTOCOL_VERSION = "2024-11-05"
-_SERVER_VERSION = "0.1.0"
-_SERVICE_PROTOCOL = "verigym.synopsys.dc.mcp.v1"
+SERVER_VERSION = "0.1.0"
+SERVICE_PROTOCOL = "verigym.synopsys.dc.mcp.v1"
 _MAX_MESSAGE_BYTES = 48 * 1024 * 1024
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
@@ -116,6 +116,7 @@ class McpSynthesisRequest(ProfileIdentityRequest):
     top: str = Field(min_length=1, max_length=256)
     sources: list[McpSource] = Field(min_length=1, max_length=64)
     run_label: Literal["candidate", "reference"]
+    artifact_content_policy: Literal["all", "reports"] = "all"
 
     @model_validator(mode="after")
     def validate_unique_sources(self) -> McpSynthesisRequest:
@@ -163,6 +164,11 @@ def _profile_input_schema(*, synthesis: bool) -> dict[str, Any]:
                     },
                 },
                 "run_label": {"type": "string", "enum": ["candidate", "reference"]},
+                "artifact_content_policy": {
+                    "type": "string",
+                    "enum": ["all", "reports"],
+                    "default": "all",
+                },
             }
         )
         required.extend(["top", "sources", "run_label"])
@@ -231,12 +237,12 @@ class DesignCompilerMcpService:
             if arguments:
                 raise McpRequestError("list_profiles accepts no arguments")
             profiles = [self._profile_summary(profile) for _, profile in self._registry.items()]
-            return {"protocol": _SERVICE_PROTOCOL, "profiles": profiles}
+            return {"protocol": SERVICE_PROTOCOL, "profiles": profiles}
         if name == RESOLVE_PROFILE_TOOL:
             request = _validate_model(ProfileIdentityRequest, arguments)
             profile, resolved = self._resolve(request)
             return {
-                "protocol": _SERVICE_PROTOCOL,
+                "protocol": SERVICE_PROTOCOL,
                 "profile": self._profile_summary(profile),
                 "resolved_profile": _sanitized_resolved_profile(resolved),
             }
@@ -349,13 +355,14 @@ class DesignCompilerMcpService:
                     tool_result,
                     artifacts,
                     include_content=request.run_label == "candidate",
+                    content_policy=request.artifact_content_policy,
                 )
             finally:
                 if session is not None:
                     session.close()
                 runtime.close()
         return {
-            "protocol": _SERVICE_PROTOCOL,
+            "protocol": SERVICE_PROTOCOL,
             "profile": self._profile_summary(profile),
             "resolved_profile": _sanitized_resolved_profile(resolved),
             "tool_result": _sanitized_tool_result(tool_result, request.run_label),
@@ -389,6 +396,17 @@ def _prepare_work_root(path: Path) -> Path:
 
 
 def _sanitized_resolved_profile(resolved: ResolvedToolchainProfile) -> dict[str, Any]:
+    flow_settings = {
+        name: resolved.metadata[name]
+        for name in (
+            "clock_period",
+            "power_activity_mode",
+            "power_activity",
+            "power_static_probability",
+            "power_base_clock",
+        )
+        if name in resolved.metadata
+    }
     return {
         "profile_id": resolved.profile_id,
         "profile_version": resolved.profile_version,
@@ -405,6 +423,7 @@ def _sanitized_resolved_profile(resolved: ResolvedToolchainProfile) -> dict[str,
         "reference_candidate_hash": resolved.reference_candidate_hash,
         "tool_versions": {item.logical_name: item.version for item in resolved.tool_identities},
         "asset_hashes": {item.logical_id: item.content_hash for item in resolved.asset_identities},
+        "flow_settings": flow_settings,
     }
 
 
@@ -423,6 +442,7 @@ def _export_artifacts(
     artifact_dir: Path,
     *,
     include_content: bool,
+    content_policy: Literal["all", "reports"],
 ) -> list[dict[str, Any]]:
     raw_refs = result.metadata.get("synthesis", {}).get("artifacts", [])
     if not isinstance(raw_refs, list):
@@ -436,7 +456,15 @@ def _export_artifacts(
             raise McpRequestError("synthesis backend returned invalid artifact metadata") from exc
         record = ref.model_dump(mode="json")
         record["content_base64"] = None
-        if include_content:
+        content_allowed = content_policy == "all" or ref.path in {
+            "flow.tcl",
+            "metrics.kv",
+            "area.rpt",
+            "timing.rpt",
+            "power.rpt",
+            "qor.rpt",
+        }
+        if include_content and content_allowed:
             relative = _safe_relative(ref.path)
             path = artifact_dir / relative
             if path.is_symlink():
@@ -472,7 +500,7 @@ def _handle(request: Any, service: DesignCompilerMcpService) -> dict[str, Any] |
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {
                     "name": "verigym-synopsys-verifier",
-                    "version": _SERVER_VERSION,
+                    "version": SERVER_VERSION,
                 },
             },
         }
@@ -598,6 +626,8 @@ __all__ = [
     "McpSynthesisRequest",
     "ProfileIdentityRequest",
     "RESOLVE_PROFILE_TOOL",
+    "SERVER_VERSION",
+    "SERVICE_PROTOCOL",
     "SYNTHESIZE_TOOL",
     "main",
     "tool_definitions",

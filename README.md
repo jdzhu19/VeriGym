@@ -332,8 +332,9 @@ verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
 Both integrations are separate installable packages. No benchmark files, commercial binaries,
 libraries, or license values are present in the core distribution. See the
 [commercial-tool integration policy](docs/commercial_tools.md). The Synopsys package also provides
-a restricted verifier-only MCP stdio service for a dedicated licensed host; it accepts only
-server-approved profiles and hash-bound RTL, not arbitrary commands or Tcl.
+a restricted verifier-only MCP stdio service and `synopsys.dc.mcp` synthesis backend for a
+dedicated licensed host. A sanitized client profile lets normal `verigym run` use the service; it
+accepts only server-approved profiles and hash-bound RTL, not arbitrary commands or Tcl.
 
 ## External VerilogEval V2
 

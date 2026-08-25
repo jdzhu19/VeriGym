@@ -3,13 +3,15 @@
 VeriGym core defines tool, synthesis-backend, profile, artifact, and result contracts; it does not
 ship vendor software. The optional
 [`verigym-synopsys`](../integrations/verigym-synopsys/README.md) package proves the interface with
-three site-local plugins:
+site-local tools plus one remote synthesis transport:
 
 - `synopsys.vcs.simulate` runs a hash-bound hidden regression and classifies license, candidate,
   timeout, parser, and runtime failures separately.
 - `synopsys.dc.synth` runs a generated DC flow and emits mapped area, mapped cell count,
   maximum-path delay, worst-negative slack, total dynamic plus cell leakage power, and QoR reports
   from an exact `.db`/SDC pair.
+- `synopsys.dc.mcp` invokes the same generated DC flow through a hash-bound, verifier-only MCP
+  stdio wrapper while keeping DC, the `.db`, SDC, PDK, and license on a remote controlled host.
 - `synopsys.formality.equivalence` separately stages reference and implementation RTL, runs
   `match`/`verify`, and emits a script-bound equivalence status. Detailed unmatched/failing-point
   reports remain inside the ephemeral verifier session because they can reveal golden-design
@@ -66,6 +68,14 @@ structured DC metrics. Candidate reports/netlists are bounded artifact payloads;
 artifact bodies stay on the server. Message, individual-source, aggregate-source,
 individual-artifact, and aggregate-artifact limits are enforced before data is accepted or
 exported.
+
+The installable `synopsys.dc.mcp` synthesis backend is the matching VeriGym client. A separate
+sanitized client profile selects it, identifies the fixed transport executable by SHA-256, and
+binds the server profile ID/hash. `verigym-synopsys-export-mcp-profile` derives that client
+contract without copying remote URIs, asset bytes, or license environment names. Normal
+`verigym run` and replay then resolve the server before synthesis and bind both client and server
+resolved hashes. Candidate summary reports return through the ordinary artifact path; raw logs,
+large netlists, and every reference artifact body stay remote.
 
 This boundary is transport and policy mediation, not a sandbox for hostile RTL. Run it under a
 dedicated account or scheduler job on a controlled verifier host, restrict the SSH principal to a

@@ -20,12 +20,12 @@ SDC pair. The current explicit-power v4 flow runs `compile_ultra`, records mappe
 retains `report_area`, `report_timing`, `report_power`, and `report_qor` artifacts. It annotates
 non-clock primary inputs with a frozen clock-relative toggle rate and static probability. Power is
 normalized as total dynamic plus cell leakage power. The v1/v2 area/timing flows and v3 legacy
-vectorless-power flow remain accepted for exact replay. `synopsys.formality.equivalence` compares
-separately staged reference and implementation RTL,
-supports Verilog and SystemVerilog, and emits a script-bound structured equivalence result. All
-three plugins are verifier-only and intended for site-controlled runtimes; DC profiles explicitly
-require the trusted local runtime. Detailed Formality point reports are not exported because they
-can reveal golden-design identifiers.
+vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same DC
+metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
+compares separately staged reference and implementation RTL, supports Verilog and SystemVerilog,
+and emits a script-bound structured equivalence result. All plugins are verifier-only and intended
+for site-controlled runtimes. Detailed Formality point reports are not exported because they can
+reveal golden-design identifiers.
 
 ## Prepare a site profile
 
@@ -80,7 +80,7 @@ verigym-synopsys-mcp-server \
 ```
 
 MCP stdio can be carried over SSH without adding an HTTP listener. A verifier-side MCP client can
-use a fixed argument array equivalent to:
+use a fixed executable wrapper equivalent to:
 
 ```text
 ssh eda-verifier /opt/verigym/bin/verigym-synopsys-mcp-server \
@@ -88,9 +88,45 @@ ssh eda-verifier /opt/verigym/bin/verigym-synopsys-mcp-server \
   --work-root /private/verigym-work
 ```
 
+The wrapper must accept no arguments and connect its stdin/stdout directly to that fixed command.
+Hash the wrapper on the VeriGym control-plane machine. Then, on a trusted administration machine,
+export a client profile from the server profile and transfer only the sanitized output:
+
+```bash
+verigym-synopsys-export-mcp-profile \
+  --server-profile /private/profiles/dc.yaml \
+  --transport-executable /usr/local/bin/verigym-dc-mcp-transport \
+  --transport-sha256 <64-lowercase-hex> \
+  --output-profile /private/profiles/dc-mcp-client.yaml
+```
+
+Omit `--transport-sha256` when the wrapper is locally available to the exporter. Add
+`--transport-environment SSH_AUTH_SOCK` only when the fixed SSH deployment needs that environment
+name; values never enter the profile. The client profile contains remote DB, SDC, flow, and PDK
+hashes but no remote asset paths, bytes, or license-variable names.
+
+After installing the integration on the control-plane machine, `verigym run` selects the remote
+backend through the client profile in the ordinary synthesis path:
+
+```bash
+verigym profiles validate site-synopsys-dc-mcp \
+  --file /private/profiles/dc-mcp-client.yaml
+verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
+  --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
+  --toolchain-profile site-synopsys-dc-mcp \
+  --toolchain-profile-file /private/profiles/dc-mcp-client.yaml --output runs/
+```
+
+Here `--runtime local` owns only the hash-bound MCP wrapper process; DC, the library, SDC, PDK, and
+license remain on the remote verifier. Candidate flow and summary reports are imported into the
+normal `synopsys_dc_mcp` artifact namespace. Large netlists and raw DC logs are not transported by
+the client. Reference artifact content is never imported. Resolution and replay bind both the
+client profile/transport hash and the independent server resolved-profile hash.
+
 Use a dedicated SSH principal and a forced command or fixed wrapper in production so the client
-cannot replace the server arguments. Authentication and host-key policy belong to SSH; the MCP
-protocol never transports license values. Keep the process on a verifier control plane. Do not
+cannot replace the server arguments. Do not enable SSH agent forwarding. Authentication and
+host-key policy belong to SSH; the MCP protocol never transports license values. Keep the process
+on a verifier control plane. Do not
 register it as a candidate-agent/model-visible tool, because candidate RTL and commercial assets
 must remain separated and the current DC execution backend still assumes a trusted,
 site-controlled host. The existing in-process `synopsys.dc.synth` plugin and its `LocalRuntime`

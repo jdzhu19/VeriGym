@@ -90,7 +90,8 @@
               "enum": [
                 "package_resource",
                 "user_path",
-                "generated"
+                "generated",
+                "remote_service"
               ],
               "type": "string"
             },

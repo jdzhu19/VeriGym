@@ -3,13 +3,22 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-from verigym.plugin_api import content_hash
+import pytest
+from verigym.core.synthesis import execute_synthesis_quality
+from verigym.plugin_api import ConfigurationError, ToolContext, content_hash
 from verigym.profiles.registry import ToolchainProfileRegistry
+from verigym.runtimes.local import LocalRuntime
+from verigym.schemas.runtime import SessionSpec
+from verigym.schemas.task import Candidate
 
+from verigym_synopsys.export_mcp_profile import main as export_mcp_profile
+from verigym_synopsys.mcp_client import McpDesignCompilerSynthesisTool, _run_stdio
 from verigym_synopsys.mcp_server import (
     LIST_PROFILES_TOOL,
     SYNTHESIZE_TOOL,
@@ -247,3 +256,191 @@ def test_mcp_reference_response_never_exports_artifact_content(tmp_path: Path) -
     structured = response["result"]["structuredContent"]
     assert structured["tool_result"]["artifacts"] == []
     assert all(item["content_base64"] is None for item in structured["artifacts"])
+
+
+def test_mcp_client_backend_runs_candidate_reference_and_exact_replay(tmp_path: Path) -> None:
+    server_profile_path, rtl = _site_profile(tmp_path)
+    wrapper = tmp_path / "dc-mcp-transport"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(sys.executable)} -m verigym_synopsys.mcp_server "
+        f"--profile {shlex.quote(str(server_profile_path))} "
+        f"--work-root {shlex.quote(str(tmp_path / 'remote-work'))}\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    client_profile_path = tmp_path / "client-profile.yaml"
+    assert (
+        export_mcp_profile(
+            [
+                "--server-profile",
+                str(server_profile_path),
+                "--transport-executable",
+                str(wrapper),
+                "--output-profile",
+                str(client_profile_path),
+            ]
+        )
+        == 0
+    )
+    client_profile_text = client_profile_path.read_text(encoding="utf-8")
+    assert str(server_profile_path) not in client_profile_text
+    assert "source_kind: remote_service" in client_profile_text
+    server_profile = ToolchainProfileRegistry().load_file(server_profile_path)
+    private_uris = [
+        item.uri
+        for item in [
+            *server_profile.libraries,
+            *(item for item in server_profile.constraints if hasattr(item, "uri")),
+        ]
+        if item.uri is not None
+    ]
+    assert all(uri not in client_profile_text for uri in private_uris)
+    client_profile = ToolchainProfileRegistry().load_file(client_profile_path)
+    assert client_profile.flow is not None
+    assert client_profile.flow.backend_plugin == "synopsys.dc.mcp"
+    assert client_profile.libraries[0].uri is None
+    assert client_profile.libraries[0].copy_permitted is False
+
+    plugin = McpDesignCompilerSynthesisTool()
+    validation = plugin.validate_profile_contract(client_profile)
+    assert validation.valid, validation.errors
+    runtime = LocalRuntime()
+    reference_candidate = Candidate(files={"rtl/counter.v": rtl.decode("utf-8")})
+    reference_hash = content_hash(reference_candidate)
+    resolved = plugin.resolve_profile(
+        client_profile,
+        runtime,
+        source_paths=["rtl/counter.v"],
+        top_module="counter",
+        reference_candidate_hash=reference_hash,
+    )
+    assert resolved.metadata["mcp_server_resolved_profile_hash"]
+    assert resolved.resolved_profile_hash != resolved.metadata["mcp_server_resolved_profile_hash"]
+    replayed = plugin.resolve_profile(
+        client_profile,
+        runtime,
+        source_paths=["rtl/counter.v"],
+        top_module="counter",
+        reference_candidate_hash=reference_hash,
+        expected=resolved,
+    )
+    assert replayed == resolved
+    tampered = client_profile.model_copy(deep=True)
+    tampered.metadata["power_activity"] = 0.2
+    with pytest.raises(ConfigurationError, match="flow settings differ"):
+        plugin.resolve_profile(
+            tampered,
+            runtime,
+            source_paths=["rtl/counter.v"],
+            top_module="counter",
+            reference_candidate_hash=reference_hash,
+        )
+    tampered_version = client_profile.model_copy(deep=True)
+    tampered_version.metadata["remote_design_compiler_version"] = "==unexpected-version"
+    with pytest.raises(ConfigurationError, match="Design Compiler requirement differs"):
+        plugin.resolve_profile(
+            tampered_version,
+            runtime,
+            source_paths=["rtl/counter.v"],
+            top_module="counter",
+            reference_candidate_hash=reference_hash,
+        )
+
+    source = tmp_path / "client-source"
+    (source / "rtl").mkdir(parents=True)
+    (source / "rtl" / "counter.v").write_bytes(rtl)
+    plugin.stage_profile_assets(client_profile, resolved, source)
+    session = runtime.create_session(
+        SessionSpec(source_dir=str(source), label="mcp-client", max_output_bytes=1_000_000)
+    )
+    try:
+        candidate_artifacts = tmp_path / "candidate-artifacts"
+        candidate = plugin.execute(
+            plugin.build_synthesis_request(client_profile, resolved, run_label="candidate"),
+            ToolContext(session=session, artifact_dir=candidate_artifacts),
+        )
+        assert candidate.success, candidate.message
+        metrics = candidate.metadata["synthesis"]
+        assert metrics["resolved_profile_hash"] == resolved.resolved_profile_hash
+        assert (
+            metrics["tool_identity"]["mcp_server_resolved_profile_hash"]
+            == resolved.metadata["mcp_server_resolved_profile_hash"]
+        )
+        assert metrics["mapped_area_raw"] == 42.5
+        assert metrics["critical_path_delay_raw"] == 3.25
+        assert metrics["total_power_raw"] == 8.8
+        assert (candidate_artifacts / "flow.tcl").is_file()
+        assert (candidate_artifacts / "power.rpt").is_file()
+        assert not (candidate_artifacts / "netlist.v").exists()
+        assert not (candidate_artifacts / "dc.log").exists()
+
+        reference = plugin.execute(
+            plugin.build_synthesis_request(client_profile, resolved, run_label="reference"),
+            ToolContext(session=session, artifact_dir=tmp_path / "reference-artifacts"),
+        )
+        assert reference.success, reference.message
+        assert reference.artifacts == []
+        assert not (tmp_path / "reference-artifacts").exists()
+    finally:
+        session.close()
+    suite = SimpleNamespace(reference_solution=lambda _task: reference_candidate)
+    task = SimpleNamespace(budget=SimpleNamespace(max_output_bytes_per_tool=1_000_000))
+    evaluation = execute_synthesis_quality(
+        suite=suite,
+        task=task,
+        candidate_dir=source,
+        runtime=runtime,
+        profile=client_profile,
+        resolved=resolved,
+        artifact_root=tmp_path / "quality-artifacts",
+        plugin=plugin,
+        correctness_passed=True,
+    )
+    assert evaluation.candidate.synthesis_ok
+    assert evaluation.reference.synthesis_ok
+    assert evaluation.candidate.resolved_profile_hash == resolved.resolved_profile_hash
+    assert evaluation.reference.artifacts == []
+    assert (tmp_path / "quality-artifacts" / "synopsys_dc_mcp" / "candidate" / "flow.tcl").is_file()
+    assert (tmp_path / "quality-artifacts" / "synopsys_dc_mcp" / "reference_summary.json").is_file()
+    runtime.close()
+    wrapper.write_text(wrapper.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8")
+    assert not plugin.validate_profile_contract(client_profile).valid
+
+
+def test_mcp_control_plane_transport_output_is_bounded(tmp_path: Path) -> None:
+    wrapper = tmp_path / "oversized-mcp-transport"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('x' * (2 * 1024 * 1024 + 1))\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    completed = _run_stdio(str(wrapper), "", environment_names=[], timeout_s=5)
+    assert completed.exit_code == 0
+    assert completed.output_truncated
+    assert len(completed.stdout.encode("utf-8")) == 2 * 1024 * 1024
+
+
+def test_mcp_client_profile_can_bind_an_off_host_wrapper_hash(tmp_path: Path) -> None:
+    server_profile_path, _ = _site_profile(tmp_path)
+    output = tmp_path / "off-host-client.yaml"
+    assert (
+        export_mcp_profile(
+            [
+                "--server-profile",
+                str(server_profile_path),
+                "--transport-executable",
+                "/opt/verigym/bin/verigym-dc-mcp-transport",
+                "--transport-sha256",
+                "c" * 64,
+                "--output-profile",
+                str(output),
+                "--transport-environment",
+                "SSH_AUTH_SOCK",
+            ]
+        )
+        == 0
+    )
+    profile = ToolchainProfileRegistry().load_file(output)
+    assert profile.metadata["mcp_transport_sha256"] == "c" * 64
+    assert profile.environment_allowlist == ["SSH_AUTH_SOCK"]

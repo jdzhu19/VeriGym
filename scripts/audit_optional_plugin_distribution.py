@@ -124,8 +124,11 @@ _POLICIES = {
         module="verigym_synopsys",
         entry_markers=(
             "[console_scripts]",
+            "verigym-synopsys-export-mcp-profile = verigym_synopsys.export_mcp_profile:main",
+            "verigym-synopsys-mcp-server = verigym_synopsys.mcp_server:main",
             "verigym-synopsys-prepare-profile = verigym_synopsys.prepare:main",
             "[verigym.tools]",
+            "synopsys-dc-mcp = verigym_synopsys:McpDesignCompilerSynthesisTool",
             "synopsys-dc-synthesis = verigym_synopsys:DesignCompilerSynthesisTool",
             "synopsys-vcs-simulate = verigym_synopsys:VcsSimulationTool",
         ),

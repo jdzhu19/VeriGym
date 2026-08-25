@@ -200,6 +200,34 @@ narrow mounts, and a dedicated data volume; they must not mount the host home, r
 credentials, hidden assets, or unrelated experiments. A nonempty inner runtime inventory or failed
 cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](docs/hwe_dind_runtime.md).
 
+### Verifier-only Synopsys MCP transport
+
+The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
+verifier host; it is not a model-visible tool or a general remote shell. The control plane launches
+one regular, executable, SHA-256-bound wrapper without arguments or a shell. A profile may pass
+only `SSH_AUTH_SOCK` or `KRB5CCNAME` by name to that wrapper. SSH deployments must use a dedicated
+principal, host-key verification, a forced command or otherwise fixed server command, and no SSH
+agent forwarding. Transport environment values are never serialized.
+
+The stdio MCP server approves its site profiles at startup and accepts only a profile ID plus
+declared hash, a reference-candidate hash, fixed top and ordered source names, candidate/reference
+role, bounded hash-checked RTL, and one bounded artifact-return policy. It does not accept an
+executable, shell command, Tcl, SDC, PDK/library bytes or paths, license configuration, timeout, or
+environment. It regenerates and hash-checks the existing DC flow. Messages, sources, output, and
+artifacts have individual and aggregate bounds. The client validates the server/protocol version,
+server profile and resolved hashes, DC version, remote asset hashes, flow/activity settings,
+metrics, and artifact hashes before importing candidate summary reports. Reference artifact
+content never returns. MCP/SSH payload logging must remain disabled because a reference call
+necessarily transports verifier-private reference RTL to the remote verifier.
+
+This transport separates the ordinary control-plane host from commercial assets, but it is not an
+OS sandbox for hostile RTL. The current server invokes DC through the trusted local backend on the
+licensed host. Sites must use trusted/qualified inputs or add their own dedicated disposable
+account, scheduler job, VM, or equivalent containment around the server. The MCP label alone must
+not be used to claim that adversarial generated RTL is safe to parse on a shared licensed host.
+The residual trusted computing base includes the fixed wrapper, SSH client/server, MCP adapter,
+licensed EDA installation, verifier host, and its site-specific containment.
+
 ## Yosys and profile-specific protections
 
 Toolchain profile resolution is a verifier-side configuration step and completes before model

@@ -203,7 +203,15 @@ class ArtifactDescriptor(StrictModel):
     version: str | None = None
     license: str | None = None
     media_type: str | None = None
-    source_kind: Literal["package_resource", "user_path", "generated"] | None = None
+    source_kind: (
+        Literal[
+            "package_resource",
+            "user_path",
+            "generated",
+            "remote_service",
+        ]
+        | None
+    ) = None
     attribution: str | None = None
     redistributable: bool | None = None
     unit: str | None = None
