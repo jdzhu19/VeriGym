@@ -29,6 +29,7 @@ _OPTIONS = {
     "agent_version_manifest_json",
     "observation_policy_id",
     "observation_policy",
+    "capture_training_transcript",
 }
 
 
@@ -43,6 +44,7 @@ class OpenHandsSettings:
     agent_version_id: str | None
     agent_version_hash: str | None
     observation_policy_id: str
+    capture_training_transcript: bool
     configuration_fingerprint: str
 
     def safe_dict(self) -> dict[str, JsonValue]:
@@ -63,6 +65,7 @@ class OpenHandsSettings:
             "workspace_policy": "private_empty_non_repository",
             "mcp_servers": ["verigym"],
             "observation_policy_id": self.observation_policy_id,
+            "capture_training_transcript": self.capture_training_transcript,
             "configuration_fingerprint": self.configuration_fingerprint,
         }
 
@@ -105,6 +108,12 @@ def openhands_settings(
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
         raise ValueError("OpenHands campaign role is unsupported")
+    capture_training_transcript = _boolean(
+        options.get("capture_training_transcript", False),
+        "capture_training_transcript",
+    )
+    if capture_training_transcript and role != "training":
+        raise ValueError("OpenHands transcript capture is training-only")
     version_id = options.get("agent_version_id")
     version_hash = options.get("agent_version_hash")
     if (version_id is None) != (version_hash is None):
@@ -157,6 +166,7 @@ def openhands_settings(
         "agent_version_hash": version_hash,
         "tools": "repository_action.v2",
         "observation_policy_id": observation_policy_id,
+        "capture_training_transcript": capture_training_transcript,
     }
     return OpenHandsSettings(
         model_id=model_id,
@@ -168,6 +178,7 @@ def openhands_settings(
         agent_version_id=version_id,
         agent_version_hash=version_hash,
         observation_policy_id=observation_policy_id,
+        capture_training_transcript=capture_training_transcript,
         configuration_fingerprint=content_hash(safe),
     )
 
@@ -193,6 +204,12 @@ def _text(value: JsonValue | None, label: str) -> str:
 def _integer(value: JsonValue, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"OpenHands {label} must be an integer")
+    return value
+
+
+def _boolean(value: JsonValue, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"OpenHands {label} must be a boolean")
     return value
 
 

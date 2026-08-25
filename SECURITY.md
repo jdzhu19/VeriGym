@@ -105,6 +105,35 @@ that counterfactual next-action validation was not run, remain primary-ineligibl
 mixed into the frozen primary dataset formats. Because the Codex app-server owns live provider
 history, the exec-server broker does not claim or attempt retroactive rollout-history mutation.
 
+### OpenHands SDK trajectory boundary
+
+The optional `verigym-openhands` integration runs OpenHands SDK 1.42.1 as a trusted host control
+plane with an empty private workspace. Default OpenHands terminal, file-editor, browser, plugin,
+skill, client-tool, condenser, and repository-mount surfaces are disabled. The SDK receives only
+one owner-controlled MCP server and never receives the Docker socket, hidden verifier assets,
+reference solutions, host home, or another run's workspace. Ordinary repository actions and the
+optional HWE native-shell actions remain broker-owned. HWE shell commands execute only in the
+task-keyed networkless agent container through the existing DeepSeek HWE broker; they are not host
+shell commands.
+
+Training transcript capture is explicit and training-role-only. The collector accepts exactly one
+linear system/user/action/observation trajectory ending in typed `finish`. It rejects private
+reasoning, thinking blocks, dynamic context, skills, critics, foreign events, sibling actions,
+duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK event
+and broker-owned canonical arguments or compact-observation hash. The exact effective OpenHands
+tool schemas, including SDK-added metadata fields, are retained so downstream token receipts bind
+the actual model-visible contract. Raw provider events, uncompacted observations, private
+reasoning, credentials, host paths, hidden assets, and reference solutions are not exported.
+
+Message content remains in memory until the ordinary verifier completes. A public training
+trajectory is written only for a resolved, infrastructure-valid episode; all other episodes remain
+SFT-ineligible. Downstream decision export supervises one complete assistant tool decision at a
+time, passes the same tools to the frozen Qwen chat template, fails above 65,536 tokens without
+truncation, and seals input-ID and loss-mask hashes. The residual trusted computing base adds
+OpenHands SDK, its model client dependencies, the reviewed MCP adapter and broker, Docker daemon,
+and host kernel. The model endpoint remains external, and Docker does not protect against a
+compromised trusted host control plane.
+
 ### DeepSeek Harness HWE controller boundary
 
 The opt-in `verigym-deepseek-harness` integration runs the pinned official Harness source in a
