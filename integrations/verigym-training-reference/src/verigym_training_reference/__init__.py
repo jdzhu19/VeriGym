@@ -15,6 +15,11 @@ from .heldout import (
     load_repository_heldout_freeze,
     summarize_heldout_results,
 )
+from .hwe_rllm_bridge import (
+    HweNativeShellV2RllmEvalBridge,
+    build_hwe_native_shell_v2_rllm_eval_bridge,
+    zero_call_hwe_conformance,
+)
 from .native_runtime import (
     GpuHealthSample,
     NativeGpuToolchain,
@@ -53,6 +58,7 @@ from .trl_adapter import TrlRewardAdapter, build_trl_dataset_rows
 __all__ = [
     "CampaignStageSpec",
     "GpuHealthSample",
+    "HweNativeShellV2RllmEvalBridge",
     "ModelSnapshotIdentity",
     "NativeGpuToolchain",
     "NativeTrainingRuntimeManifest",
@@ -70,6 +76,7 @@ __all__ = [
     "VerifiedSftExample",
     "build_trl_dataset_rows",
     "build_public_input_record",
+    "build_hwe_native_shell_v2_rllm_eval_bridge",
     "exclusion_counts",
     "export_online_policy_version",
     "freeze_heldout_evaluation",
@@ -91,4 +98,5 @@ __all__ = [
     "topology_overrides",
     "validate_runtime_manifest",
     "validate_training_bundle",
+    "zero_call_hwe_conformance",
 ]

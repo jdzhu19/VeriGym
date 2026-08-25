@@ -9,6 +9,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from verigym.core.repository_observation import (
+    RawObservationCallback,
+    RepositoryObservationPolicy,
+)
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.common import ToolchainProfile, ToolDescriptor
@@ -21,6 +25,8 @@ class ToolContext:
     workspace_policy: Any | None = None
     max_output_bytes: int = 1_000_000
     artifact_dir: Path | None = None
+    observation_policy: RepositoryObservationPolicy | None = None
+    audit_callback: RawObservationCallback | None = None
 
 
 class ToolPlugin(ABC):

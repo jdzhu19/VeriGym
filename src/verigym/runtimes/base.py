@@ -61,11 +61,22 @@ class RuntimeSession(ABC):
 
         return []
 
-    def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+    def execute_external_process(
+        self,
+        request: ExternalProcessRequest,
+        *,
+        private_audit_root: Path | None = None,
+    ) -> ExternalProcessResult:
         """Execute through the runtime when the backend supports external agents."""
 
-        del request
+        del request, private_audit_root
         raise ValueError("this runtime does not execute external-agent processes")
+
+    def execute_external_agent_command(self, command: CommandSpec) -> CompletedCommand:
+        """Execute a validated command in the configured credential-free agent image."""
+
+        del command
+        raise ValueError("this runtime does not execute external-agent commands")
 
     def execute_public_test(self, test_id: str) -> CompletedCommand:
         """Execute one hash-bound public test through the selected runtime."""

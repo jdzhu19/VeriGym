@@ -1,0 +1,157 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-coact-multiturn-sft-dataset.schema.json",
+  "additionalProperties": false,
+  "description": "Dataset-level lock for the eight-trajectory CoACT arm.",
+  "properties": {
+    "canonical_action_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 419,
+      "minItems": 419,
+      "title": "Canonical Action Hashes",
+      "type": "array"
+    },
+    "dataset_hash": {
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "example_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "title": "Example Hashes",
+      "type": "array"
+    },
+    "format_id": {
+      "const": "verigym_hwe_coact_multiturn_sft_dataset_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "hpc_jobs_submitted": {
+      "const": false,
+      "title": "Hpc Jobs Submitted",
+      "type": "boolean"
+    },
+    "max_length": {
+      "const": 65536,
+      "title": "Max Length",
+      "type": "integer"
+    },
+    "max_token_count": {
+      "maximum": 65536,
+      "minimum": 1,
+      "title": "Max Token Count",
+      "type": "integer"
+    },
+    "observation_compression_format": {
+      "const": "hwe_coact_observation_entry_compression_v1",
+      "title": "Observation Compression Format",
+      "type": "string"
+    },
+    "only_infrastructure_valid": {
+      "const": true,
+      "title": "Only Infrastructure Valid",
+      "type": "boolean"
+    },
+    "only_verifier_resolved": {
+      "const": true,
+      "title": "Only Verifier Resolved",
+      "type": "boolean"
+    },
+    "private_reasoning_exported": {
+      "const": false,
+      "title": "Private Reasoning Exported",
+      "type": "boolean"
+    },
+    "raw_observations_exported": {
+      "const": false,
+      "title": "Raw Observations Exported",
+      "type": "boolean"
+    },
+    "record_count": {
+      "const": 8,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "reference_solutions_exported": {
+      "const": false,
+      "title": "Reference Solutions Exported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "supervised_roles": {
+      "items": {
+        "const": "assistant",
+        "type": "string"
+      },
+      "title": "Supervised Roles",
+      "type": "array"
+    },
+    "task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "title": "Task Ids",
+      "type": "array"
+    },
+    "total_action_count": {
+      "const": 419,
+      "title": "Total Action Count",
+      "type": "integer"
+    },
+    "training_semantics": {
+      "const": "complete_multiturn_assistant_actions",
+      "title": "Training Semantics",
+      "type": "string"
+    },
+    "trajectory_count": {
+      "const": 8,
+      "title": "Trajectory Count",
+      "type": "integer"
+    },
+    "truncation": {
+      "const": "error",
+      "title": "Truncation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "trajectory_count",
+    "record_count",
+    "task_ids",
+    "example_hashes",
+    "canonical_action_hashes",
+    "total_action_count",
+    "max_token_count",
+    "max_length",
+    "truncation",
+    "training_semantics",
+    "supervised_roles",
+    "observation_compression_format",
+    "only_verifier_resolved",
+    "only_infrastructure_valid",
+    "raw_observations_exported",
+    "private_reasoning_exported",
+    "hidden_assets_exported",
+    "reference_solutions_exported",
+    "hpc_jobs_submitted",
+    "dataset_hash"
+  ],
+  "title": "HweCoactDatasetManifest",
+  "type": "object"
+}

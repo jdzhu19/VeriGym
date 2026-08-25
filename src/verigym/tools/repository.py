@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from verigym.core.repository_observation import (
+    audit_record,
+    bounded_text_with_marker,
+    compact_tool_result,
+)
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
@@ -118,14 +123,46 @@ class RepositoryPublicTestTool(ToolPlugin):
     def execute(self, raw_request: dict[str, Any], context: ToolContext) -> ToolResult:
         request = self.validate_request(raw_request)
         if context.session is None:
-            return ToolResult(
+            result = ToolResult(
                 tool=self.descriptor.name,
                 success=False,
                 category=ErrorCategory.INTERNAL_ERROR,
                 message="repository public test requires a runtime session",
             )
+            return _publish_result(result, context, {"test_id": request.test_id})
         completed = context.session.execute_public_test(request.test_id)
-        return self.parse_result(request, completed, context)
+        return _publish_result(
+            self.parse_result(request, completed, context),
+            context,
+            {"test_id": request.test_id},
+        )
+
+
+def _publish_result(
+    result: ToolResult, context: ToolContext, request: dict[str, Any]
+) -> ToolResult:
+    if context.audit_callback is not None:
+        context.audit_callback(
+            audit_record(result, request=request, policy=context.observation_policy)
+        )
+    result = compact_tool_result(result, policy=context.observation_policy)
+    stdout, stdout_truncated = bounded_text_with_marker(
+        result.stdout, context.max_output_bytes, description=f"{result.tool} stdout"
+    )
+    stderr, stderr_truncated = bounded_text_with_marker(
+        result.stderr,
+        min(context.max_output_bytes, 8 * 1024),
+        description=f"{result.tool} stderr",
+    )
+    return result.model_copy(
+        update={
+            "stdout": stdout,
+            "stderr": stderr,
+            "output_truncated": bool(
+                result.output_truncated or stdout_truncated or stderr_truncated
+            ),
+        }
+    )
 
 
 def builtin_repository_tools() -> list[ToolPlugin]:

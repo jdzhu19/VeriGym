@@ -471,6 +471,7 @@ class DockerRuntime(Runtime):
                     source_dir=str(Path(temporary)),
                     label="diagnostic",
                     max_output_bytes=128 * 1024,
+                    environment={"CODEX_HOME": "/tmp/verigym-codex-home"},
                 ),
                 engine=self._get_engine(),
                 config=probe_config,
@@ -825,7 +826,7 @@ def _external_agent_as_runtime_config(
         max_command_time_s=config.max_process_time_s,
         max_artifact_file_bytes=16 * 1024 * 1024,
         max_artifact_bytes=64 * 1024 * 1024,
-        environment_allowlist=[],
+        environment_allowlist=["CODEX_HOME"],
     )
 
 

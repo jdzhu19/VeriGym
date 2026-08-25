@@ -1,0 +1,613 @@
+{
+  "$defs": {
+    "HweDecisionSft64kOptimizerSmokeAcceptance": {
+      "additionalProperties": false,
+      "description": "Fail-closed acceptance gates for the future eight-step execution.",
+      "properties": {
+        "actual_verl_loader_rows_before_step_one": {
+          "const": 83,
+          "title": "Actual Verl Loader Rows Before Step One",
+          "type": "integer"
+        },
+        "adapter_allowed": {
+          "const": false,
+          "title": "Adapter Allowed",
+          "type": "boolean"
+        },
+        "benchmark_score_claim_allowed": {
+          "const": false,
+          "title": "Benchmark Score Claim Allowed",
+          "type": "boolean"
+        },
+        "checkpoint_allowed": {
+          "const": false,
+          "title": "Checkpoint Allowed",
+          "type": "boolean"
+        },
+        "exact_receipts_revalidated_before_step_one": {
+          "const": true,
+          "title": "Exact Receipts Revalidated Before Step One",
+          "type": "boolean"
+        },
+        "finite_nonzero_gradients_each_step": {
+          "const": true,
+          "title": "Finite Nonzero Gradients Each Step",
+          "type": "boolean"
+        },
+        "finite_positive_loss_each_step": {
+          "const": true,
+          "title": "Finite Positive Loss Each Step",
+          "type": "boolean"
+        },
+        "infrastructure_invalid_is_terminal": {
+          "const": true,
+          "title": "Infrastructure Invalid Is Terminal",
+          "type": "boolean"
+        },
+        "longest_repeat_steps": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Longest Repeat Steps",
+          "type": "array"
+        },
+        "offload_fallback_allowed": {
+          "const": false,
+          "title": "Offload Fallback Allowed",
+          "type": "boolean"
+        },
+        "optimizer_state_step_must_match_schedule": {
+          "const": true,
+          "title": "Optimizer State Step Must Match Schedule",
+          "type": "boolean"
+        },
+        "optimizer_steps_required": {
+          "const": 8,
+          "title": "Optimizer Steps Required",
+          "type": "integer"
+        },
+        "post_clip_global_norm_lte": {
+          "title": "Post Clip Global Norm Lte",
+          "type": "number"
+        },
+        "production_training_ready": {
+          "const": false,
+          "title": "Production Training Ready",
+          "type": "boolean"
+        },
+        "repeat_peak_reserved_delta_max_bytes": {
+          "const": 1073741824,
+          "title": "Repeat Peak Reserved Delta Max Bytes",
+          "type": "integer"
+        },
+        "trainable_parameter_hash_must_change": {
+          "const": true,
+          "title": "Trainable Parameter Hash Must Change",
+          "type": "boolean"
+        },
+        "truncation_allowed": {
+          "const": false,
+          "title": "Truncation Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "actual_verl_loader_rows_before_step_one",
+        "exact_receipts_revalidated_before_step_one",
+        "optimizer_steps_required",
+        "finite_positive_loss_each_step",
+        "finite_nonzero_gradients_each_step",
+        "post_clip_global_norm_lte",
+        "trainable_parameter_hash_must_change",
+        "optimizer_state_step_must_match_schedule",
+        "longest_repeat_steps",
+        "repeat_peak_reserved_delta_max_bytes",
+        "truncation_allowed",
+        "checkpoint_allowed",
+        "adapter_allowed",
+        "offload_fallback_allowed",
+        "infrastructure_invalid_is_terminal",
+        "benchmark_score_claim_allowed",
+        "production_training_ready"
+      ],
+      "title": "HweDecisionSft64kOptimizerSmokeAcceptance",
+      "type": "object"
+    },
+    "HweDecisionSft64kOptimizerSmokeOptimizer": {
+      "additionalProperties": false,
+      "description": "Frozen numerical settings for the bounded development optimizer smoke.",
+      "properties": {
+        "algorithm": {
+          "const": "adamw",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "betas": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Betas",
+          "type": "array"
+        },
+        "epsilon": {
+          "title": "Epsilon",
+          "type": "number"
+        },
+        "learning_rate": {
+          "title": "Learning Rate",
+          "type": "number"
+        },
+        "max_grad_norm": {
+          "title": "Max Grad Norm",
+          "type": "number"
+        },
+        "scheduler": {
+          "const": "constant",
+          "title": "Scheduler",
+          "type": "string"
+        },
+        "warmup_steps": {
+          "const": 0,
+          "title": "Warmup Steps",
+          "type": "integer"
+        },
+        "weight_decay": {
+          "title": "Weight Decay",
+          "type": "number"
+        }
+      },
+      "required": [
+        "algorithm",
+        "learning_rate",
+        "betas",
+        "epsilon",
+        "weight_decay",
+        "scheduler",
+        "warmup_steps",
+        "max_grad_norm"
+      ],
+      "title": "HweDecisionSft64kOptimizerSmokeOptimizer",
+      "type": "object"
+    },
+    "HweDecisionSft64kOptimizerSmokeProfile": {
+      "additionalProperties": false,
+      "description": "Frozen four-A30 runtime profile inherited from the successful qualification.",
+      "properties": {
+        "activation_offload": {
+          "const": false,
+          "title": "Activation Offload",
+          "type": "boolean"
+        },
+        "bounded_fused_vocabulary_head": {
+          "const": true,
+          "title": "Bounded Fused Vocabulary Head",
+          "type": "boolean"
+        },
+        "global_batch_size": {
+          "const": 1,
+          "title": "Global Batch Size",
+          "type": "integer"
+        },
+        "gradient_accumulation_steps": {
+          "const": 1,
+          "title": "Gradient Accumulation Steps",
+          "type": "integer"
+        },
+        "gradient_checkpointing": {
+          "const": true,
+          "title": "Gradient Checkpointing",
+          "type": "boolean"
+        },
+        "lora_alpha": {
+          "const": 16,
+          "title": "Lora Alpha",
+          "type": "integer"
+        },
+        "lora_dropout": {
+          "title": "Lora Dropout",
+          "type": "number"
+        },
+        "lora_rank": {
+          "const": 8,
+          "title": "Lora Rank",
+          "type": "integer"
+        },
+        "lora_target_modules": {
+          "const": "all-linear",
+          "title": "Lora Target Modules",
+          "type": "string"
+        },
+        "max_length": {
+          "const": 65536,
+          "title": "Max Length",
+          "type": "integer"
+        },
+        "max_token_len_per_gpu": {
+          "const": 16384,
+          "title": "Max Token Len Per Gpu",
+          "type": "integer"
+        },
+        "micro_batch_size_per_gpu": {
+          "const": 1,
+          "title": "Micro Batch Size Per Gpu",
+          "type": "integer"
+        },
+        "num_workers": {
+          "const": 0,
+          "title": "Num Workers",
+          "type": "integer"
+        },
+        "optimizer_offload": {
+          "const": false,
+          "title": "Optimizer Offload",
+          "type": "boolean"
+        },
+        "parameter_offload": {
+          "const": false,
+          "title": "Parameter Offload",
+          "type": "boolean"
+        },
+        "precision": {
+          "const": "bf16",
+          "title": "Precision",
+          "type": "string"
+        },
+        "remove_padding": {
+          "const": true,
+          "title": "Remove Padding",
+          "type": "boolean"
+        },
+        "strategy": {
+          "const": "fsdp2",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "torch_compile": {
+          "const": false,
+          "title": "Torch Compile",
+          "type": "boolean"
+        },
+        "ulysses_sequence_parallel_size": {
+          "const": 4,
+          "title": "Ulysses Sequence Parallel Size",
+          "type": "integer"
+        },
+        "world_size": {
+          "const": 4,
+          "title": "World Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "precision",
+        "strategy",
+        "lora_rank",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "gradient_checkpointing",
+        "remove_padding",
+        "bounded_fused_vocabulary_head",
+        "global_batch_size",
+        "micro_batch_size_per_gpu",
+        "gradient_accumulation_steps",
+        "max_length",
+        "max_token_len_per_gpu",
+        "world_size",
+        "ulysses_sequence_parallel_size",
+        "num_workers",
+        "torch_compile",
+        "parameter_offload",
+        "optimizer_offload",
+        "activation_offload"
+      ],
+      "title": "HweDecisionSft64kOptimizerSmokeProfile",
+      "type": "object"
+    },
+    "HweDecisionSft64kOptimizerSmokeStep": {
+      "additionalProperties": false,
+      "description": "One hash-bound optimizer-smoke step selected from the frozen 64K v4 rows.",
+      "properties": {
+        "action_names": {
+          "items": {
+            "enum": [
+              "apply_patch",
+              "finish",
+              "inspect_diff",
+              "list_files",
+              "read_file",
+              "shell"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Action Names",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "coverage",
+            "longest_repeat"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "source_v4_record_hash": {
+          "title": "Source V4 Record Hash",
+          "type": "string"
+        },
+        "source_v4_record_index": {
+          "exclusiveMaximum": 83,
+          "minimum": 0,
+          "title": "Source V4 Record Index",
+          "type": "integer"
+        },
+        "step": {
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Step",
+          "type": "integer"
+        },
+        "task_id": {
+          "minLength": 1,
+          "title": "Task Id",
+          "type": "string"
+        },
+        "token_count": {
+          "maximum": 65536,
+          "minimum": 1,
+          "title": "Token Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "step",
+        "source_v4_record_index",
+        "source_v4_record_hash",
+        "task_id",
+        "token_count",
+        "action_names",
+        "role"
+      ],
+      "title": "HweDecisionSft64kOptimizerSmokeStep",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-optimizer-smoke-preregistration.schema.json",
+  "additionalProperties": false,
+  "description": "Sealed, not-yet-executed development optimizer-smoke contract.",
+  "properties": {
+    "acceptance": {
+      "$ref": "#/$defs/HweDecisionSft64kOptimizerSmokeAcceptance"
+    },
+    "adapter_written": {
+      "const": false,
+      "title": "Adapter Written",
+      "type": "boolean"
+    },
+    "checkpoint_resume_validation_deferred": {
+      "const": true,
+      "title": "Checkpoint Resume Validation Deferred",
+      "type": "boolean"
+    },
+    "checkpoint_written": {
+      "const": false,
+      "title": "Checkpoint Written",
+      "type": "boolean"
+    },
+    "existing_lsf_job_id": {
+      "const": "466876",
+      "title": "Existing Lsf Job Id",
+      "type": "string"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_optimizer_smoke_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "gpu_qualification_sha256": {
+      "const": "c44b7068284f4e02d6e0ec44a9e89f56e886debbbc32a06525a4312388d14a62",
+      "title": "Gpu Qualification Sha256",
+      "type": "string"
+    },
+    "new_hpc_jobs_allowed": {
+      "const": false,
+      "title": "New Hpc Jobs Allowed",
+      "type": "boolean"
+    },
+    "optimizer": {
+      "$ref": "#/$defs/HweDecisionSft64kOptimizerSmokeOptimizer"
+    },
+    "optimizer_steps": {
+      "const": 0,
+      "title": "Optimizer Steps",
+      "type": "integer"
+    },
+    "planned_host": {
+      "const": "gpu03",
+      "title": "Planned Host",
+      "type": "string"
+    },
+    "preregistration_hash": {
+      "title": "Preregistration Hash",
+      "type": "string"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "profile": {
+      "$ref": "#/$defs/HweDecisionSft64kOptimizerSmokeProfile"
+    },
+    "qualification_summary_sha256": {
+      "const": "da521f3859e4d188c9ebd5d4f560300f896f394905ca864346666f5b9ce1d384",
+      "title": "Qualification Summary Sha256",
+      "type": "string"
+    },
+    "release_existing_allocation": {
+      "const": false,
+      "title": "Release Existing Allocation",
+      "type": "boolean"
+    },
+    "rllm_commit": {
+      "const": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+      "title": "Rllm Commit",
+      "type": "string"
+    },
+    "schedule": {
+      "items": {
+        "$ref": "#/$defs/HweDecisionSft64kOptimizerSmokeStep"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "title": "Schedule",
+      "type": "array"
+    },
+    "schedule_hash": {
+      "title": "Schedule Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "const": "development_optimizer_numerical_smoke_only",
+      "title": "Scope",
+      "type": "string"
+    },
+    "seed": {
+      "const": 484,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "selected_gpu_indices": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Selected Gpu Indices",
+      "type": "array"
+    },
+    "source_v3_dataset_hash": {
+      "const": "b362cc1df0969f1bad368c939110175502d8ff0d97aef62c93cccd18871e351a",
+      "title": "Source V3 Dataset Hash",
+      "type": "string"
+    },
+    "source_v4_dataset_hash": {
+      "const": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "source_v4_manifest_sha256": {
+      "const": "60b1f2646c238efa2197d89c98875c1587a3be16e1c051f2227c3a22b8ae4fac",
+      "title": "Source V4 Manifest Sha256",
+      "type": "string"
+    },
+    "source_v4_train_jsonl_sha256": {
+      "const": "cab55d3cc7752b971904c88d8c11e93645c0b215af9beec40dd648bcfe7f1aa1",
+      "title": "Source V4 Train Jsonl Sha256",
+      "type": "string"
+    },
+    "status": {
+      "const": "preregistered_not_started",
+      "title": "Status",
+      "type": "string"
+    },
+    "step_count": {
+      "const": 8,
+      "title": "Step Count",
+      "type": "integer"
+    },
+    "training_started": {
+      "const": false,
+      "title": "Training Started",
+      "type": "boolean"
+    },
+    "transformers_commit": {
+      "const": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
+      "title": "Transformers Commit",
+      "type": "string"
+    },
+    "trust_remote_code": {
+      "const": false,
+      "title": "Trust Remote Code",
+      "type": "boolean"
+    },
+    "verl_commit": {
+      "const": "7aed6b230776f963fa09509c10d9c3a767d1102c",
+      "title": "Verl Commit",
+      "type": "string"
+    },
+    "verl_release": {
+      "const": "0.8.0",
+      "title": "Verl Release",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "scope",
+    "source_v3_dataset_hash",
+    "source_v4_dataset_hash",
+    "source_v4_manifest_sha256",
+    "source_v4_train_jsonl_sha256",
+    "qualification_summary_sha256",
+    "gpu_qualification_sha256",
+    "rllm_commit",
+    "verl_release",
+    "verl_commit",
+    "transformers_commit",
+    "trust_remote_code",
+    "seed",
+    "step_count",
+    "schedule",
+    "schedule_hash",
+    "optimizer",
+    "profile",
+    "acceptance",
+    "existing_lsf_job_id",
+    "planned_host",
+    "selected_gpu_indices",
+    "new_hpc_jobs_allowed",
+    "release_existing_allocation",
+    "checkpoint_resume_validation_deferred",
+    "training_started",
+    "optimizer_steps",
+    "checkpoint_written",
+    "adapter_written",
+    "production_training_ready",
+    "preregistration_hash"
+  ],
+  "title": "HweDecisionSft64kOptimizerSmokePreregistration",
+  "type": "object"
+}

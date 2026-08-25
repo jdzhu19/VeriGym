@@ -1,0 +1,510 @@
+{
+  "$defs": {
+    "HweMaskedHistoryLedger": {
+      "additionalProperties": false,
+      "properties": {
+        "all_prior_actions_preserved": {
+          "const": true,
+          "title": "All Prior Actions Preserved",
+          "type": "boolean"
+        },
+        "counterfactual_next_action_validation": {
+          "const": "not_run",
+          "title": "Counterfactual Next Action Validation",
+          "type": "string"
+        },
+        "input_tokens": {
+          "maximum": 32768,
+          "minimum": 1,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "ledger_hash": {
+          "title": "Ledger Hash",
+          "type": "string"
+        },
+        "marker_rule_id": {
+          "enum": [
+            "hwe_action_preserving_observation_masking_v1/hash_marker_v1",
+            "hwe_action_preserving_observation_masking_v1/lossless_under_32k/no_markers"
+          ],
+          "title": "Marker Rule Id",
+          "type": "string"
+        },
+        "mask_marker_tokens": {
+          "minimum": 0,
+          "title": "Mask Marker Tokens",
+          "type": "integer"
+        },
+        "masked_history_sha256": {
+          "title": "Masked History Sha256",
+          "type": "string"
+        },
+        "masked_observation_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Masked Observation Sequences",
+          "type": "array"
+        },
+        "masked_source_observation_tokens": {
+          "minimum": 0,
+          "title": "Masked Source Observation Tokens",
+          "type": "integer"
+        },
+        "max_pinned_observations": {
+          "enum": [
+            1,
+            2,
+            4
+          ],
+          "title": "Max Pinned Observations",
+          "type": "integer"
+        },
+        "pinned_observation_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Pinned Observation Sequences",
+          "type": "array"
+        },
+        "policy_hash": {
+          "title": "Policy Hash",
+          "type": "string"
+        },
+        "policy_id": {
+          "enum": [
+            "hwe_action_preserving_observation_masking_v1",
+            "hwe_action_preserving_observation_masking_v1/lossless_under_32k"
+          ],
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "recent_observation_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Recent Observation Sequences",
+          "type": "array"
+        },
+        "recent_observations": {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            10,
+            16
+          ],
+          "title": "Recent Observations",
+          "type": "integer"
+        },
+        "retained_observation_sequences": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Retained Observation Sequences",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_history_sha256": {
+          "title": "Source History Sha256",
+          "type": "string"
+        },
+        "source_history_tokens": {
+          "minimum": 1,
+          "title": "Source History Tokens",
+          "type": "integer"
+        },
+        "structural_causal_validation": {
+          "const": "passed",
+          "title": "Structural Causal Validation",
+          "type": "string"
+        },
+        "target_action": {
+          "enum": [
+            "list_files",
+            "read_file",
+            "apply_patch",
+            "shell",
+            "inspect_diff",
+            "finish"
+          ],
+          "title": "Target Action",
+          "type": "string"
+        },
+        "target_action_preserved": {
+          "const": true,
+          "title": "Target Action Preserved",
+          "type": "boolean"
+        },
+        "target_action_sha256": {
+          "title": "Target Action Sha256",
+          "type": "string"
+        },
+        "target_message_index": {
+          "minimum": 2,
+          "title": "Target Message Index",
+          "type": "integer"
+        },
+        "target_sequence": {
+          "minimum": 0,
+          "title": "Target Sequence",
+          "type": "integer"
+        },
+        "target_tokens": {
+          "maximum": 32768,
+          "minimum": 1,
+          "title": "Target Tokens",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "maximum": 32768,
+          "minimum": 1,
+          "title": "Total Tokens",
+          "type": "integer"
+        },
+        "workspace_epoch": {
+          "minimum": 0,
+          "title": "Workspace Epoch",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "policy_id",
+        "policy_hash",
+        "marker_rule_id",
+        "recent_observations",
+        "max_pinned_observations",
+        "target_sequence",
+        "target_action",
+        "target_message_index",
+        "workspace_epoch",
+        "source_history_sha256",
+        "masked_history_sha256",
+        "target_action_sha256",
+        "source_history_tokens",
+        "input_tokens",
+        "target_tokens",
+        "total_tokens",
+        "retained_observation_sequences",
+        "recent_observation_sequences",
+        "pinned_observation_sequences",
+        "masked_observation_sequences",
+        "masked_source_observation_tokens",
+        "mask_marker_tokens",
+        "all_prior_actions_preserved",
+        "target_action_preserved",
+        "structural_causal_validation",
+        "counterfactual_next_action_validation",
+        "ledger_hash"
+      ],
+      "title": "HweMaskedHistoryLedger",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/hwe-training-ready-action-conditioned-sft.schema.json",
+  "additionalProperties": false,
+  "description": "One NAP-gated action-conditioned record; historical v1 rows remain untouched.",
+  "properties": {
+    "candidate_hash": {
+      "title": "Candidate Hash",
+      "type": "string"
+    },
+    "collection_profile_id": {
+      "const": "hwe_standard_v2",
+      "title": "Collection Profile Id",
+      "type": "string"
+    },
+    "counterfactual_next_action_validation": {
+      "const": "passed",
+      "title": "Counterfactual Next Action Validation",
+      "type": "string"
+    },
+    "credential_values_exported": {
+      "const": false,
+      "title": "Credential Values Exported",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_training_ready_action_conditioned_sft_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "history_ledger": {
+      "$ref": "#/$defs/HweMaskedHistoryLedger"
+    },
+    "history_policy_hash": {
+      "title": "History Policy Hash",
+      "type": "string"
+    },
+    "history_policy_id": {
+      "enum": [
+        "hwe_action_preserving_observation_masking_v1",
+        "hwe_action_preserving_observation_masking_v1/lossless_under_32k"
+      ],
+      "title": "History Policy Id",
+      "type": "string"
+    },
+    "infrastructure_valid": {
+      "const": true,
+      "title": "Infrastructure Valid",
+      "type": "boolean"
+    },
+    "input_token_count": {
+      "maximum": 32768,
+      "minimum": 1,
+      "title": "Input Token Count",
+      "type": "integer"
+    },
+    "max_length": {
+      "const": 32768,
+      "title": "Max Length",
+      "type": "integer"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "minItems": 3,
+      "title": "Messages",
+      "type": "array"
+    },
+    "nap_validation": {
+      "additionalProperties": true,
+      "title": "Nap Validation",
+      "type": "object"
+    },
+    "observation_policy_id": {
+      "const": "hwe_repository_observation_v2",
+      "title": "Observation Policy Id",
+      "type": "string"
+    },
+    "primary_eligible": {
+      "const": false,
+      "title": "Primary Eligible",
+      "type": "boolean"
+    },
+    "prior_assistant_labels_masked": {
+      "const": true,
+      "title": "Prior Assistant Labels Masked",
+      "type": "boolean"
+    },
+    "private_reasoning_exported": {
+      "const": false,
+      "title": "Private Reasoning Exported",
+      "type": "boolean"
+    },
+    "raw_host_paths_exported": {
+      "const": false,
+      "title": "Raw Host Paths Exported",
+      "type": "boolean"
+    },
+    "raw_observations_exported": {
+      "const": false,
+      "title": "Raw Observations Exported",
+      "type": "boolean"
+    },
+    "raw_provider_events_exported": {
+      "const": false,
+      "title": "Raw Provider Events Exported",
+      "type": "boolean"
+    },
+    "record_hash": {
+      "title": "Record Hash",
+      "type": "string"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string"
+    },
+    "recovery": {
+      "additionalProperties": true,
+      "title": "Recovery",
+      "type": "object"
+    },
+    "reference_solutions_exported": {
+      "const": false,
+      "title": "Reference Solutions Exported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_hash": {
+      "title": "Source Hash",
+      "type": "string"
+    },
+    "source_primary_eligible": {
+      "title": "Source Primary Eligible",
+      "type": "boolean"
+    },
+    "source_sft_bucket": {
+      "enum": [
+        "primary",
+        "long_context_candidate",
+        "audit"
+      ],
+      "title": "Source Sft Bucket",
+      "type": "string"
+    },
+    "source_transcript_hash": {
+      "title": "Source Transcript Hash",
+      "type": "string"
+    },
+    "supervised_message_indices": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Supervised Message Indices",
+      "type": "array"
+    },
+    "target_action": {
+      "enum": [
+        "list_files",
+        "read_file",
+        "apply_patch",
+        "shell",
+        "inspect_diff",
+        "finish"
+      ],
+      "title": "Target Action",
+      "type": "string"
+    },
+    "target_sequence": {
+      "minimum": 0,
+      "title": "Target Sequence",
+      "type": "integer"
+    },
+    "target_token_count": {
+      "maximum": 32768,
+      "minimum": 1,
+      "title": "Target Token Count",
+      "type": "integer"
+    },
+    "task_hash": {
+      "title": "Task Hash",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "token_count": {
+      "maximum": 32768,
+      "minimum": 1,
+      "title": "Token Count",
+      "type": "integer"
+    },
+    "tokenizer_hash": {
+      "title": "Tokenizer Hash",
+      "type": "string"
+    },
+    "tokenizer_id": {
+      "const": "tiktoken-0.7.0/o200k_base",
+      "title": "Tokenizer Id",
+      "type": "string"
+    },
+    "tool_contract_hash": {
+      "title": "Tool Contract Hash",
+      "type": "string"
+    },
+    "tool_contract_id": {
+      "const": "hwe_native_shell_v2",
+      "title": "Tool Contract Id",
+      "type": "string"
+    },
+    "training_eligibility": {
+      "const": "training_ready_action_conditioned",
+      "title": "Training Eligibility",
+      "type": "string"
+    },
+    "training_semantics": {
+      "const": "next_action_conditioned_on_exact_masked_history",
+      "title": "Training Semantics",
+      "type": "string"
+    },
+    "trajectory_sample_id": {
+      "title": "Trajectory Sample Id",
+      "type": "string"
+    },
+    "truncation": {
+      "const": "error",
+      "title": "Truncation",
+      "type": "string"
+    },
+    "verifier_hash": {
+      "title": "Verifier Hash",
+      "type": "string"
+    },
+    "verifier_resolved": {
+      "const": true,
+      "title": "Verifier Resolved",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "format_id",
+    "record_id",
+    "trajectory_sample_id",
+    "task_id",
+    "task_hash",
+    "source_hash",
+    "candidate_hash",
+    "verifier_hash",
+    "source_transcript_hash",
+    "source_sft_bucket",
+    "source_primary_eligible",
+    "collection_profile_id",
+    "observation_policy_id",
+    "tool_contract_id",
+    "tool_contract_hash",
+    "history_policy_id",
+    "history_policy_hash",
+    "tokenizer_id",
+    "tokenizer_hash",
+    "target_sequence",
+    "target_action",
+    "messages",
+    "history_ledger",
+    "input_token_count",
+    "target_token_count",
+    "token_count",
+    "max_length",
+    "truncation",
+    "supervised_message_indices",
+    "prior_assistant_labels_masked",
+    "training_semantics",
+    "training_eligibility",
+    "primary_eligible",
+    "counterfactual_next_action_validation",
+    "verifier_resolved",
+    "infrastructure_valid",
+    "raw_provider_events_exported",
+    "raw_observations_exported",
+    "private_reasoning_exported",
+    "hidden_assets_exported",
+    "reference_solutions_exported",
+    "credential_values_exported",
+    "raw_host_paths_exported",
+    "record_hash",
+    "nap_validation",
+    "recovery"
+  ],
+  "title": "HweTrainingReadyActionConditionedExample",
+  "type": "object"
+}

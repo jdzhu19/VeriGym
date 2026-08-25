@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,37 @@ from verigym_hwe_bench.models import (
     VerifierDependencyFile,
     repository_profile,
 )
+
+
+def test_docker_cli_drops_incompatible_dynamic_loader_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, str] = {}
+
+    def fake_subprocess_run(
+        argv: list[str],
+        *,
+        check: bool,
+        capture_output: bool,
+        timeout: int,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[bytes]:
+        del check, capture_output, timeout
+        observed.update(env)
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/incompatible/compatibility-runtime")
+    monkeypatch.setenv("LD_PRELOAD", "/incompatible/preload.so")
+    monkeypatch.setenv("DOCKER_HOST", "unix:///run/docker.sock")
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    result = docker_verifier._run(["docker", "version"])
+
+    assert result.returncode == 0
+    assert "LD_LIBRARY_PATH" not in observed
+    assert "LD_PRELOAD" not in observed
+    assert observed["DOCKER_HOST"] == "unix:///run/docker.sock"
+    assert observed["PATH"] == os.environ["PATH"]
 
 
 @pytest.mark.parametrize("airgapped", [False, True])

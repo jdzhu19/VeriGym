@@ -8,6 +8,12 @@ from typing import Any
 from verigym.core.artifact_policy import bound_value
 from verigym.core.episode import BudgetTracker, EpisodeState, TerminationReason
 from verigym.core.errors import PathPolicyError
+from verigym.core.repository_observation import (
+    RawObservationCallback,
+    RepositoryObservationPolicy,
+    bounded_read_view,
+    list_workspace_entries,
+)
 from verigym.core.trace import TraceWriter
 from verigym.core.workspace import WorkspacePolicy
 from verigym.registry.base import PluginRegistry
@@ -39,12 +45,16 @@ class VeriGymEnv:
         runtime: Runtime,
         tools: PluginRegistry[ToolPlugin],
         mode: InteractionMode = InteractionMode.AGENT,
+        observation_policy: RepositoryObservationPolicy | None = None,
+        audit_callback: RawObservationCallback | None = None,
     ) -> None:
         self.task = task
         self.assets = assets
         self.runtime = runtime
         self.tools = tools
         self.mode = mode
+        self.observation_policy = observation_policy
+        self.audit_callback = audit_callback
         self.state = EpisodeState.CREATED
         self.termination_reason: TerminationReason | None = None
         self.session: RuntimeSession | None = None
@@ -273,6 +283,8 @@ class VeriGymEnv:
                 session=self.session,
                 workspace_policy=self.policy,
                 max_output_bytes=self.task.budget.max_output_bytes_per_tool,
+                observation_policy=self.observation_policy,
+                audit_callback=self.audit_callback,
             ),
         )
 
@@ -352,6 +364,16 @@ class VeriGymEnv:
 
     def _visible_files(self) -> list[str]:
         assert self.session is not None
+        if self.observation_policy is not None:
+            output, _metadata = list_workspace_entries(
+                self.session.root,
+                relative_path=".",
+                recursive=True,
+                policy=self.observation_policy,
+                is_excluded=self.policy.is_excluded,
+                workspace_root=self.session.root,
+            )
+            return [item for item in output.splitlines() if item and not item.endswith("/")]
         files: list[str] = []
         for path in sorted(self.session.root.rglob("*")):
             if path.is_symlink():
@@ -375,7 +397,12 @@ class VeriGymEnv:
         selected: dict[str, str] = {}
         if initial and self.task.interaction.initial_observation.include_readme:
             try:
-                selected["README.md"] = self.session.read_file("README.md").decode("utf-8")
+                readme = self.session.read_file("README.md").decode("utf-8")
+                selected["README.md"] = bounded_read_view(
+                    readme,
+                    "README.md",
+                    policy=self.observation_policy,
+                )[0]
             except FileNotFoundError:
                 pass
         diff = self.session.snapshot_diff()
@@ -406,6 +433,14 @@ class VeriGymEnv:
                     "Only task-allowed tools may be used.",
                     "Hidden verifier assets are not present in this workspace.",
                     f"Editable globs: {', '.join(self.task.workspace.editable_globs)}",
+                    *(
+                        [
+                            "repository_observation_v1 is active: locate shallowly, then read a "
+                            "bounded local range or concise view; omitted content is marked."
+                        ]
+                        if self.observation_policy is not None
+                        else []
+                    ),
                 ]
             ),
             episode_status=self.state.value,

@@ -1,0 +1,303 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_hwe_decision_sft_64k_development_training_v1",
+  "status": "preregistered_not_authorized",
+  "scope": "development_training_32_step_canary_preregistration_only",
+  "campaign_id": "cva6-hwe-deepseek-harness-development-training-v1-canary-32step-s484",
+  "source_v3_dataset_hash": "b362cc1df0969f1bad368c939110175502d8ff0d97aef62c93cccd18871e351a",
+  "source_v4_dataset_hash": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+  "source_v4_manifest_sha256": "60b1f2646c238efa2197d89c98875c1587a3be16e1c051f2227c3a22b8ae4fac",
+  "source_v4_train_jsonl_sha256": "cab55d3cc7752b971904c88d8c11e93645c0b215af9beec40dd648bcfe7f1aa1",
+  "qualification_artifacts": [
+    {
+      "path": "checkpoint-resume-qualification-summary.json",
+      "size_bytes": 3149,
+      "sha256": "d081e09a1de2aaa474638894bff47b5b70608e99dc43b1cbfddabe57538bd3a8"
+    },
+    {
+      "path": "execution-checkpoint-resume-report.json",
+      "size_bytes": 7869,
+      "sha256": "02f9ce97d87a6a8fba249b99da503570c7d1a6a3b8649662aaf3d39ab5c97f1e"
+    },
+    {
+      "path": "security-scan.json",
+      "size_bytes": 60026,
+      "sha256": "4fad90ac0a9ca46a3b7536402930c883d786f6cb6841997bbf22d5083c4d7367"
+    }
+  ],
+  "split": {
+    "strategy": "whole_trajectory_holdout_v1",
+    "train_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549",
+    "heldout_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944",
+    "train_sample_id": "5f1410c944a31656e3979aa902bb31a7f34d47e8a7c2c6cff372cae8085f072d",
+    "heldout_sample_id": "29891240b7a231621aed5ef4d18f7868b08749e365b9d5d1160c968a2ba656eb",
+    "train_transcript_hash": "85c4a84c942e94ad609358ecceb9c10664432eca03802ccdcb0131f445ceab1e",
+    "heldout_transcript_hash": "72e6dad7bfef85ce588f2e3f4b7bb8d88b28889ba4289c1580dee303ab8abc51",
+    "train_record_indices": [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+      39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+      58, 59, 60, 61
+    ],
+    "heldout_record_indices": [
+      62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+      81, 82
+    ],
+    "train_record_hashes_hash": "1ccf181ac11aa4495b2309ed9b088aa307d54083c371bbd2095cc589c07df5f3",
+    "heldout_record_hashes_hash": "74035a9e6c300596ce8a43fc61ba730b9488dafaea967ca05c391de9cac0b2fb",
+    "train_input_ids_hashes_hash": "fefe54352ff41c715bfaea739277d853b557f7911a3e290c80473443d2d3c0e8",
+    "heldout_input_ids_hashes_hash": "e823fce2babdbfa207acfb2a841d9ab1e63b895baee06168da41817c1fe0fbaa",
+    "train_loss_mask_hashes_hash": "48a35e1e9d539c37b091c760e503e9b73877f38fc61dab8908f1055eceb6a54c",
+    "heldout_loss_mask_hashes_hash": "5f09bfe8101f048bc5b769725fc0b012b60a580fca93cfc29ca58a11a551fc4a",
+    "leakage_keys": ["task_id", "sample_id", "transcript_hash"],
+    "overlap_count": 0,
+    "split_hash": "45c0c23bd1840a77661bc0b692da4a78b7845d02aac683041ce34d0ceb261c58"
+  },
+  "model": {
+    "model_id": "Qwen3.5-9B",
+    "local_directory_name": "Qwen3.5-9B",
+    "causal_lm_class": "Qwen3_5ForCausalLM",
+    "tokenizer_id": "Qwen3.5-9B/local-frozen-chat-template",
+    "trust_remote_code": false,
+    "artifacts": [
+      {
+        "path": "chat_template.jinja",
+        "size_bytes": 7756,
+        "sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715"
+      },
+      {
+        "path": "config.json",
+        "size_bytes": 3126,
+        "sha256": "d0883072e01861ed0b2d47be3c16c36a8e81c224c7ffaa310c6558fb3f932b05"
+      },
+      {
+        "path": "model.safetensors-00001-of-00004.safetensors",
+        "size_bytes": 5276436216,
+        "sha256": "db6f444b43d318c92f360a13a25561a6a65b10c0631b8ed305a426dbaa6c380e"
+      },
+      {
+        "path": "model.safetensors-00002-of-00004.safetensors",
+        "size_bytes": 5335161512,
+        "sha256": "31c7d7e2dd5d207840b31cc59083c8f4c4718959149e0358c0364052bb9a0330"
+      },
+      {
+        "path": "model.safetensors-00003-of-00004.safetensors",
+        "size_bytes": 5368717440,
+        "sha256": "7ec36ba3a4176a44c3c0876ad80c56a2f70c84bf008d82e9501df642f17dadec"
+      },
+      {
+        "path": "model.safetensors-00004-of-00004.safetensors",
+        "size_bytes": 3325995712,
+        "sha256": "b62b0c4cd7e44edee103ee8f4fe225f246d5e768e07bfd5f25b63a8aa1fdd0c6"
+      },
+      {
+        "path": "model.safetensors.index.json",
+        "size_bytes": 79657,
+        "sha256": "26d3539b516be613f39563617cb9d33b3f83d401298125be392c80cefb8f7fe5"
+      },
+      {
+        "path": "tokenizer.json",
+        "size_bytes": 12807982,
+        "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size_bytes": 16710,
+        "sha256": "316230d6a809701f4db5ea8f8fc862bc3a6f3229c937c174e674ff3ca0a64ac8"
+      }
+    ],
+    "artifact_manifest_hash": "ecd37154ae0914a94d88db720a84ce071fc05700d73432fbc7d62c0475b6fa4b",
+    "model_identity_hash": "d78dfb66d84251270506badb72fa0a3513e856ff43b6046d0d55cc810d8f6ce4"
+  },
+  "sources": {
+    "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+    "verl_release": "0.8.0",
+    "verl_commit": "7aed6b230776f963fa09509c10d9c3a767d1102c",
+    "transformers_commit": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
+    "artifacts": [
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k.py",
+        "size_bytes": 15696,
+        "sha256": "6837e35497fc16ad7f9aea6ddd988188f9dc8c09fa7d0545c81f80d05dc4e58d"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k_backend.py",
+        "size_bytes": 14676,
+        "sha256": "5749429d7f119385e5f2e8a1bcd6182b026bdef54ff5892cf97cebaaa1116d66"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k_checkpoint_resume.py",
+        "size_bytes": 17586,
+        "sha256": "3da45e50dfc302579b170beb2e759425ca71632e18bdc02ca3ab61ec20660543"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k_checkpoint_resume_entry.py",
+        "size_bytes": 33268,
+        "sha256": "1b1342a402cfa7d90f71cbc77dff2df0933c4fdc7720753627dbc1cc603ff433"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k_optimizer_smoke.py",
+        "size_bytes": 28817,
+        "sha256": "f0dc80958dd4b689b7d05f411339f5b29e9b1381ddbce65c404aa34ed5505685"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_decision_sft_64k_optimizer_smoke_entry.py",
+        "size_bytes": 33029,
+        "sha256": "638caef60503df8f31c550cecf046ec854a0af332230abad01e3a26f8de6ddee"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/hwe_rllm_bridge.py",
+        "size_bytes": 5131,
+        "sha256": "237a42b96148ad1f91c44443c4aac3b92a34fd5c99f7d2b95153b0eb2ef7c783"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/qwen35_verl_compat.py",
+        "size_bytes": 12034,
+        "sha256": "d748f426b7399b8418f30dbea4de124455589f8e9c23cb27ddb6a4e8617aa1f1"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/qwen35_verl_fused_compat.py",
+        "size_bytes": 776,
+        "sha256": "456215bef349b5dd2b04bb2ad8bc74e17e48375ebd820ff5664adcff91fe38d3"
+      },
+      {
+        "path": "integrations/verigym-training-reference/src/verigym_training_reference/verl_sft_dataset.py",
+        "size_bytes": 4960,
+        "sha256": "f428c83bc448487ca25587d5101e92c83018fb6e9d21c3c749f5a8aa3de305f7"
+      }
+    ],
+    "artifact_manifest_hash": "71bb061749a193f79b779f6eaaef907810a3e0941c89ef5c2017124df7a171f2",
+    "source_identity_hash": "b5efaba25c5eb0a8a3081b611bfc782b7a138ab796cdeb348949a44114ef8b33"
+  },
+  "optimizer": {
+    "algorithm": "adamw",
+    "learning_rate": 0.0001,
+    "betas": [0.9, 0.999],
+    "epsilon": 1e-08,
+    "weight_decay": 0.0,
+    "scheduler": "constant",
+    "warmup_steps": 0,
+    "max_grad_norm": 1.0
+  },
+  "profile": {
+    "precision": "bf16",
+    "strategy": "fsdp2",
+    "lora_rank": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "lora_target_modules": "all-linear",
+    "gradient_checkpointing": true,
+    "remove_padding": true,
+    "bounded_fused_vocabulary_head": true,
+    "global_batch_size": 1,
+    "micro_batch_size_per_gpu": 1,
+    "gradient_accumulation_steps": 1,
+    "max_length": 65536,
+    "max_token_len_per_gpu": 16384,
+    "world_size": 4,
+    "ulysses_sequence_parallel_size": 4,
+    "num_workers": 0,
+    "torch_compile": false,
+    "parameter_offload": false,
+    "optimizer_offload": false,
+    "activation_offload": false
+  },
+  "determinism": {
+    "seed": 484,
+    "sample_order_algorithm": "seeded_sha256_rank_longest_at_16_and_32_v1",
+    "shuffle": false,
+    "flash_attention_deterministic": true,
+    "torch_deterministic_algorithms": true,
+    "cublas_workspace_config": ":4096:8",
+    "cudnn_deterministic": true,
+    "cudnn_benchmark": false,
+    "host_rng_step_boundary_normalized": true,
+    "cuda_rng_restored_without_boundary_reseeding": true
+  },
+  "canary": {
+    "optimizer_steps": 32,
+    "producer_end_step": 16,
+    "resumed_start_step": 17,
+    "resumed_end_step": 32,
+    "checkpoint_global_step": 16,
+    "checkpoint_count": 1,
+    "checkpoint_save_contents": ["model", "optimizer", "extra"],
+    "checkpoint_load_contents": ["model", "optimizer", "extra"],
+    "checkpoint_format": "verl_fsdp2_sharded_v0_8",
+    "resume_in_fresh_process": true,
+    "schedule_indices": [
+      21, 54, 46, 35, 39, 22, 27, 56, 13, 58, 15, 6, 19, 3, 11, 61,
+      17, 16, 37, 2, 40, 9, 52, 24, 7, 41, 38, 10, 32, 12, 4, 61
+    ],
+    "schedule_record_hashes": [
+      "e48150406a0eb8179a280ff0c26d7b4649712b798c2ba0879f8d47a3d5e4cada",
+      "7e60123ea26a89c76e61192cb84343fd9f572e1435c77a1a08f0db97d8dbf27d",
+      "1c2a17578b552517a0d011a88ab4e9f967c0f6d2b5e3fed9b0b7e66436400952",
+      "14222f2cdd18216fd78164a6d152ca72b753e2b7d2653edc167edac0b28a6519",
+      "e5e4eb96d170e199348acfa361ef1e25bca754d03b4c41b4087e628b648fc1e7",
+      "8e17c8b211cd1c23dff481182d6d39d3604e7a4bb62ec1cc0ed8400fe201dd4f",
+      "46777e96fc89bc8acb3361ad345d3f18c8111f0eaebb2d5d7d22e4f706fe36e4",
+      "d9f290abe76b7c5f2cfe3a32ad965a92860604d7e9151acec752dcc950ffa145",
+      "7ae2ba0c03d9ddcc3bf8e6ce469f99b4d51da946850e9f65752a89b315eadd0d",
+      "bcc3df3ce993baf13f45485890a1f1539cc7fc3c8fd2dcd67070f5a2918f7bd9",
+      "fe5b59d4c09af2cc41c4cfa10bec5806eeeba59d631ac731f36efd67deae3354",
+      "99c1813927d4abd4484ec116d28e4fc6f3d468661622e071dbc439fba88cb01d",
+      "3bf83e7c1aeff84b14d0096db595b976ea2609327d57f22be47cabdbb157f6ae",
+      "995509f2e908ddf136e935546f33288ff9356f6ca0fd5a7e1bb15ef47de3a622",
+      "dc40dc36f7584e1fae3b01e5d25b0ff9ebbdf9f811155d09ae163ff646262cbd",
+      "2cad13f56f2641b20226f743112f3d50efa3b14c787901e88edc412d0083ba9d",
+      "37f9a9b4575c80571a595af709f78bdde06c9463a98e4eb14689a7fb7f3cc9e4",
+      "a0101043e4291a57a80731c1b18ee59ddbf2f69b90270c8ce941732a5c4b5ba7",
+      "6af3d9d41d25713ff55a2a29ef62f9973f527c84bf28577466d2fc52d052c595",
+      "40b3bce7d38bef5eb774f3c8a6aa994626233d9efcc363db1595574daa32d57f",
+      "676496a81b67042fcb71ea8845b6dbb3c531cfde1438dae41648cbbc6f3b7eff",
+      "1e01693a55f1e1514a520512a8987f39e8751eacd14a940bfb5aa3fe521ff80f",
+      "763d2bdc3ed831fa9831d0decc09df3107ddf30faea0efac8bc2179953b0b36f",
+      "c58115e56f4636501d0ad75c5d43cde2641ab2c6c315bedaf4361bbe61de37f1",
+      "37f396ac9c1d32c387892d506fd853d953984a0a0dd637d57e72192dae156124",
+      "3c1193ac659cd6b70bf26244efba976ee70dc06b078cc93ee494a7d3c281a3ba",
+      "de482383b7618dcd281386023244b217f5d86588d1b5b5aa945b5c3c13892a96",
+      "8c965f3855217ee9532a66ae4cf0640b47ce81672c9465fe183e5eed53d969dd",
+      "50195caa247a407de227b4d007387212ac83695b0ae714158e4b2c95a3a3ad1a",
+      "9ed6014dd5d305c68062d7a09563b5574e2843d9bab92ba423c82f15ab9e7b27",
+      "32963d23f8acaa2a03bde913f553741a8104151794409aae1f30e70a62eb6394",
+      "2cad13f56f2641b20226f743112f3d50efa3b14c787901e88edc412d0083ba9d"
+    ],
+    "schedule_token_counts": [
+      19925, 40166, 33597, 28888, 31751, 21821, 24748, 44778,
+      16311, 45778, 17371, 11158, 19544, 4714, 13886, 50117,
+      18749, 18107, 30093, 4504, 32001, 12498, 37674, 22899,
+      11354, 32262, 31057, 13654, 27011, 14983, 10173, 50117
+    ],
+    "schedule_hash": "567eb915e6dbaa77dc149343f7fe1e9820cb11bb0d7856e7bfb4ffd7e09b9a61",
+    "heldout_evaluation_steps": [0, 16, 32],
+    "heldout_evaluation_record_count": 21,
+    "heldout_evaluation_forward_only": true,
+    "heldout_improvement_required": false,
+    "exact_resume_equivalence_required": true,
+    "finite_positive_loss_each_training_step": true,
+    "finite_nonzero_gradients_each_training_step": true,
+    "trainable_parameter_hash_must_change": true,
+    "optimizer_state_step_must_match_schedule": true,
+    "exact_receipts_revalidated_before_step_one": true,
+    "exact_receipts_revalidated_before_each_evaluation": true,
+    "truncation_allowed": false,
+    "offload_fallback_allowed": false,
+    "temporary_checkpoint_deletion_after_validation_allowed": true,
+    "adapter_retention_allowed": false,
+    "infrastructure_invalid_is_terminal": true,
+    "benchmark_score_claim_allowed": false
+  },
+  "existing_lsf_job_id": "466876",
+  "planned_host": "gpu03",
+  "selected_gpu_indices": [0, 1, 2, 3],
+  "new_hpc_jobs_allowed": false,
+  "release_existing_allocation": false,
+  "execution_authorized": false,
+  "training_started": false,
+  "optimizer_steps": 0,
+  "checkpoint_written": false,
+  "adapter_written": false,
+  "production_training_ready": false,
+  "recipe_hash": "9a84dd42684dea42f4650c498e6f6fe03383eff98a5f05cc806c073230592c95"
+}

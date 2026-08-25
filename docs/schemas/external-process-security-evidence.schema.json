@@ -145,7 +145,8 @@
       "items": {
         "enum": [
           "/verigym-public",
-          "/workspace"
+          "/workspace",
+          "/workspace/repository"
         ],
         "type": "string"
       },
@@ -280,6 +281,7 @@
       "items": {
         "enum": [
           "/workspace",
+          "/workspace/repository",
           "/tmp"
         ],
         "type": "string"

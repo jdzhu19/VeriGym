@@ -13,6 +13,7 @@ from typing import Any
 
 from verigym.agents.external import ExternalAgentBridge
 from verigym.core.errors import PathPolicyError
+from verigym.core.repository_observation import bounded_text_with_marker
 from verigym.protocols.repository_action import (
     RepositoryActionProtocolViolation,
     canonical_action_json,
@@ -485,6 +486,23 @@ class RepositoryToolBroker:
             "failure_reason": completed.failure_reason,
             "failure_origin": completed.failure_origin,
         }
+        policy = getattr(self._bridge, "observation_policy", None)
+        if policy is not None:
+            stdout, stdout_truncated = bounded_text_with_marker(
+                payload["stdout"], policy.public_test_max_bytes, description="public-test stdout"
+            )
+            stderr, stderr_truncated = bounded_text_with_marker(
+                payload["stderr"],
+                min(policy.public_test_max_bytes, 2 * 1024),
+                description="public-test stderr",
+            )
+            payload["stdout"] = stdout
+            payload["stderr"] = stderr
+            payload["output_truncated"] = bool(
+                payload["output_truncated"] or stdout_truncated or stderr_truncated
+            )
+            payload["observation_policy_id"] = policy.policy_id
+            payload["observation_omission_marker"] = "[verigym omission:"
         is_error = completed.exit_code not in {0}
         with self._lock:
             self._public_observed = True

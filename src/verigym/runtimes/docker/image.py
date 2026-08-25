@@ -123,7 +123,8 @@ def resolve_image(
         if isinstance(image_environment, list)
         else set()
     )
-    forbidden_environment = sorted(image_environment_names - _BASELINE_IMAGE_ENV)
+    allowed_environment = _BASELINE_IMAGE_ENV | set(config.environment_allowlist)
+    forbidden_environment = sorted(image_environment_names - allowed_environment)
     if forbidden_environment:
         raise DockerImageError(
             "Docker image declares environment variables outside the runtime allowlist: "

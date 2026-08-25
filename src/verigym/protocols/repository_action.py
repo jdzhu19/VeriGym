@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from pathlib import PurePosixPath
 from typing import Any
 
-from pydantic import ConfigDict, Field, ValidationError
+from pydantic import ConfigDict, Field, ValidationError, model_validator
 
 from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.repository_observation import (
+    BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+    REPOSITORY_OBSERVATION_POLICY_ID,
+    resolve_repository_observation_policy,
+)
 from verigym.schemas.action_protocol import (
     CanonicalRepositoryAction,
     ProviderNativeToolCall,
@@ -37,6 +43,16 @@ _SAFE_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SAFE_TEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _PATCH_HEADER = re.compile(r"^(?:---|\+\+\+) (?:a/|b/)?(?P<path>[^\t\n]+)", re.MULTILINE)
 
+# This is the pre-bounded v1 OpenAI tool-contract identity.  Keep it as a literal so a
+# historical transcript can be checked after the live registry grows optional bounded-view
+# arguments and descriptions.
+LEGACY_REPOSITORY_TOOL_CONTRACT_HASH = (
+    "2234b7de9631d2916ac24c3f6b42653c7c203c9528ee3436935bd77439722b8d"
+)
+LEGACY_REPOSITORY_ACTION_REGISTRY_HASH = (
+    "c60164616d37a85b33d6aa3df39ba3ac422ac4650b32265f7da5ae2aaf69f03b"
+)
+
 
 class _StrictArguments(StrictModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
@@ -45,10 +61,26 @@ class _StrictArguments(StrictModel):
 class ListFilesArguments(_StrictArguments):
     path: str = "."
     recursive: bool = True
+    # Optional fields keep historical action serialization stable when omitted.
+    max_depth: int | None = Field(default=None, ge=0, le=64)
+    max_entries: int | None = Field(default=None, ge=1, le=4096)
 
 
 class ReadFileArguments(_StrictArguments):
     path: str
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    concise: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_line_range(self) -> ReadFileArguments:
+        if (
+            self.start_line is not None
+            and self.end_line is not None
+            and self.start_line > self.end_line
+        ):
+            raise ValueError("read_file start_line must not be after end_line")
+        return self
 
 
 class ApplyPatchArguments(_StrictArguments):
@@ -112,8 +144,14 @@ _ACTION_MAPPINGS = {
 }
 
 _ACTION_DESCRIPTIONS = {
-    "list_files": "List visible task-workspace files using safe relative paths.",
-    "read_file": "Read one visible UTF-8 task-workspace file by relative path.",
+    "list_files": (
+        "List visible task-workspace files using safe relative paths. Start with the default "
+        "shallow view and use read_file for a local slice."
+    ),
+    "read_file": (
+        "Read one visible UTF-8 task-workspace file by relative path. Prefer a bounded line "
+        "range or concise view before requesting a whole large file."
+    ),
     "apply_patch": (
         "Apply one unified diff to editable repository paths. The patch must use exact "
         "--- a/path and +++ b/path file headers plus numbered "
@@ -166,6 +204,34 @@ def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, An
     return definitions
 
 
+def legacy_repository_tool_contract_hash() -> str:
+    """Return the frozen v1 tool-contract hash without exposing a second live registry."""
+
+    return LEGACY_REPOSITORY_TOOL_CONTRACT_HASH
+
+
+def legacy_repository_action_registry_hash() -> str:
+    """Return the frozen v1 registry identity used by historical replay manifests."""
+
+    return LEGACY_REPOSITORY_ACTION_REGISTRY_HASH
+
+
+def _legacy_action_registry() -> dict[str, Any]:
+    """Project the current registry back to the exact pre-bounded v1 schema."""
+
+    registry = deepcopy(action_registry())
+    list_properties = registry["actions"]["list_files"]["arguments_schema"]["properties"]
+    list_properties.pop("max_depth", None)
+    list_properties.pop("max_entries", None)
+    read_properties = registry["actions"]["read_file"]["arguments_schema"]["properties"]
+    read_properties.pop("start_line", None)
+    read_properties.pop("end_line", None)
+    read_properties.pop("concise", None)
+    if content_hash(registry) != LEGACY_REPOSITORY_ACTION_REGISTRY_HASH:  # pragma: no cover
+        raise RuntimeError("the historical repository action registry projection changed")
+    return registry
+
+
 def canonical_action_json(name: str, arguments: Mapping[str, Any]) -> str:
     """Serialize one provider-native call as a ``repository_action.v2`` envelope."""
 
@@ -182,7 +248,8 @@ def canonical_action_json(name: str, arguments: Mapping[str, Any]) -> str:
     value = {
         "protocol": "repository_action.v2",
         "action": name,
-        "arguments": parsed.model_dump(mode="json"),
+        # Keep omitted optional bounded-view controls out of historical call identities.
+        "arguments": parsed.model_dump(mode="json", exclude_none=True),
     }
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -192,6 +259,7 @@ def canonical_tool_observation(
     payload: Mapping[str, Any],
     *,
     is_error: bool,
+    observation_policy_id: str | None = None,
 ) -> str:
     """Serialize a bounded public tool result identically for every harness."""
 
@@ -204,6 +272,20 @@ def canonical_tool_observation(
         "is_error": is_error,
         "result": dict(payload),
     }
+    if observation_policy_id is None:
+        candidate = payload.get("observation_policy_id")
+        if isinstance(candidate, str):
+            observation_policy_id = candidate
+    if observation_policy_id is None:
+        metadata = payload.get("metadata")
+        if isinstance(metadata, Mapping):
+            candidate = metadata.get("observation_policy_id")
+            if isinstance(candidate, str):
+                observation_policy_id = candidate
+    if observation_policy_id is not None:
+        if observation_policy_id != REPOSITORY_OBSERVATION_POLICY_ID:
+            raise ValueError("unsupported repository observation policy identity")
+        value["observation_policy_id"] = observation_policy_id
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -212,12 +294,21 @@ def prompt_contract(
 ) -> dict[str, Any]:
     """Return the deterministic action prompt contract derived from the registry."""
 
-    registry = action_registry()
+    registry = (
+        _legacy_action_registry()
+        if state_machine_id == "repository_action_state_machine_v1"
+        else action_registry()
+    )
+    registry_hash = (
+        LEGACY_REPOSITORY_ACTION_REGISTRY_HASH
+        if state_machine_id == "repository_action_state_machine_v1"
+        else content_hash(registry)
+    )
     prompt_contract_id = {
         "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
         "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
     }[state_machine_id]
-    contract = {
+    contract: dict[str, Any] = {
         "schema_version": "1.0",
         "prompt_contract_id": prompt_contract_id,
         "protocol": "repository_action.v2",
@@ -226,7 +317,7 @@ def prompt_contract(
             "action": "one registered action name",
             "arguments": "an object matching that action's strict schema",
         },
-        "registry_hash": content_hash(registry),
+        "registry_hash": registry_hash,
         "registry": registry,
         "rules": [
             "Return exactly one action object and no prose.",
@@ -243,6 +334,15 @@ def prompt_contract(
     }
     if state_machine_id == "repository_action_state_machine_v2":
         contract["state_machine_id"] = state_machine_id
+        contract["observation_policy"] = BOUNDED_REPOSITORY_OBSERVATION_POLICY.identity()
+        contract["rules"].extend(
+            [
+                "Begin with the bounded shallow list_files view; do not recursively enumerate "
+                "large trees.",
+                "Use read_file start_line/end_line or concise=true for large files.",
+                "Every bounded omission is explicit; never infer that an omitted region is empty.",
+            ]
+        )
     return contract
 
 
@@ -257,6 +357,14 @@ def resolve_repository_action_protocol(
 
     if protocol_spec is None:
         return None
+    raw_observation_policy = agent_options.get(
+        "observation_policy_id", agent_options.get("observation_policy")
+    )
+    if raw_observation_policy is None and protocol_spec.state_machine_id == (
+        "repository_action_state_machine_v2"
+    ):
+        raw_observation_policy = "repository_observation_v1"
+    observation_policy = resolve_repository_observation_policy(raw_observation_policy)
     requested_protocol = agent_options.get("action_protocol")
     if requested_protocol not in {None, protocol_spec.protocol_id}:
         raise ValueError("agent action protocol differs from its plugin declaration")
@@ -278,10 +386,14 @@ def resolve_repository_action_protocol(
     )
     if task.budget.max_model_calls is not None and max_calls > task.budget.max_model_calls:
         raise ValueError("repository action completion-call limit exceeds the task model budget")
-    registry_hash = content_hash(action_registry())
+    registry_hash = (
+        legacy_repository_action_registry_hash()
+        if protocol_spec.state_machine_id == "repository_action_state_machine_v1"
+        else content_hash(action_registry())
+    )
     contract_hash = content_hash(prompt_contract(protocol_spec.state_machine_id))
     public_ids = _public_test_ids(task)
-    task_tool_contract = {
+    task_tool_contract: dict[str, Any] = {
         "allowed_tools": sorted(task.interaction.allowed_tools),
         "denied_tools": sorted(task.interaction.denied_tools),
         "network_policy": task.interaction.network_policy,
@@ -289,7 +401,9 @@ def resolve_repository_action_protocol(
         "readonly_globs": sorted(task.workspace.readonly_globs),
         "public_test_ids": public_ids,
     }
-    payload = {
+    if observation_policy is not None:
+        task_tool_contract["observation_policy"] = observation_policy.identity()
+    payload: dict[str, Any] = {
         "resolver_id": "repository_action_protocol_resolver_v1",
         "protocol_id": protocol_spec.protocol_id,
         "protocol_version": protocol_spec.protocol_version,
@@ -305,6 +419,8 @@ def resolve_repository_action_protocol(
         "agent_descriptor_hash": content_hash(agent_descriptor),
         "task_tool_contract_hash": content_hash(task_tool_contract),
     }
+    if observation_policy is not None:
+        payload["observation_policy"] = observation_policy.identity()
     return RepositoryActionProtocolDescriptor(
         resolver_id="repository_action_protocol_resolver_v1",
         protocol_id=protocol_spec.protocol_id,
@@ -381,14 +497,19 @@ def canonical_repository_action_to_agent_action(
     """Map one validated canonical action to the ordinary VeriGym environment action."""
 
     if isinstance(arguments, ListFilesArguments):
-        return ToolCallAction(tool="file.list", arguments=arguments.model_dump(mode="json"))
+        return ToolCallAction(
+            tool="file.list", arguments=arguments.model_dump(mode="json", exclude_none=True)
+        )
     if isinstance(arguments, ReadFileArguments):
-        return ToolCallAction(tool="file.read", arguments=arguments.model_dump(mode="json"))
+        return ToolCallAction(
+            tool="file.read", arguments=arguments.model_dump(mode="json", exclude_none=True)
+        )
     if isinstance(arguments, ApplyPatchArguments):
         return ApplyPatchAction(patch=arguments.patch)
     if isinstance(arguments, RunPublicTestArguments):
         return ToolCallAction(
-            tool="repository.public_test", arguments=arguments.model_dump(mode="json")
+            tool="repository.public_test",
+            arguments=arguments.model_dump(mode="json", exclude_none=True),
         )
     if isinstance(arguments, InspectDiffArguments):
         return ToolCallAction(tool="file.diff", arguments={})
@@ -685,8 +806,12 @@ __all__ = [
     "canonical_tool_observation",
     "extract_json_content",
     "extract_transport_action",
+    "LEGACY_REPOSITORY_ACTION_REGISTRY_HASH",
+    "LEGACY_REPOSITORY_TOOL_CONTRACT_HASH",
     "prompt_contract",
     "repository_tool_definitions",
+    "legacy_repository_action_registry_hash",
+    "legacy_repository_tool_contract_hash",
     "repository_action_state_failure",
     "resolve_repository_action_protocol",
     "task_requires_public_test",

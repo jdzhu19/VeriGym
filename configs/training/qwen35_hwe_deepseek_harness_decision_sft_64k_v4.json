@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_deepseek_harness_decision_sft_64k_qualification_v4",
+  "scope": "loader_and_gpu_qualification_only",
+  "source_v3_dataset_hash": "b362cc1df0969f1bad368c939110175502d8ff0d97aef62c93cccd18871e351a",
+  "dataset": {
+    "format_id": "verigym_hwe_deepseek_harness_decision_sft_dataset_64k_v4",
+    "record_count": 83,
+    "trajectory_count": 2,
+    "tool_action_count": 85,
+    "max_observed_token_count": 50117,
+    "max_length": 65536,
+    "truncation": "error",
+    "exact_model_visible_context": true,
+    "context_transformed_after_collection": false,
+    "nap_required": false,
+    "nap_pass_claimed": false
+  },
+  "software": {
+    "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+    "verl_version": "0.8.0",
+    "transformers_commit": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
+    "trust_remote_code": false
+  },
+  "loader": {
+    "dispatcher": "VeriGymHweDecisionSft64kTrainer",
+    "backend": "VeriGymHweDecisionSft64kBackend",
+    "torchrun_entry": "verigym_training_reference.hwe_decision_sft_64k_entry",
+    "custom_dataset_class": "VeriGymHweDecisionSft64kDataset",
+    "messages_key": "messages",
+    "tools_key": "tools",
+    "exact_receipt_key": "exact_token_receipt",
+    "tokenize_method": "tool_aware_exact_final_decision",
+    "all_rows_dry_run_required": true
+  },
+  "qualification_profile": {
+    "precision": "bf16",
+    "strategy": "fsdp2",
+    "lora": {
+      "rank": 8,
+      "alpha": 16,
+      "dropout": 0.05,
+      "target_modules": "all-linear"
+    },
+    "gradient_checkpointing": true,
+    "remove_padding": true,
+    "bounded_fused_vocabulary_head": true,
+    "global_batch_size": 1,
+    "micro_batch_size_per_gpu": 1,
+    "max_length": 65536,
+    "max_token_len_per_gpu": 16384,
+    "world_size": 4,
+    "ulysses_sequence_parallel_size": 4,
+    "num_workers": 0,
+    "torch_compile": false,
+    "optimizer_step_guard": "fail_fast",
+    "optimizer_steps": 0,
+    "fallbacks": [
+      {
+        "id": "offload_v1",
+        "parameter_offload": true,
+        "optimizer_offload": true,
+        "activation_offload": true,
+        "mathematical_objective_unchanged": true
+      }
+    ]
+  },
+  "acceptance": {
+    "longest_real_record_only": true,
+    "finite_loss_required": true,
+    "finite_gradients_required": true,
+    "trainable_parameter_hash_unchanged": true,
+    "optimizer_steps": 0,
+    "checkpoint_allowed": false,
+    "adapter_allowed": false,
+    "production_training_ready": false,
+    "training_started": false,
+    "new_hpc_jobs_submitted": false
+  }
+}

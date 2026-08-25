@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -133,7 +134,16 @@ def _render_cache_seed(dependencies: list[VerifierDependencyFile]) -> str:
 
 
 def _run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(argv, check=False, capture_output=True, timeout=timeout_s)
+    environment = os.environ.copy()
+    environment.pop("LD_LIBRARY_PATH", None)
+    environment.pop("LD_PRELOAD", None)
+    return subprocess.run(
+        argv,
+        check=False,
+        capture_output=True,
+        timeout=timeout_s,
+        env=environment,
+    )
 
 
 def _remove_container(name: str) -> None:

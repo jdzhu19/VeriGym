@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Literal, Self
 
@@ -354,6 +355,220 @@ class VerifiedMultiTurnSftDatasetManifest(StrictModel):
         return self
 
 
+class VerifiedMultiTurnSftExampleV2(StrictModel):
+    """Bounded-observation v2 record; v1 records intentionally remain a separate type."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_verified_multiturn_sft_v2"] = "verigym_verified_multiturn_sft_v2"
+    sample_id: str
+    task_id: str
+    official_task_id: str
+    task_hash: str
+    source_hash: str
+    candidate_hash: str
+    verifier_hash: str
+    verigym_source_commit: str
+    verigym_source_tree_hash: str
+    provider: str
+    model_id: str
+    reasoning_effort: Literal["max", "xhigh"]
+    client_kind: Literal["cli", "sdk"]
+    client_name: str
+    client_version: str
+    prompt_hash: str
+    tool_contract_hash: str
+    harness_hash: str
+    tokenizer_hash: str
+    observation_policy_id: Literal["repository_observation_v1"] = "repository_observation_v1"
+    split: Literal["training"] = "training"
+    messages: list[MultiTurnSftMessage] = Field(min_length=5)
+    token_count: int = Field(ge=1, le=32_768)
+    max_length: Literal[32_768] = 32_768
+    truncation: Literal["error"] = "error"
+    total_tokens: int = Field(ge=1, le=32_768)
+    assistant_tokens: int = Field(ge=0, le=32_768)
+    observation_tokens: int = Field(ge=0, le=32_768)
+    tool_calls: int = Field(ge=0, le=4096)
+    file_reads: int = Field(ge=0, le=4096)
+    max_single_observation_tokens: int = Field(ge=0, le=32_768)
+    observation_to_assistant_ratio: float = Field(ge=0.0, le=1_000_000.0)
+    supervised_roles: tuple[Literal["assistant"], ...] = ("assistant",)
+    masked_roles: tuple[Literal["system"], Literal["user"], Literal["tool"]] = (
+        "system",
+        "user",
+        "tool",
+    )
+    verifier_resolved: Literal[True] = True
+    infrastructure_valid: Literal[True] = True
+    non_registry_tool_events_observed: Literal[False] = False
+    hidden_assets_exported: Literal[False] = False
+    reference_solutions_exported: Literal[False] = False
+    private_reasoning_exported: Literal[False] = False
+    credential_values_exported: Literal[False] = False
+    raw_host_paths_exported: Literal[False] = False
+    raw_observations_exported: Literal[False] = False
+    example_hash: str
+
+    @field_validator(
+        "sample_id",
+        "task_hash",
+        "source_hash",
+        "candidate_hash",
+        "verifier_hash",
+        "verigym_source_commit",
+        "verigym_source_tree_hash",
+        "prompt_hash",
+        "tool_contract_hash",
+        "harness_hash",
+        "tokenizer_hash",
+        "example_hash",
+    )
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        return _sha256(value)
+
+    @field_validator("task_id", "official_task_id", "provider", "model_id", "client_name")
+    @classmethod
+    def validate_identity(cls, value: str) -> str:
+        return _portable(value)
+
+    @field_validator("client_version")
+    @classmethod
+    def validate_client_version(cls, value: str) -> str:
+        if (
+            not value
+            or value != value.strip()
+            or len(value) > 256
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            raise ValueError("client version must be bounded printable text")
+        return value
+
+    @model_validator(mode="after")
+    def validate_dialogue_and_seal(self) -> Self:
+        if self.total_tokens != self.token_count:
+            raise ValueError("multi-turn SFT token metrics disagree with token_count")
+        if self.assistant_tokens > self.total_tokens or self.observation_tokens > self.total_tokens:
+            raise ValueError("multi-turn SFT token metrics exceed total_tokens")
+        if self.file_reads > self.tool_calls:
+            raise ValueError("multi-turn SFT file_reads exceed tool_calls")
+        if self.max_single_observation_tokens > self.observation_tokens:
+            raise ValueError("multi-turn SFT maximum observation exceeds observation_tokens")
+        expected_ratio = (
+            self.observation_tokens / self.assistant_tokens if self.assistant_tokens else 0.0
+        )
+        if not math.isclose(
+            self.observation_to_assistant_ratio,
+            expected_ratio,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError("multi-turn SFT observation ratio is inconsistent")
+        _validate_sft_dialogue(self.messages)
+        identity = self.model_dump(mode="json", exclude={"example_hash"})
+        if content_hash(identity) != self.example_hash:
+            raise ValueError("multi-turn SFT example identity changed")
+        return self
+
+
+class VerifiedMultiTurnSftDatasetManifestV2(StrictModel):
+    """Immutable dataset identity for bounded 32K multi-turn SFT."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_verified_multiturn_sft_dataset_v2"] = (
+        "verigym_verified_multiturn_sft_dataset_v2"
+    )
+    record_count: int = Field(ge=1)
+    task_ids: list[str] = Field(min_length=1)
+    example_hashes: list[str] = Field(min_length=1)
+    tokenizer_hash: str
+    tool_contract_hash: str
+    observation_policy_id: Literal["repository_observation_v1"] = "repository_observation_v1"
+    max_length: Literal[32_768] = 32_768
+    truncation: Literal["error"] = "error"
+    verigym_source_commits: list[str] = Field(min_length=1)
+    verigym_source_tree_hashes: list[str] = Field(min_length=1)
+    records_sha256: str
+    only_training_split: Literal[True] = True
+    only_resolved_samples: Literal[True] = True
+    infrastructure_invalid_excluded: Literal[True] = True
+    hidden_assets_exported: Literal[False] = False
+    reference_solutions_exported: Literal[False] = False
+    private_reasoning_exported: Literal[False] = False
+    credential_values_exported: Literal[False] = False
+    raw_host_paths_exported: Literal[False] = False
+    raw_observations_exported: Literal[False] = False
+    manifest_hash: str
+
+    @field_validator("tokenizer_hash", "tool_contract_hash", "records_sha256", "manifest_hash")
+    @classmethod
+    def validate_hashes(cls, value: str) -> str:
+        return _sha256(value)
+
+    @field_validator("example_hashes")
+    @classmethod
+    def validate_example_hashes(cls, values: list[str]) -> list[str]:
+        return [_sha256(value) for value in values]
+
+    @field_validator("verigym_source_commits", "verigym_source_tree_hashes")
+    @classmethod
+    def validate_source_hashes(cls, values: list[str]) -> list[str]:
+        return [_sha256(value) for value in values]
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if self.record_count != len(self.task_ids) or self.record_count != len(self.example_hashes):
+            raise ValueError("multi-turn manifest counts disagree")
+        if self.task_ids != sorted(set(self.task_ids)):
+            raise ValueError("multi-turn dataset tasks must be sorted and unique")
+        if len(set(self.example_hashes)) != len(self.example_hashes):
+            raise ValueError("multi-turn dataset example hashes must be unique")
+        if self.verigym_source_commits != sorted(set(self.verigym_source_commits)):
+            raise ValueError("multi-turn dataset source commits must be sorted and unique")
+        if self.verigym_source_tree_hashes != sorted(set(self.verigym_source_tree_hashes)):
+            raise ValueError("multi-turn dataset source tree hashes must be sorted and unique")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("multi-turn SFT manifest identity changed")
+        return self
+
+
+def _validate_sft_dialogue(messages: list[MultiTurnSftMessage]) -> None:
+    if [message.role for message in messages[:2]] != ["system", "user"]:
+        raise ValueError("multi-turn SFT must start with system then user")
+    if messages[-1].role != "assistant" or messages[-1].tool_calls:
+        raise ValueError("multi-turn SFT must end in a final assistant message")
+    pending: SftToolCall | None = None
+    seen_ids: set[str] = set()
+    saw_finish = False
+    for index, message in enumerate(messages):
+        if message.role == "assistant":
+            if pending is not None:
+                raise ValueError("assistant emitted another turn before a tool observation")
+            if message.tool_calls:
+                call = message.tool_calls[0]
+                if call.id in seen_ids:
+                    raise ValueError("SFT tool-call IDs must be unique")
+                seen_ids.add(call.id)
+                pending = call
+                saw_finish = saw_finish or call.function.name == "finish"
+            elif index != len(messages) - 1:
+                raise ValueError("assistant final content may appear only after terminal finish")
+        elif message.role == "tool":
+            if pending is None:
+                raise ValueError("SFT tool observation has no preceding assistant call")
+            if message.tool_call_id != pending.id or message.name != pending.function.name:
+                raise ValueError("SFT tool observation does not match its assistant call")
+            pending = None
+        elif index > 1:
+            raise ValueError("repository SFT cannot inject system/user messages mid-episode")
+    if pending is not None or not saw_finish:
+        raise ValueError("SFT trajectory is incomplete or lacks finish")
+    validate_terminal_finish(messages)
+    if sum(1 for message in messages if message.role == "assistant") < 2:
+        raise ValueError("multi-turn SFT requires tool-call and final assistant supervision")
+
+
 def seal_multi_turn_example(payload: dict[str, Any]) -> VerifiedMultiTurnSftExample:
     """Calculate the record hash only after all strict fields have been supplied."""
 
@@ -368,6 +583,25 @@ def seal_multi_turn_example(payload: dict[str, Any]) -> VerifiedMultiTurnSftExam
     draft = VerifiedMultiTurnSftExample.model_construct(**identity)
     normalized = draft.model_dump(mode="json", exclude={"example_hash"})
     return VerifiedMultiTurnSftExample.model_validate(
+        {**normalized_payload, "example_hash": content_hash(normalized)}
+    )
+
+
+def seal_multi_turn_example_v2(payload: dict[str, Any]) -> VerifiedMultiTurnSftExampleV2:
+    """Calculate a bounded v2 record hash after normalizing its messages."""
+
+    raw_messages = payload.get("messages")
+    if not isinstance(raw_messages, list):
+        raise ValueError("multi-turn SFT payload omits its messages")
+    normalized_payload = {
+        **payload,
+        "format_id": "verigym_verified_multiturn_sft_v2",
+        "messages": [MultiTurnSftMessage.model_validate(message) for message in raw_messages],
+    }
+    identity = {**normalized_payload, "example_hash": "0" * 64}
+    draft = VerifiedMultiTurnSftExampleV2.model_construct(**identity)
+    normalized = draft.model_dump(mode="json", exclude={"example_hash"})
+    return VerifiedMultiTurnSftExampleV2.model_validate(
         {**normalized_payload, "example_hash": content_hash(normalized)}
     )
 
@@ -463,6 +697,9 @@ __all__ = [
     "SftToolCall",
     "VerifiedMultiTurnSftDatasetManifest",
     "VerifiedMultiTurnSftExample",
+    "VerifiedMultiTurnSftExampleV2",
+    "VerifiedMultiTurnSftDatasetManifestV2",
     "seal_multi_turn_example",
+    "seal_multi_turn_example_v2",
     "validate_terminal_finish",
 ]

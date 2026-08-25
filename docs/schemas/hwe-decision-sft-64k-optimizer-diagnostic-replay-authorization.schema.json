@@ -1,0 +1,228 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-optimizer-diagnostic-replay-authorization.schema.json",
+  "additionalProperties": false,
+  "description": "One-use authorization for one instrumented replay of the first smoke step.",
+  "properties": {
+    "adapter_allowed": {
+      "const": false,
+      "title": "Adapter Allowed",
+      "type": "boolean"
+    },
+    "attempt": {
+      "const": 3,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "authorization_basis": {
+      "const": "explicit_user_instruction_single_step_diagnostic_replay",
+      "title": "Authorization Basis",
+      "type": "string"
+    },
+    "authorization_hash": {
+      "title": "Authorization Hash",
+      "type": "string"
+    },
+    "authorization_scope": {
+      "const": "single_record_single_optimizer_step_diagnostic",
+      "title": "Authorization Scope",
+      "type": "string"
+    },
+    "checkpoint_allowed": {
+      "const": false,
+      "title": "Checkpoint Allowed",
+      "type": "boolean"
+    },
+    "development_training_ready": {
+      "const": false,
+      "title": "Development Training Ready",
+      "type": "boolean"
+    },
+    "diagnostic_instrumentation_source_sha256": {
+      "title": "Diagnostic Instrumentation Source Sha256",
+      "type": "string"
+    },
+    "execution_authorized": {
+      "const": true,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    },
+    "existing_lsf_job_id": {
+      "const": "466876",
+      "title": "Existing Lsf Job Id",
+      "type": "string"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_optimizer_diagnostic_replay_authorization_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "new_hpc_jobs_allowed": {
+      "const": false,
+      "title": "New Hpc Jobs Allowed",
+      "type": "boolean"
+    },
+    "offload_fallback_allowed": {
+      "const": false,
+      "title": "Offload Fallback Allowed",
+      "type": "boolean"
+    },
+    "optimizer_steps_authorized": {
+      "const": 1,
+      "title": "Optimizer Steps Authorized",
+      "type": "integer"
+    },
+    "planned_host": {
+      "const": "gpu03",
+      "title": "Planned Host",
+      "type": "string"
+    },
+    "preregistration_config_sha256": {
+      "title": "Preregistration Config Sha256",
+      "type": "string"
+    },
+    "preregistration_hash": {
+      "title": "Preregistration Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_hash": {
+      "title": "Preregistration Receipt Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_sha256": {
+      "title": "Preregistration Receipt Sha256",
+      "type": "string"
+    },
+    "prior_authorization_hash": {
+      "const": "e20d56f36cd847c3b5bba088016d09a651a689935c299c2f13f09796ff375be7",
+      "title": "Prior Authorization Hash",
+      "type": "string"
+    },
+    "prior_failure_report_sha256": {
+      "const": "138000280478730bcb39b43788565b464a637fe77cfce03c999194a4fc39832b",
+      "title": "Prior Failure Report Sha256",
+      "type": "string"
+    },
+    "prior_retry_authorization_hash": {
+      "const": "68246c680006aa392a45de4beafa1c2f11a53566bcc9ec9323130ead3874b34e",
+      "title": "Prior Retry Authorization Hash",
+      "type": "string"
+    },
+    "prior_retry_failure_report_sha256": {
+      "const": "bb35899a191bb71b7f4d6fa67a6a6d8a92a69b92a66fd3a709d2ed122f5e1a1b",
+      "title": "Prior Retry Failure Report Sha256",
+      "type": "string"
+    },
+    "prior_retry_optimizer_steps_confirmed": {
+      "const": 1,
+      "title": "Prior Retry Optimizer Steps Confirmed",
+      "type": "integer"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "release_existing_allocation": {
+      "const": false,
+      "title": "Release Existing Allocation",
+      "type": "boolean"
+    },
+    "schedule_hash": {
+      "title": "Schedule Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_gpu_indices": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Selected Gpu Indices",
+      "type": "array"
+    },
+    "source_v4_dataset_hash": {
+      "const": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "source_v4_record_hash": {
+      "const": "432d9069ef7793e90ec80e85b1d39e7c61dbdf2e751e5cb5948f58658fffcd03",
+      "title": "Source V4 Record Hash",
+      "type": "string"
+    },
+    "source_v4_record_index": {
+      "const": 62,
+      "title": "Source V4 Record Index",
+      "type": "integer"
+    },
+    "status": {
+      "const": "authorized_for_single_step_diagnostic_replay",
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "const": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "token_count": {
+      "const": 1883,
+      "title": "Token Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "authorization_basis",
+    "authorization_scope",
+    "attempt",
+    "preregistration_hash",
+    "preregistration_config_sha256",
+    "preregistration_receipt_hash",
+    "preregistration_receipt_sha256",
+    "source_v4_dataset_hash",
+    "schedule_hash",
+    "source_v4_record_index",
+    "source_v4_record_hash",
+    "task_id",
+    "token_count",
+    "optimizer_steps_authorized",
+    "execution_authorized",
+    "checkpoint_allowed",
+    "adapter_allowed",
+    "offload_fallback_allowed",
+    "new_hpc_jobs_allowed",
+    "release_existing_allocation",
+    "existing_lsf_job_id",
+    "planned_host",
+    "selected_gpu_indices",
+    "prior_authorization_hash",
+    "prior_failure_report_sha256",
+    "prior_retry_authorization_hash",
+    "prior_retry_failure_report_sha256",
+    "prior_retry_optimizer_steps_confirmed",
+    "diagnostic_instrumentation_source_sha256",
+    "development_training_ready",
+    "production_training_ready",
+    "authorization_hash"
+  ],
+  "title": "HweDecisionSft64kOptimizerDiagnosticReplayAuthorization",
+  "type": "object"
+}

@@ -67,6 +67,7 @@ _ENVIRONMENT_NAME_KEY = re.compile(
 _AUTHENTICATION_MODE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:auth(?:entication)?)(?:[_-](?:semantic[_-]?id|mode))$"
 )
+_AUTHORIZATION_AUDIT_METADATA_KEY = re.compile(r"(?i)^authorization[_-](?:basis|scope)$")
 _EXECUTION_BOUNDARY_KEY = re.compile(
     r"(?i)(?:execution[_-]?boundary|credential[_-]?bearing[_-]?http[_-]?location|"
     r"controller[_-]?(?:role|location|boundary)|trust[_-]?boundary|process[_-]?boundary)"
@@ -300,6 +301,8 @@ def classify_structured_field_role(
         return "environment_variable_name"
     if key and _AUTHENTICATION_MODE_KEY.search(normalized_key):
         return "authentication_mode"
+    if key and _AUTHORIZATION_AUDIT_METADATA_KEY.fullmatch(normalized_key):
+        return "documentation_text"
     if key and _EXECUTION_BOUNDARY_KEY.search(normalized_key):
         return "execution_boundary_enum"
     if key and _BASE_URL_KEY.search(normalized_key):

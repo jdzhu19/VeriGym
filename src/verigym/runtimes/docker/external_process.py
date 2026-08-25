@@ -13,12 +13,16 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 from verigym.core.hashing import content_hash, hash_directory
+from verigym.hwe.codex_collector import HweExecProtocolCollector
+from verigym.hwe.observation import HweObservationCompactor
+from verigym.hwe.private_audit import HweRawArtifactWriter
+from verigym.hwe.profiles import HWE_COLLECTION_PROFILE_ID, HWE_COLLECTION_PROFILE_V2_ID
 from verigym.runtimes.docker.control_plane_environment import (
     ControlPlaneEnvironmentError,
     build_trusted_host_app_server_environment,
@@ -44,7 +48,7 @@ from verigym.schemas.runtime import (
 )
 
 _CONTAINER_ENVIRONMENT = {
-    "PATH": "/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
+    "PATH": "/tools/verilator/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
     "HOME": "/tmp/verigym-home",
     "CODEX_HOME": "/tmp/verigym-codex-home",
     "LANG": "C.UTF-8",
@@ -161,6 +165,7 @@ class DockerExternalProcessExecutor:
         session_id: str,
         register_container: Any,
         remove_container: Any,
+        private_audit_root: Path | None = None,
     ) -> None:
         self._engine = engine
         self._verifier_image = verifier_image
@@ -170,6 +175,7 @@ class DockerExternalProcessExecutor:
         self._session_id = session_id
         self._register_container = register_container
         self._remove_container = remove_container
+        self._private_audit_root = private_audit_root
 
     def execute(
         self,
@@ -181,7 +187,7 @@ class DockerExternalProcessExecutor:
         mounts = mounts or [
             MountSpec(
                 source=visible_workspace.resolve(strict=True),
-                destination="/workspace",
+                destination=request.logical_workspace_root,
                 read_only=False,
             )
         ]
@@ -197,6 +203,9 @@ class DockerExternalProcessExecutor:
         container_id: str | None = None
         broker: LoopbackWebSocketStdioBroker | None = None
         broker_stopped = False
+        hwe_raw_writer: HweRawArtifactWriter | None = None
+        hwe_private_audit_manifest: dict[str, object] | None = None
+        hwe_protocol_records: list[dict[str, object]] = []
         container_removed = False
         container_exit_inspected = False
         cleanup_verified = False
@@ -243,7 +252,7 @@ class DockerExternalProcessExecutor:
                         destination=mount.destination,
                         read_only=mount.read_only,
                     )
-                    if mount.destination == "/workspace"
+                    if mount.destination == request.logical_workspace_root
                     else mount
                     for mount in mounts
                 ]
@@ -271,7 +280,7 @@ class DockerExternalProcessExecutor:
                 *security_arguments(
                     effective_config,
                     user=user,
-                    cwd="/workspace",
+                    cwd=request.logical_workspace_root,
                     environment=_CONTAINER_ENVIRONMENT,
                     labels=labels,
                 ),
@@ -294,12 +303,30 @@ class DockerExternalProcessExecutor:
             _verify_agent_inspection(inspection)
             effective_verified = True
             attach_process = self._engine.start_attach_streaming(container_id)
+            protocol_collector: HweExecProtocolCollector | None = None
+            if request.integration_track == "codex_cli_hwe_native_shell":
+                if self._private_audit_root is None:
+                    raise ValueError("HWE native-shell collection requires a private audit root")
+                hwe_profile_id = _hwe_request_profile_id(request)
+                hwe_raw_writer = HweRawArtifactWriter(
+                    self._private_audit_root, profile_id=hwe_profile_id
+                )
+                protocol_collector = HweExecProtocolCollector(
+                    workspace_root=workspace,
+                    compactor=HweObservationCompactor(profile_id=hwe_profile_id),
+                    raw_writer=hwe_raw_writer,
+                    sft_mode=True,
+                    profile_id=hwe_profile_id,
+                )
+            elif self._private_audit_root is not None:
+                raise ValueError("private HWE audit root supplied to a non-HWE process")
             broker = LoopbackWebSocketStdioBroker(
                 attach_process,
                 max_output_bytes=min(
                     request.max_output_bytes,
                     self._agent_config.max_output_bytes,
                 ),
+                protocol_collector=protocol_collector,
             )
             broker.start()
             app_result = _run_app_server(
@@ -307,7 +334,23 @@ class DockerExternalProcessExecutor:
                 broker_url=broker.url,
                 workspace=workspace,
                 effective_timeout_s=effective_timeout,
+                broker_health_check=broker.assert_healthy,
             )
+            if hwe_raw_writer is not None:
+                raw_public_events = app_result.get("_hwe_raw_public_events")
+                if not isinstance(raw_public_events, tuple):
+                    raise ValueError("HWE app-server omitted its raw public trajectory")
+                for sequence, event in enumerate(raw_public_events):
+                    if not isinstance(event, dict):
+                        raise ValueError("HWE app-server raw public event is malformed")
+                    hwe_raw_writer.append(
+                        {
+                            "schema_version": "1.0",
+                            "format_id": "verigym_hwe_raw_public_provider_event_v1",
+                            "sequence": sequence,
+                            "event": event,
+                        }
+                    )
             normalized_stdout = app_result["stdout"]
             app_stderr = app_result["stderr"]
             exit_code = app_result["exit_code"]
@@ -370,10 +413,23 @@ class DockerExternalProcessExecutor:
                     attach_stderr = broker_result.stderr
                     attach_stderr_truncated = broker_result.stderr_truncated
                     group_cleaned = group_cleaned and broker_result.process_group_cleaned
+                    hwe_protocol_records = list(broker_result.protocol_records)
                 except DockerRuntimeError as exc:
-                    broker_stopped = False
-                    failure_reason = failure_reason or exc.subreason
-                    failure_origin = failure_origin or "broker"
+                    details = exc.details
+                    broker_stopped = details.get("broker_stopped") is True
+                    stopped_group_cleaned = details.get("process_group_cleaned") is True
+                    group_cleaned = group_cleaned and stopped_group_cleaned
+                    records = details.get("protocol_records")
+                    if isinstance(records, tuple) and all(
+                        isinstance(record, dict) for record in records
+                    ):
+                        hwe_protocol_records = list(records)
+                    if exc.subreason.startswith("hwe_protocol_"):
+                        failure_reason = exc.subreason
+                        failure_origin = "broker"
+                    else:
+                        failure_reason = failure_reason or exc.subreason
+                        failure_origin = failure_origin or "broker"
             if container_id is not None:
                 try:
                     state_payload = self._engine.inspect_container(container_id)
@@ -421,6 +477,13 @@ class DockerExternalProcessExecutor:
             after = _workspace_identity(workspace)
             if temporary is not None:
                 temporary.cleanup()
+            if hwe_raw_writer is not None:
+                try:
+                    hwe_private_audit_manifest = hwe_raw_writer.finalize()
+                except (OSError, RuntimeError, ValueError) as exc:
+                    failure_reason = failure_reason or "hwe_private_audit_invalid"
+                    failure_origin = failure_origin or "broker"
+                    app_stderr = f"{app_stderr}\n{type(exc).__name__}: {exc}".strip()
         changed_paths = sorted(
             path for path in set(before) | set(after) if before.get(path) != after.get(path)
         )
@@ -478,7 +541,7 @@ class DockerExternalProcessExecutor:
             prompt_text_sha256=request.prompt_text_sha256,
             invocation_spec_hash=request.invocation_spec_hash,
             payload_binding_hash=request.payload_binding_hash,
-            logical_workspace_root="/workspace",
+            logical_workspace_root=request.logical_workspace_root,
         )
         security = ExternalProcessSecurityEvidence(
             boundary="docker_outer_runtime",
@@ -491,10 +554,10 @@ class DockerExternalProcessExecutor:
             private_pid_namespace=True,
             private_ipc_namespace=True,
             mount_destinations=cast(
-                list[Literal["/verigym-public", "/workspace"]],
+                list[Literal["/verigym-public", "/workspace", "/workspace/repository"]],
                 [mount.destination for mount in mounts],
             ),
-            writable_destinations=["/workspace", "/tmp"],
+            writable_destinations=[request.logical_workspace_root, "/tmp"],
             read_only_destinations=[
                 cast(Literal["/verigym-public"], mount.destination)
                 for mount in mounts
@@ -576,6 +639,8 @@ class DockerExternalProcessExecutor:
             failure_origin=failure_origin,
             runtime_identity=identity,
             security=security,
+            hwe_protocol_records=hwe_protocol_records,
+            hwe_private_audit_manifest=hwe_private_audit_manifest,
         )
 
     def _validate_request(
@@ -608,7 +673,9 @@ class DockerExternalProcessExecutor:
         if observed_read_only != request.read_only_mounts:
             raise ValueError("external process read-only mount identity changed")
         workspace_mounts = [
-            mount for mount in mounts if mount.destination == "/workspace" and not mount.read_only
+            mount
+            for mount in mounts
+            if mount.destination == request.logical_workspace_root and not mount.read_only
         ]
         if len(workspace_mounts) != 1 or len(mounts) != 1 + len(observed_read_only):
             raise ValueError("external process mount plan contains an undeclared destination")
@@ -639,6 +706,7 @@ def _run_app_server(
     broker_url: str,
     workspace: Path,
     effective_timeout_s: float,
+    broker_health_check: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     arguments = [str(request.executable_path)]
     for override in _APP_SERVER_CONFIG_OVERRIDES:
@@ -662,7 +730,12 @@ def _run_app_server(
         start_new_session=True,
         close_fds=True,
     )
-    client = _AppServerClient(process, max_output_bytes=request.max_output_bytes)
+    client = _AppServerClient(
+        process,
+        max_output_bytes=request.max_output_bytes,
+        hwe_sft_mode=request.integration_track == "codex_cli_hwe_native_shell",
+        health_check=broker_health_check,
+    )
     deadline = time.monotonic() + effective_timeout_s
     timed_out = False
     terminal = False
@@ -696,7 +769,9 @@ def _run_app_server(
             {"environmentId": "verigym-docker-agent"},
             deadline=deadline,
         )
-        if not _is_logical_workspace_uri(_nested_string(environment_info, "cwd")):
+        if not _is_logical_workspace_uri(
+            _nested_string(environment_info, "cwd"), request.logical_workspace_root
+        ):
             raise RuntimeError("remote environment reported a non-logical workspace cwd")
         thread = client.request(
             "thread/start",
@@ -711,7 +786,7 @@ def _run_app_server(
                 "environments": [
                     {
                         "environmentId": "verigym-docker-agent",
-                        "cwd": "/workspace",
+                        "cwd": request.logical_workspace_root,
                     }
                 ],
             },
@@ -738,7 +813,7 @@ def _run_app_server(
                 "environments": [
                     {
                         "environmentId": "verigym-docker-agent",
-                        "cwd": "/workspace",
+                        "cwd": request.logical_workspace_root,
                     }
                 ],
                 "sandboxPolicy": {
@@ -764,6 +839,15 @@ def _run_app_server(
         timed_out = True
         failure_reason = "timeout"
         failure_origin = "host_control_plane"
+    except DockerRuntimeError as exc:
+        client.add_synthetic_event(
+            {
+                "type": "error",
+                "message": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        failure_reason = exc.subreason
+        failure_origin = "broker"
     except (RuntimeError, ValueError, OSError) as exc:
         client.add_synthetic_event(
             {
@@ -782,6 +866,10 @@ def _run_app_server(
     config_metadata_after = _codex_config_metadata()
     stdout, stdout_truncated = client.normalized_jsonl()
     stderr, stderr_truncated = client.stderr_text()
+    raw_public_events, raw_public_truncated = client.raw_public_events()
+    if request.integration_track == "codex_cli_hwe_native_shell" and raw_public_truncated:
+        failure_reason = failure_reason or "hwe_raw_public_trajectory_truncated"
+        failure_origin = failure_origin or "host_control_plane"
     return {
         "stdout": stdout,
         "stderr": stderr,
@@ -796,6 +884,7 @@ def _run_app_server(
         "user_config_metadata_unchanged": (config_metadata_before == config_metadata_after),
         "control_plane_environment_identity": (control_plane_environment.safe_identity()),
         "_proxy_redaction_values": control_plane_environment.redaction_values,
+        "_hwe_raw_public_events": raw_public_events,
     }
 
 
@@ -825,16 +914,28 @@ def _is_loopback_proxy_failure(exc: BaseException, broker_url: str) -> bool:
 
 
 class _AppServerClient:
-    def __init__(self, process: subprocess.Popen[bytes], *, max_output_bytes: int) -> None:
+    def __init__(
+        self,
+        process: subprocess.Popen[bytes],
+        *,
+        max_output_bytes: int,
+        hwe_sft_mode: bool = False,
+        health_check: Callable[[], None] | None = None,
+    ) -> None:
         if process.stdin is None or process.stdout is None or process.stderr is None:
             raise ValueError("app-server process pipes are unavailable")
         self._process = process
         self._max_output_bytes = max_output_bytes
+        self._hwe_sft_mode = hwe_sft_mode
+        self._health_check = health_check
         self._messages: queue.Queue[dict[str, Any] | object] = queue.Queue(maxsize=1024)
         self._pending: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
         self._event_bytes = 0
         self._events_truncated = False
+        self._raw_public_events: list[dict[str, Any]] = []
+        self._raw_public_bytes = 0
+        self._raw_public_truncated = False
         self._next_id = 0
         self._stdout_error: BaseException | None = None
         self._stderr = bytearray()
@@ -918,15 +1019,19 @@ class _AppServerClient:
             raise RuntimeError("app-server stdin closed") from exc
 
     def _next_message(self, deadline: float) -> dict[str, Any]:
-        if self._stdout_error is not None:
-            raise RuntimeError("app-server emitted malformed JSON-RPC") from self._stdout_error
-        timeout = deadline - time.monotonic()
-        if timeout <= 0:
-            raise TimeoutError("app-server deadline expired")
-        try:
-            item = self._messages.get(timeout=timeout)
-        except queue.Empty as exc:
-            raise TimeoutError("app-server deadline expired") from exc
+        while True:
+            if self._stdout_error is not None:
+                raise RuntimeError("app-server emitted malformed JSON-RPC") from self._stdout_error
+            if self._health_check is not None:
+                self._health_check()
+            timeout = deadline - time.monotonic()
+            if timeout <= 0:
+                raise TimeoutError("app-server deadline expired")
+            try:
+                item = self._messages.get(timeout=min(timeout, 0.25))
+                break
+            except queue.Empty:
+                continue
         if item is _APP_SERVER_EOF:
             if self._stdout_error is not None:
                 raise RuntimeError("app-server emitted malformed JSON-RPC") from self._stdout_error
@@ -942,9 +1047,57 @@ class _AppServerClient:
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
             return
+        if self._hwe_sft_mode and _is_hwe_public_provider_event(method, params):
+            encoded_size = len(
+                json.dumps(
+                    message, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode("utf-8")
+            )
+            if self._raw_public_bytes + encoded_size + 1 > self._max_output_bytes:
+                self._raw_public_truncated = True
+            else:
+                self._raw_public_events.append(message)
+                self._raw_public_bytes += encoded_size + 1
+        if (
+            self._hwe_sft_mode
+            and method.startswith("item/")
+            and method
+            not in {
+                "item/started",
+                "item/completed",
+                "item/commandExecution/outputDelta",
+                "item/commandExecution/terminalInteraction",
+                "item/fileChange/outputDelta",
+                "item/fileChange/patchUpdated",
+                "item/agentMessage/delta",
+                "item/reasoning/delta",
+                "item/reasoning/summaryTextDelta",
+                "item/reasoning/summaryPartAdded",
+                "item/plan/delta",
+            }
+        ):
+            raise RuntimeError("unknown output-bearing app-server notification fails closed")
         event = _normalize_app_server_notification(method, params)
+        if (
+            self._hwe_sft_mode
+            and isinstance(event, dict)
+            and isinstance(event.get("item"), dict)
+            and event["item"].get("type")
+            in {
+                "agent_message",
+                "command_execution",
+                "file_change",
+                "mcp_tool_call",
+                "web_search",
+                "plan",
+            }
+        ):
+            return
         if event is not None:
             self._append_event(event)
+
+    def raw_public_events(self) -> tuple[tuple[dict[str, Any], ...], bool]:
+        return tuple(self._raw_public_events), self._raw_public_truncated
 
     def _append_event(self, event: dict[str, Any]) -> None:
         encoded_size = (
@@ -1038,6 +1191,50 @@ def _normalize_app_server_notification(
             "turn_id": params.get("turnId"),
             "item": safe_item,
         }
+    if method == "item/fileChange/patchUpdated":
+        changes = params.get("changes")
+        paths: list[str] = []
+        raw_diffs: list[str] = []
+        if not isinstance(changes, list) or not changes:
+            raise RuntimeError("HWE patchUpdated notification omits schema-defined changes")
+        for change in changes:
+            if not isinstance(change, dict):
+                raise RuntimeError("HWE patchUpdated change is malformed")
+            path = change.get("path")
+            diff = change.get("diff")
+            kind = change.get("kind")
+            if (
+                not isinstance(path, str)
+                or not path
+                or not isinstance(diff, str)
+                or not isinstance(kind, dict)
+                or kind.get("type") not in {"add", "delete", "update"}
+            ):
+                raise RuntimeError("HWE patchUpdated change violates the Codex 0.147 schema")
+            paths.append(_hwe_patch_path(path))
+            raw_diffs.append(diff)
+        patch = "".join(value if value.endswith("\n") else f"{value}\n" for value in raw_diffs)
+        return {
+            "type": "file_change.patch_updated",
+            "thread_id": params.get("threadId"),
+            "turn_id": params.get("turnId"),
+            "item_id": params.get("itemId"),
+            "paths": paths,
+            "patch": patch,
+        }
+    if method in {
+        "item/commandExecution/outputDelta",
+        "item/commandExecution/terminalInteraction",
+        "item/fileChange/outputDelta",
+        "item/agentMessage/delta",
+        "item/reasoning/delta",
+        "item/reasoning/summaryTextDelta",
+        "item/reasoning/summaryPartAdded",
+        "item/plan/delta",
+    }:
+        # Incremental/private/UI material never becomes a training message. Completed command and
+        # patch items retain the public action/observation evidence.
+        return None
     if method == "thread/tokenUsage/updated":
         usage = params.get("tokenUsage")
         usage = usage.get("last") if isinstance(usage, dict) else None
@@ -1054,6 +1251,49 @@ def _normalize_app_server_notification(
     if method == "error":
         return {"type": "error", "message": params.get("message")}
     return None
+
+
+def _is_hwe_public_provider_event(method: str, params: dict[str, Any]) -> bool:
+    if method.startswith("item/reasoning/") or method.startswith("item/plan/"):
+        return False
+    if method in {"item/started", "item/completed"}:
+        item = params.get("item")
+        if isinstance(item, dict) and item.get("type") in {
+            "userMessage",
+            "reasoning",
+            "reasoningSummary",
+            "plan",
+        }:
+            return False
+    return method.startswith(("thread/", "turn/", "item/"))
+
+
+def _hwe_patch_path(value: str) -> str:
+    if value.startswith("/workspace/repository/"):
+        return value.removeprefix("/workspace/repository/")
+    if value.startswith("/workspace/"):
+        return value.removeprefix("/workspace/")
+    return value
+
+
+def _hwe_request_profile_id(request: ExternalProcessRequest) -> str:
+    spec = request.invocation_spec
+    if spec is None:
+        raise ValueError("HWE native-shell request lacks its invocation identity")
+    mapping = {
+        "codex_cli_hwe_native_shell_context_v2": HWE_COLLECTION_PROFILE_ID,
+        "codex_cli_hwe_native_shell_context_v3": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v4": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v5": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v6": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v7": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v8": HWE_COLLECTION_PROFILE_V2_ID,
+        "codex_cli_hwe_native_shell_context_v9": HWE_COLLECTION_PROFILE_V2_ID,
+    }
+    try:
+        return mapping[spec.prompt_contract_id]
+    except KeyError as exc:
+        raise ValueError("HWE native-shell request uses an unknown prompt contract") from exc
 
 
 def _snake_value(value: Any) -> Any:
@@ -1164,7 +1404,7 @@ def external_agent_runtime_config(
         max_command_time_s=config.max_process_time_s,
         max_artifact_file_bytes=16 * 1024 * 1024,
         max_artifact_bytes=64 * 1024 * 1024,
-        environment_allowlist=[],
+        environment_allowlist=["CODEX_HOME"],
     )
 
 
@@ -1215,14 +1455,14 @@ def _safe_rpc_error(value: Any) -> str:
     return str(value)[:1024]
 
 
-def _is_logical_workspace_uri(value: str | None) -> bool:
+def _is_logical_workspace_uri(value: str | None, expected_path: str = "/workspace") -> bool:
     if value is None:
         return False
     parsed = urlsplit(value)
     return (
         parsed.scheme == "file"
         and parsed.netloc == ""
-        and unquote(parsed.path) == "/workspace"
+        and unquote(parsed.path) == expected_path
         and not parsed.query
         and not parsed.fragment
     )

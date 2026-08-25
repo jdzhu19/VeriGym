@@ -97,7 +97,10 @@
       "title": "Invocation Spec Hash"
     },
     "logical_workspace_root": {
-      "const": "/workspace",
+      "enum": [
+        "/workspace",
+        "/workspace/repository"
+      ],
       "title": "Logical Workspace Root",
       "type": "string"
     },

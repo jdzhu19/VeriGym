@@ -14,10 +14,15 @@ from typing import Any
 
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
-from verigym.protocols.repository_action import repository_tool_definitions
+from verigym.protocols.repository_action import (
+    legacy_repository_tool_contract_hash,
+    repository_tool_definitions,
+)
 from verigym.schemas.multiturn_sft import (
     VerifiedMultiTurnSftDatasetManifest,
+    VerifiedMultiTurnSftDatasetManifestV2,
     VerifiedMultiTurnSftExample,
+    VerifiedMultiTurnSftExampleV2,
 )
 
 RLLM_COMMIT = "1d1109a655e291b3001d8526d7c9ecc5b9328226"
@@ -26,6 +31,7 @@ VLLM_VERSION = "0.22.1"
 EXPECTED_RECORDS = 8
 EXPECTED_STEPS = 6
 MAX_LENGTH = 16_384
+MAX_LENGTH_V2 = 32_768
 SEED = 484
 OPT_IN_ENV = "VERIGYM_RUN_QWEN35_MULTITURN_SFT"
 _MAX_DATASET_BYTES = 256 * 1024 * 1024
@@ -37,6 +43,16 @@ class FrozenSftInputs:
 
     dataset_root: Path
     manifest: VerifiedMultiTurnSftDatasetManifest
+    rows: list[dict[str, Any]]
+    train_jsonl_sha256: str
+
+
+@dataclass(frozen=True)
+class FrozenSftInputsV2:
+    """Validated bounded v2 inputs for the 32K trainer path."""
+
+    dataset_root: Path
+    manifest: VerifiedMultiTurnSftDatasetManifestV2
     rows: list[dict[str, Any]]
     train_jsonl_sha256: str
 
@@ -73,14 +89,56 @@ def load_frozen_multiturn_dataset(path: Path) -> FrozenSftInputs:
     if any(example.tool_contract_hash != manifest.tool_contract_hash for example in examples):
         raise ConfigurationError("dataset contains mixed tool-contract identities")
     current_tool_hash = content_hash(repository_tool_definitions(dialect="openai"))
-    if manifest.tool_contract_hash != current_tool_hash:
+    if manifest.tool_contract_hash not in {
+        current_tool_hash,
+        legacy_repository_tool_contract_hash(),
+    }:
         raise ConfigurationError("dataset uses a stale repository tool contract")
     rows = [{"messages": example.model_dump(mode="json")["messages"]} for example in examples]
     return FrozenSftInputs(root, manifest, rows, train_hash)
 
 
+def load_frozen_multiturn_dataset_v2(path: Path) -> FrozenSftInputsV2:
+    """Load exactly eight bounded v2 examples without truncation or raw artifacts."""
+
+    root = _safe_directory(path, "dataset")
+    manifest_path = root / "dataset-manifest.json"
+    train_path = root / "train.jsonl"
+    manifest = VerifiedMultiTurnSftDatasetManifestV2.model_validate(
+        json.loads(_read_regular_file(manifest_path))
+    )
+    if manifest.record_count != EXPECTED_RECORDS:
+        raise ConfigurationError(
+            f"multi-turn SFT v2 requires exactly {EXPECTED_RECORDS} records; "
+            f"found {manifest.record_count}"
+        )
+    train_payload = _read_regular_file(train_path)
+    train_hash = hash_bytes(train_payload)
+    if train_hash != manifest.records_sha256:
+        raise ConfigurationError("v2 train.jsonl differs from the sealed dataset manifest")
+    raw_lines = train_payload.decode("utf-8").splitlines()
+    if len(raw_lines) != EXPECTED_RECORDS or any(not line for line in raw_lines):
+        raise ConfigurationError("v2 train.jsonl must contain exactly eight non-empty records")
+    examples = [VerifiedMultiTurnSftExampleV2.model_validate_json(line) for line in raw_lines]
+    if [example.task_id for example in examples] != manifest.task_ids:
+        raise ConfigurationError("v2 dataset task ordering differs from its manifest")
+    if [example.example_hash for example in examples] != manifest.example_hashes:
+        raise ConfigurationError("v2 dataset example identities differ from its manifest")
+    if any(example.tokenizer_hash != manifest.tokenizer_hash for example in examples):
+        raise ConfigurationError("v2 dataset contains mixed tokenizer identities")
+    if any(example.tool_contract_hash != manifest.tool_contract_hash for example in examples):
+        raise ConfigurationError("v2 dataset contains mixed tool-contract identities")
+    current_tool_hash = content_hash(repository_tool_definitions(dialect="openai"))
+    if manifest.tool_contract_hash != current_tool_hash:
+        raise ConfigurationError("v2 dataset uses a stale repository tool contract")
+    if manifest.raw_observations_exported is not False:
+        raise ConfigurationError("v2 dataset must not export raw observations")
+    rows = [{"messages": example.model_dump(mode="json")["messages"]} for example in examples]
+    return FrozenSftInputsV2(root, manifest, rows, train_hash)
+
+
 def sft_spec_kwargs(
-    inputs: FrozenSftInputs,
+    inputs: FrozenSftInputs | FrozenSftInputsV2,
     *,
     model_root: Path,
     output: Path,
@@ -143,6 +201,21 @@ def sft_spec_kwargs(
     }
 
 
+def sft_spec_kwargs_v2(
+    inputs: FrozenSftInputsV2,
+    *,
+    model_root: Path,
+    output: Path,
+) -> dict[str, Any]:
+    """Return the same LoRA/FSDP2 recipe with the bounded 32K sequence length."""
+
+    kwargs = sft_spec_kwargs(inputs, model_root=model_root, output=output)
+    kwargs["max_length"] = MAX_LENGTH_V2
+    overrides = kwargs["overrides"]
+    overrides["data"]["max_length"] = MAX_LENGTH_V2
+    return kwargs
+
+
 def validate_runtime_pins(rllm_source: Path) -> dict[str, str]:
     """Require the frozen trainer and separately bound model-service versions."""
 
@@ -196,6 +269,16 @@ def _rllm_commit(source: Path) -> str:
 def assert_resolved_verl_config(config: Any, *, output: Path) -> None:
     """Verify the effective config rather than trusting requested overrides."""
 
+    _assert_resolved_verl_config(config, output=output, max_length=MAX_LENGTH)
+
+
+def assert_resolved_verl_config_v2(config: Any, *, output: Path) -> None:
+    """Verify the effective bounded 32K veRL configuration."""
+
+    _assert_resolved_verl_config(config, output=output, max_length=MAX_LENGTH_V2)
+
+
+def _assert_resolved_verl_config(config: Any, *, output: Path, max_length: int) -> None:
     expected = {
         "model.lora_rank": 8,
         "model.lora_alpha": 16,
@@ -208,7 +291,7 @@ def assert_resolved_verl_config(config: Any, *, output: Path) -> None:
         "engine.seed": SEED,
         "data.train_batch_size": 4,
         "data.micro_batch_size_per_gpu": 1,
-        "data.max_length": MAX_LENGTH,
+        "data.max_length": max_length,
         "data.truncation": "error",
         "data.use_dynamic_bsz": False,
         "data.rllm.tokenize_and_mask_method": "hf_template",
@@ -288,6 +371,83 @@ def run_frozen_multiturn_sft(
         "truncation": "error",
         "tokenize_method": "hf_template",
         "tool_argument_template_adapter": "openai_json_string_to_mapping_v1",
+        "dataset_manifest_hash": inputs.manifest.manifest_hash,
+        "dataset_records_sha256": inputs.train_jsonl_sha256,
+        "tokenizer_hash": inputs.manifest.tokenizer_hash,
+        "tool_contract_hash": inputs.manifest.tool_contract_hash,
+        "rllm_commit": versions["rllm_commit"],
+        "verl_version": versions["verl"],
+        "vllm_version": versions["vllm"],
+        "resolved_config_sha256": resolved_config_hash,
+        "checkpoint": checkpoint.relative_to(destination).as_posix(),
+        "adapter": adapter.relative_to(destination).as_posix(),
+        "artifact_hash": artifact_hash,
+        "artifacts": inventory,
+        "reload_smoke": "pending",
+    }
+    report["report_hash"] = content_hash(report)
+    _atomic_json(destination / "training-report.json", report)
+    return report
+
+
+def run_frozen_multiturn_sft_v2(
+    *,
+    dataset: Path,
+    model_root: Path,
+    output: Path,
+    rllm_source: Path,
+) -> dict[str, Any]:
+    """Run the opt-in bounded 32K AgentSFTTrainer job and seal its report."""
+
+    if os.environ.get(OPT_IN_ENV) != "1":
+        raise ConfigurationError(f"{OPT_IN_ENV}=1 is required")
+    inputs = load_frozen_multiturn_dataset_v2(dataset)
+    versions = validate_runtime_pins(rllm_source)
+    kwargs = sft_spec_kwargs_v2(inputs, model_root=model_root, output=output)
+    rows = kwargs.pop("_rows")
+
+    from rllm.data import Dataset
+    from rllm.trainer.agent_sft_trainer import (
+        AgentSFTTrainer,
+    )
+    from rllm.trainer.sft import SFTSpec
+
+    spec = SFTSpec(
+        train_dataset=Dataset(data=rows, name="verigym-cva6-multiturn-sft-v2", split="train"),
+        **kwargs,
+    )
+    trainer = AgentSFTTrainer(spec, backend="verl")
+    backend = trainer.prepare()
+    destination = Path(spec.output_dir or "")
+    assert_resolved_verl_config_v2(backend.config, output=destination)
+    resolved_config_path = Path(backend.serialize_config())
+    resolved_config_hash = hash_bytes(resolved_config_path.read_bytes())
+    trainer.train()
+
+    checkpoint = destination / f"global_step_{EXPECTED_STEPS}"
+    adapter = _export_adapter_checkpoint(checkpoint, destination=destination)
+    _validate_adapter_checkpoint(adapter)
+    artifact_hash, inventory = _artifact_inventory(destination)
+    report = {
+        "format_id": "verigym_qwen35_multiturn_sft_report_v2",
+        "status": "completed",
+        "optimizer_steps": EXPECTED_STEPS,
+        "epochs": 3,
+        "global_batch_size": 4,
+        "micro_batch_size_per_gpu": 1,
+        "gradient_accumulation_steps": 1,
+        "world_size": 4,
+        "precision": "bf16",
+        "strategy": "fsdp2",
+        "gradient_checkpointing": True,
+        "lora": {"rank": 8, "alpha": 16, "dropout": 0.05},
+        "learning_rate": 1e-4,
+        "seed": SEED,
+        "max_length": MAX_LENGTH_V2,
+        "truncation": "error",
+        "tokenize_method": "hf_template",
+        "tool_argument_template_adapter": "openai_json_string_to_mapping_v1",
+        "observation_policy_id": "repository_observation_v1",
         "dataset_manifest_hash": inputs.manifest.manifest_hash,
         "dataset_records_sha256": inputs.train_jsonl_sha256,
         "tokenizer_hash": inputs.manifest.tokenizer_hash,
@@ -474,15 +634,21 @@ __all__ = [
     "EXPECTED_RECORDS",
     "EXPECTED_STEPS",
     "FrozenSftInputs",
+    "FrozenSftInputsV2",
     "MAX_LENGTH",
+    "MAX_LENGTH_V2",
     "OPT_IN_ENV",
     "RLLM_COMMIT",
     "SEED",
     "VERL_VERSION",
     "VLLM_VERSION",
     "assert_resolved_verl_config",
+    "assert_resolved_verl_config_v2",
     "load_frozen_multiturn_dataset",
+    "load_frozen_multiturn_dataset_v2",
     "run_frozen_multiturn_sft",
+    "run_frozen_multiturn_sft_v2",
     "sft_spec_kwargs",
+    "sft_spec_kwargs_v2",
     "validate_runtime_pins",
 ]

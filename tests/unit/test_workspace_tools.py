@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from verigym.core.errors import PathPolicyError
+from verigym.core.repository_observation import BOUNDED_REPOSITORY_OBSERVATION_POLICY
 from verigym.core.workspace import WorkspacePolicy, copy_tree_safely
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.common import ErrorCategory
@@ -72,6 +73,21 @@ def test_hidden_path_is_denied_without_disclosing_contents(local_session, policy
     assert not result.success
     assert result.category == ErrorCategory.PERMISSION_DENIED
     assert "secret" not in result.stdout + result.stderr + result.message
+
+
+def test_bounded_read_range_error_stays_an_invalid_request(local_session, policy) -> None:
+    result = FileReadTool().execute(
+        {"path": "rtl/counter.v", "start_line": 2},
+        ToolContext(
+            session=local_session,
+            workspace_policy=policy,
+            observation_policy=BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+        ),
+    )
+
+    assert not result.success
+    assert result.category == ErrorCategory.INVALID_REQUEST
+    assert "start_line is outside the file" in result.message
 
 
 def test_apply_patch_enforces_context_and_edit_glob(local_session, policy) -> None:

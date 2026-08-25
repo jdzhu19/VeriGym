@@ -1,0 +1,196 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-training-ready-action-conditioned-sft-dataset.schema.json",
+  "additionalProperties": false,
+  "description": "Manifest for the 419-record NAP-gated Complexity-Trap arm.",
+  "properties": {
+    "canonical_action_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 419,
+      "minItems": 419,
+      "title": "Canonical Action Hashes",
+      "type": "array"
+    },
+    "counterfactual_next_action_validation": {
+      "const": "passed",
+      "title": "Counterfactual Next Action Validation",
+      "type": "string"
+    },
+    "dataset_hash": {
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "experimental_action_conditioned": {
+      "const": true,
+      "title": "Experimental Action Conditioned",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_training_ready_action_conditioned_sft_dataset_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "history_policy_hash": {
+      "title": "History Policy Hash",
+      "type": "string"
+    },
+    "history_policy_id": {
+      "enum": [
+        "hwe_action_preserving_observation_masking_v1",
+        "hwe_action_preserving_observation_masking_v1/lossless_under_32k",
+        "mixed"
+      ],
+      "title": "History Policy Id",
+      "type": "string"
+    },
+    "hpc_jobs_submitted": {
+      "const": false,
+      "title": "Hpc Jobs Submitted",
+      "type": "boolean"
+    },
+    "max_length": {
+      "const": 32768,
+      "title": "Max Length",
+      "type": "integer"
+    },
+    "nap_validation": {
+      "additionalProperties": true,
+      "title": "Nap Validation",
+      "type": "object"
+    },
+    "old_dataset_hash": {
+      "title": "Old Dataset Hash",
+      "type": "string"
+    },
+    "old_record_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 419,
+      "minItems": 419,
+      "title": "Old Record Hashes",
+      "type": "array"
+    },
+    "only_infrastructure_valid": {
+      "const": true,
+      "title": "Only Infrastructure Valid",
+      "type": "boolean"
+    },
+    "only_verifier_resolved": {
+      "const": true,
+      "title": "Only Verifier Resolved",
+      "type": "boolean"
+    },
+    "primary_eligible": {
+      "const": false,
+      "title": "Primary Eligible",
+      "type": "boolean"
+    },
+    "private_reasoning_exported": {
+      "const": false,
+      "title": "Private Reasoning Exported",
+      "type": "boolean"
+    },
+    "raw_observations_exported": {
+      "const": false,
+      "title": "Raw Observations Exported",
+      "type": "boolean"
+    },
+    "record_count": {
+      "minimum": 1,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "record_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Record Hashes",
+      "type": "array"
+    },
+    "reference_solutions_exported": {
+      "const": false,
+      "title": "Reference Solutions Exported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_transcript_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Transcript Hashes",
+      "type": "array"
+    },
+    "task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Task Ids",
+      "type": "array"
+    },
+    "training_ready": {
+      "const": true,
+      "title": "Training Ready",
+      "type": "boolean"
+    },
+    "training_semantics": {
+      "const": "next_action_conditioned_on_exact_masked_history",
+      "title": "Training Semantics",
+      "type": "string"
+    },
+    "trajectory_count": {
+      "minimum": 1,
+      "title": "Trajectory Count",
+      "type": "integer"
+    },
+    "truncation": {
+      "const": "error",
+      "title": "Truncation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "record_count",
+    "trajectory_count",
+    "task_ids",
+    "source_transcript_hashes",
+    "record_hashes",
+    "history_policy_id",
+    "history_policy_hash",
+    "max_length",
+    "truncation",
+    "training_semantics",
+    "primary_eligible",
+    "experimental_action_conditioned",
+    "counterfactual_next_action_validation",
+    "only_verifier_resolved",
+    "only_infrastructure_valid",
+    "raw_observations_exported",
+    "private_reasoning_exported",
+    "hidden_assets_exported",
+    "reference_solutions_exported",
+    "hpc_jobs_submitted",
+    "dataset_hash",
+    "canonical_action_hashes",
+    "old_dataset_hash",
+    "old_record_hashes",
+    "nap_validation",
+    "training_ready"
+  ],
+  "title": "HweTrainingReadyActionConditionedManifest",
+  "type": "object"
+}

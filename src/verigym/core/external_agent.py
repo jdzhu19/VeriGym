@@ -11,6 +11,11 @@ from typing import Any, cast
 from verigym.core.artifact_policy import bound_value
 from verigym.core.errors import PathPolicyError
 from verigym.core.redaction import redact_mapping
+from verigym.core.repository_observation import (
+    RawObservationCallback,
+    RepositoryObservationPolicy,
+    audit_record,
+)
 from verigym.core.trace import TraceWriter
 from verigym.core.workspace import WorkspacePolicy
 from verigym.runtimes.base import RuntimeSession
@@ -25,11 +30,15 @@ from verigym.schemas.options import JsonValue
 from verigym.schemas.tool import CommandSpec, CompletedCommand, ToolResult
 from verigym.tools.base import ToolContext
 from verigym.tools.file_tools import builtin_file_tools
+from verigym.tools.repository import RepositoryPublicTestRequest, RepositoryPublicTestTool
 
-_EVENT_TYPE = re.compile(r"^(?:(?:codex|claude)_cli|openhands_sdk)_[a-z0-9_]{1,80}$")
+_EVENT_TYPE = re.compile(
+    r"^(?:(?:codex|claude)_cli|openhands_sdk|deepseek_harness)_[a-z0-9_]{1,80}$"
+)
 _MAX_EVENT_BYTES = 256 * 1024
 _MAX_TOOL_OUTPUT_BYTES = 256 * 1024
 _WORKSPACE_TOOLS = {tool.descriptor.name: tool for tool in builtin_file_tools()}
+_PUBLIC_TEST_TOOL = RepositoryPublicTestTool()
 _FORBIDDEN_CANDIDATE_NAMES = {
     ".env",
     "auth.json",
@@ -49,12 +58,16 @@ class RuntimeExternalAgentBridge:
         isolation_level: str,
         policy: WorkspacePolicy,
         trace: TraceWriter,
+        observation_policy: RepositoryObservationPolicy | None = None,
+        audit_callback: RawObservationCallback | None = None,
     ) -> None:
         self._session = session
         self._artifact_root = artifact_root
         self._isolation_level = isolation_level
         self._policy = policy
         self._trace = trace
+        self._observation_policy = observation_policy
+        self._audit_callback = audit_callback
         self._accounting: ExternalAgentAccounting | None = None
         self._observations: list[ExternalAgentCallIdentity] = []
         artifact_root.mkdir(parents=True, exist_ok=False)
@@ -70,6 +83,10 @@ class RuntimeExternalAgentBridge:
     @property
     def isolation_level(self) -> str:
         return self._isolation_level
+
+    @property
+    def observation_policy(self) -> RepositoryObservationPolicy | None:
+        return self._observation_policy
 
     @property
     def editable_globs(self) -> tuple[str, ...]:
@@ -92,7 +109,15 @@ class RuntimeExternalAgentBridge:
         return [item.model_copy(deep=True) for item in self._session.external_read_only_mounts]
 
     def execute_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
-        return self._session.execute_external_process(request)
+        private_audit_root = (
+            self._artifact_root.parent.parent
+            if request.integration_track == "codex_cli_hwe_native_shell"
+            else None
+        )
+        return self._session.execute_external_process(
+            request,
+            private_audit_root=private_audit_root,
+        )
 
     def invoke_workspace_tool(self, tool_name: str, request: dict[str, JsonValue]) -> ToolResult:
         """Invoke one core-owned file tool against the visible workspace."""
@@ -107,6 +132,8 @@ class RuntimeExternalAgentBridge:
                 workspace_policy=self._policy,
                 max_output_bytes=_MAX_TOOL_OUTPUT_BYTES,
                 artifact_dir=self._artifact_root,
+                observation_policy=self._observation_policy,
+                audit_callback=self._audit_callback,
             ),
         )
         return result.model_copy(deep=True)
@@ -132,8 +159,43 @@ class RuntimeExternalAgentBridge:
         self.validate_workspace()
         return completed.model_copy(deep=True)
 
+    def execute_external_agent_command(self, command: CommandSpec) -> CompletedCommand:
+        """Run one HWE shell command in the credential-free external-agent image."""
+
+        if (
+            command.requires_shell
+            or len(command.argv) != 3
+            or command.argv[:2] != ["/bin/bash", "-lc"]
+        ):
+            raise PathPolicyError("HWE external-agent commands require exact /bin/bash -lc argv")
+        if command.env:
+            raise PathPolicyError("external-agent commands cannot inject environment variables")
+        if command.stdin is not None or command.artifact_globs:
+            raise PathPolicyError("external-agent commands cannot use stdin or collect artifacts")
+        if len(command.argv[2].encode("utf-8")) > 64 * 1024:
+            raise PathPolicyError("external-agent shell command exceeds 64 KiB")
+        if command.timeout_s > 900:
+            raise PathPolicyError("external-agent HWE command timeout exceeds 900 seconds")
+        completed = self._session.execute_external_agent_command(command)
+        self.validate_workspace()
+        return completed.model_copy(deep=True)
+
     def execute_public_test(self, test_id: str) -> CompletedCommand:
         completed = self._session.execute_public_test(test_id)
+        if self._audit_callback is not None:
+            request = RepositoryPublicTestRequest(test_id=test_id)
+            result = _PUBLIC_TEST_TOOL.parse_result(
+                request,
+                completed,
+                ToolContext(
+                    session=self._session,
+                    max_output_bytes=_MAX_TOOL_OUTPUT_BYTES,
+                    observation_policy=self._observation_policy,
+                ),
+            )
+            self._audit_callback(
+                audit_record(result, request={"test_id": test_id}, policy=self._observation_policy)
+            )
         self.validate_workspace()
         return completed.model_copy(deep=True)
 
@@ -156,7 +218,11 @@ class RuntimeExternalAgentBridge:
             raise ValueError("external-agent event types must use a registered *_cli_* namespace")
         clean = self._sanitize_payload(redact_mapping(payload))
         identity: ExternalAgentCallIdentity | None = None
-        if event_type in {"codex_cli_identity_observed", "claude_cli_identity_observed"}:
+        if event_type in {
+            "codex_cli_identity_observed",
+            "claude_cli_identity_observed",
+            "deepseek_harness_identity_observed",
+        }:
             identity = ExternalAgentCallIdentity.model_validate(dict(clean))
         bounded, truncated = bound_value(clean, _MAX_EVENT_BYTES)
         if not isinstance(bounded, dict):

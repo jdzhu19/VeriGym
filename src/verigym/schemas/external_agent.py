@@ -49,19 +49,19 @@ class ExternalProcessInvocationSpec(StrictModel):
     protocol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,128}$")
     runtime_role: Literal["agent"] = "agent"
     argv: list[str] = Field(min_length=1, max_length=64)
-    logical_cwd: Literal["/workspace"] = "/workspace"
+    logical_cwd: Literal["/workspace", "/workspace/repository"] = "/workspace"
     stdin_transport: Literal["runtime_protocol_adapter"] = "runtime_protocol_adapter"
     network_policy: Literal["none"] = "none"
     mount_policy: Literal[
         "task_workspace_only",
         "task_workspace_and_public_tests",
     ] = "task_workspace_only"
-    writable_destinations: list[Literal["/workspace", "/tmp"]]
+    writable_destinations: list[Literal["/workspace", "/workspace/repository", "/tmp"]]
     read_only_mounts: list[ExternalReadOnlyMountIdentity] = Field(default_factory=list)
     container_environment_names: list[str] = Field(default_factory=list)
     integration_track: str = Field(min_length=1, max_length=128)
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"]
-    logical_workspace_root: Literal["/workspace"] = "/workspace"
+    logical_workspace_root: Literal["/workspace", "/workspace/repository"] = "/workspace"
     requested_model_id: str = Field(min_length=1, max_length=256)
     requested_reasoning_effort: str = Field(min_length=1, max_length=32)
     executable_path_identity: Literal["verified_host_codex_cli"] = "verified_host_codex_cli"
@@ -74,8 +74,8 @@ class ExternalProcessInvocationSpec(StrictModel):
     auth_semantic_id: str = Field(min_length=1, max_length=128)
     allow_proxy_environment: bool
     forwarded_proxy_environment_names: list[str] = Field(default_factory=list)
-    timeout_s: float = Field(gt=0.0, le=1800.0)
-    max_output_bytes: int = Field(ge=1024, le=16 * 1024 * 1024)
+    timeout_s: float = Field(gt=0.0, le=3600.0)
+    max_output_bytes: int = Field(ge=1024, le=32 * 1024 * 1024)
     editable_globs: list[str] = Field(default_factory=list)
     readonly_globs: list[str] = Field(default_factory=list)
     prompt_policy: PromptPolicyDescriptor | None = None
@@ -137,13 +137,22 @@ class ExternalProcessInvocationSpec(StrictModel):
 
     @model_validator(mode="after")
     def validate_spec_contract(self) -> ExternalProcessInvocationSpec:
+        expected_workspace = (
+            "/workspace/repository"
+            if self.integration_track == "codex_cli_hwe_native_shell"
+            else "/workspace"
+        )
+        if self.logical_workspace_root != expected_workspace:
+            raise ValueError("external invocation workspace differs from its integration track")
         if self.forwarded_proxy_environment_names and not self.allow_proxy_environment:
             raise ValueError("proxy names require allow_proxy_environment=true")
         if self.container_environment_names:
             raise ValueError(
                 "external agent-container environment is owned entirely by the runtime"
             )
-        if self.writable_destinations != ["/workspace", "/tmp"]:
+        if self.logical_cwd != self.logical_workspace_root:
+            raise ValueError("external invocation cwd differs from its workspace root")
+        if self.writable_destinations != [self.logical_workspace_root, "/tmp"]:
             raise ValueError("Docker external processes have exactly two writable destinations")
         expected_mount_policy = (
             "task_workspace_and_public_tests" if self.read_only_mounts else "task_workspace_only"
@@ -239,7 +248,7 @@ class ExternalProcessRequest(StrictModel):
     protocol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,128}$")
     runtime_role: Literal["agent"] = "agent"
     argv: list[str] = Field(min_length=1, max_length=64)
-    logical_cwd: Literal["/workspace"] = "/workspace"
+    logical_cwd: Literal["/workspace", "/workspace/repository"] = "/workspace"
     stdin_text: str = Field(min_length=1, max_length=2 * 1024 * 1024)
     stdin_transport: Literal["runtime_protocol_adapter"] = "runtime_protocol_adapter"
     network_policy: Literal["none"] = "none"
@@ -247,12 +256,12 @@ class ExternalProcessRequest(StrictModel):
         "task_workspace_only",
         "task_workspace_and_public_tests",
     ] = "task_workspace_only"
-    writable_destinations: list[Literal["/workspace", "/tmp"]]
+    writable_destinations: list[Literal["/workspace", "/workspace/repository", "/tmp"]]
     read_only_mounts: list[ExternalReadOnlyMountIdentity] = Field(default_factory=list)
     container_environment_names: list[str] = Field(default_factory=list)
     integration_track: str = Field(min_length=1, max_length=128)
     workspace_mode: Literal["fresh_empty", "visible_task_workspace"]
-    logical_workspace_root: Literal["/workspace"] = "/workspace"
+    logical_workspace_root: Literal["/workspace", "/workspace/repository"] = "/workspace"
     requested_model_id: str = Field(min_length=1, max_length=256)
     requested_reasoning_effort: str = Field(min_length=1, max_length=32)
     executable_path: Path
@@ -265,8 +274,8 @@ class ExternalProcessRequest(StrictModel):
     auth_semantic_id: str = Field(min_length=1, max_length=128)
     allow_proxy_environment: bool
     forwarded_proxy_environment_names: list[str] = Field(default_factory=list)
-    timeout_s: float = Field(gt=0.0, le=1800.0)
-    max_output_bytes: int = Field(ge=1024, le=16 * 1024 * 1024)
+    timeout_s: float = Field(gt=0.0, le=3600.0)
+    max_output_bytes: int = Field(ge=1024, le=32 * 1024 * 1024)
     editable_globs: list[str] = Field(default_factory=list)
     readonly_globs: list[str] = Field(default_factory=list)
     prompt_policy: PromptPolicyDescriptor | None = None
@@ -334,13 +343,22 @@ class ExternalProcessRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_request_contract(self) -> ExternalProcessRequest:
+        expected_workspace = (
+            "/workspace/repository"
+            if self.integration_track == "codex_cli_hwe_native_shell"
+            else "/workspace"
+        )
+        if self.logical_workspace_root != expected_workspace:
+            raise ValueError("external process workspace differs from its integration track")
         if self.forwarded_proxy_environment_names and not self.allow_proxy_environment:
             raise ValueError("proxy names require allow_proxy_environment=true")
         if self.container_environment_names:
             raise ValueError(
                 "external agent-container environment is owned entirely by the runtime"
             )
-        if self.writable_destinations != ["/workspace", "/tmp"]:
+        if self.logical_cwd != self.logical_workspace_root:
+            raise ValueError("external process cwd differs from its workspace root")
+        if self.writable_destinations != [self.logical_workspace_root, "/tmp"]:
             raise ValueError("Docker external processes have exactly two writable destinations")
         expected_mount_policy = (
             "task_workspace_and_public_tests" if self.read_only_mounts else "task_workspace_only"
@@ -418,7 +436,7 @@ class ExternalProcessRuntimeIdentity(StrictModel):
     prompt_text_sha256: str | None = None
     invocation_spec_hash: str | None = None
     payload_binding_hash: str | None = None
-    logical_workspace_root: Literal["/workspace"]
+    logical_workspace_root: Literal["/workspace", "/workspace/repository"]
     model_process_count: Literal[1] = 1
     exec_server_process_count: Literal[1] = 1
 
@@ -459,8 +477,8 @@ class ExternalProcessSecurityEvidence(StrictModel):
     init: Literal[True]
     private_pid_namespace: Literal[True]
     private_ipc_namespace: Literal[True]
-    mount_destinations: list[Literal["/verigym-public", "/workspace"]]
-    writable_destinations: list[Literal["/workspace", "/tmp"]]
+    mount_destinations: list[Literal["/verigym-public", "/workspace", "/workspace/repository"]]
+    writable_destinations: list[Literal["/workspace", "/workspace/repository", "/tmp"]]
     read_only_destinations: list[Literal["/verigym-public"]] = Field(default_factory=list)
     public_test_assets_mounted_read_only: bool = False
     environment_names: list[str]
@@ -530,15 +548,18 @@ class ExternalProcessSecurityEvidence(StrictModel):
             raise ValueError("disabled trusted host proxy forwarding has inconsistent evidence")
         if self.cap_drop != ["ALL"]:
             raise ValueError("agent container must drop all capabilities")
-        expected_mounts = [*self.read_only_destinations, "/workspace"]
+        if self.writable_destinations not in (
+            ["/workspace", "/tmp"],
+            ["/workspace/repository", "/tmp"],
+        ):
+            raise ValueError("agent container has an undeclared writable destination")
+        expected_mounts = [*self.read_only_destinations, self.writable_destinations[0]]
         if self.mount_destinations != expected_mounts:
             raise ValueError("agent container has an undeclared mount destination")
         if self.read_only_destinations not in ([], ["/verigym-public"]):
             raise ValueError("agent container has an undeclared read-only destination")
         if self.public_test_assets_mounted_read_only != bool(self.read_only_destinations):
             raise ValueError("public-test mount evidence is inconsistent")
-        if self.writable_destinations != ["/workspace", "/tmp"]:
-            raise ValueError("agent container has an undeclared writable destination")
         return self
 
 
@@ -570,6 +591,8 @@ class ExternalProcessResult(StrictModel):
     ) = None
     runtime_identity: ExternalProcessRuntimeIdentity
     security: ExternalProcessSecurityEvidence
+    hwe_protocol_records: list[dict[str, object]] = Field(default_factory=list)
+    hwe_private_audit_manifest: dict[str, object] | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def validate_failure_taxonomy(self) -> ExternalProcessResult:
@@ -603,7 +626,13 @@ class ExternalAgentCallIdentity(StrictModel):
     observed_model_id: str | None
     requested_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=32)
     effective_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=32)
-    reasoning_effort_source: Literal["verigym_explicit_cli_override"] | None = None
+    reasoning_effort_source: (
+        Literal[
+            "verigym_explicit_cli_override",
+            "verigym_explicit_harness_override",
+        ]
+        | None
+    ) = None
     inherited_reasoning_effort_allowed: bool | None = None
     executable_name: str
     executable_sha256: str
@@ -615,12 +644,23 @@ class ExternalAgentCallIdentity(StrictModel):
         Literal[
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
+            "codex_cli_hwe_native_shell",
             "claude_cli_external_agent",
             "openhands_sdk_agent",
+            "deepseek_harness_hwe_native_shell",
+            "deepseek_harness_hwe_native_shell_v3",
         ]
         | None
     ) = None
-    execution_surface: Literal["codex_cli", "claude_cli", "openhands_sdk"] | None = None
+    execution_surface: (
+        Literal[
+            "codex_cli",
+            "claude_cli",
+            "openhands_sdk",
+            "deepseek_harness_sdk",
+        ]
+        | None
+    ) = None
     interaction_class: (
         Literal[
             "cli_agent_single_turn_readonly",
@@ -631,7 +671,15 @@ class ExternalAgentCallIdentity(StrictModel):
     ) = None
     harness_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_client_kind: Literal["cli_agent_mediated", "sdk_agent_mediated"] | None = None
-    agent_harness_kind: Literal["codex_cli", "claude_cli", "openhands_sdk"] | None = None
+    agent_harness_kind: (
+        Literal[
+            "codex_cli",
+            "claude_cli",
+            "openhands_sdk",
+            "deepseek_harness",
+        ]
+        | None
+    ) = None
     tool_availability_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_use_policy: str | None = Field(default=None, min_length=1, max_length=128)
     tool_event_count: int | None = Field(default=None, ge=0)
@@ -754,6 +802,7 @@ class ExternalAgentAccounting(StrictModel):
     schema_version: str = SCHEMA_VERSION
     process_wall_time_s: float = Field(ge=0.0)
     cli_event_count: int = Field(ge=0)
+    model_call_count: int | None = Field(default=None, ge=0)
     external_tool_call_count: int | None = Field(default=None, ge=0)
     external_command_count: int | None = Field(default=None, ge=0)
     public_test_invocation_count: int | None = Field(default=None, ge=0)

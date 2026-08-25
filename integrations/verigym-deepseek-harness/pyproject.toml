@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-deepseek-harness"
+version = "0.2.0"
+description = "DeepSeek Harness HWE-Bench collection bridge for VeriGym."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["verigym>=0.1.0"]
+
+[project.entry-points."verigym.agents"]
+deepseek-harness-hwe-agent = "verigym_deepseek_harness:DeepSeekHarnessHweAgentAdapter"
+deepseek-harness-hwe-agent-v3 = "verigym_deepseek_harness:DeepSeekHarnessHweAgentV3Adapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_deepseek_harness = ["py.typed", "runtime/*.yml", "runtime/*.mjs"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+markers = ["docker: exercises the opt-in pinned Docker Harness controller"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["verigym_deepseek_harness"]

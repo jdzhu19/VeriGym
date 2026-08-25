@@ -343,7 +343,8 @@
               "enum": [
                 "codex_cli",
                 "claude_cli",
-                "openhands_sdk"
+                "openhands_sdk",
+                "deepseek_harness"
               ],
               "type": "string"
             },
@@ -468,7 +469,8 @@
               "enum": [
                 "codex_cli",
                 "claude_cli",
-                "openhands_sdk"
+                "openhands_sdk",
+                "deepseek_harness_sdk"
               ],
               "type": "string"
             },
@@ -537,8 +539,11 @@
               "enum": [
                 "codex_cli_readonly_single_turn_agent",
                 "codex_cli_external_agent",
+                "codex_cli_hwe_native_shell",
                 "claude_cli_external_agent",
-                "openhands_sdk_agent"
+                "openhands_sdk_agent",
+                "deepseek_harness_hwe_native_shell",
+                "deepseek_harness_hwe_native_shell_v3"
               ],
               "type": "string"
             },
@@ -639,7 +644,10 @@
         "reasoning_effort_source": {
           "anyOf": [
             {
-              "const": "verigym_explicit_cli_override",
+              "enum": [
+                "verigym_explicit_cli_override",
+                "verigym_explicit_harness_override"
+              ],
               "type": "string"
             },
             {

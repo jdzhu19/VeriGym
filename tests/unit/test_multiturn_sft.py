@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from verigym.core.hashing import content_hash
 from verigym.evolution.training_transcript import (
     build_teacher_transcript,
+    build_teacher_transcript_v2,
     validate_teacher_transcript,
 )
 from verigym.protocols.repository_action import (
@@ -18,6 +19,7 @@ from verigym.schemas.multiturn_sft import (
     MultiTurnSftMessage,
     VerifiedMultiTurnSftExample,
     seal_multi_turn_example,
+    seal_multi_turn_example_v2,
 )
 
 _HASH = "a" * 64
@@ -147,6 +149,73 @@ def test_teacher_capture_is_training_only_and_tamper_evident() -> None:
             harness_identity={},
             messages=_messages(),
         )
+
+
+def test_bounded_teacher_transcript_v2_records_observation_efficiency() -> None:
+    messages = _messages()
+    bounded_observation = canonical_tool_observation(
+        "finish",
+        {"accepted": True, "terminal": True},
+        is_error=False,
+        observation_policy_id="repository_observation_v1",
+    )
+    messages[3] = MultiTurnSftMessage(
+        role="tool",
+        name="finish",
+        tool_call_id="call_finish_1",
+        content=bounded_observation,
+    )
+    transcript = build_teacher_transcript_v2(
+        campaign_role="training",
+        task_id="suite/task",
+        provider="provider",
+        model_id="model",
+        reasoning_effort="max",
+        client_kind="cli",
+        client_name="client",
+        client_version="1",
+        harness_identity={"kind": "test", "observation_policy_id": "repository_observation_v1"},
+        messages=messages,
+    )
+
+    assert validate_teacher_transcript(transcript) == transcript
+    assert transcript["observation_policy_id"] == "repository_observation_v1"
+    assert transcript["tool_calls"] == 1
+    assert transcript["observation_tokens"] > 0
+    assert transcript["raw_observations_exported"] is False
+
+    tampered = {**transcript, "observation_tokens": transcript["observation_tokens"] + 1}
+    with pytest.raises(ValueError, match="identity changed"):
+        validate_teacher_transcript(tampered)
+
+
+def test_bounded_sft_example_uses_32k_fail_closed_fields() -> None:
+    payload = _example_payload()
+    payload.update(
+        {
+            "format_id": "verigym_verified_multiturn_sft_v2",
+            "observation_policy_id": "repository_observation_v1",
+            "max_length": 32_768,
+            "token_count": 32_768,
+            "total_tokens": 32_768,
+            "assistant_tokens": 10,
+            "observation_tokens": 5,
+            "tool_calls": 1,
+            "file_reads": 0,
+            "max_single_observation_tokens": 5,
+            "observation_to_assistant_ratio": 0.5,
+            "raw_observations_exported": False,
+        }
+    )
+    example = seal_multi_turn_example_v2(payload)
+    assert example.max_length == 32_768
+    assert example.truncation == "error"
+    assert example.observation_policy_id == "repository_observation_v1"
+    assert example.raw_observations_exported is False
+
+    over_limit = {**payload, "token_count": 32_769}
+    with pytest.raises(ValidationError):
+        seal_multi_turn_example_v2(over_limit)
 
 
 def test_multiturn_example_masks_only_non_assistant_roles_and_seals_identity() -> None:

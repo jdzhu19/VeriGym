@@ -1,0 +1,44 @@
+# Hermetic HWE-Bench composition for the pinned DeepSeek Harness SDK runtime.
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: false
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    thinking: disabled
+    reasoningEffort: off
+    maxTokens: 2048
+    streamIdleTimeoutMs: 300000
+    retryPolicy:
+      mode: normal
+      maxRetries: 0
+    models:
+      - id: deepseek-v4-flash
+        contextWindow: 1000000
+        maxTokens: 2048
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    maxParallelToolCalls: 1
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    persona: !!js process.env.DSH_SYSTEM_PROMPT
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+
+- id: verigym-hwe-tools
+  name: './hwe-tools.mjs'
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT
+    compression: none
+    packChunks: false

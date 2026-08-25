@@ -12,13 +12,17 @@ import struct
 import subprocess
 import threading
 from dataclasses import dataclass
-from typing import BinaryIO, cast
+from typing import TYPE_CHECKING, BinaryIO, cast
 
 from verigym.runtimes.docker.errors import DockerContainerError
+
+if TYPE_CHECKING:
+    from verigym.hwe.codex_collector import HweExecProtocolCollector
 
 _WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _MAX_HANDSHAKE_BYTES = 16 * 1024
 _MAX_FRAME_BYTES = 1024 * 1024
+_PROTOCOL_SETTLE_TIMEOUT_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,7 @@ class BrokerResult:
     stderr_truncated: bool
     process_group_cleaned: bool
     stopped: bool
+    protocol_records: tuple[dict[str, object], ...] = ()
 
 
 class LoopbackWebSocketStdioBroker:
@@ -37,11 +42,13 @@ class LoopbackWebSocketStdioBroker:
         process: subprocess.Popen[bytes],
         *,
         max_output_bytes: int,
+        protocol_collector: HweExecProtocolCollector | None = None,
     ) -> None:
         if process.stdin is None or process.stdout is None or process.stderr is None:
             raise ValueError("stdio broker requires a process with all three pipes")
         self._process = process
         self._max_output_bytes = max_output_bytes
+        self._protocol_collector = protocol_collector
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("127.0.0.1", 0))
@@ -67,12 +74,26 @@ class LoopbackWebSocketStdioBroker:
 
     def assert_healthy(self) -> None:
         if self._error is not None:
+            reason = getattr(self._error, "reason", None)
             raise DockerContainerError(
                 f"external-agent stdio broker failed: {type(self._error).__name__}",
-                subreason="stdio_broker_failed",
+                subreason=(f"hwe_protocol_{reason}" if reason else "stdio_broker_failed"),
             ) from self._error
 
     def stop(self) -> BrokerResult:
+        protocol_records: tuple[dict[str, object], ...] = ()
+        protocol_error: RuntimeError | None = None
+        if self._protocol_collector is not None:
+            try:
+                settled = self._protocol_collector.wait_for_settled(
+                    timeout_s=_PROTOCOL_SETTLE_TIMEOUT_S
+                )
+                protocol_records = tuple(
+                    {field: getattr(record, field) for field in record.__dataclass_fields__}
+                    for record in settled
+                )
+            except RuntimeError as exc:
+                protocol_error = exc
         self._stop.set()
         client = self._client
         if client is not None:
@@ -92,12 +113,32 @@ class LoopbackWebSocketStdioBroker:
         self._terminate_process_group()
         self._thread.join(timeout=5)
         stopped = not self._thread.is_alive()
+        if protocol_error is not None:
+            reason = getattr(protocol_error, "reason", "failed_closed")
+            completed = (
+                self._protocol_collector.completed_records()
+                if self._protocol_collector is not None
+                else ()
+            )
+            raise DockerContainerError(
+                f"external-agent HWE protocol failed: {protocol_error}",
+                subreason=f"hwe_protocol_{reason}",
+                details={
+                    "broker_stopped": stopped,
+                    "process_group_cleaned": self._process_group_absent(),
+                    "protocol_records": tuple(
+                        {field: getattr(record, field) for field in record.__dataclass_fields__}
+                        for record in completed
+                    ),
+                },
+            ) from protocol_error
         self.assert_healthy()
         return BrokerResult(
             stderr=bytes(self._stderr),
             stderr_truncated=self._stderr_truncated,
             process_group_cleaned=self._process_group_absent(),
             stopped=stopped,
+            protocol_records=protocol_records,
         )
 
     def _serve(self) -> None:
@@ -193,6 +234,8 @@ class LoopbackWebSocketStdioBroker:
                     raise RuntimeError("unsupported WebSocket opcode")
                 if not payload.endswith(b"\n"):
                     payload += b"\n"
+                if self._protocol_collector is not None:
+                    payload = self._protocol_collector.client_message(payload)
                 self._process.stdin.write(payload)
                 self._process.stdin.flush()
         except (BrokenPipeError, ConnectionError, OSError):
@@ -206,24 +249,44 @@ class LoopbackWebSocketStdioBroker:
     def _process_to_client(self, client: socket.socket) -> None:
         assert self._process.stdout is not None
         selector = selectors.DefaultSelector()
-        selector.register(self._process.stdout, selectors.EVENT_READ)
+        descriptor = self._process.stdout.fileno()
+        selector.register(descriptor, selectors.EVENT_READ)
         retained = 0
+        buffered = bytearray()
         try:
             while not self._stop.is_set():
                 ready = selector.select(timeout=0.25)
                 if not ready:
-                    if self._process.poll() is not None:
+                    if self._process.poll() is not None and not buffered:
                         return
                     continue
-                line = self._process.stdout.readline(_MAX_FRAME_BYTES + 1)
-                if not line:
+                chunk = os.read(descriptor, 64 * 1024)
+                if not chunk:
+                    if buffered:
+                        raise RuntimeError("exec-server emitted a partial JSON-RPC frame")
                     return
-                if len(line) > _MAX_FRAME_BYTES:
-                    raise RuntimeError("exec-server JSON-RPC frame exceeded its size bound")
-                retained += len(line)
-                if retained > self._max_output_bytes:
-                    raise RuntimeError("exec-server output exceeded its aggregate bound")
-                self._send_frame(client, line.rstrip(b"\r\n"), opcode=0x1)
+                buffered.extend(chunk)
+                while True:
+                    newline = buffered.find(b"\n")
+                    if newline < 0:
+                        if len(buffered) > _MAX_FRAME_BYTES:
+                            raise RuntimeError("exec-server JSON-RPC frame exceeded its size bound")
+                        break
+                    line = bytes(buffered[: newline + 1])
+                    del buffered[: newline + 1]
+                    if len(line) > _MAX_FRAME_BYTES:
+                        raise RuntimeError("exec-server JSON-RPC frame exceeded its size bound")
+                    retained += len(line)
+                    if retained > self._max_output_bytes:
+                        raise RuntimeError("exec-server output exceeded its aggregate bound")
+                    transformed: bytes | tuple[bytes, ...] | None = line
+                    if self._protocol_collector is not None:
+                        transformed = self._protocol_collector.server_message(line)
+                    if transformed is None:
+                        continue
+                    frames = transformed if isinstance(transformed, tuple) else (transformed,)
+                    for frame in frames:
+                        self._send_frame(client, frame.rstrip(b"\r\n"), opcode=0x1)
         finally:
             selector.close()
 

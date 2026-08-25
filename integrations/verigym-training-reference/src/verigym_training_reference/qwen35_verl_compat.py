@@ -8,6 +8,7 @@ from collections.abc import MutableMapping, Sequence
 from typing import Any, cast
 
 _FSDP2_FUSED_FORWARD_PATCH_MARKER = "_verigym_qwen35_fused_head_compatible"
+_QWEN35_EXPLICIT_CAUSAL_PATCH_MARKER = "_verigym_qwen35_explicit_causal_model"
 _QWEN35_CAUSAL_MODEL_TYPES = {
     "qwen3_5",
     "qwen3_5_moe",
@@ -42,10 +43,96 @@ def _remove_qwen35_image_mappings(auto_model: Any) -> bool:
 
 def activate_qwen35_causal_adapter_compatibility() -> bool:
     try:
-        from transformers import AutoModelForImageTextToText  # type: ignore[import-not-found]
+        from transformers import AutoModelForImageTextToText
     except ImportError:
         return False
     return _remove_qwen35_image_mappings(AutoModelForImageTextToText)
+
+
+def _qwen35_shift_labels(
+    *,
+    torch_module: Any,
+    input_ids: Any,
+    labels: Any,
+    shift_labels: Any,
+) -> tuple[Any, bool]:
+    """Resolve labels and report whether Ulysses still needs to slice them.
+
+    veRL computes ``shift_labels`` from the full unsharded sequence and slices it together with
+    the inputs. Re-rolling or re-slicing that value inside the Qwen forward corrupts labels at
+    every sequence-parallel shard boundary.
+    """
+
+    if shift_labels is not None:
+        return shift_labels, False
+    if labels is not None:
+        return torch_module.roll(labels, shifts=-1, dims=-1), True
+    if input_ids is not None:
+        return torch_module.roll(input_ids, shifts=-1, dims=-1), True
+    raise RuntimeError("Qwen3.5 fused forward requires shift_labels, labels, or input_ids")
+
+
+def activate_qwen35_explicit_causal_model_compatibility(
+    verl_model: Any | None = None,
+    causal_model_class: Any | None = None,
+) -> bool:
+    """Make veRL select the official text-only Qwen3.5 causal-LM class explicitly.
+
+    The frozen 9B snapshot uses a composite ``qwen3_5`` config and stores text weights below
+    ``model.language_model``. The official causal class expects a ``qwen3_5_text`` config and
+    ``model`` weights. A narrow ``from_pretrained`` wrapper supplies Transformers' in-memory
+    ``key_mapping`` facility; no model or upstream source file is edited.
+    """
+
+    resolved_verl_model = verl_model
+    if resolved_verl_model is None:
+        try:
+            resolved_verl_model = importlib.import_module("verl.utils.model")
+        except ModuleNotFoundError:
+            return False
+    original_selector = resolved_verl_model.get_hf_auto_model_class
+    if getattr(original_selector, _QWEN35_EXPLICIT_CAUSAL_PATCH_MARKER, False):
+        return True
+
+    resolved_causal_class = causal_model_class
+    if resolved_causal_class is None:
+        try:
+            transformers_qwen = importlib.import_module(
+                "transformers.models.qwen3_5.modeling_qwen3_5"
+            )
+        except ModuleNotFoundError:
+            return False
+        resolved_causal_class = transformers_qwen.Qwen3_5ForCausalLM
+
+    class VeriGymQwen35ForCausalLM(resolved_causal_class):  # type: ignore[misc, valid-type]
+        @classmethod
+        def from_pretrained(
+            cls, pretrained_model_name_or_path: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            if kwargs.get("trust_remote_code") is not False:
+                raise RuntimeError("Qwen3.5 qualification requires trust_remote_code=false")
+            config = kwargs.get("config")
+            if getattr(config, "model_type", None) == "qwen3_5":
+                config = getattr(config, "text_config", None)
+                if config is None or getattr(config, "model_type", None) != "qwen3_5_text":
+                    raise RuntimeError("Qwen3.5 composite config lacks its frozen text config")
+                kwargs["config"] = config
+            supplied_mapping = kwargs.pop("key_mapping", None)
+            if supplied_mapping is not None:
+                raise RuntimeError("Qwen3.5 qualification does not accept another key mapping")
+            kwargs["key_mapping"] = {r"^model\.language_model\.": "model."}
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+    VeriGymQwen35ForCausalLM.__name__ = "VeriGymQwen35ForCausalLM"
+
+    def explicit_selector(hf_config: Any) -> Any:
+        if getattr(hf_config, "model_type", None) == "qwen3_5":
+            return VeriGymQwen35ForCausalLM
+        return original_selector(hf_config)
+
+    setattr(explicit_selector, _QWEN35_EXPLICIT_CAUSAL_PATCH_MARKER, True)
+    resolved_verl_model.get_hf_auto_model_class = explicit_selector  # type: ignore[union-attr]
+    return True
 
 
 def _call_fused_head(
@@ -116,35 +203,41 @@ def activate_fsdp2_fused_head_compatibility(dense_common: Any | None = None) -> 
         cache_position: Any = None,
         logits_to_keep: Any = 0,
         temperature: float = 1.0,
+        shift_labels: Any = None,
         **loss_kwargs: Any,
     ) -> Any:
         if getattr(getattr(model, "config", None), "model_type", None) not in (
             _QWEN35_CAUSAL_MODEL_TYPES
         ):
-            return original_forward(
-                model,
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                labels=labels,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-                cache_position=cache_position,
-                logits_to_keep=logits_to_keep,
-                temperature=temperature,
+            original_kwargs = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "position_ids": position_ids,
+                "past_key_values": past_key_values,
+                "inputs_embeds": inputs_embeds,
+                "labels": labels,
+                "use_cache": use_cache,
+                "output_attentions": output_attentions,
+                "output_hidden_states": output_hidden_states,
+                "return_dict": return_dict,
+                "cache_position": cache_position,
+                "logits_to_keep": logits_to_keep,
+                "temperature": temperature,
                 **loss_kwargs,
-            )
+            }
+            if shift_labels is not None:
+                original_kwargs["shift_labels"] = shift_labels
+            return original_forward(model, **original_kwargs)
 
         fsdp = importlib.import_module("torch.distributed.fsdp")
         torch = importlib.import_module("torch")
         torch_functional = importlib.import_module("verl.utils.experimental.torch_functional")
+        ulysses = importlib.import_module("verl.utils.ulysses")
 
         if not isinstance(model.lm_head, fsdp.FSDPModule):
             raise RuntimeError("Qwen3.5 fused PPO compatibility requires an FSDP2 lm_head")
+        if ulysses.get_ulysses_sequence_parallel_world_size() > 1 and shift_labels is None:
+            raise RuntimeError("Qwen3.5 Ulysses requires globally shifted labels from veRL")
         outputs = resolved_dense_common.forward_base_model(
             model,
             input_ids=input_ids,
@@ -159,12 +252,12 @@ def activate_fsdp2_fused_head_compatibility(dense_common: Any | None = None) -> 
         )
         if not return_dict:
             raise NotImplementedError("Qwen3.5 fused PPO compatibility requires return_dict")
-        if labels is not None:
-            rolled_labels = torch.roll(labels, shifts=-1, dims=-1)
-        elif input_ids is not None:
-            rolled_labels = torch.roll(input_ids, shifts=-1, dims=-1)
-        else:
-            raise RuntimeError("Qwen3.5 fused PPO forward requires labels or input_ids")
+        rolled_labels, _ = _qwen35_shift_labels(
+            torch_module=torch,
+            input_ids=input_ids,
+            labels=labels,
+            shift_labels=shift_labels,
+        )
         log_probs, entropy = _call_fused_head(
             model.lm_head,
             outputs[0],

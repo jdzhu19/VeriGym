@@ -45,28 +45,31 @@
           "type": "string"
         },
         "logical_workspace_root": {
-          "const": "/workspace",
           "default": "/workspace",
+          "enum": [
+            "/workspace",
+            "/workspace/repository"
+          ],
           "title": "Logical Workspace Root",
           "type": "string"
         },
         "max_output_bytes": {
           "default": 8388608,
-          "maximum": 16777216,
+          "maximum": 33554432,
           "minimum": 1024,
           "title": "Max Output Bytes",
           "type": "integer"
         },
         "max_process_time_s": {
           "default": 300,
-          "maximum": 1800,
+          "maximum": 3600,
           "minimum": 1,
           "title": "Max Process Time S",
           "type": "integer"
         },
         "memory_bytes": {
           "default": 536870912,
-          "maximum": 4294967296,
+          "maximum": 17179869184,
           "minimum": 67108864,
           "title": "Memory Bytes",
           "type": "integer"
@@ -79,7 +82,7 @@
         },
         "pids_limit": {
           "default": 128,
-          "maximum": 1024,
+          "maximum": 4096,
           "minimum": 16,
           "title": "Pids Limit",
           "type": "integer"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from verigym.core.repository_observation import RepositoryObservationPolicy
 from verigym.schemas.external_agent import (
     ExternalAgentAccounting,
     ExternalProcessRequest,
@@ -24,6 +25,9 @@ class ExternalAgentBridge(Protocol):
 
     @property
     def isolation_level(self) -> str: ...
+
+    @property
+    def observation_policy(self) -> RepositoryObservationPolicy | None: ...
 
     @property
     def editable_globs(self) -> tuple[str, ...]: ...
@@ -47,6 +51,8 @@ class ExternalAgentBridge(Protocol):
     ) -> ToolResult: ...
 
     def execute_command(self, command: CommandSpec) -> CompletedCommand: ...
+
+    def execute_external_agent_command(self, command: CommandSpec) -> CompletedCommand: ...
 
     def execute_public_test(self, test_id: str) -> CompletedCommand: ...
 

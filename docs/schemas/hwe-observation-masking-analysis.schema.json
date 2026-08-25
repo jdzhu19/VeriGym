@@ -1,0 +1,394 @@
+{
+  "$defs": {
+    "HweMaskingTrajectoryAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "source_primary_eligible": {
+          "title": "Source Primary Eligible",
+          "type": "boolean"
+        },
+        "source_sft_bucket": {
+          "enum": [
+            "primary",
+            "long_context_candidate",
+            "audit"
+          ],
+          "title": "Source Sft Bucket",
+          "type": "string"
+        },
+        "source_sft_tokens": {
+          "minimum": 1,
+          "title": "Source Sft Tokens",
+          "type": "integer"
+        },
+        "source_transcript_hash": {
+          "title": "Source Transcript Hash",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "window_analyses": {
+          "items": {
+            "$ref": "#/$defs/HweMaskingWindowAnalysis"
+          },
+          "minItems": 1,
+          "title": "Window Analyses",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task_id",
+        "source_transcript_hash",
+        "source_sft_tokens",
+        "source_sft_bucket",
+        "source_primary_eligible",
+        "window_analyses"
+      ],
+      "title": "HweMaskingTrajectoryAnalysis",
+      "type": "object"
+    },
+    "HweMaskingWindowAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "action_record_count": {
+          "minimum": 1,
+          "title": "Action Record Count",
+          "type": "integer"
+        },
+        "all_within_32k": {
+          "title": "All Within 32K",
+          "type": "boolean"
+        },
+        "counterfactual_next_action_validation": {
+          "const": "not_run",
+          "title": "Counterfactual Next Action Validation",
+          "type": "string"
+        },
+        "history_policy_hash": {
+          "title": "History Policy Hash",
+          "type": "string"
+        },
+        "max_input_tokens": {
+          "minimum": 1,
+          "title": "Max Input Tokens",
+          "type": "integer"
+        },
+        "max_masked_observations": {
+          "minimum": 0,
+          "title": "Max Masked Observations",
+          "type": "integer"
+        },
+        "max_pinned_observations": {
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Max Pinned Observations",
+          "type": "integer"
+        },
+        "max_retained_observations": {
+          "minimum": 0,
+          "title": "Max Retained Observations",
+          "type": "integer"
+        },
+        "max_source_history_tokens": {
+          "minimum": 1,
+          "title": "Max Source History Tokens",
+          "type": "integer"
+        },
+        "max_total_tokens": {
+          "minimum": 1,
+          "title": "Max Total Tokens",
+          "type": "integer"
+        },
+        "p50_total_tokens": {
+          "minimum": 1,
+          "title": "P50 Total Tokens",
+          "type": "integer"
+        },
+        "p95_total_tokens": {
+          "minimum": 1,
+          "title": "P95 Total Tokens",
+          "type": "integer"
+        },
+        "recent_observations": {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            10,
+            16
+          ],
+          "title": "Recent Observations",
+          "type": "integer"
+        },
+        "structural_action_preservation": {
+          "const": "passed",
+          "title": "Structural Action Preservation",
+          "type": "string"
+        },
+        "total_mask_marker_tokens": {
+          "minimum": 0,
+          "title": "Total Mask Marker Tokens",
+          "type": "integer"
+        },
+        "total_masked_source_observation_tokens": {
+          "minimum": 0,
+          "title": "Total Masked Source Observation Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recent_observations",
+        "history_policy_hash",
+        "action_record_count",
+        "max_source_history_tokens",
+        "max_input_tokens",
+        "max_total_tokens",
+        "p50_total_tokens",
+        "p95_total_tokens",
+        "all_within_32k",
+        "max_masked_observations",
+        "max_retained_observations",
+        "max_pinned_observations",
+        "total_masked_source_observation_tokens",
+        "total_mask_marker_tokens",
+        "structural_action_preservation",
+        "counterfactual_next_action_validation"
+      ],
+      "title": "HweMaskingWindowAnalysis",
+      "type": "object"
+    },
+    "HweMaskingWindowSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "all_trajectories_within_32k": {
+          "title": "All Trajectories Within 32K",
+          "type": "boolean"
+        },
+        "history_policy_hash": {
+          "title": "History Policy Hash",
+          "type": "string"
+        },
+        "max_input_tokens": {
+          "minimum": 1,
+          "title": "Max Input Tokens",
+          "type": "integer"
+        },
+        "max_total_tokens": {
+          "minimum": 1,
+          "title": "Max Total Tokens",
+          "type": "integer"
+        },
+        "recent_observations": {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            10,
+            16
+          ],
+          "title": "Recent Observations",
+          "type": "integer"
+        },
+        "trajectory_count": {
+          "minimum": 1,
+          "title": "Trajectory Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recent_observations",
+        "history_policy_hash",
+        "max_input_tokens",
+        "max_total_tokens",
+        "all_trajectories_within_32k",
+        "trajectory_count"
+      ],
+      "title": "HweMaskingWindowSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/hwe-observation-masking-analysis.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "analysis_hash": {
+      "title": "Analysis Hash",
+      "type": "string"
+    },
+    "analysis_scope": {
+      "const": "sealed_successful_hwe_pilot_transcripts",
+      "title": "Analysis Scope",
+      "type": "string"
+    },
+    "counterfactual_next_action_validation": {
+      "const": "not_run",
+      "title": "Counterfactual Next Action Validation",
+      "type": "string"
+    },
+    "derivation_only": {
+      "const": true,
+      "title": "Derivation Only",
+      "type": "boolean"
+    },
+    "existing_primary_reclassified": {
+      "const": false,
+      "title": "Existing Primary Reclassified",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_observation_masking_analysis_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "hpc_jobs_submitted": {
+      "const": false,
+      "title": "Hpc Jobs Submitted",
+      "type": "boolean"
+    },
+    "live_rollout_masking_applied": {
+      "const": false,
+      "title": "Live Rollout Masking Applied",
+      "type": "boolean"
+    },
+    "pilot_is_benchmark_score": {
+      "const": false,
+      "title": "Pilot Is Benchmark Score",
+      "type": "boolean"
+    },
+    "private_reasoning_exported": {
+      "const": false,
+      "title": "Private Reasoning Exported",
+      "type": "boolean"
+    },
+    "raw_observations_exported": {
+      "const": false,
+      "title": "Raw Observations Exported",
+      "type": "boolean"
+    },
+    "reference_solutions_exported": {
+      "const": false,
+      "title": "Reference Solutions Exported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_window": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            10,
+            16
+          ],
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Selected Window"
+    },
+    "selection_rule": {
+      "const": "largest_tested_window_with_all_target_contexts_at_or_below_32768",
+      "title": "Selection Rule",
+      "type": "string"
+    },
+    "source_transcripts_modified": {
+      "const": false,
+      "title": "Source Transcripts Modified",
+      "type": "boolean"
+    },
+    "structural_action_preservation": {
+      "const": "passed",
+      "title": "Structural Action Preservation",
+      "type": "string"
+    },
+    "summary_by_window": {
+      "items": {
+        "$ref": "#/$defs/HweMaskingWindowSummary"
+      },
+      "minItems": 1,
+      "title": "Summary By Window",
+      "type": "array"
+    },
+    "tested_windows": {
+      "items": {
+        "enum": [
+          1,
+          2,
+          4,
+          8,
+          10,
+          16
+        ],
+        "type": "integer"
+      },
+      "minItems": 1,
+      "title": "Tested Windows",
+      "type": "array"
+    },
+    "tokenizer_hash": {
+      "title": "Tokenizer Hash",
+      "type": "string"
+    },
+    "tokenizer_id": {
+      "const": "tiktoken-0.7.0/o200k_base",
+      "title": "Tokenizer Id",
+      "type": "string"
+    },
+    "trajectories": {
+      "items": {
+        "$ref": "#/$defs/HweMaskingTrajectoryAnalysis"
+      },
+      "minItems": 1,
+      "title": "Trajectories",
+      "type": "array"
+    },
+    "trajectory_count": {
+      "minimum": 1,
+      "title": "Trajectory Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "format_id",
+    "analysis_scope",
+    "trajectory_count",
+    "tested_windows",
+    "selection_rule",
+    "selected_window",
+    "tokenizer_id",
+    "tokenizer_hash",
+    "trajectories",
+    "summary_by_window",
+    "structural_action_preservation",
+    "counterfactual_next_action_validation",
+    "live_rollout_masking_applied",
+    "derivation_only",
+    "source_transcripts_modified",
+    "existing_primary_reclassified",
+    "pilot_is_benchmark_score",
+    "raw_observations_exported",
+    "private_reasoning_exported",
+    "hidden_assets_exported",
+    "reference_solutions_exported",
+    "hpc_jobs_submitted",
+    "analysis_hash"
+  ],
+  "title": "HweObservationMaskingAnalysis",
+  "type": "object"
+}

@@ -12,7 +12,9 @@ from verigym.core.hashing import hash_directory
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.registry.collections import build_registries
 from verigym.runtimes.docker.engine import EngineResult
+from verigym.runtimes.docker.mounts import MountSpec
 from verigym.runtimes.docker.runtime import DockerRuntime
+from verigym.runtimes.docker.session import _external_process_mounts
 from verigym.schemas.common import RuntimeDescriptor, ToolchainProfile
 from verigym.schemas.runtime import (
     DockerExternalAgentRuntimeConfig,
@@ -26,6 +28,24 @@ IMAGE_ID = "sha256:" + "d" * 64
 AGENT_IMAGE_ID = "sha256:" + "e" * 64
 CODEX_SHA256 = "a" * 64
 LAUNCHER_SHA256 = "b" * 64
+
+
+def test_hwe_external_process_mount_maps_only_the_workspace_root(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    public = tmp_path / "public"
+    workspace.mkdir()
+    public.mkdir()
+    mounts = _external_process_mounts(
+        [
+            MountSpec(source=public, destination="/verigym-public", read_only=True),
+            MountSpec(source=workspace, destination="/workspace", read_only=False),
+        ],
+        logical_workspace_root="/workspace/repository",
+    )
+    assert [(item.destination, item.read_only) for item in mounts] == [
+        ("/verigym-public", True),
+        ("/workspace/repository", False),
+    ]
 
 
 class RecordingDockerEngine:
@@ -455,6 +475,58 @@ def test_repository_public_test_uses_separate_read_only_mount_and_agent_image(
     assert engine.list_managed_containers() == []
     assert runtime.descriptor.cleanup is not None
     assert runtime.descriptor.cleanup.complete
+
+
+def test_external_agent_shell_uses_credential_free_networkless_command_image(
+    tmp_path: Path,
+) -> None:
+    engine = RecordingDockerEngine()
+    engine.image_labels = {
+        "org.verigym.runtime.role": "repository-agent",
+        "org.verigym.codex.version": "0.144.6",
+        "org.verigym.codex.binary.sha256": CODEX_SHA256,
+        "org.verigym.public_test_launcher.sha256": LAUNCHER_SHA256,
+    }
+    runtime = _prepared_runtime(
+        engine,
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image="example:repository-agent",
+            expected_image_id=AGENT_IMAGE_ID,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version="codex-cli 0.144.6",
+            expected_executable_sha256=CODEX_SHA256,
+            process_argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
+            protocol="deepseek_harness_hwe_command_image_v1",
+            required_image_labels=engine.image_labels,
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+            max_process_time_s=300,
+            max_output_bytes=1024 * 1024,
+        ),
+    )
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "rtl").mkdir()
+    session = runtime.create_session(SessionSpec(source_dir=str(source), label="agent"))
+    try:
+        result = session.execute_external_agent_command(
+            CommandSpec(argv=["/bin/bash", "-lc", "pwd"], cwd="rtl", timeout_s=5)
+        )
+        assert result.exit_code == 0
+        assert result.metadata["credential_environment_names"] == []
+        assert result.metadata["network_mode"] == "none"
+        arguments = engine.create_arguments[-1]
+        image_index = arguments.index(AGENT_IMAGE_ID)
+        assert arguments[image_index + 1 :] == ["/bin/bash", "-lc", "pwd"]
+        assert _option_value(arguments, "--network") == "none"
+        environment = _all_option_values(arguments[:image_index], "--env")
+        assert not any("KEY" in value or "TOKEN" in value for value in environment)
+        assert _option_value(arguments, "--workdir") == "/workspace/repository/rtl"
+        with pytest.raises(ValueError, match="exact /bin/bash"):
+            session.execute_external_agent_command(CommandSpec(argv=["true"]))
+    finally:
+        session.close()
+        runtime.close()
 
 
 def test_cleanup_failure_preserves_primary_timeout_and_is_reported(tmp_path: Path) -> None:

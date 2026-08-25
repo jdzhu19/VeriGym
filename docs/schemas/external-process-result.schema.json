@@ -98,7 +98,10 @@
           "title": "Invocation Spec Hash"
         },
         "logical_workspace_root": {
-          "const": "/workspace",
+          "enum": [
+            "/workspace",
+            "/workspace/repository"
+          ],
           "title": "Logical Workspace Root",
           "type": "string"
         },
@@ -328,7 +331,8 @@
           "items": {
             "enum": [
               "/verigym-public",
-              "/workspace"
+              "/workspace",
+              "/workspace/repository"
             ],
             "type": "string"
           },
@@ -463,6 +467,7 @@
           "items": {
             "enum": [
               "/workspace",
+              "/workspace/repository",
               "/tmp"
             ],
             "type": "string"
@@ -592,6 +597,14 @@
       ],
       "default": null,
       "title": "Failure Reason"
+    },
+    "hwe_protocol_records": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Hwe Protocol Records",
+      "type": "array"
     },
     "oom_killed": {
       "title": "Oom Killed",

@@ -28,6 +28,8 @@ from verigym_training_reference.multiturn_sft_exporter import (
     bindings_from_cva6_collection,
     export_verified_multiturn_sft,
     hf_template_messages,
+    hf_template_tokens_and_final_assistant_loss_mask,
+    hf_template_tokens_and_loss_mask,
     rllm_hf_template_token_count,
 )
 from verigym_training_reference.multiturn_sft_training import (
@@ -38,7 +40,7 @@ from verigym_training_reference.multiturn_sft_training import (
     sft_spec_kwargs,
     validate_runtime_pins,
 )
-from verigym_training_reference.verl_lora_dropout import wrap_lora_config
+from verigym_training_reference.verl_lora_dropout import wrap_get_peft_model, wrap_lora_config
 
 
 def _example(index: int) -> dict[str, object]:
@@ -214,6 +216,21 @@ def test_verl_lora_compat_injects_frozen_dropout_and_rejects_conflicts() -> None
     assert wrap_lora_config(wrapped) is wrapped
     with pytest.raises(RuntimeError, match="requires lora_dropout"):
         wrapped(r=8, lora_dropout=0.1)
+
+
+def test_verl_lora_compat_keeps_adapter_parameters_in_frozen_bf16_dtype() -> None:
+    observed: list[dict[str, object]] = []
+
+    def factory(*args: object, **kwargs: object) -> dict[str, object]:
+        observed.append(kwargs)
+        return kwargs
+
+    wrapped = wrap_get_peft_model(factory)
+    assert wrapped("model", "config")["autocast_adapter_dtype"] is False
+    assert observed == [{"autocast_adapter_dtype": False}]
+    assert wrap_get_peft_model(wrapped) is wrapped
+    with pytest.raises(RuntimeError, match="autocast_adapter_dtype=False"):
+        wrapped("model", "config", autocast_adapter_dtype=True)
 
 
 def test_runtime_pins_bind_separate_vllm_service(
@@ -393,6 +410,21 @@ def test_hf_template_adapter_preserves_openai_record_and_renders_qwen_shape() ->
     assert original[2]["tool_calls"][0]["function"]["arguments"] == '{"message":"done"}'
     assert adapted[2]["tool_calls"][0]["function"]["arguments"] == {"message": "done"}
     assert rllm_hf_template_token_count(_QwenStyleTokenizer(), original) > 0
+
+
+def test_action_conditioned_hf_template_supervises_only_final_assistant() -> None:
+    messages = _example(1)["messages"]
+    all_tokens, all_assistant_mask = hf_template_tokens_and_loss_mask(_Tokenizer(), messages)
+    final_tokens, final_assistant_mask = hf_template_tokens_and_final_assistant_loss_mask(
+        _Tokenizer(), messages
+    )
+
+    assert final_tokens == all_tokens
+    assert 0 < sum(final_assistant_mask) < sum(all_assistant_mask)
+    assert final_assistant_mask[-1] == 1
+
+    with pytest.raises(ConfigurationError, match="end with an assistant"):
+        hf_template_tokens_and_final_assistant_loss_mask(_Tokenizer(), messages[:-1])
 
 
 def test_hf_template_adapter_rejects_non_object_arguments() -> None:

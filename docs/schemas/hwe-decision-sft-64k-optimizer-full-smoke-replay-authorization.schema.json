@@ -1,0 +1,259 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-optimizer-full-smoke-replay-authorization.schema.json",
+  "additionalProperties": false,
+  "description": "One-use full eight-step smoke replay after the repaired single-step pass.",
+  "properties": {
+    "adapter_allowed": {
+      "const": false,
+      "title": "Adapter Allowed",
+      "type": "boolean"
+    },
+    "attempt": {
+      "const": 6,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "authorization_basis": {
+      "const": "explicit_user_instruction_execute_full_eight_step_optimizer_smoke",
+      "title": "Authorization Basis",
+      "type": "string"
+    },
+    "authorization_hash": {
+      "title": "Authorization Hash",
+      "type": "string"
+    },
+    "authorization_scope": {
+      "const": "single_preregistered_eight_step_optimizer_smoke",
+      "title": "Authorization Scope",
+      "type": "string"
+    },
+    "checkpoint_allowed": {
+      "const": false,
+      "title": "Checkpoint Allowed",
+      "type": "boolean"
+    },
+    "execution_authorized": {
+      "const": true,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    },
+    "existing_lsf_job_id": {
+      "const": "466876",
+      "title": "Existing Lsf Job Id",
+      "type": "string"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_optimizer_full_smoke_replay_authorization_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "implementation_fix": {
+      "const": "execution_loop_uses_authorized_schedule",
+      "title": "Implementation Fix",
+      "type": "string"
+    },
+    "implementation_source_sha256": {
+      "const": "f024e74dc3ba74f97c9132812b73a299fa3ca7be076e66b0eb0a177276e37c61",
+      "title": "Implementation Source Sha256",
+      "type": "string"
+    },
+    "new_hpc_jobs_allowed": {
+      "const": false,
+      "title": "New Hpc Jobs Allowed",
+      "type": "boolean"
+    },
+    "offload_fallback_allowed": {
+      "const": false,
+      "title": "Offload Fallback Allowed",
+      "type": "boolean"
+    },
+    "optimizer_steps_authorized": {
+      "const": 8,
+      "title": "Optimizer Steps Authorized",
+      "type": "integer"
+    },
+    "planned_host": {
+      "const": "gpu03",
+      "title": "Planned Host",
+      "type": "string"
+    },
+    "preregistration_config_sha256": {
+      "title": "Preregistration Config Sha256",
+      "type": "string"
+    },
+    "preregistration_hash": {
+      "title": "Preregistration Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_hash": {
+      "title": "Preregistration Receipt Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_sha256": {
+      "title": "Preregistration Receipt Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_authorization_sha256": {
+      "const": "acc637cd5326bbb3be4dff3a2227991bc4815fd58ba80dd69a317faec7a4b3e3",
+      "title": "Prior Authorized Schedule Authorization Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_invariants_all_passed": {
+      "const": true,
+      "title": "Prior Authorized Schedule Invariants All Passed",
+      "type": "boolean"
+    },
+    "prior_authorized_schedule_optimizer_steps_confirmed": {
+      "const": 1,
+      "title": "Prior Authorized Schedule Optimizer Steps Confirmed",
+      "type": "integer"
+    },
+    "prior_authorized_schedule_pass_report_sha256": {
+      "const": "c18ce989c41b68b2f3d93bba120857a4f488c0d0796e5aba7318847493299b71",
+      "title": "Prior Authorized Schedule Pass Report Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_rank_diagnostic_sha256": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "Prior Authorized Schedule Rank Diagnostic Sha256",
+      "type": "array"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "release_existing_allocation": {
+      "const": false,
+      "title": "Release Existing Allocation",
+      "type": "boolean"
+    },
+    "replaces_authorization_hash": {
+      "const": "8ef0ae8e44cedb40f6967bc85475fd4483ebed860c6653e2ea0d2582bb26a7d2",
+      "title": "Replaces Authorization Hash",
+      "type": "string"
+    },
+    "schedule_hash": {
+      "title": "Schedule Hash",
+      "type": "string"
+    },
+    "schedule_indices": {
+      "maxItems": 8,
+      "minItems": 8,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Schedule Indices",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_gpu_indices": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Selected Gpu Indices",
+      "type": "array"
+    },
+    "source_v4_dataset_hash": {
+      "const": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "status": {
+      "const": "authorized_for_full_eight_step_smoke_replay",
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "authorization_basis",
+    "authorization_scope",
+    "preregistration_hash",
+    "preregistration_config_sha256",
+    "preregistration_receipt_hash",
+    "preregistration_receipt_sha256",
+    "source_v4_dataset_hash",
+    "schedule_hash",
+    "schedule_indices",
+    "optimizer_steps_authorized",
+    "execution_authorized",
+    "checkpoint_allowed",
+    "adapter_allowed",
+    "offload_fallback_allowed",
+    "new_hpc_jobs_allowed",
+    "release_existing_allocation",
+    "existing_lsf_job_id",
+    "planned_host",
+    "selected_gpu_indices",
+    "production_training_ready",
+    "authorization_hash",
+    "attempt",
+    "replaces_authorization_hash",
+    "prior_authorized_schedule_authorization_sha256",
+    "prior_authorized_schedule_pass_report_sha256",
+    "prior_authorized_schedule_optimizer_steps_confirmed",
+    "prior_authorized_schedule_invariants_all_passed",
+    "prior_authorized_schedule_rank_diagnostic_sha256",
+    "implementation_fix",
+    "implementation_source_sha256"
+  ],
+  "title": "HweDecisionSft64kOptimizerFullSmokeReplayAuthorization",
+  "type": "object"
+}

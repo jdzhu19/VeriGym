@@ -23,6 +23,11 @@ from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
 from verigym.core.repository_candidate import repository_plan_identity
+from verigym.core.repository_observation import (
+    RawObservationAuditWriter,
+    RepositoryObservationPolicy,
+    resolve_repository_observation_policy,
+)
 from verigym.core.scoring import build_scorecard
 from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
 from verigym.core.trace import TraceWriter
@@ -75,6 +80,8 @@ def _external_agent_artifact_namespace(agent_name: str) -> str:
         return "claude_cli"
     if agent_name.startswith("openhands-"):
         return "openhands_sdk"
+    if agent_name.startswith("deepseek-harness-"):
+        return "deepseek_harness"
     return "external_agent"
 
 
@@ -83,9 +90,27 @@ def _external_agent_isolation_label(agent_name: str, execution_backend: str) -> 
         return "host_claude_control_plane_runtime_mcp_delegated"
     if agent_name.startswith("openhands-"):
         return "host_openhands_sdk_control_plane_runtime_mcp_delegated"
+    if agent_name.startswith("deepseek-harness-"):
+        return "host_deepseek_harness_control_plane_runtime_tools_delegated"
     if execution_backend == "docker_outer_runtime_delegated":
         return "docker_outer_runtime_delegated"
     return "codex_cli_sandbox_on_trusted_host"
+
+
+def _configured_observation_policy(
+    options: dict[str, Any],
+    *,
+    external_agent_selected: bool = False,
+    bounded_action_protocol: bool = False,
+) -> RepositoryObservationPolicy | None:
+    raw = options.get("observation_policy_id", options.get("observation_policy"))
+    if raw is None and (
+        external_agent_selected
+        or bounded_action_protocol
+        or options.get("action_protocol") == "repository_action.v2"
+    ):
+        raw = "repository_observation_v1"
+    return resolve_repository_observation_policy(raw)
 
 
 class VeriGym:
@@ -468,12 +493,32 @@ class VeriGym:
             ),
         )
 
+        observation_policy = _configured_observation_policy(
+            config.agent_options,
+            external_agent_selected=external_agent_selected,
+            bounded_action_protocol=(
+                resolved_action_protocol is not None
+                and resolved_action_protocol.state_machine_id
+                == "repository_action_state_machine_v2"
+            ),
+        )
+        raw_observation_audit: RawObservationAuditWriter | None = None
+        if (
+            observation_policy is not None
+            and config.agent_options.get("campaign_role") == "training"
+            and config.agent_options.get("capture_training_transcript") is True
+        ):
+            raw_observation_audit = RawObservationAuditWriter(
+                layout.root / "private-audit" / "raw-observations.ndjson"
+            )
         env = VeriGymEnv(
             task=task,
             assets=assets,
             runtime=runtime,
             tools=self.registries.tools,
             mode=config.mode,
+            observation_policy=observation_policy,
+            audit_callback=raw_observation_audit,
         )
         verifier_results: list[VerifierResult] = []
         synthesis_evaluation: SynthesisEvaluation | None = None
@@ -493,6 +538,8 @@ class VeriGym:
                     isolation_level=runtime.descriptor.isolation_level,
                     policy=env.policy,
                     trace=trace,
+                    observation_policy=observation_policy,
+                    audit_callback=raw_observation_audit,
                 )
             model_gateway = (
                 ModelGateway(
@@ -886,6 +933,8 @@ class VeriGym:
             write_run_artifact_manifest(layout.root, run_id)
             return RunResult(run_dir=layout.root, manifest=manifest, scorecard=scorecard)
         finally:
+            if raw_observation_audit is not None:
+                raw_observation_audit.finalize()
             env.close()
             runtime.close()
 

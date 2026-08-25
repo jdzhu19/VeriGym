@@ -23,6 +23,7 @@ from verigym.runtimes.docker.errors import (
     DockerRuntimeError,
     sanitize_diagnostic,
 )
+from verigym.runtimes.docker.external_command import DockerExternalAgentCommandExecutor
 from verigym.runtimes.docker.external_process import (
     DockerExternalProcessExecutor,
     external_agent_runtime_config,
@@ -57,6 +58,11 @@ from verigym.schemas.runtime import (
     WorkspaceDiff,
 )
 from verigym.schemas.tool import CommandSpec, CompletedCommand
+
+_EXTERNAL_AGENT_UTILITY_ENVIRONMENT = {
+    **BASELINE_ENVIRONMENT,
+    "CODEX_HOME": "/tmp/verigym-codex-home",
+}
 
 
 class DockerSessionOwner(Protocol):
@@ -164,7 +170,12 @@ class DockerRuntimeSession(RuntimeSession):
     def external_read_only_mounts(self) -> list[ExternalReadOnlyMountIdentity]:
         return [item.model_copy(deep=True) for item in self._read_only_identities]
 
-    def execute_external_process(self, request: ExternalProcessRequest) -> ExternalProcessResult:
+    def execute_external_process(
+        self,
+        request: ExternalProcessRequest,
+        *,
+        private_audit_root: Path | None = None,
+    ) -> ExternalProcessResult:
         if self._closed:
             raise PathPolicyError("Docker session is closed")
         if self._frozen:
@@ -187,8 +198,43 @@ class DockerRuntimeSession(RuntimeSession):
             session_id=self.session_id,
             register_container=register,
             remove_container=self._remove_container,
+            private_audit_root=private_audit_root,
         )
-        return executor.execute(request, self._root, self._external_mounts)
+        mounts = _external_process_mounts(
+            self._external_mounts,
+            logical_workspace_root=request.logical_workspace_root,
+        )
+        return executor.execute(request, self._root, mounts)
+
+    def execute_external_agent_command(self, command: CommandSpec) -> CompletedCommand:
+        if self._closed:
+            raise PathPolicyError("Docker session is closed")
+        if self._frozen:
+            raise PathPolicyError("Docker session is frozen")
+        if self.role != "agent" or self._agent_config is None or self._agent_image is None:
+            raise PathPolicyError("external-agent command execution is unavailable")
+        cwd = self._resolve(command.cwd, allow_root=True)
+        if not cwd.is_dir():
+            raise PathPolicyError(f"command working directory does not exist: {command.cwd}")
+
+        def register(container_id: str) -> None:
+            self._active_containers.add(container_id)
+            self._owner.container_registered(self.session_id, container_id)
+
+        executor = DockerExternalAgentCommandExecutor(
+            engine=self._engine,
+            image=self._agent_image,
+            config=self._agent_config,
+            run_id=self._run_id,
+            session_id=self.session_id,
+            register_container=register,
+            remove_container=self._remove_container,
+        )
+        mounts = _external_process_mounts(
+            self._external_mounts,
+            logical_workspace_root="/workspace/repository",
+        )
+        return executor.execute(command, mounts=mounts)
 
     def _resolve(self, raw_path: str, *, allow_root: bool = False) -> Path:
         relative = normalize_relative_path(raw_path, allow_root=allow_root)
@@ -417,7 +463,7 @@ class DockerRuntimeSession(RuntimeSession):
                 config,
                 user=user,
                 cwd="/workspace",
-                environment=BASELINE_ENVIRONMENT,
+                environment=_EXTERNAL_AGENT_UTILITY_ENVIRONMENT,
                 labels=labels,
             ),
             *resource_arguments(config),
@@ -440,7 +486,7 @@ class DockerRuntimeSession(RuntimeSession):
                 config=config,
                 expected_user=user,
                 expected_mounts=self._external_mounts,
-                expected_environment=BASELINE_ENVIRONMENT,
+                expected_environment=_EXTERNAL_AGENT_UTILITY_ENVIRONMENT,
                 expected_labels=labels,
             )
             execution = self._engine.start_attach(
@@ -639,6 +685,32 @@ class DockerRuntimeSession(RuntimeSession):
                 "compatibility_status": self._image.compatibility_status,
             },
         }
+
+
+def _external_process_mounts(
+    mounts: list[MountSpec],
+    *,
+    logical_workspace_root: str,
+) -> list[MountSpec]:
+    """Map the session's physical workspace onto the integration-owned logical root."""
+
+    mapped: list[MountSpec] = []
+    writable_workspace_count = 0
+    for mount in mounts:
+        if mount.destination == "/workspace" and not mount.read_only:
+            mapped.append(
+                MountSpec(
+                    source=mount.source,
+                    destination=logical_workspace_root,
+                    read_only=False,
+                )
+            )
+            writable_workspace_count += 1
+        else:
+            mapped.append(mount)
+    if writable_workspace_count != 1:
+        raise PathPolicyError("Docker session lacks exactly one declared writable workspace mount")
+    return mapped
 
 
 __all__ = ["DockerRuntimeSession", "DockerSessionOwner"]

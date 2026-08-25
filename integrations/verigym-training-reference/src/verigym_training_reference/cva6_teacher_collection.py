@@ -400,7 +400,7 @@ def _ensure_plugins(registries: Any) -> None:
 
         registries.agents.register(ClaudeCliAgentAdapter())
     if "codex-cli-mcp-teacher" not in registries.agents.names():
-        from verigym_codex_cli import CodexCliMcpTeacherAdapter  # type: ignore[import-untyped]
+        from verigym_codex_cli import CodexCliMcpTeacherAdapter
 
         registries.agents.register(CodexCliMcpTeacherAdapter())
 

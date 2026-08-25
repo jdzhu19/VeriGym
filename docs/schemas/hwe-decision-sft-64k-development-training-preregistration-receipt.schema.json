@@ -1,0 +1,158 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-development-training-preregistration-receipt.schema.json",
+  "additionalProperties": false,
+  "description": "Validation receipt proving that no development training was started.",
+  "properties": {
+    "adapter_written": {
+      "const": false,
+      "title": "Adapter Written",
+      "type": "boolean"
+    },
+    "campaign_id": {
+      "const": "cva6-hwe-deepseek-harness-development-training-v1-canary-32step-s484",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "canary_execution_authorized": {
+      "const": false,
+      "title": "Canary Execution Authorized",
+      "type": "boolean"
+    },
+    "canary_schedule_hash": {
+      "title": "Canary Schedule Hash",
+      "type": "string"
+    },
+    "checkpoint_written": {
+      "const": false,
+      "title": "Checkpoint Written",
+      "type": "boolean"
+    },
+    "config_sha256": {
+      "title": "Config Sha256",
+      "type": "string"
+    },
+    "existing_allocation_modified": {
+      "const": false,
+      "title": "Existing Allocation Modified",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_development_training_preregistration_receipt_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "heldout_record_count": {
+      "const": 21,
+      "title": "Heldout Record Count",
+      "type": "integer"
+    },
+    "model_artifact_check": {
+      "const": "passed",
+      "title": "Model Artifact Check",
+      "type": "string"
+    },
+    "model_identity_hash": {
+      "title": "Model Identity Hash",
+      "type": "string"
+    },
+    "new_hpc_jobs_submitted": {
+      "const": false,
+      "title": "New Hpc Jobs Submitted",
+      "type": "boolean"
+    },
+    "optimizer_steps": {
+      "const": 0,
+      "title": "Optimizer Steps",
+      "type": "integer"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "qualification_evidence_check": {
+      "const": "passed",
+      "title": "Qualification Evidence Check",
+      "type": "string"
+    },
+    "receipt_hash": {
+      "title": "Receipt Hash",
+      "type": "string"
+    },
+    "recipe_hash": {
+      "title": "Recipe Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_artifact_check": {
+      "const": "passed",
+      "title": "Source Artifact Check",
+      "type": "string"
+    },
+    "source_identity_hash": {
+      "title": "Source Identity Hash",
+      "type": "string"
+    },
+    "source_v4_dataset_hash": {
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "split_hash": {
+      "title": "Split Hash",
+      "type": "string"
+    },
+    "status": {
+      "const": "preregistered_not_authorized",
+      "title": "Status",
+      "type": "string"
+    },
+    "train_record_count": {
+      "const": 62,
+      "title": "Train Record Count",
+      "type": "integer"
+    },
+    "training_started": {
+      "const": false,
+      "title": "Training Started",
+      "type": "boolean"
+    },
+    "whole_trajectory_leakage_check": {
+      "const": "passed",
+      "title": "Whole Trajectory Leakage Check",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "campaign_id",
+    "recipe_hash",
+    "config_sha256",
+    "source_v4_dataset_hash",
+    "model_identity_hash",
+    "source_identity_hash",
+    "split_hash",
+    "canary_schedule_hash",
+    "train_record_count",
+    "heldout_record_count",
+    "whole_trajectory_leakage_check",
+    "qualification_evidence_check",
+    "model_artifact_check",
+    "source_artifact_check",
+    "canary_execution_authorized",
+    "training_started",
+    "optimizer_steps",
+    "checkpoint_written",
+    "adapter_written",
+    "production_training_ready",
+    "new_hpc_jobs_submitted",
+    "existing_allocation_modified",
+    "receipt_hash"
+  ],
+  "title": "HweDecisionSft64kDevelopmentTrainingPreregistrationReceipt",
+  "type": "object"
+}

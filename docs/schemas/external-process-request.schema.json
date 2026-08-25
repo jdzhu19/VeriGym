@@ -85,19 +85,25 @@
           "type": "string"
         },
         "logical_cwd": {
-          "const": "/workspace",
           "default": "/workspace",
+          "enum": [
+            "/workspace",
+            "/workspace/repository"
+          ],
           "title": "Logical Cwd",
           "type": "string"
         },
         "logical_workspace_root": {
-          "const": "/workspace",
           "default": "/workspace",
+          "enum": [
+            "/workspace",
+            "/workspace/repository"
+          ],
           "title": "Logical Workspace Root",
           "type": "string"
         },
         "max_output_bytes": {
-          "maximum": 16777216,
+          "maximum": 33554432,
           "minimum": 1024,
           "title": "Max Output Bytes",
           "type": "integer"
@@ -208,7 +214,7 @@
         },
         "timeout_s": {
           "exclusiveMinimum": 0.0,
-          "maximum": 1800.0,
+          "maximum": 3600.0,
           "title": "Timeout S",
           "type": "number"
         },
@@ -224,6 +230,7 @@
           "items": {
             "enum": [
               "/workspace",
+              "/workspace/repository",
               "/tmp"
             ],
             "type": "string"
@@ -628,19 +635,25 @@
       "title": "Invocation Spec Hash"
     },
     "logical_cwd": {
-      "const": "/workspace",
       "default": "/workspace",
+      "enum": [
+        "/workspace",
+        "/workspace/repository"
+      ],
       "title": "Logical Cwd",
       "type": "string"
     },
     "logical_workspace_root": {
-      "const": "/workspace",
       "default": "/workspace",
+      "enum": [
+        "/workspace",
+        "/workspace/repository"
+      ],
       "title": "Logical Workspace Root",
       "type": "string"
     },
     "max_output_bytes": {
-      "maximum": 16777216,
+      "maximum": 33554432,
       "minimum": 1024,
       "title": "Max Output Bytes",
       "type": "integer"
@@ -800,7 +813,7 @@
     },
     "timeout_s": {
       "exclusiveMinimum": 0.0,
-      "maximum": 1800.0,
+      "maximum": 3600.0,
       "title": "Timeout S",
       "type": "number"
     },
@@ -816,6 +829,7 @@
       "items": {
         "enum": [
           "/workspace",
+          "/workspace/repository",
           "/tmp"
         ],
         "type": "string"

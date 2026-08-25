@@ -16,12 +16,18 @@ from verigym.core.integrity import verify_artifact_manifest
 from verigym.evolution.splits import validate_task_split
 from verigym.evolution.training_transcript import validate_teacher_transcript
 from verigym.experiments.state import atomic_dump_json, atomic_dump_jsonl, atomic_write_text
-from verigym.protocols.repository_action import repository_tool_definitions
+from verigym.protocols.repository_action import (
+    legacy_repository_tool_contract_hash,
+    repository_tool_definitions,
+)
 from verigym.schemas.evolution import TaskSplitEntry, TaskSplitManifest
 from verigym.schemas.multiturn_sft import (
     VerifiedMultiTurnSftDatasetManifest,
+    VerifiedMultiTurnSftDatasetManifestV2,
     VerifiedMultiTurnSftExample,
+    VerifiedMultiTurnSftExampleV2,
     seal_multi_turn_example,
+    seal_multi_turn_example_v2,
 )
 from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.run import RunManifest
@@ -69,11 +75,24 @@ def bindings_from_cva6_collection(
     split = validate_task_split(TaskSplitManifest.model_validate(_json_object(split_manifest_path)))
     progress = _json_object(root / "collection-progress.json")
     receipt = _json_object(root / "successful-bindings.json")
+    collection_format = progress.get("format_id")
+    if not isinstance(collection_format, str):
+        raise ConfigurationError("unsupported CVA6 teacher collection format")
+    expected_receipt_format = {
+        "verigym_cva6_teacher_collection_v1": "verigym_cva6_teacher_bindings_v1",
+        "verigym_cva6_teacher_collection_v2": "verigym_cva6_teacher_bindings_v2",
+    }.get(collection_format)
+    if expected_receipt_format is None:
+        raise ConfigurationError("unsupported CVA6 teacher collection format")
     if (
-        progress.get("format_id") != "verigym_cva6_teacher_collection_v1"
+        collection_format
+        not in {
+            "verigym_cva6_teacher_collection_v1",
+            "verigym_cva6_teacher_collection_v2",
+        }
         or progress.get("status") != "completed"
         or progress.get("task_split_hash") != split.manifest_hash
-        or receipt.get("format_id") != "verigym_cva6_teacher_bindings_v1"
+        or receipt.get("format_id") != expected_receipt_format
         or receipt.get("task_split_hash") != split.manifest_hash
         or receipt.get("record_count") != 8
     ):
@@ -120,7 +139,12 @@ def export_verified_multiturn_sft(
     validation_ids = {entry.task_id for entry in split.validation}
     heldout_ids = {entry.task_id for entry in split.heldout}
     tokenizer_hash = _tokenizer_identity(tokenizer_root)
-    tool_contract_hash = content_hash(repository_tool_definitions(dialect="openai"))
+    current_tool_contract_hash = content_hash(repository_tool_definitions(dialect="openai"))
+    allowed_tool_contract_hashes = {
+        current_tool_contract_hash,
+        legacy_repository_tool_contract_hash(),
+    }
+    observed_tool_contract_hashes: set[str] = set()
     examples: list[VerifiedMultiTurnSftExample] = []
     seen_tasks: set[str] = set()
     for binding in bindings:
@@ -187,9 +211,13 @@ def export_verified_multiturn_sft(
             "raw_host_paths_exported": False,
         }
         example = seal_multi_turn_example(payload)
-        if example.tool_contract_hash != tool_contract_hash:
-            raise ConfigurationError("teacher transcript uses a stale repository tool contract")
+        if example.tool_contract_hash not in allowed_tool_contract_hashes:
+            raise ConfigurationError("teacher transcript uses an unknown repository tool contract")
+        observed_tool_contract_hashes.add(example.tool_contract_hash)
         examples.append(example)
+    if len(observed_tool_contract_hashes) != 1:
+        raise ConfigurationError("multi-turn SFT cannot mix v1 repository tool contracts")
+    tool_contract_hash = next(iter(observed_tool_contract_hashes))
     examples.sort(key=lambda example: example.task_id)
     destination = _new_directory(output)
     records = [example.model_dump(mode="json", exclude_none=True) for example in examples]
@@ -232,6 +260,179 @@ def export_verified_multiturn_sft(
     return manifest
 
 
+def export_verified_multiturn_sft_v2(
+    bindings: list[TranscriptRunBinding],
+    *,
+    split_manifest_path: Path,
+    tokenizer: ChatTemplateTokenizer,
+    tokenizer_root: Path,
+    output: Path,
+) -> VerifiedMultiTurnSftDatasetManifestV2:
+    """Export bounded v2 records with fail-closed 32K token accounting."""
+
+    if not bindings:
+        raise ConfigurationError("multi-turn SFT v2 export requires at least one binding")
+    split = validate_task_split(TaskSplitManifest.model_validate(_json_object(split_manifest_path)))
+    training = {entry.task_id: entry for entry in split.training}
+    validation_ids = {entry.task_id for entry in split.validation}
+    heldout_ids = {entry.task_id for entry in split.heldout}
+    tokenizer_hash = _tokenizer_identity(tokenizer_root)
+    tool_contract_hash = content_hash(repository_tool_definitions(dialect="openai"))
+    examples: list[VerifiedMultiTurnSftExampleV2] = []
+    seen_tasks: set[str] = set()
+    for binding in bindings:
+        transcript = validate_teacher_transcript(_json_object(binding.transcript))
+        if transcript.get("format_id") != "verigym_teacher_multiturn_transcript_v2":
+            raise ConfigurationError("v2 SFT export requires v2 teacher transcripts")
+        task_id = transcript.get("task_id")
+        if not isinstance(task_id, str):
+            raise ConfigurationError("teacher transcript omits task_id")
+        if task_id in validation_ids or task_id in heldout_ids or task_id not in training:
+            raise ConfigurationError("teacher transcript is not in the frozen training split")
+        if task_id in seen_tasks:
+            raise ConfigurationError("multi-turn SFT accepts only one trajectory per task")
+        seen_tasks.add(task_id)
+        run, scorecard, task, provenance = _validated_run(binding.run, binding.transcript)
+        _validate_split_binding(training[task_id], run, task)
+        if task.id != task_id or run.task_id != task_id:
+            raise ConfigurationError("teacher transcript and verified run task differ")
+        messages = transcript["messages"]
+        token_count = rllm_hf_template_token_count(tokenizer, messages)
+        if token_count > 32_768:
+            raise ConfigurationError(
+                f"multi-turn trajectory {task_id} uses {token_count} tokens; "
+                "truncation is forbidden"
+            )
+        official_task_id = task.metadata.get("official_task_id", task.id)
+        if not isinstance(official_task_id, str) or not official_task_id:
+            raise ConfigurationError("verified task has no official portable identity")
+        metrics = _exact_v2_metrics(tokenizer, messages, token_count)
+        payload = {
+            "schema_version": "1.0",
+            "format_id": "verigym_verified_multiturn_sft_v2",
+            "sample_id": transcript["transcript_hash"],
+            "task_id": task_id,
+            "official_task_id": official_task_id,
+            "task_hash": run.task_hash,
+            "source_hash": run.source_hash,
+            "candidate_hash": run.candidate_hash,
+            "verifier_hash": scorecard.reproducibility.verifier_hash,
+            "verigym_source_commit": provenance.source_commit,
+            "verigym_source_tree_hash": provenance.source_tree_hash,
+            "provider": transcript["provider"],
+            "model_id": transcript["model_id"],
+            "reasoning_effort": transcript["reasoning_effort"],
+            "client_kind": transcript["client_kind"],
+            "client_name": transcript["client_name"],
+            "client_version": transcript["client_version"],
+            "prompt_hash": transcript["prompt_hash"],
+            "tool_contract_hash": transcript["tool_contract_hash"],
+            "harness_hash": transcript["harness_hash"],
+            "tokenizer_hash": tokenizer_hash,
+            "observation_policy_id": "repository_observation_v1",
+            "split": "training",
+            "messages": messages,
+            "token_count": token_count,
+            "max_length": 32_768,
+            "truncation": "error",
+            **metrics,
+            "supervised_roles": ["assistant"],
+            "masked_roles": ["system", "user", "tool"],
+            "verifier_resolved": True,
+            "infrastructure_valid": True,
+            "non_registry_tool_events_observed": False,
+            "hidden_assets_exported": False,
+            "reference_solutions_exported": False,
+            "private_reasoning_exported": False,
+            "credential_values_exported": False,
+            "raw_host_paths_exported": False,
+            "raw_observations_exported": False,
+        }
+        example = seal_multi_turn_example_v2(payload)
+        if example.tool_contract_hash != tool_contract_hash:
+            raise ConfigurationError("teacher transcript uses a stale repository tool contract")
+        examples.append(example)
+    examples.sort(key=lambda example: example.task_id)
+    destination = _new_directory(output)
+    records = [example.model_dump(mode="json", exclude_none=True) for example in examples]
+    atomic_dump_jsonl(destination / "train.jsonl", records)
+    records_sha256 = hash_bytes((destination / "train.jsonl").read_bytes())
+    manifest_base = {
+        "schema_version": "1.0",
+        "format_id": "verigym_verified_multiturn_sft_dataset_v2",
+        "record_count": len(examples),
+        "task_ids": [example.task_id for example in examples],
+        "example_hashes": [example.example_hash for example in examples],
+        "tokenizer_hash": tokenizer_hash,
+        "tool_contract_hash": tool_contract_hash,
+        "observation_policy_id": "repository_observation_v1",
+        "max_length": 32_768,
+        "truncation": "error",
+        "verigym_source_commits": sorted({example.verigym_source_commit for example in examples}),
+        "verigym_source_tree_hashes": sorted(
+            {example.verigym_source_tree_hash for example in examples}
+        ),
+        "records_sha256": records_sha256,
+        "only_training_split": True,
+        "only_resolved_samples": True,
+        "infrastructure_invalid_excluded": True,
+        "hidden_assets_exported": False,
+        "reference_solutions_exported": False,
+        "private_reasoning_exported": False,
+        "credential_values_exported": False,
+        "raw_host_paths_exported": False,
+        "raw_observations_exported": False,
+    }
+    manifest = VerifiedMultiTurnSftDatasetManifestV2.model_validate(
+        {**manifest_base, "manifest_hash": content_hash(manifest_base)}
+    )
+    atomic_dump_json(destination / "dataset-manifest.json", manifest)
+    hashes = {
+        name: hash_bytes((destination / name).read_bytes())
+        for name in ("dataset-manifest.json", "train.jsonl")
+    }
+    atomic_write_text(
+        destination / "SHA256SUMS",
+        "".join(f"{digest}  {name}\n" for name, digest in sorted(hashes.items())),
+    )
+    return manifest
+
+
+def _exact_v2_metrics(
+    tokenizer: ChatTemplateTokenizer,
+    messages: list[dict[str, Any]],
+    total_tokens: int,
+) -> dict[str, int | float]:
+    _tokens, loss_mask = hf_template_tokens_and_loss_mask(tokenizer, messages)
+    observation_lengths = [
+        len(tokenizer.encode(str(message.get("content") or ""), add_special_tokens=False))
+        for message in messages
+        if message.get("role") == "tool"
+    ]
+    tool_calls = [
+        call
+        for message in messages
+        if message.get("role") == "assistant"
+        for call in (message.get("tool_calls") or [])
+    ]
+    assistant_tokens = sum(loss_mask)
+    observation_tokens = sum(observation_lengths)
+    return {
+        "total_tokens": total_tokens,
+        "assistant_tokens": assistant_tokens,
+        "observation_tokens": observation_tokens,
+        "tool_calls": len(tool_calls),
+        "file_reads": sum(
+            int(isinstance(call, dict) and call.get("function", {}).get("name") == "read_file")
+            for call in tool_calls
+        ),
+        "max_single_observation_tokens": max(observation_lengths, default=0),
+        "observation_to_assistant_ratio": (
+            float(observation_tokens / assistant_tokens) if assistant_tokens else 0.0
+        ),
+    }
+
+
 def rllm_hf_template_token_count(
     tokenizer: ChatTemplateTokenizer,
     messages: list[dict[str, Any]],
@@ -259,6 +460,32 @@ def hf_template_tokens_and_loss_mask(
     segment. Every later message retains an independent prefix boundary.
     """
 
+    return _hf_template_tokens_and_loss_mask(tokenizer, messages, supervised_indices=None)
+
+
+def hf_template_tokens_and_final_assistant_loss_mask(
+    tokenizer: ChatTemplateTokenizer,
+    messages: list[dict[str, Any]],
+) -> tuple[list[int], list[int]]:
+    """Render one action-conditioned row and supervise only its final assistant action."""
+
+    if not messages or messages[-1].get("role") != "assistant":
+        raise ConfigurationError("action-conditioned SFT must end with an assistant target")
+    return _hf_template_tokens_and_loss_mask(
+        tokenizer,
+        messages,
+        supervised_indices={len(messages) - 1},
+    )
+
+
+def _hf_template_tokens_and_loss_mask(
+    tokenizer: ChatTemplateTokenizer,
+    messages: list[dict[str, Any]],
+    *,
+    supervised_indices: set[int] | None,
+) -> tuple[list[int], list[int]]:
+    """Render prefix-stable segments with either role-wide or explicit supervision."""
+
     if len(messages) < 2 or [message.get("role") for message in messages[:2]] != [
         "system",
         "user",
@@ -285,7 +512,10 @@ def hf_template_tokens_and_loss_mask(
             full[offsets[index] : offsets[index + 1]], add_special_tokens=False
         )
         tokens.extend(segment)
-        supervised = 1 if template_messages[index].get("role") == "assistant" else 0
+        if supervised_indices is None:
+            supervised = 1 if template_messages[index].get("role") == "assistant" else 0
+        else:
+            supervised = 1 if index in supervised_indices else 0
         loss_mask.extend([supervised] * len(segment))
     if not tokens:
         raise ConfigurationError("tokenizer produced an empty multi-turn trajectory")
@@ -455,7 +685,9 @@ __all__ = [
     "TranscriptRunBinding",
     "bindings_from_cva6_collection",
     "export_verified_multiturn_sft",
+    "export_verified_multiturn_sft_v2",
     "hf_template_messages",
+    "hf_template_tokens_and_final_assistant_loss_mask",
     "hf_template_tokens_and_loss_mask",
     "rllm_hf_template_token_count",
 ]

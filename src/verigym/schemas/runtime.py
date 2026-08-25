@@ -35,24 +35,24 @@ class DockerExternalAgentRuntimeConfig(StrictModel):
     memory_bytes: int = Field(
         default=512 * 1024 * 1024,
         ge=64 * 1024 * 1024,
-        le=4 * 1024**3,
+        le=16 * 1024**3,
     )
     cpus: float = Field(default=1.0, gt=0.0, le=16.0)
-    pids_limit: int = Field(default=128, ge=16, le=1024)
+    pids_limit: int = Field(default=128, ge=16, le=4096)
     tmpfs_bytes: int = Field(
         default=64 * 1024 * 1024,
         ge=1024 * 1024,
         le=512 * 1024**2,
     )
     stop_timeout_s: int = Field(default=3, ge=1, le=30)
-    max_process_time_s: int = Field(default=300, ge=1, le=1800)
+    max_process_time_s: int = Field(default=300, ge=1, le=3600)
     max_output_bytes: int = Field(
         default=8 * 1024 * 1024,
         ge=1024,
-        le=16 * 1024 * 1024,
+        le=32 * 1024 * 1024,
     )
     inner_sandbox_mode: Literal["outer_runtime_delegated"] = "outer_runtime_delegated"
-    logical_workspace_root: Literal["/workspace"] = "/workspace"
+    logical_workspace_root: Literal["/workspace", "/workspace/repository"] = "/workspace"
 
     @field_validator("image")
     @classmethod

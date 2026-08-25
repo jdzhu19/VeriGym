@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,9 +16,11 @@ from verigym.runtimes.docker.control_plane_environment import (
     build_trusted_host_app_server_environment,
 )
 from verigym.runtimes.docker.engine import DockerCliEngine, EngineResult
+from verigym.runtimes.docker.errors import DockerContainerError
 from verigym.runtimes.docker.external_process import (
     _APP_SERVER_CONFIG_OVERRIDES,
     DockerExternalProcessExecutor,
+    _hwe_request_profile_id,
     _is_logical_workspace_uri,
     _run_app_server,
     _sanitize_and_bound,
@@ -278,6 +281,13 @@ def _request(executable: Path, **updates: object) -> ExternalProcessRequest:
     return ExternalProcessRequest.model_validate(values)
 
 
+def test_hwe_v9_prompt_contract_resolves_to_v2_collection_profile() -> None:
+    request = SimpleNamespace(
+        invocation_spec=SimpleNamespace(prompt_contract_id="codex_cli_hwe_native_shell_context_v9")
+    )
+    assert _hwe_request_profile_id(request) == "hwe_standard_v2"  # type: ignore[arg-type]
+
+
 def test_runtime_owns_container_process_and_records_effective_controls(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -299,11 +309,13 @@ def test_runtime_owns_container_process_and_records_effective_controls(
         broker_url: str,
         workspace: Path,
         effective_timeout_s: float,
+        broker_health_check: Any,
     ) -> dict[str, Any]:
         assert request.requested_model_id == "gpt-5.4"
         assert broker_url.startswith("ws://127.0.0.1:")
         assert workspace == (tmp_path / "visible").resolve()
         assert effective_timeout_s == 30
+        assert callable(broker_health_check)
         return {
             "stdout": (
                 '{"type":"thread.started","model":"gpt-5.4"}\n'
@@ -369,6 +381,10 @@ def test_runtime_owns_container_process_and_records_effective_controls(
     assert _values(engine.arguments, "--mount") == [
         f"type=bind,src={workspace.resolve()},dst=/workspace"
     ]
+    environment = _key_values(engine.arguments, "--env")
+    assert environment["PATH"] == (
+        "/tools/verilator/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin"
+    )
     assert result.exit_code == 0
     assert result.terminal_event_seen
     assert result.cleanup_complete
@@ -548,6 +564,52 @@ def test_app_server_eof_is_observable_without_waiting_for_timeout(
     assert result["failure_origin"] == "host_control_plane"
     assert result["timed_out"] is False
     assert any(marker in result["stdout"] for marker in ("stdout closed", "stdin closed"))
+
+
+def test_app_server_stops_immediately_when_broker_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "fake-app-server"
+    executable.write_text(
+        """#!/usr/bin/env python3
+import json
+import sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if "id" in request:
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    checks = 0
+
+    def broker_health_check() -> None:
+        nonlocal checks
+        checks += 1
+        if checks >= 2:
+            raise DockerContainerError(
+                "external-agent stdio broker failed: HweExecProtocolError",
+                subreason="hwe_protocol_test_failure",
+            )
+
+    started = time.monotonic()
+    result = _run_app_server(
+        _request(executable),
+        broker_url="ws://127.0.0.1:1/fake",
+        workspace=tmp_path,
+        effective_timeout_s=30,
+        broker_health_check=broker_health_check,
+    )
+    assert time.monotonic() - started < 2
+    assert result["failure_reason"] == "hwe_protocol_test_failure"
+    assert result["failure_origin"] == "broker"
+    assert result["timed_out"] is False
 
 
 def test_loopback_proxy_attempt_has_stable_host_control_plane_taxonomy(

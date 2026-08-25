@@ -1,0 +1,190 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-optimizer-smoke-execution-authorization.schema.json",
+  "additionalProperties": false,
+  "description": "One-use authorization bound to the sealed eight-step smoke contract.",
+  "properties": {
+    "adapter_allowed": {
+      "const": false,
+      "title": "Adapter Allowed",
+      "type": "boolean"
+    },
+    "authorization_basis": {
+      "const": "explicit_user_instruction",
+      "title": "Authorization Basis",
+      "type": "string"
+    },
+    "authorization_hash": {
+      "title": "Authorization Hash",
+      "type": "string"
+    },
+    "authorization_scope": {
+      "const": "single_preregistered_execution",
+      "title": "Authorization Scope",
+      "type": "string"
+    },
+    "checkpoint_allowed": {
+      "const": false,
+      "title": "Checkpoint Allowed",
+      "type": "boolean"
+    },
+    "execution_authorized": {
+      "const": true,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    },
+    "existing_lsf_job_id": {
+      "const": "466876",
+      "title": "Existing Lsf Job Id",
+      "type": "string"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_optimizer_smoke_execution_authorization_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "new_hpc_jobs_allowed": {
+      "const": false,
+      "title": "New Hpc Jobs Allowed",
+      "type": "boolean"
+    },
+    "offload_fallback_allowed": {
+      "const": false,
+      "title": "Offload Fallback Allowed",
+      "type": "boolean"
+    },
+    "optimizer_steps_authorized": {
+      "const": 8,
+      "title": "Optimizer Steps Authorized",
+      "type": "integer"
+    },
+    "planned_host": {
+      "const": "gpu03",
+      "title": "Planned Host",
+      "type": "string"
+    },
+    "preregistration_config_sha256": {
+      "title": "Preregistration Config Sha256",
+      "type": "string"
+    },
+    "preregistration_hash": {
+      "title": "Preregistration Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_hash": {
+      "title": "Preregistration Receipt Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_sha256": {
+      "title": "Preregistration Receipt Sha256",
+      "type": "string"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "release_existing_allocation": {
+      "const": false,
+      "title": "Release Existing Allocation",
+      "type": "boolean"
+    },
+    "schedule_hash": {
+      "title": "Schedule Hash",
+      "type": "string"
+    },
+    "schedule_indices": {
+      "maxItems": 8,
+      "minItems": 8,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Schedule Indices",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_gpu_indices": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Selected Gpu Indices",
+      "type": "array"
+    },
+    "source_v4_dataset_hash": {
+      "const": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "status": {
+      "const": "authorized_for_single_execution",
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "authorization_basis",
+    "authorization_scope",
+    "preregistration_hash",
+    "preregistration_config_sha256",
+    "preregistration_receipt_hash",
+    "preregistration_receipt_sha256",
+    "source_v4_dataset_hash",
+    "schedule_hash",
+    "schedule_indices",
+    "optimizer_steps_authorized",
+    "execution_authorized",
+    "checkpoint_allowed",
+    "adapter_allowed",
+    "offload_fallback_allowed",
+    "new_hpc_jobs_allowed",
+    "release_existing_allocation",
+    "existing_lsf_job_id",
+    "planned_host",
+    "selected_gpu_indices",
+    "production_training_ready",
+    "authorization_hash"
+  ],
+  "title": "HweDecisionSft64kOptimizerSmokeExecutionAuthorization",
+  "type": "object"
+}

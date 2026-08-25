@@ -1,0 +1,541 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-decision-sft-64k-checkpoint-resume-qualification-authorization.schema.json",
+  "additionalProperties": false,
+  "description": "One-use authorization for a 4-step control versus 2+resume+2 qualification.",
+  "properties": {
+    "adapter_allowed": {
+      "const": false,
+      "title": "Adapter Allowed",
+      "type": "boolean"
+    },
+    "attempt": {
+      "const": 8,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "authorization_basis": {
+      "const": "explicit_user_instruction_authorize_checkpoint_resume_qualification",
+      "title": "Authorization Basis",
+      "type": "string"
+    },
+    "authorization_hash": {
+      "title": "Authorization Hash",
+      "type": "string"
+    },
+    "authorization_scope": {
+      "const": "single_four_step_control_vs_two_plus_resume_plus_two_qualification",
+      "title": "Authorization Scope",
+      "type": "string"
+    },
+    "bfloat16_epsilon": {
+      "title": "Bfloat16 Epsilon",
+      "type": "number"
+    },
+    "checkpoint_allowed": {
+      "const": true,
+      "title": "Checkpoint Allowed",
+      "type": "boolean"
+    },
+    "checkpoint_count_allowed": {
+      "const": 1,
+      "title": "Checkpoint Count Allowed",
+      "type": "integer"
+    },
+    "checkpoint_format": {
+      "const": "verl_fsdp2_sharded_v0_8",
+      "title": "Checkpoint Format",
+      "type": "string"
+    },
+    "checkpoint_global_step": {
+      "const": 2,
+      "title": "Checkpoint Global Step",
+      "type": "integer"
+    },
+    "checkpoint_load_contents": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "const": "model",
+          "type": "string"
+        },
+        {
+          "const": "optimizer",
+          "type": "string"
+        },
+        {
+          "const": "extra",
+          "type": "string"
+        }
+      ],
+      "title": "Checkpoint Load Contents",
+      "type": "array"
+    },
+    "checkpoint_producer_optimizer_steps": {
+      "const": 2,
+      "title": "Checkpoint Producer Optimizer Steps",
+      "type": "integer"
+    },
+    "checkpoint_resume_implementation": {
+      "const": "three_fresh_torchrun_branches_with_hash_bound_fsdp2_checkpoint",
+      "title": "Checkpoint Resume Implementation",
+      "type": "string"
+    },
+    "checkpoint_resume_implementation_source_sha256": {
+      "title": "Checkpoint Resume Implementation Source Sha256",
+      "type": "string"
+    },
+    "checkpoint_save_contents": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "const": "model",
+          "type": "string"
+        },
+        {
+          "const": "optimizer",
+          "type": "string"
+        },
+        {
+          "const": "extra",
+          "type": "string"
+        }
+      ],
+      "title": "Checkpoint Save Contents",
+      "type": "array"
+    },
+    "control_optimizer_steps": {
+      "const": 4,
+      "title": "Control Optimizer Steps",
+      "type": "integer"
+    },
+    "dataloader_state_required": {
+      "const": true,
+      "title": "Dataloader State Required",
+      "type": "boolean"
+    },
+    "exact_resume_equivalence_required": {
+      "const": true,
+      "title": "Exact Resume Equivalence Required",
+      "type": "boolean"
+    },
+    "execution_authorized": {
+      "const": true,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    },
+    "existing_lsf_job_id": {
+      "const": "466876",
+      "title": "Existing Lsf Job Id",
+      "type": "string"
+    },
+    "explicit_schedule_cursor_required": {
+      "const": true,
+      "title": "Explicit Schedule Cursor Required",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_decision_sft_64k_checkpoint_resume_qualification_authorization_v1",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "gradient_clip_target": {
+      "title": "Gradient Clip Target",
+      "type": "number"
+    },
+    "implementation_fix": {
+      "const": "full_smoke_inherits_validated_bf16_clip_tolerance",
+      "title": "Implementation Fix",
+      "type": "string"
+    },
+    "implementation_source_sha256": {
+      "const": "638caef60503df8f31c550cecf046ec854a0af332230abad01e3a26f8de6ddee",
+      "title": "Implementation Source Sha256",
+      "type": "string"
+    },
+    "lr_scheduler_state_required": {
+      "const": true,
+      "title": "Lr Scheduler State Required",
+      "type": "boolean"
+    },
+    "new_hpc_jobs_allowed": {
+      "const": false,
+      "title": "New Hpc Jobs Allowed",
+      "type": "boolean"
+    },
+    "offload_fallback_allowed": {
+      "const": false,
+      "title": "Offload Fallback Allowed",
+      "type": "boolean"
+    },
+    "optimizer_steps_authorized": {
+      "const": 8,
+      "title": "Optimizer Steps Authorized",
+      "type": "integer"
+    },
+    "planned_host": {
+      "const": "gpu03",
+      "title": "Planned Host",
+      "type": "string"
+    },
+    "post_clip_global_norm_acceptance_lte": {
+      "title": "Post Clip Global Norm Acceptance Lte",
+      "type": "number"
+    },
+    "post_clip_global_norm_relative_tolerance": {
+      "title": "Post Clip Global Norm Relative Tolerance",
+      "type": "number"
+    },
+    "preregistration_config_sha256": {
+      "title": "Preregistration Config Sha256",
+      "type": "string"
+    },
+    "preregistration_hash": {
+      "title": "Preregistration Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_hash": {
+      "title": "Preregistration Receipt Hash",
+      "type": "string"
+    },
+    "preregistration_receipt_sha256": {
+      "title": "Preregistration Receipt Sha256",
+      "type": "string"
+    },
+    "prior_attempt_7_authorization_sha256": {
+      "const": "7c65340716337f174e86b7747818e6f00963848427077b1790ca6cd6457e16b8",
+      "title": "Prior Attempt 7 Authorization Sha256",
+      "type": "string"
+    },
+    "prior_attempt_7_invariants_all_passed": {
+      "const": true,
+      "title": "Prior Attempt 7 Invariants All Passed",
+      "type": "boolean"
+    },
+    "prior_attempt_7_optimizer_steps_confirmed": {
+      "const": 8,
+      "title": "Prior Attempt 7 Optimizer Steps Confirmed",
+      "type": "integer"
+    },
+    "prior_attempt_7_pass_report_sha256": {
+      "const": "46cb4a151da1de3bf789024f2fe122528e1f5ef71984765ea477c31feae6af62",
+      "title": "Prior Attempt 7 Pass Report Sha256",
+      "type": "string"
+    },
+    "prior_attempt_7_rank_diagnostic_sha256": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Attempt 7 Rank Diagnostic Sha256",
+      "type": "array"
+    },
+    "prior_attempt_7_summary_sha256": {
+      "const": "f37d83e972055ce64aa75d81d715c53ff0399a6e655b86a18cd9d35da8ed1ca8",
+      "title": "Prior Attempt 7 Summary Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_authorization_sha256": {
+      "const": "acc637cd5326bbb3be4dff3a2227991bc4815fd58ba80dd69a317faec7a4b3e3",
+      "title": "Prior Authorized Schedule Authorization Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_invariants_all_passed": {
+      "const": true,
+      "title": "Prior Authorized Schedule Invariants All Passed",
+      "type": "boolean"
+    },
+    "prior_authorized_schedule_optimizer_steps_confirmed": {
+      "const": 1,
+      "title": "Prior Authorized Schedule Optimizer Steps Confirmed",
+      "type": "integer"
+    },
+    "prior_authorized_schedule_pass_report_sha256": {
+      "const": "c18ce989c41b68b2f3d93bba120857a4f488c0d0796e5aba7318847493299b71",
+      "title": "Prior Authorized Schedule Pass Report Sha256",
+      "type": "string"
+    },
+    "prior_authorized_schedule_rank_diagnostic_sha256": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "Prior Authorized Schedule Rank Diagnostic Sha256",
+      "type": "array"
+    },
+    "prior_full_smoke_authorization_sha256": {
+      "const": "53ffc48bc61aec314e8e1235d556d43ce677446ae9c346439c5973c7a9d11fe9",
+      "title": "Prior Full Smoke Authorization Sha256",
+      "type": "string"
+    },
+    "prior_full_smoke_failed_invariant": {
+      "const": "post_clip_global_norm_within_limit",
+      "title": "Prior Full Smoke Failed Invariant",
+      "type": "string"
+    },
+    "prior_full_smoke_failure_record_index": {
+      "const": 76,
+      "title": "Prior Full Smoke Failure Record Index",
+      "type": "integer"
+    },
+    "prior_full_smoke_failure_report_sha256": {
+      "const": "1cf0b909b9adc9f945295dadf369c41add239e0e5f26acfeb7b643e8cedecf40",
+      "title": "Prior Full Smoke Failure Report Sha256",
+      "type": "string"
+    },
+    "prior_full_smoke_failure_step": {
+      "const": 2,
+      "title": "Prior Full Smoke Failure Step",
+      "type": "integer"
+    },
+    "prior_full_smoke_failure_token_count": {
+      "const": 10693,
+      "title": "Prior Full Smoke Failure Token Count",
+      "type": "integer"
+    },
+    "prior_full_smoke_optimizer_steps_confirmed": {
+      "const": 2,
+      "title": "Prior Full Smoke Optimizer Steps Confirmed",
+      "type": "integer"
+    },
+    "prior_full_smoke_rank_diagnostic_sha256": {
+      "maxItems": 8,
+      "minItems": 8,
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "Prior Full Smoke Rank Diagnostic Sha256",
+      "type": "array"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "release_existing_allocation": {
+      "const": false,
+      "title": "Release Existing Allocation",
+      "type": "boolean"
+    },
+    "replaces_authorization_hash": {
+      "const": "a2329c519edd2010aa41bde88168b7f2c24e25714dafaf81e09bbcde3e4857c8",
+      "title": "Replaces Authorization Hash",
+      "type": "string"
+    },
+    "resumed_optimizer_steps": {
+      "const": 2,
+      "title": "Resumed Optimizer Steps",
+      "type": "integer"
+    },
+    "rng_state_required": {
+      "const": true,
+      "title": "Rng State Required",
+      "type": "boolean"
+    },
+    "schedule_hash": {
+      "title": "Schedule Hash",
+      "type": "string"
+    },
+    "schedule_indices": {
+      "maxItems": 8,
+      "minItems": 8,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Schedule Indices",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_gpu_indices": {
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Selected Gpu Indices",
+      "type": "array"
+    },
+    "source_v4_dataset_hash": {
+      "const": "0acfe95a820d87310a87b6da104ba59e259ce754b19242f7c9b42937591c5139",
+      "title": "Source V4 Dataset Hash",
+      "type": "string"
+    },
+    "status": {
+      "const": "authorized_for_single_checkpoint_resume_qualification",
+      "title": "Status",
+      "type": "string"
+    },
+    "temporary_checkpoint_deletion_after_validation_allowed": {
+      "const": true,
+      "title": "Temporary Checkpoint Deletion After Validation Allowed",
+      "type": "boolean"
+    },
+    "tolerance_basis": {
+      "const": "two_bfloat16_eps_relative_rounding_margin",
+      "title": "Tolerance Basis",
+      "type": "string"
+    },
+    "tolerance_inherited_from_prior_authorized_schedule": {
+      "const": true,
+      "title": "Tolerance Inherited From Prior Authorized Schedule",
+      "type": "boolean"
+    },
+    "tolerance_multiplier": {
+      "const": 2,
+      "title": "Tolerance Multiplier",
+      "type": "integer"
+    },
+    "tolerance_tuned_to_observed_value": {
+      "const": false,
+      "title": "Tolerance Tuned To Observed Value",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "format_id",
+    "status",
+    "authorization_basis",
+    "authorization_scope",
+    "preregistration_hash",
+    "preregistration_config_sha256",
+    "preregistration_receipt_hash",
+    "preregistration_receipt_sha256",
+    "source_v4_dataset_hash",
+    "schedule_hash",
+    "schedule_indices",
+    "optimizer_steps_authorized",
+    "execution_authorized",
+    "checkpoint_allowed",
+    "adapter_allowed",
+    "offload_fallback_allowed",
+    "new_hpc_jobs_allowed",
+    "release_existing_allocation",
+    "existing_lsf_job_id",
+    "planned_host",
+    "selected_gpu_indices",
+    "production_training_ready",
+    "authorization_hash",
+    "attempt",
+    "replaces_authorization_hash",
+    "prior_authorized_schedule_authorization_sha256",
+    "prior_authorized_schedule_pass_report_sha256",
+    "prior_authorized_schedule_optimizer_steps_confirmed",
+    "prior_authorized_schedule_invariants_all_passed",
+    "prior_authorized_schedule_rank_diagnostic_sha256",
+    "implementation_fix",
+    "implementation_source_sha256",
+    "prior_full_smoke_authorization_sha256",
+    "prior_full_smoke_failure_report_sha256",
+    "prior_full_smoke_optimizer_steps_confirmed",
+    "prior_full_smoke_failure_step",
+    "prior_full_smoke_failure_record_index",
+    "prior_full_smoke_failure_token_count",
+    "prior_full_smoke_failed_invariant",
+    "prior_full_smoke_rank_diagnostic_sha256",
+    "gradient_clip_target",
+    "bfloat16_epsilon",
+    "tolerance_multiplier",
+    "post_clip_global_norm_relative_tolerance",
+    "post_clip_global_norm_acceptance_lte",
+    "tolerance_basis",
+    "tolerance_inherited_from_prior_authorized_schedule",
+    "tolerance_tuned_to_observed_value",
+    "prior_attempt_7_authorization_sha256",
+    "prior_attempt_7_pass_report_sha256",
+    "prior_attempt_7_summary_sha256",
+    "prior_attempt_7_optimizer_steps_confirmed",
+    "prior_attempt_7_invariants_all_passed",
+    "prior_attempt_7_rank_diagnostic_sha256",
+    "control_optimizer_steps",
+    "checkpoint_producer_optimizer_steps",
+    "resumed_optimizer_steps",
+    "checkpoint_global_step",
+    "checkpoint_count_allowed",
+    "checkpoint_save_contents",
+    "checkpoint_load_contents",
+    "checkpoint_format",
+    "dataloader_state_required",
+    "explicit_schedule_cursor_required",
+    "rng_state_required",
+    "lr_scheduler_state_required",
+    "exact_resume_equivalence_required",
+    "temporary_checkpoint_deletion_after_validation_allowed",
+    "checkpoint_resume_implementation",
+    "checkpoint_resume_implementation_source_sha256"
+  ],
+  "title": "HweDecisionSft64kCheckpointResumeQualificationAuthorization",
+  "type": "object"
+}

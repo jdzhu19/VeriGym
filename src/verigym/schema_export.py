@@ -91,6 +91,35 @@ from verigym.schemas.external_agent import (
     ExternalProcessRuntimeIdentity,
     ExternalProcessSecurityEvidence,
 )
+from verigym.schemas.hwe import (
+    HweActionConditionedSftDatasetManifest,
+    HweActionConditionedSftExample,
+    HweDeepSeekHarnessActionSftDatasetManifest,
+    HweDeepSeekHarnessActionSftExample,
+    HweDeepSeekHarnessDecisionSftDatasetManifestV3,
+    HweDeepSeekHarnessDecisionSftDatasetManifestV4,
+    HweDeepSeekHarnessDecisionSftExampleV3,
+    HweDeepSeekHarnessDecisionSftExampleV4,
+    HweObservationMaskingAnalysis,
+)
+from verigym.schemas.hwe_training import (
+    HweCoactDatasetManifest,
+    HweCoactExample,
+    HweDecisionSft64kCheckpointResumeQualificationAuthorization,
+    HweDecisionSft64kDevelopmentTrainingExecutionAuthorization,
+    HweDecisionSft64kDevelopmentTrainingPreregistration,
+    HweDecisionSft64kDevelopmentTrainingPreregistrationReceipt,
+    HweDecisionSft64kOptimizerAuthorizedScheduleReplayAuthorization,
+    HweDecisionSft64kOptimizerBf16ToleranceReplayAuthorization,
+    HweDecisionSft64kOptimizerDiagnosticReplayAuthorization,
+    HweDecisionSft64kOptimizerFullSmokeBf16ToleranceReplayAuthorization,
+    HweDecisionSft64kOptimizerFullSmokeReplayAuthorization,
+    HweDecisionSft64kOptimizerSmokeExecutionAuthorization,
+    HweDecisionSft64kOptimizerSmokeExecutionRetryAuthorization,
+    HweDecisionSft64kOptimizerSmokePreregistration,
+    HweTrainingReadyActionConditionedExample,
+    HweTrainingReadyActionConditionedManifest,
+)
 from verigym.schemas.integrity import ArtifactManifest, IntegrityValidation
 from verigym.schemas.model import (
     ModelCallIdentity,
@@ -203,6 +232,61 @@ _SCHEMAS: dict[str, SchemaFactory] = {
         HistoricalTrainingEpisodeImportEligibility
     ),
     "historical-training-import-manifest": _model(HistoricalTrainingImportManifest),
+    "hwe-action-conditioned-sft": _model(HweActionConditionedSftExample),
+    "hwe-action-conditioned-sft-dataset": _model(HweActionConditionedSftDatasetManifest),
+    "hwe-deepseek-harness-action-sft": _model(HweDeepSeekHarnessActionSftExample),
+    "hwe-deepseek-harness-action-sft-dataset": _model(HweDeepSeekHarnessActionSftDatasetManifest),
+    "hwe-deepseek-harness-decision-sft-v3": _model(HweDeepSeekHarnessDecisionSftExampleV3),
+    "hwe-deepseek-harness-decision-sft-dataset-v3": _model(
+        HweDeepSeekHarnessDecisionSftDatasetManifestV3
+    ),
+    "hwe-deepseek-harness-decision-sft-64k-v4": _model(HweDeepSeekHarnessDecisionSftExampleV4),
+    "hwe-deepseek-harness-decision-sft-dataset-64k-v4": _model(
+        HweDeepSeekHarnessDecisionSftDatasetManifestV4
+    ),
+    "hwe-observation-masking-analysis": _model(HweObservationMaskingAnalysis),
+    "hwe-coact-multiturn-sft": _model(HweCoactExample),
+    "hwe-coact-multiturn-sft-dataset": _model(HweCoactDatasetManifest),
+    "hwe-decision-sft-64k-optimizer-smoke-preregistration": _model(
+        HweDecisionSft64kOptimizerSmokePreregistration
+    ),
+    "hwe-decision-sft-64k-optimizer-smoke-execution-authorization": _model(
+        HweDecisionSft64kOptimizerSmokeExecutionAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-smoke-execution-retry-authorization": _model(
+        HweDecisionSft64kOptimizerSmokeExecutionRetryAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-diagnostic-replay-authorization": _model(
+        HweDecisionSft64kOptimizerDiagnosticReplayAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-bf16-tolerance-replay-authorization": _model(
+        HweDecisionSft64kOptimizerBf16ToleranceReplayAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-authorized-schedule-replay-authorization": _model(
+        HweDecisionSft64kOptimizerAuthorizedScheduleReplayAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-full-smoke-replay-authorization": _model(
+        HweDecisionSft64kOptimizerFullSmokeReplayAuthorization
+    ),
+    "hwe-decision-sft-64k-optimizer-full-smoke-bf16-tolerance-replay-authorization": _model(
+        HweDecisionSft64kOptimizerFullSmokeBf16ToleranceReplayAuthorization
+    ),
+    "hwe-decision-sft-64k-checkpoint-resume-qualification-authorization": _model(
+        HweDecisionSft64kCheckpointResumeQualificationAuthorization
+    ),
+    "hwe-decision-sft-64k-development-training-v1": _model(
+        HweDecisionSft64kDevelopmentTrainingPreregistration
+    ),
+    "hwe-decision-sft-64k-development-training-execution-authorization": _model(
+        HweDecisionSft64kDevelopmentTrainingExecutionAuthorization
+    ),
+    "hwe-decision-sft-64k-development-training-preregistration-receipt": _model(
+        HweDecisionSft64kDevelopmentTrainingPreregistrationReceipt
+    ),
+    "hwe-training-ready-action-conditioned-sft": _model(HweTrainingReadyActionConditionedExample),
+    "hwe-training-ready-action-conditioned-sft-dataset": _model(
+        HweTrainingReadyActionConditionedManifest
+    ),
     "native-regression-result": _model(NativeRegressionResult),
     "observation": _model(Observation),
     "pass-at-k-report": _model(PassAtKReport),

@@ -157,11 +157,16 @@ on a login node, the older split native fallback remains documented in
 
 ## Verified multi-turn SFT mainline
 
-The current SFT path is separate from the legacy one-record smoke. `export-multiturn-sft` accepts
-only integrity-bound training-split transcripts and verified runs, applies the local Qwen chat
-template with rLLM's `hf_template` segmentation, and fails instead of truncating beyond 16,384
-tokens. `scripts/train_qwen35_multiturn_sft.py` then requires exactly eight sealed records and the
-frozen rLLM/veRL/vLLM versions before launching `AgentSFTTrainer` for six optimizer steps.
+The current SFT path is separate from the legacy one-record smoke. The legacy `v1` exporter and
+trainer remain available at 16,384 tokens for replay compatibility. New bounded campaigns use
+`export-multiturn-sft --format-version v2`, which accepts only integrity-bound training-split
+transcripts and verified runs, applies the local Qwen chat template with rLLM's `hf_template`
+segmentation, and fails instead of truncating beyond 32,768 tokens. The v2 path records the
+`repository_observation_v1` identity and observation-efficiency metrics; raw observations remain
+in the restricted training-run audit area and are not included in the dataset. Set
+`VERIGYM_MULTITURN_SFT_VERSION=v2` when invoking `scripts/run_multiturn_sft_container.sh`.
+Both versions require exactly eight sealed records and the frozen rLLM/veRL/vLLM versions before
+launching `AgentSFTTrainer` for six optimizer steps.
 The sealed records keep canonical OpenAI JSON-string tool arguments. A training-only dataset
 adapter converts those strings to the mappings required by Qwen3.5's native template and groups
 the leading masked `system`/`user` prefix, because that template rejects a system-only prefix. The
@@ -174,9 +179,9 @@ The supporting real-run sequence is:
    validation tasks after zero-model base-FAIL/reference-PASS qualification.
 2. `scripts/collect_cva6_multiturn_teachers.py` runs three independent Claude/DeepSeek MCP-only
    samples per task and one Codex/GPT-5.4 fallback, stopping after eight eligible successes.
-3. `verigym-training-reference export-multiturn-sft --collection-root <collection>` resolves the
-   campaign receipt and seals the mixed-provider training JSONL.
-4. `scripts/train_qwen35_multiturn_sft.py` trains the adapter, and
+3. `verigym-training-reference export-multiturn-sft --format-version v2 --collection-root
+   <collection>` resolves the campaign receipt and seals the bounded mixed-provider training JSONL.
+4. `scripts/train_qwen35_multiturn_sft_v2.py` trains the adapter, and
    `scripts/smoke_reload_qwen35_multiturn_adapter.py` performs the required four-A30 reload.
 5. `scripts/smoke_qwen35_rllm_multiturn.py` exercises the native future-rollout interface with
    zero optimizer/GRPO updates.

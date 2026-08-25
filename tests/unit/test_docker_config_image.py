@@ -322,6 +322,24 @@ def test_invalid_image_identity_root_user_and_image_environment_fail_closed() ->
         resolve_image(engine, DockerRuntimeConfig(image="example:test"))
 
 
+def test_image_environment_requires_an_explicit_non_secret_allowlist() -> None:
+    engine = ImageEngine()
+    original = engine.inspect_image
+
+    def image_with_codex_home(reference: str) -> dict[str, Any] | None:
+        payload = original(reference)
+        assert payload is not None
+        payload["Config"]["Env"] = ["PATH=/usr/bin", "CODEX_HOME=/opt/codex"]
+        return payload
+
+    engine.inspect_image = image_with_codex_home  # type: ignore[method-assign]
+    identity = resolve_image(
+        engine,
+        DockerRuntimeConfig(image="example:test", environment_allowlist=["CODEX_HOME"]),
+    )
+    assert identity.resolved_image_id == IMAGE_ID
+
+
 def test_backend_capabilities_and_rootless_status_are_parsed() -> None:
     backend, _ = inspect_backend(ImageEngine())
     assert backend.client_version == "25.0.0"

@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_deepseek_harness_action_sft_pilot_config_v1",
+  "scope": "three_task_collection_and_loader_conformance_only",
+  "model": {
+    "id": "Qwen3.5-9B",
+    "path": "/data/jzhu484/Agent/datasets/Qwen3.5-9B",
+    "base_model_lock_source": "campaign-report.json",
+    "remote_code": false
+  },
+  "dataset": {
+    "format_id": "verigym_hwe_deepseek_harness_action_sft_dataset_v1",
+    "manifest_source": "dataset/dataset-manifest.json",
+    "records_source": "dataset/train.jsonl",
+    "record_unit": "one_exact_context_target_action",
+    "collection_profile_id": "hwe_standard_v2",
+    "observation_policy_id": "hwe_repository_observation_v2",
+    "tool_contract_id": "hwe_native_shell_v2",
+    "max_length": 32768,
+    "truncation": "error",
+    "supervised_roles": [
+      "assistant"
+    ],
+    "supervised_message_indices": "final_only",
+    "masked_roles": [
+      "system",
+      "user",
+      "tool"
+    ],
+    "exact_model_visible_context": true,
+    "context_transformed_after_collection": false,
+    "nap_required": false,
+    "verifier_resolved_only": true,
+    "infrastructure_valid_only": true
+  },
+  "loader": {
+    "entrypoint": "rllm.AgentSFTTrainer",
+    "backend": "verl",
+    "tokenize_method": "hf_template",
+    "custom_dataset_class": "VeriGymFinalAssistantHfTemplateSFTDataset",
+    "transformers_version": "4.57.6",
+    "trust_remote_code": false,
+    "loss_mask_dry_run_required": true,
+    "dataset_manifest_loader_ready_required": true
+  },
+  "recipe": {
+    "status": "not_preregistered_for_three_task_pilot",
+    "epochs": null,
+    "learning_rate": null,
+    "optimizer_updates": null,
+    "world_size": null,
+    "rationale": "HWE-specific training values require a separate post-pilot decision; no values are copied from software-engineering benchmarks."
+  },
+  "trainer": {
+    "enabled": false,
+    "start": false,
+    "production_training_ready": false,
+    "training_started": false,
+    "hpc_jobs_submitted": false,
+    "gpu_hours": 0
+  },
+  "heldout_evaluation_started": false
+}

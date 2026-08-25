@@ -1,0 +1,245 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/hwe-deepseek-harness-decision-sft-dataset-64k-v4.schema.json",
+  "additionalProperties": false,
+  "description": "Exact-token 64K loader dataset derived without changing the frozen v3 pilot.",
+  "properties": {
+    "credential_values_exported": {
+      "const": false,
+      "title": "Credential Values Exported",
+      "type": "boolean"
+    },
+    "dataset_hash": {
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "exact_token_receipts": {
+      "const": true,
+      "title": "Exact Token Receipts",
+      "type": "boolean"
+    },
+    "format_id": {
+      "const": "verigym_hwe_deepseek_harness_decision_sft_dataset_64k_v4",
+      "title": "Format Id",
+      "type": "string"
+    },
+    "format_repair_count": {
+      "const": 1,
+      "title": "Format Repair Count",
+      "type": "integer"
+    },
+    "gpu_hours": {
+      "const": 0,
+      "title": "Gpu Hours",
+      "type": "integer"
+    },
+    "hidden_assets_exported": {
+      "const": false,
+      "title": "Hidden Assets Exported",
+      "type": "boolean"
+    },
+    "hpc_jobs_submitted": {
+      "const": false,
+      "title": "Hpc Jobs Submitted",
+      "type": "boolean"
+    },
+    "loader_ready": {
+      "const": true,
+      "title": "Loader Ready",
+      "type": "boolean"
+    },
+    "masked_format_error_decision_count": {
+      "const": 1,
+      "title": "Masked Format Error Decision Count",
+      "type": "integer"
+    },
+    "masked_policy_error_decision_count": {
+      "const": 0,
+      "title": "Masked Policy Error Decision Count",
+      "type": "integer"
+    },
+    "max_length": {
+      "const": 65536,
+      "title": "Max Length",
+      "type": "integer"
+    },
+    "max_observed_token_count": {
+      "const": 50117,
+      "title": "Max Observed Token Count",
+      "type": "integer"
+    },
+    "nap_required": {
+      "const": false,
+      "title": "Nap Required",
+      "type": "boolean"
+    },
+    "overlength_records": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "maxItems": 0,
+      "title": "Overlength Records",
+      "type": "array"
+    },
+    "pilot_task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Pilot Task Ids",
+      "type": "array"
+    },
+    "private_reasoning_exported": {
+      "const": false,
+      "title": "Private Reasoning Exported",
+      "type": "boolean"
+    },
+    "production_training_ready": {
+      "const": false,
+      "title": "Production Training Ready",
+      "type": "boolean"
+    },
+    "raw_host_paths_exported": {
+      "const": false,
+      "title": "Raw Host Paths Exported",
+      "type": "boolean"
+    },
+    "raw_observations_exported": {
+      "const": false,
+      "title": "Raw Observations Exported",
+      "type": "boolean"
+    },
+    "raw_provider_events_exported": {
+      "const": false,
+      "title": "Raw Provider Events Exported",
+      "type": "boolean"
+    },
+    "record_count": {
+      "const": 83,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "record_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 83,
+      "minItems": 83,
+      "title": "Record Hashes",
+      "type": "array"
+    },
+    "reference_solutions_exported": {
+      "const": false,
+      "title": "Reference Solutions Exported",
+      "type": "boolean"
+    },
+    "represented_task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Represented Task Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_v3_dataset_hash": {
+      "const": "b362cc1df0969f1bad368c939110175502d8ff0d97aef62c93cccd18871e351a",
+      "title": "Source V3 Dataset Hash",
+      "type": "string"
+    },
+    "source_v3_format_id": {
+      "const": "verigym_hwe_deepseek_harness_decision_sft_dataset_v3",
+      "title": "Source V3 Format Id",
+      "type": "string"
+    },
+    "source_v3_manifest_sha256": {
+      "const": "a2605512edac128e66ac0afdf07a9245098f0bdd3b07ca485defc484b3b01c46",
+      "title": "Source V3 Manifest Sha256",
+      "type": "string"
+    },
+    "source_v3_record_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 83,
+      "minItems": 83,
+      "title": "Source V3 Record Hashes",
+      "type": "array"
+    },
+    "source_v3_train_jsonl_sha256": {
+      "const": "1b7522c3bae396aeed4464486a3c8ba60b9b4f3fde8defa2d4903ff852618cec",
+      "title": "Source V3 Train Jsonl Sha256",
+      "type": "string"
+    },
+    "supervised_decision_count": {
+      "const": 83,
+      "title": "Supervised Decision Count",
+      "type": "integer"
+    },
+    "supervised_tool_action_count": {
+      "const": 85,
+      "title": "Supervised Tool Action Count",
+      "type": "integer"
+    },
+    "training_started": {
+      "const": false,
+      "title": "Training Started",
+      "type": "boolean"
+    },
+    "trajectory_count": {
+      "const": 2,
+      "title": "Trajectory Count",
+      "type": "integer"
+    },
+    "truncation": {
+      "const": "error",
+      "title": "Truncation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format_id",
+    "source_v3_format_id",
+    "source_v3_dataset_hash",
+    "source_v3_manifest_sha256",
+    "source_v3_train_jsonl_sha256",
+    "source_v3_record_hashes",
+    "record_count",
+    "record_hashes",
+    "pilot_task_ids",
+    "represented_task_ids",
+    "trajectory_count",
+    "supervised_decision_count",
+    "supervised_tool_action_count",
+    "masked_policy_error_decision_count",
+    "masked_format_error_decision_count",
+    "format_repair_count",
+    "max_observed_token_count",
+    "max_length",
+    "truncation",
+    "overlength_records",
+    "exact_token_receipts",
+    "loader_ready",
+    "nap_required",
+    "production_training_ready",
+    "training_started",
+    "hpc_jobs_submitted",
+    "gpu_hours",
+    "raw_provider_events_exported",
+    "raw_observations_exported",
+    "private_reasoning_exported",
+    "hidden_assets_exported",
+    "reference_solutions_exported",
+    "credential_values_exported",
+    "raw_host_paths_exported",
+    "dataset_hash"
+  ],
+  "title": "HweDeepSeekHarnessDecisionSftDatasetManifestV4",
+  "type": "object"
+}

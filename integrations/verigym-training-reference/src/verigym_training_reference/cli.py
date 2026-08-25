@@ -19,6 +19,7 @@ from .heldout import RepositoryHeldoutRequest, freeze_repository_heldout
 from .multiturn_sft_exporter import (
     TranscriptRunBinding,
     export_verified_multiturn_sft,
+    export_verified_multiturn_sft_v2,
 )
 from .online_policy import export_online_policy_version
 from .pipeline import (
@@ -110,6 +111,12 @@ def _parser() -> argparse.ArgumentParser:
     export_multiturn.add_argument("--split-manifest", type=Path, required=True)
     export_multiturn.add_argument("--tokenizer", type=Path, required=True)
     export_multiturn.add_argument("--output", type=Path, required=True)
+    export_multiturn.add_argument(
+        "--format-version",
+        choices=("v1", "v2"),
+        default="v1",
+        help="select the legacy 16K or bounded-observation 32K record format",
+    )
 
     policy = subparsers.add_parser(
         "register-policy-version",
@@ -266,7 +273,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
             "manifest_hash": sft_manifest.manifest_hash,
         }
     if arguments.command == "export-multiturn-sft":
-        from transformers import AutoTokenizer  # type: ignore[import-not-found]
+        from transformers import AutoTokenizer
 
         from .multiturn_sft_exporter import bindings_from_cva6_collection
 
@@ -282,10 +289,15 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
                 if not separator or not transcript or not run:
                     raise ConfigurationError("--binding must use TRANSCRIPT::RUN_DIR")
                 bindings.append(TranscriptRunBinding(transcript=Path(transcript), run=Path(run)))
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(  # type: ignore[no-untyped-call]
             arguments.tokenizer.resolve(strict=True), local_files_only=True
         )
-        multiturn_manifest = export_verified_multiturn_sft(
+        exporter = (
+            export_verified_multiturn_sft_v2
+            if arguments.format_version == "v2"
+            else export_verified_multiturn_sft
+        )
+        multiturn_manifest = exporter(
             bindings,
             split_manifest_path=arguments.split_manifest,
             tokenizer=tokenizer,

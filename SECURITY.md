@@ -76,6 +76,67 @@ recreate only verifier sessions. The residual trusted computing base includes th
 control-plane binary, reviewed VeriGym/plugin code, Docker daemon, and host kernel; Docker does
 not protect against compromise of those components.
 
+The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
+and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
+including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
+`process/closed` lifecycle. It buffers streamed output privately and forwards only one compacted
+replacement, rejects command environment injection, interactive process control, unmatched
+process identifiers, and fails closed on unknown output-bearing command, process, or filesystem
+methods. Legacy `hwe_standard_v1` also rejects lexical shell workspace escapes. Current
+`hwe_standard_v2` deliberately allows container-native shell reads such as `find ..` and absolute
+tool inspection: its read boundary is the isolated agent container, not a path-string filter.
+Direct filesystem/patch methods and all persistent candidate changes remain restricted to
+`/workspace/repository`; non-workspace direct read-only discovery is mapped to one fixed
+nonexistent workspace path, exposes no container metadata or file contents, and is not recorded as
+a training action. Mutations still fail closed, and legacy HWE v1 keeps its original behavior. The
+v2 process transport additionally normalizes only the direct parent of the visible workspace back
+to the repository root; any other external or noncanonical `cwd` still fails closed. The image
+root is read-only and `/tmp` is bounded and ephemeral. Original
+public command output is
+written only to a bounded, secret-scanned
+`private-audit/` artifact and frozen read-only; only the deterministic compact projection may reach
+the public transcript. These HWE profiles do not broaden or replace the strict typed-tool paths.
+
+The optional HWE action-conditioned masking derivation operates only on the already-public compact
+transcript. It never reads private-audit output. It preserves assistant action bytes and replaces
+eligible older tool observations with typed markers containing only public compact-content hashes,
+sizes, token counts, normalized sequence, action, and workspace epoch. Its records explicitly state
+that counterfactual next-action validation was not run, remain primary-ineligible, and cannot be
+mixed into the frozen primary dataset formats. Because the Codex app-server owns live provider
+history, the exec-server broker does not claim or attempt retroactive rollout-history mutation.
+
+### DeepSeek Harness HWE controller boundary
+
+The opt-in `verigym-deepseek-harness` integration runs the pinned official Harness source in a
+digest-locked, read-only controller container. The controller is the only component that receives
+the DeepSeek credential and provider base URL. It has the dedicated `verigym-hwe-net` network but
+does not receive the task workspace, source checkout outside the pinned Harness tree, Docker
+socket, hidden verifier assets, reference patch, host home, or unrelated experiment roots.
+
+The controller can reach one mode-0600 Unix socket under a mode-0700 run directory. A reviewed
+plugin exposes exactly the six HWE native-shell v2 tools with serial execution; built-in bash,
+jobs, skills, workspace context, runtime context, and Harness compaction are disabled. The host
+broker validates each typed action and call ID. Core file tools retain normal `WorkspacePolicy`
+checks. Shell diagnostics run in the task-keyed repository-agent image through a new short-lived
+container with `network=none`, a fixed credential-free environment, read-only root, non-root user,
+cap-drop `ALL`, no-new-privileges, bounded resources, and only the visible workspace/public mounts.
+No provider or proxy variable is forwarded to that command image.
+
+The pinned Harness uses streaming requests and private JSONL session persistence without
+compression. Session events and uncompacted command output remain private audit material. Public
+transcripts are reconstructed only when every assistant message is exactly one known tool call,
+every result is causally matched, the effective request headers contain the frozen model/settings
+and exact tool schemas, and the episode concludes with one typed `finish`. Thinking/reasoning
+blocks, assistant prose outside tools, foreign tools, duplicate call IDs, malformed events, policy
+violations, and controller/broker failures fail closed.
+
+The residual trusted computing base adds the pinned Harness source, its locked Node controller
+image and installed dependencies, the reviewed tool plugin/helper/broker, Docker daemon, and host
+kernel. The controller deliberately has provider network access, so compromise of those trusted
+components can expose the provider credential. Docker is not a defense against compromise of the
+host control plane. The three-task collection output is permanently pilot-only and cannot claim
+production training readiness.
+
 ### Claude CLI MCP external-agent boundary
 
 The optional `verigym-claude-cli` plugin uses a distinct host-control-plane design because Claude

@@ -252,6 +252,35 @@ def test_environment_name_metadata_requires_environment_identifier_shape(tmp_pat
     assert _scan(tmp_path).gate == "fail"
 
 
+@pytest.mark.parametrize("key", ["authorization_basis", "authorization_scope"])
+def test_authorization_audit_metadata_is_not_a_credential_field(tmp_path: Path, key: str) -> None:
+    value = "single-use execution boundary recorded by operator"
+    assert (
+        classify_structured_field_role(
+            key=key,
+            value=value,
+            content_class="runtime_artifact",
+            field_path=f"$.{key}",
+        )
+        == "documentation_text"
+    )
+    _write(tmp_path / f"{key}.json", json.dumps({key: value}))
+    assert _scan(tmp_path).gate == "pass"
+
+
+@pytest.mark.parametrize("key", ["authorization_basis", "authorization_scope"])
+def test_authorization_audit_metadata_still_detects_explicit_bearer(
+    tmp_path: Path, key: str
+) -> None:
+    _write(
+        tmp_path / f"{key}.json",
+        json.dumps({key: "Authorization: Bearer " + CANARIES["bearer"]}),
+    )
+    report = _scan(tmp_path)
+    assert report.gate == "fail"
+    assert any(finding.evidence_category == "authorization_bearer" for finding in report.findings)
+
+
 def test_credential_source_distinguishes_environment_name_from_value(tmp_path: Path) -> None:
     environment_name = "SYNTHETIC_PROVIDER_API_KEY"
     assert (

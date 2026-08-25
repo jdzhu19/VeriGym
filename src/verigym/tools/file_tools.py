@@ -6,9 +6,16 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from verigym.core.errors import PathPolicyError
+from verigym.core.repository_observation import (
+    audit_record,
+    bounded_read_view,
+    bounded_text_with_marker,
+    compact_tool_result,
+    list_workspace_entries,
+)
 from verigym.core.workspace import WorkspacePolicy, glob_matches
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
@@ -19,10 +26,25 @@ from verigym.tools.base import ToolContext, ToolPlugin
 class FileListRequest(StrictModel):
     path: str = "."
     recursive: bool = True
+    max_depth: int | None = Field(default=None, ge=0, le=64)
+    max_entries: int | None = Field(default=None, ge=1, le=4096)
 
 
 class FileReadRequest(StrictModel):
     path: str
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    concise: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_line_range(self) -> FileReadRequest:
+        if (
+            self.start_line is not None
+            and self.end_line is not None
+            and self.start_line > self.end_line
+        ):
+            raise ValueError("read_file start_line must not be after end_line")
+        return self
 
 
 class FileSearchRequest(StrictModel):
@@ -89,27 +111,70 @@ class DirectFileTool(ToolPlugin):
         raise RuntimeError("direct file tools do not parse subprocess commands")
 
     def execute(self, raw_request: dict[str, Any], context: ToolContext) -> ToolResult:
+        result: ToolResult
         try:
             request = self.validate_request(raw_request)
             if context.session is None or not isinstance(context.workspace_policy, WorkspacePolicy):
-                return _error_result(
-                    self.descriptor.name, ErrorCategory.INTERNAL_ERROR, "missing workspace context"
+                result = _error_result(
+                    self.descriptor.name,
+                    ErrorCategory.INTERNAL_ERROR,
+                    "missing workspace context",
                 )
-            return self.execute_direct(request, context)
+            else:
+                result = self.execute_direct(request, context)
         except ValidationError as exc:
-            return _error_result(self.descriptor.name, ErrorCategory.INVALID_REQUEST, str(exc))
+            result = _error_result(self.descriptor.name, ErrorCategory.INVALID_REQUEST, str(exc))
         except PathPolicyError as exc:
-            return _error_result(self.descriptor.name, ErrorCategory.PERMISSION_DENIED, str(exc))
+            result = _error_result(self.descriptor.name, ErrorCategory.PERMISSION_DENIED, str(exc))
         except FileNotFoundError:
-            return _error_result(
+            result = _error_result(
                 self.descriptor.name, ErrorCategory.INVALID_REQUEST, "path not found"
             )
         except UnicodeDecodeError:
-            return _error_result(
+            result = _error_result(
                 self.descriptor.name, ErrorCategory.INVALID_REQUEST, "file is not UTF-8 text"
             )
+        except ValueError as exc:
+            result = _error_result(self.descriptor.name, ErrorCategory.INVALID_REQUEST, str(exc))
         except Exception as exc:
-            return _error_result(self.descriptor.name, ErrorCategory.INTERNAL_ERROR, str(exc))
+            result = _error_result(self.descriptor.name, ErrorCategory.INTERNAL_ERROR, str(exc))
+        return self._publish(result, context, raw_request)
+
+    def _publish(
+        self,
+        result: ToolResult,
+        context: ToolContext,
+        raw_request: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        if context.audit_callback is not None:
+            context.audit_callback(
+                audit_record(
+                    result,
+                    request=_safe_audit_request(raw_request),
+                    policy=context.observation_policy,
+                )
+            )
+        compacted = _apply_policy_view(result, raw_request, context)
+        compacted = compact_tool_result(compacted, policy=context.observation_policy)
+        stdout, stdout_truncated = bounded_text_with_marker(
+            compacted.stdout,
+            context.max_output_bytes,
+            description=f"{compacted.tool} stdout",
+        )
+        stderr, stderr_truncated = bounded_text_with_marker(
+            compacted.stderr,
+            min(context.max_output_bytes, 8 * 1024),
+            description=f"{compacted.tool} stderr",
+        )
+        return compacted.model_copy(
+            update={
+                "stdout": stdout,
+                "stderr": stderr,
+                "output_truncated": bool(
+                    compacted.output_truncated or stdout_truncated or stderr_truncated
+                ),
+            }
+        )
 
     def execute_direct(self, request: BaseModel, context: ToolContext) -> ToolResult:
         raise NotImplementedError
@@ -138,17 +203,18 @@ class FileListTool(DirectFileTool):
         assert isinstance(policy, WorkspacePolicy)
         relative = policy.check_read(request.path, allow_root=True)
         root = _safe_directory(context, relative)
-        iterator = root.rglob("*") if request.recursive else root.glob("*")
-        entries: list[str] = []
-        for path in sorted(iterator):
-            workspace_relative = path.relative_to(context.session.root).as_posix()
-            if policy.is_excluded(workspace_relative):
-                continue
-            if path.is_symlink():
-                raise PathPolicyError("symlinks are not permitted inside the workspace")
-            entries.append(workspace_relative + ("/" if path.is_dir() else ""))
-        output = "\n".join(entries)
-        return _bounded_text_result(self.descriptor.name, output, context.max_output_bytes)
+        try:
+            output, metadata = list_workspace_entries(
+                root,
+                relative_path=relative,
+                recursive=request.recursive,
+                policy=None,
+                is_excluded=policy.is_excluded,
+                workspace_root=context.session.root,
+            )
+        except ValueError as exc:
+            raise PathPolicyError(str(exc)) from exc
+        return _direct_result(self.descriptor.name, stdout=output, metadata=metadata)
 
 
 class FileReadTool(DirectFileTool):
@@ -162,7 +228,16 @@ class FileReadTool(DirectFileTool):
         assert isinstance(policy, WorkspacePolicy)
         relative = policy.check_read(request.path)
         text = context.session.read_file(relative).decode("utf-8")
-        return _bounded_text_result(self.descriptor.name, text, context.max_output_bytes)
+        line_count = len(text.splitlines())
+        if request.start_line is not None and request.start_line > line_count:
+            raise ValueError("start_line is outside the file")
+        if request.end_line is not None and request.end_line > line_count:
+            raise ValueError("end_line is outside the file")
+        return _direct_result(
+            self.descriptor.name,
+            stdout=text,
+            metadata={"line_count": len(text.splitlines()), "view_mode": "raw"},
+        )
 
 
 class FileSearchTool(DirectFileTool):
@@ -196,9 +271,7 @@ class FileSearchTool(DirectFileTool):
                 found = bool(matcher.search(line)) if matcher else request.query in line
                 if found:
                     matches.append(f"{workspace_relative}:{number}:{line}")
-        return _bounded_text_result(
-            self.descriptor.name, "\n".join(matches), context.max_output_bytes
-        )
+        return _direct_result(self.descriptor.name, stdout="\n".join(matches))
 
 
 class FileWriteTool(DirectFileTool):
@@ -264,7 +337,7 @@ class FileDiffTool(DirectFileTool):
     def execute_direct(self, request: BaseModel, context: ToolContext) -> ToolResult:
         assert context.session is not None
         diff = context.session.snapshot_diff()
-        result = _bounded_text_result(self.descriptor.name, diff.patch, context.max_output_bytes)
+        result = _direct_result(self.descriptor.name, stdout=diff.patch)
         result.metadata = {
             "changed_files": diff.changed_files,
             "added_lines": diff.added_lines,
@@ -273,17 +346,79 @@ class FileDiffTool(DirectFileTool):
         return result
 
 
-def _bounded_text_result(tool: str, text: str, limit: int) -> ToolResult:
-    encoded = text.encode("utf-8")
-    truncated = len(encoded) > limit
-    if truncated:
-        text = encoded[:limit].decode("utf-8", errors="ignore")
-    return _direct_result(
-        tool,
-        stdout=text,
-        message="output truncated" if truncated else "",
-        truncated=truncated,
-    )
+def _apply_policy_view(
+    result: ToolResult,
+    raw_request: dict[str, Any] | None,
+    context: ToolContext,
+) -> ToolResult:
+    policy = context.observation_policy
+    if (
+        not result.success
+        or policy is None
+        or not isinstance(raw_request, dict)
+        or context.session is None
+    ):
+        return result
+    workspace_policy = context.workspace_policy
+    if not isinstance(workspace_policy, WorkspacePolicy):
+        return result
+    if result.tool == "file.list":
+        relative = workspace_policy.check_read(str(raw_request.get("path", ".")), allow_root=True)
+        output, metadata = list_workspace_entries(
+            _safe_directory(context, relative),
+            relative_path=relative,
+            recursive=bool(raw_request.get("recursive", True)),
+            requested_max_depth=raw_request.get("max_depth")
+            if isinstance(raw_request.get("max_depth"), int)
+            else None,
+            requested_max_entries=raw_request.get("max_entries")
+            if isinstance(raw_request.get("max_entries"), int)
+            else None,
+            policy=policy,
+            is_excluded=workspace_policy.is_excluded,
+            workspace_root=context.session.root,
+        )
+        return result.model_copy(
+            update={"stdout": output, "metadata": {**result.metadata, **metadata}}
+        )
+    if result.tool == "file.read":
+        relative = workspace_policy.check_read(str(raw_request.get("path", "")))
+        rendered, metadata = bounded_read_view(
+            result.stdout,
+            relative,
+            start_line=raw_request.get("start_line")
+            if isinstance(raw_request.get("start_line"), int)
+            else None,
+            end_line=raw_request.get("end_line")
+            if isinstance(raw_request.get("end_line"), int)
+            else None,
+            concise=raw_request.get("concise")
+            if isinstance(raw_request.get("concise"), bool)
+            else None,
+            policy=policy,
+        )
+        return result.model_copy(
+            update={"stdout": rendered, "metadata": {**result.metadata, **metadata}}
+        )
+    return result
+
+
+def _safe_audit_request(request: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        return {}
+    allowed = {
+        "path",
+        "start_line",
+        "end_line",
+        "concise",
+        "recursive",
+        "max_depth",
+        "max_entries",
+        "query",
+        "glob",
+        "regex",
+    }
+    return {key: value for key, value in request.items() if key in allowed}
 
 
 def _safe_directory(context: ToolContext, relative: str) -> Path:
