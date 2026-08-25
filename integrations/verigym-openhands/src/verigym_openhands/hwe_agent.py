@@ -279,7 +279,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         raise
                     post_stage = "tool_contract"
                     try:
-                        if sorted(agent.tools_map) != _TOOL_NAMES:
+                        if sorted(conversation.agent.tools_map) != _TOOL_NAMES:
                             raise OpenHandsTrajectoryInfrastructureError(
                                 "OpenHands exposed tools outside the exact HWE contract"
                             )
@@ -294,7 +294,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             event_snapshots = snapshot_openhands_events(conversation.state.events)
                             post_stage = "tool_snapshot"
                             effective_tools = snapshot_openhands_tools(
-                                list(agent.tools_map.values())
+                                list(conversation.agent.tools_map.values())
                             )
                     except Exception as exc:
                         receipt = _sdk_failure_receipt(exc, conversation.state.events)

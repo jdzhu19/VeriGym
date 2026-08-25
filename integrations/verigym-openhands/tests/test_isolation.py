@@ -41,6 +41,8 @@ def test_openhands_pin_and_tool_isolation_are_static() -> None:
     assert "client_tools=[]" in source
     assert "repository_tool_definitions" in source
     assert "conversation.arun()" in source
+    assert "conversation.agent.tools_map" in source
+    assert "sorted(agent.tools_map)" not in source
     assert "timeout=settings.process_timeout_s" in source
     assert "TerminalTool" not in source
     assert "FileEditor" not in source
@@ -114,6 +116,8 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert '"openhands_sdk_identity_observed"' in source
     assert '"openhands_hwe_prompt_policy_bound"' not in source
     assert '"openhands_hwe_identity_observed"' not in source
+    assert "conversation.agent.tools_map" in source
+    assert "sorted(agent.tools_map)" not in source
     assert "TerminalTool" not in source
     assert "FileEditor" not in source
     assert "docker.sock" not in source

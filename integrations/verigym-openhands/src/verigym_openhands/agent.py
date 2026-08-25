@@ -202,7 +202,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                 broker.start()
                 try:
                     conversation.send_message(prompt)
-                    if sorted(agent.tools_map) != sorted(allowed):
+                    if sorted(conversation.agent.tools_map) != sorted(allowed):
                         raise RuntimeError(
                             "OpenHands exposed tools outside the repository registry"
                         )
@@ -217,7 +217,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                         else []
                     )
                     effective_tools = (
-                        snapshot_openhands_tools(list(agent.tools_map.values()))
+                        snapshot_openhands_tools(list(conversation.agent.tools_map.values()))
                         if settings.capture_training_transcript
                         else []
                     )
