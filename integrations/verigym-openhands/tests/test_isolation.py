@@ -110,6 +110,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert 'f"PYTHONPATH={mcp_pythonpath}"' in source
     assert '"openhands_sdk_hwe_prompt_policy_bound"' in source
     assert '"openhands_sdk_hwe_episode_failed"' in source
+    assert '"openhands_sdk_hwe_post_episode_failed"' in source
     assert '"openhands_sdk_identity_observed"' in source
     assert '"openhands_hwe_prompt_policy_bound"' not in source
     assert '"openhands_hwe_identity_observed"' not in source

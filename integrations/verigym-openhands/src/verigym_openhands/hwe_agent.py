@@ -277,17 +277,33 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             _sdk_failure_receipt(exc, conversation.state.events),
                         )
                         raise
-                    if sorted(agent.tools_map) != _TOOL_NAMES:
-                        raise OpenHandsTrajectoryInfrastructureError(
-                            "OpenHands exposed tools outside the exact HWE contract"
+                    post_stage = "tool_contract"
+                    try:
+                        if sorted(agent.tools_map) != _TOOL_NAMES:
+                            raise OpenHandsTrajectoryInfrastructureError(
+                                "OpenHands exposed tools outside the exact HWE contract"
+                            )
+                        post_stage = "event_inventory"
+                        for event in conversation.state.events:
+                            event_type = type(event).__name__
+                            event_types[event_type] = event_types.get(event_type, 0) + 1
+                        post_stage = "final_response"
+                        final_response = get_agent_final_response(conversation.state.events)
+                        if settings.capture_training_transcript:
+                            post_stage = "event_snapshot"
+                            event_snapshots = snapshot_openhands_events(conversation.state.events)
+                            post_stage = "tool_snapshot"
+                            effective_tools = snapshot_openhands_tools(
+                                list(agent.tools_map.values())
+                            )
+                    except Exception as exc:
+                        receipt = _sdk_failure_receipt(exc, conversation.state.events)
+                        receipt["post_episode_stage"] = post_stage
+                        bridge.emit_event(
+                            "openhands_sdk_hwe_post_episode_failed",
+                            receipt,
                         )
-                    for event in conversation.state.events:
-                        event_type = type(event).__name__
-                        event_types[event_type] = event_types.get(event_type, 0) + 1
-                    final_response = get_agent_final_response(conversation.state.events)
-                    if settings.capture_training_transcript:
-                        event_snapshots = snapshot_openhands_events(conversation.state.events)
-                        effective_tools = snapshot_openhands_tools(list(agent.tools_map.values()))
+                        raise
                 finally:
                     try:
                         conversation.close()
