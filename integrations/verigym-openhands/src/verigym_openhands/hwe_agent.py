@@ -264,12 +264,19 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 broker.start()
                 try:
                     conversation.send_message(task_prompt)
-                    asyncio.run(
-                        asyncio.wait_for(
-                            conversation.arun(),
-                            timeout=settings.process_timeout_s,
+                    try:
+                        asyncio.run(
+                            asyncio.wait_for(
+                                conversation.arun(),
+                                timeout=settings.process_timeout_s,
+                            )
                         )
-                    )
+                    except Exception as exc:
+                        bridge.emit_event(
+                            "openhands_sdk_hwe_episode_failed",
+                            _sdk_failure_receipt(exc, conversation.state.events),
+                        )
+                        raise
                     if sorted(agent.tools_map) != _TOOL_NAMES:
                         raise OpenHandsTrajectoryInfrastructureError(
                             "OpenHands exposed tools outside the exact HWE contract"
@@ -529,6 +536,39 @@ def _configured_mcp_pythonpath() -> str:
     if len(resolved) != len(set(resolved)):
         raise ValueError("OpenHands MCP Python paths must be unique")
     return os.pathsep.join(resolved)
+
+
+def _sdk_failure_receipt(exc: BaseException, events: list[Any]) -> dict[str, Any]:
+    chain: list[str] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen and len(chain) < 8:
+        seen.add(id(current))
+        chain.append(type(current).__name__)
+        current = current.__cause__ or current.__context__
+    event_types: dict[str, int] = {}
+    error_codes: list[str] = []
+    for event in events:
+        event_type = type(event).__name__
+        event_types[event_type] = event_types.get(event_type, 0) + 1
+        code = getattr(event, "code", None)
+        if isinstance(code, str) and code and len(code) <= 160:
+            error_codes.append(code)
+    root = exc
+    visited: set[int] = set()
+    while root.__cause__ is not None and id(root) not in visited:
+        visited.add(id(root))
+        root = root.__cause__
+    return {
+        "exception_chain": chain,
+        "root_exception_type": type(root).__name__,
+        "root_message_sha256": hashlib.sha256(str(root).encode()).hexdigest(),
+        "event_type_counts": event_types,
+        "last_event_type": type(events[-1]).__name__ if events else None,
+        "error_codes": error_codes[-4:],
+        "raw_exception_message_persisted": False,
+        "raw_model_content_persisted": False,
+    }
 
 
 def _identity(
