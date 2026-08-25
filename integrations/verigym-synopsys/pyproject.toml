@@ -22,6 +22,7 @@ synopsys-formality-equivalence = "verigym_synopsys:FormalityEquivalenceTool"
 
 [project.scripts]
 verigym-synopsys-prepare-profile = "verigym_synopsys.prepare:main"
+verigym-synopsys-mcp-server = "verigym_synopsys.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

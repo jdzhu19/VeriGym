@@ -52,3 +52,46 @@ parasitics and is explicitly non-signoff. Results are site-specific and comparab
 resolved profile hashes, activity settings, units, and all other profile identities match.
 Commercial tests are opt-in; the ordinary VeriGym test suite requires no Synopsys installation or
 credentials.
+
+## Verifier-only MCP service
+
+The package also installs `verigym-synopsys-mcp-server`, a bounded standard MCP stdio endpoint for
+running DC on a site-controlled licensed machine. This is an alternative transport around the
+same generated `compile_ultra` flow and parsers; it does not add a second PPA definition. The
+server exposes exactly three tools:
+
+- `verigym.synopsys.dc.list_profiles` lists sanitized server-approved profile identities;
+- `verigym.synopsys.dc.resolve_profile` probes the exact server tool/profile identity;
+- `verigym.synopsys.dc.synthesize` accepts a fixed top, the profile's exact ordered source list,
+  SHA-256 identities, and bounded base64 RTL.
+
+The request has no executable, Tcl, SDC, PDK, library, license, shell, timeout, or arbitrary
+argument field. The service resolves those from profile files selected on its own command line,
+regenerates and hash-checks the Tcl in the existing DC backend, and launches DC without a shell.
+Candidate artifacts are bounded and returned with their hashes. Reference artifact contents are
+never returned; only structured metrics and private-artifact identities cross the transport.
+
+Run it locally on the licensed verifier host:
+
+```bash
+verigym-synopsys-mcp-server \
+  --profile /private/profiles/dc.yaml \
+  --work-root /data/verigym/.verigym-tmp/synopsys-mcp
+```
+
+MCP stdio can be carried over SSH without adding an HTTP listener. A verifier-side MCP client can
+use a fixed argument array equivalent to:
+
+```text
+ssh eda-verifier /opt/verigym/bin/verigym-synopsys-mcp-server \
+  --profile /private/profiles/dc.yaml \
+  --work-root /private/verigym-work
+```
+
+Use a dedicated SSH principal and a forced command or fixed wrapper in production so the client
+cannot replace the server arguments. Authentication and host-key policy belong to SSH; the MCP
+protocol never transports license values. Keep the process on a verifier control plane. Do not
+register it as a candidate-agent/model-visible tool, because candidate RTL and commercial assets
+must remain separated and the current DC execution backend still assumes a trusted,
+site-controlled host. The existing in-process `synopsys.dc.synth` plugin and its `LocalRuntime`
+contract remain available and unchanged.

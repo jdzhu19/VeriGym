@@ -50,3 +50,25 @@ profiles.
 
 Ordinary CI uses fake command results and parsers. Real VCS/DC/Formality tests are explicit,
 site-owned, license-gated checks and must not become dependencies of the ordinary test suite.
+
+## Optional MCP deployment
+
+`verigym-synopsys-mcp-server` makes the DC evaluator available as a verifier-only MCP stdio
+service. It is useful when the licensed installation lives on a dedicated workstation or HPC
+login/worker rather than on the VeriGym control-plane machine. Standard input/output can be
+forwarded by a fixed SSH wrapper, so no general network listener is required.
+
+The server operator approves profile files at startup. Callers select only an approved profile ID
+and declared hash, a reference-candidate hash, candidate/reference role, fixed top, and the exact
+ordered hash-bound RTL sources. The service does not accept tool paths, license configuration,
+PDK/library bytes, constraints, commands, or Tcl. It returns a sanitized resolved identity and
+structured DC metrics. Candidate reports/netlists are bounded artifact payloads; reference
+artifact bodies stay on the server. Message, individual-source, aggregate-source,
+individual-artifact, and aggregate-artifact limits are enforced before data is accepted or
+exported.
+
+This boundary is transport and policy mediation, not a sandbox for hostile RTL. Run it under a
+dedicated account or scheduler job on a controlled verifier host, restrict the SSH principal to a
+fixed command, and never expose the MCP tools to the model/agent session. The in-process local DC
+backend remains supported for sites with a co-located licensed installation; both paths use the
+same generated flow and metric semantics.
