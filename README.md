@@ -316,7 +316,8 @@ pytest -m docker_yosys
 The `verigym-rtllm` integration exposes pinned external RTLLM `counter_12` and
 `up_down_counter` tasks without redistributing the benchmark. Their chat and agent modes share a
 verifier-only VCS regression. A user-supplied `synopsys.dc.synth` profile can add
-correctness-gated area, cell-count, delay, WNS, and QoR summaries. The same optional package also
+correctness-gated area, cell-count, delay, WNS, explicit-activity power, and QoR summaries. The
+same optional package also
 provides `synopsys.formality.equivalence` for verifier-only RTL equivalence checks:
 
 ```bash
@@ -432,7 +433,8 @@ decomposed offline rewards, and immutable context-memory agent versions. See
 handoff, an online completion-to-reward oracle, and checkpoint provenance without embedding an RL
 framework in the evaluator. Reference images and Docker
 profiles are Linux-first. Quality reporting remains profile-relative educational synthesis
-area and timing—not full PPA or signoff. Site-local commercial execution is supported through
-optional plugins; proprietary tools and licenses are never distributed. OpenROAD, power,
+area, timing, and optional power—not physical PPA or signoff. Site-local commercial execution is
+supported through optional plugins; proprietary tools and licenses are never distributed.
+OpenROAD-based physical design,
 property checking beyond RTL equivalence, distributed scheduling, built-in model-weight training,
 and continuously evolving benchmark releases remain out of scope for this alpha.

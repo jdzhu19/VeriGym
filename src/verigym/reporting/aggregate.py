@@ -213,10 +213,11 @@ class ReportBuilder:
                 "efficiency_population": "resolved runs",
                 "cost_currency_policy": "unknown currency is never summed",
                 "quality_scope": (
-                    "profile-relative synthesis area and timing"
+                    "profile-relative synthesis area, timing, and optional power"
                     if any(
                         run.scorecard.quality.ppa is not None
-                        and run.scorecard.quality.ppa.scope == "synthesis_area_timing"
+                        and run.scorecard.quality.ppa.scope
+                        in {"synthesis_area_timing", "synthesis_area_timing_power"}
                         for run in runs
                     )
                     else "profile-relative synthesis area only"
@@ -751,6 +752,7 @@ def _efficiency_summaries(runs: list[ValidatedRun]) -> dict[str, NumericSummary]
         "total_tokens": ("total_tokens", "tokens"),
         "tool_calls": ("tool_calls", "calls"),
         "turns": ("turns", "turns"),
+        "external_model_call_count": ("external_model_call_count", "calls"),
         "external_tool_call_count": ("external_tool_call_count", "calls"),
         "external_command_count": ("external_command_count", "commands"),
         "external_input_tokens": ("external_input_tokens", "tokens"),
@@ -1142,6 +1144,8 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
             "clock_period": ppa.clock_period,
             "reference_candidate_hash": manifest.reference_candidate_hash,
         }
+        if ppa.power_unit is not None:
+            partition_identity["power_unit"] = ppa.power_unit
         if any(
             partition_identity[key] is None
             for key in (
@@ -1164,6 +1168,7 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
         ratios: list[float] = []
         delay_ratios: list[float] = []
         slack_deltas: list[float] = []
+        power_ratios: list[float] = []
         coverage: Counter[str] = Counter()
         for run in members:
             ppa = run.scorecard.quality.ppa
@@ -1181,6 +1186,8 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                 delay_ratios.append(ppa.delay_ratio)
             if ppa.worst_negative_slack_delta is not None:
                 slack_deltas.append(ppa.worst_negative_slack_delta)
+            if ppa.power_ratio is not None:
+                power_ratios.append(ppa.power_ratio)
             system = run.plan_item.system.system_id if run.plan_item else _fallback_system(run)
             coverage[f"{run.manifest.task_id}|{system}"] += 1
             run_values.append(
@@ -1200,6 +1207,9 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                     worst_negative_slack=ppa.worst_negative_slack,
                     reference_worst_negative_slack=(ppa.reference_worst_negative_slack),
                     worst_negative_slack_delta=ppa.worst_negative_slack_delta,
+                    power=ppa.power,
+                    reference_power=ppa.reference_power,
+                    power_ratio=ppa.power_ratio,
                 )
             )
         partitions.append(
@@ -1217,6 +1227,7 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                 metric_scope=str(identity["metric_scope"]),
                 area_unit=str(identity["area_unit"]),
                 timing_unit=identity["timing_unit"],
+                power_unit=identity.get("power_unit"),
                 clock_period=(
                     float(identity["clock_period"])
                     if identity["clock_period"] is not None
@@ -1238,6 +1249,9 @@ def _quality_partitions(runs: list[ValidatedRun]) -> list[QualityPartition]:
                     statistics.median(slack_deltas) if slack_deltas else None
                 ),
                 worst_negative_slack_delta_max=(max(slack_deltas) if slack_deltas else None),
+                power_ratio_min=min(power_ratios) if power_ratios else None,
+                power_ratio_median=(statistics.median(power_ratios) if power_ratios else None),
+                power_ratio_max=max(power_ratios) if power_ratios else None,
                 runs=run_values,
             )
         )

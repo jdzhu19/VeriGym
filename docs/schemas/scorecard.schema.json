@@ -200,6 +200,19 @@
           "default": null,
           "title": "External Input Tokens"
         },
+        "external_model_call_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Model Call Count"
+        },
         "external_output_tokens": {
           "anyOf": [
             {
@@ -567,6 +580,18 @@
           "default": null,
           "title": "Power Ratio"
         },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
+        },
         "profile_id": {
           "title": "Profile Id",
           "type": "string"
@@ -633,7 +658,8 @@
           "default": "synthesis_area_only",
           "enum": [
             "synthesis_area_only",
-            "synthesis_area_timing"
+            "synthesis_area_timing",
+            "synthesis_area_timing_power"
           ],
           "title": "Scope",
           "type": "string"
@@ -1121,6 +1147,30 @@
           "default": null,
           "title": "Num Wires"
         },
+        "power_activity_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Activity Mode"
+        },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
+        },
         "resolved_profile_hash": {
           "anyOf": [
             {
@@ -1192,6 +1242,18 @@
         "top": {
           "title": "Top",
           "type": "string"
+        },
+        "total_power_raw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Power Raw"
         },
         "unsupported_constructs": {
           "items": {

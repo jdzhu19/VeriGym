@@ -84,7 +84,9 @@ resolved candidate plus successful candidate/reference synthesis. Partitions bin
 suite/release/source, task/hash, correctness definition, declared profile ID/hash, resolved profile
 hash, runtime/image, metric scope, units, clock period, and reference candidate. Raw synthesis
 metrics may remain diagnostic for an ineligible run, but ranked values remain null. Area/timing
-profiles report area, delay, and WNS independently; power, frequency, and TNS remain unavailable.
+profiles report area, delay, and WNS independently. Area/timing/power profiles additionally report
+candidate/reference power and their ratio under an exact unit and activity contract. Frequency and
+TNS remain unavailable.
 Different partitions are never ranked together. There is no universal “VeriGym Score.”
 
 Different releases and correctness definitions receive compatibility identities and warnings; they
@@ -105,6 +107,7 @@ resolved_profile_hash, status, resolved, evaluable, infrastructure_error, failur
 termination_reason, compile_status, tests_passed, tests_total, ppa_eligible, area, area_unit,
 reference_area, area_ratio, delay, timing_unit, clock_period, reference_delay, delay_ratio,
 worst_negative_slack, reference_worst_negative_slack, worst_negative_slack_delta,
+power, power_unit, reference_power, power_ratio,
 wall_time_s, model_input_tokens, model_output_tokens, total_tokens,
 model_cost, cost_currency, turns, tool_calls, failed_tool_calls, changed_files, diff_lines,
 warning_count, artifact_validation_status

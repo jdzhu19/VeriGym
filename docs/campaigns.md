@@ -42,6 +42,8 @@ reference medians as well as ratios, with their units and exact comparison parti
 
 Every quality row preserves the existing exact compatibility partition over suite source, task,
 correctness, declared and resolved profiles, runtime/image, units, constraints, clock period, and
-reference candidate. Rows are comparable only when `comparison_partition_id` is identical. A
-campaign never pools or ranks different partitions, so results from different DC libraries,
-constraints, tool versions, or open-source profiles remain visibly separate.
+reference candidate. Area/timing/power partitions preserve candidate and reference power medians,
+their ratio, and the power unit without combining power with area or timing. Rows are comparable
+only when `comparison_partition_id` is identical. A campaign never pools or ranks different
+partitions, so results from different DC libraries, constraints, activity modes, tool versions, or
+open-source profiles remain visibly separate.

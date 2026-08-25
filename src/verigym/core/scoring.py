@@ -91,7 +91,11 @@ def build_scorecard(
         )
     quality = QualityMetrics(ppa=None, synthesis=None, reference_synthesis=None)
     if resolved_profile is not None:
-        timing_scope = resolved_profile.metric_scope == "synthesis_area_timing"
+        timing_scope = resolved_profile.metric_scope in {
+            "synthesis_area_timing",
+            "synthesis_area_timing_power",
+        }
+        power_scope = resolved_profile.metric_scope == "synthesis_area_timing_power"
         reasons: list[str] = []
         if not functional_resolved:
             reasons.append("correctness_gate_failed")
@@ -151,6 +155,19 @@ def build_scorecard(
                         reasons.append(f"{role}_timing_unit_mismatch")
                     if metrics.clock_period is None:
                         reasons.append(f"{role}_clock_period_missing")
+        if power_scope:
+            expected_activity_mode = resolved_profile.metadata.get("power_activity_mode")
+            for role, metrics in (
+                ("candidate", candidate_synthesis),
+                ("reference", reference_synthesis),
+            ):
+                if metrics is None or metrics.total_power_raw is None:
+                    reasons.append(f"{role}_power_missing")
+                    continue
+                if metrics.power_unit != resolved_profile.power_unit:
+                    reasons.append(f"{role}_power_unit_mismatch")
+                if metrics.power_activity_mode != expected_activity_mode:
+                    reasons.append(f"{role}_power_activity_mismatch")
         reasons = list(dict.fromkeys(reasons))
         eligible = not reasons
         candidate_area = (
@@ -193,6 +210,16 @@ def build_scorecard(
             if eligible and timing_scope and reference_synthesis is not None
             else None
         )
+        candidate_power = (
+            candidate_synthesis.total_power_raw
+            if eligible and power_scope and candidate_synthesis is not None
+            else None
+        )
+        reference_power = (
+            reference_synthesis.total_power_raw
+            if eligible and power_scope and reference_synthesis is not None
+            else None
+        )
         quality = QualityMetrics(
             ppa=PPAMetrics(
                 profile_id=resolved_profile.profile_id,
@@ -207,7 +234,8 @@ def build_scorecard(
                 area_ratio=ratio,
                 delay=candidate_delay,
                 frequency=None,
-                power=None,
+                power=candidate_power,
+                power_unit=resolved_profile.power_unit if eligible and power_scope else None,
                 worst_negative_slack=candidate_wns,
                 total_negative_slack=None,
                 timing_unit=resolved_profile.timing_unit if eligible and timing_scope else None,
@@ -218,17 +246,29 @@ def build_scorecard(
                 ),
                 reference_delay=reference_delay,
                 reference_worst_negative_slack=reference_wns,
+                reference_power=reference_power,
                 delay_ratio=delay_ratio,
                 worst_negative_slack_delta=(
                     candidate_wns - reference_wns
                     if candidate_wns is not None and reference_wns is not None
                     else None
                 ),
+                power_ratio=(
+                    reference_power / candidate_power
+                    if reference_power is not None and candidate_power is not None
+                    else None
+                ),
             ),
             synthesis=candidate_synthesis,
             reference_synthesis=reference_synthesis,
         )
-        scope_label = "area and timing" if timing_scope else "area-only"
+        scope_label = (
+            "area, timing, and power"
+            if power_scope
+            else "area and timing"
+            if timing_scope
+            else "area-only"
+        )
         warnings.append(f"Synthesis quality is profile-relative, {scope_label}, and non-signoff.")
     edit_similarity_values = [
         value
@@ -265,6 +305,9 @@ def build_scorecard(
             ),
             external_cli_event_count=(
                 external_accounting.cli_event_count if external_accounting is not None else 0
+            ),
+            external_model_call_count=(
+                external_accounting.model_call_count if external_accounting is not None else None
             ),
             external_tool_call_count=(
                 external_accounting.external_tool_call_count

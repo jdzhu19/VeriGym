@@ -293,7 +293,11 @@ class MetricSpec(StrictModel):
 
 
 class MetricContract(StrictModel):
-    scope: Literal["synthesis_area_only", "synthesis_area_timing"] = "synthesis_area_only"
+    scope: Literal[
+        "synthesis_area_only",
+        "synthesis_area_timing",
+        "synthesis_area_timing_power",
+    ] = "synthesis_area_only"
     area: MetricSpec
     delay: MetricSpec = Field(default_factory=lambda: MetricSpec(enabled=False))
     frequency: MetricSpec = Field(default_factory=lambda: MetricSpec(enabled=False))
@@ -326,13 +330,26 @@ class MetricContract(StrictModel):
             )
             if any(metric.enabled for metric in unavailable):
                 raise ValueError("area-only profiles cannot enable timing or power metrics")
-        else:
+        elif self.scope == "synthesis_area_timing":
             if not (self.area.enabled and self.delay.enabled and self.worst_negative_slack.enabled):
                 raise ValueError(
                     "area-timing profiles require area, delay, and worst-negative slack"
                 )
             if self.frequency.enabled or self.power.enabled or self.total_negative_slack.enabled:
                 raise ValueError("the area-timing scope does not enable frequency, power, or TNS")
+        else:
+            if not (
+                self.area.enabled
+                and self.delay.enabled
+                and self.power.enabled
+                and self.worst_negative_slack.enabled
+            ):
+                raise ValueError(
+                    "area-timing-power profiles require area, delay, power, and "
+                    "worst-negative slack"
+                )
+            if self.frequency.enabled or self.total_negative_slack.enabled:
+                raise ValueError("the area-timing-power scope does not enable frequency or TNS")
         if self.signoff:
             raise ValueError("VeriGym synthesis profiles cannot claim signoff")
         return self

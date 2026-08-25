@@ -142,6 +142,9 @@ class QualityRunValue(StrictModel):
     worst_negative_slack: float | None = None
     reference_worst_negative_slack: float | None = None
     worst_negative_slack_delta: float | None = None
+    power: float | None = None
+    reference_power: float | None = None
+    power_ratio: float | None = None
 
 
 class QualityPartition(StrictModel):
@@ -158,6 +161,7 @@ class QualityPartition(StrictModel):
     metric_scope: str = "synthesis_area_only"
     area_unit: str
     timing_unit: str | None = None
+    power_unit: str | None = None
     clock_period: float | None = None
     reference_candidate_hash: str
     eligible_run_count: int = Field(ge=0)
@@ -173,6 +177,9 @@ class QualityPartition(StrictModel):
     worst_negative_slack_delta_min: float | None = None
     worst_negative_slack_delta_median: float | None = None
     worst_negative_slack_delta_max: float | None = None
+    power_ratio_min: float | None = None
+    power_ratio_median: float | None = None
+    power_ratio_max: float | None = None
     runs: list[QualityRunValue]
 
 

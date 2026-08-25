@@ -183,6 +183,7 @@ class CampaignQualityPartition(StrictModel):
     metric_scope: str
     area_unit: str
     timing_unit: str | None = None
+    power_unit: str | None = None
     clock_period: float | None = None
     reference_candidate_hash: str
     eligible_run_count: int = Field(ge=0)
@@ -196,6 +197,9 @@ class CampaignQualityPartition(StrictModel):
     worst_negative_slack_median: float | None = None
     reference_worst_negative_slack_median: float | None = None
     worst_negative_slack_delta_median: float | None = None
+    power_median: float | None = None
+    reference_power_median: float | None = None
+    power_ratio_median: float | None = None
 
     @field_validator("input_id")
     @classmethod

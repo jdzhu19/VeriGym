@@ -13,6 +13,7 @@ from verigym.schemas.runtime import WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand
 from verigym.tools.base import ToolContext
 from verigym.tools.yosys.plugin import YosysSynthesisTool
+from verigym.tools.yosys.script_builder import generated_script_hash
 
 
 class RecordingSession(RuntimeSession):
@@ -131,6 +132,60 @@ def test_liberty_hash_mismatch_is_rejected_before_yosys(tmp_path: Path) -> None:
     assert result.category == ErrorCategory.INVALID_REQUEST
     assert "hash mismatch" in result.message
     assert not session.executed
+
+
+def test_opensta_command_is_argument_array_and_sdc_is_hash_bound(tmp_path: Path) -> None:
+    session, raw = _stage(tmp_path)
+    opensta = tmp_path / "sta"
+    opensta.write_bytes(b"trusted-opensta-test-executable")
+    constraints = b"create_clock -name clk -period 10 [get_ports clk]\n"
+    constraints_path = session.root / ".verigym_profile/constraints.sdc"
+    constraints_path.write_bytes(constraints)
+    raw.update(
+        {
+            "flow_template_id": "verigym-yosys-opensta-atp-v2",
+            "constraints_path": ".verigym_profile/constraints.sdc",
+            "constraints_sha256": hash_bytes(constraints),
+            "timing_unit": "ns",
+            "power_unit": "uW",
+            "clock_name": "clk",
+            "clock_period": 10.0,
+            "wire_load_model": "5K_hvratio_1_1",
+            "power_activity_mode": "global_clock_relative",
+            "power_activity": 0.1,
+            "power_duty": 0.5,
+            "opensta_executable": str(opensta),
+            "opensta_executable_sha256": hash_bytes(opensta.read_bytes()),
+            "expected_opensta_version": "3.1.0",
+        }
+    )
+    tool = YosysSynthesisTool()
+    request = tool.validate_request(raw)
+    raw["expected_flow_script_hash"] = generated_script_hash(request)
+    request = tool.validate_request(raw)
+    command = tool.build_command(request, ToolContext(session=session))
+    assert command.requires_shell is False
+    assert command.argv == [
+        str(opensta),
+        "-no_init",
+        "-no_splash",
+        "-exit",
+        "flow.tcl",
+    ]
+    stage = session.root / ".verigym_internal/yosys/candidate"
+    assert stage.joinpath("synthesis.ys").is_file()
+    assert stage.joinpath("flow.tcl").is_file()
+    assert stage.joinpath("profile/constraints.sdc").read_bytes() == constraints
+    assert any(path.endswith("/out/units.rpt") for path in command.artifact_globs)
+    assert any(path.endswith("/out/activity_annotation.rpt") for path in command.artifact_globs)
+
+    raw["constraints_sha256"] = "0" * 64
+    raw["expected_flow_script_hash"] = None
+    mismatched_request = tool.validate_request(raw)
+    raw["expected_flow_script_hash"] = generated_script_hash(mismatched_request)
+    result = tool.execute(raw, ToolContext(session=session))
+    assert result.category == ErrorCategory.INVALID_REQUEST
+    assert "SDC asset hash mismatch" in result.message
 
 
 def test_candidate_failure_missing_abc_parser_and_resource_errors_are_distinct(

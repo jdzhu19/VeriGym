@@ -48,7 +48,7 @@ from verigym.experiments.state import (
     load_json_model,
     load_jsonl_models,
 )
-from verigym.profiles.comparison import compare_area, compare_timing
+from verigym.profiles.comparison import compare_area, compare_power, compare_timing
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
 from verigym.provenance import get_build_provenance
@@ -1020,7 +1020,9 @@ def profiles_resolve(
 def report_compare(
     run_a: Path = typer.Argument(..., exists=True, file_okay=False),
     run_b: Path = typer.Argument(..., exists=True, file_okay=False),
-    metric: Literal["area", "delay", "worst_negative_slack"] = typer.Option("area", "--metric"),
+    metric: Literal["area", "delay", "worst_negative_slack", "power"] = typer.Option(
+        "area", "--metric"
+    ),
 ) -> None:
     """Rank two runs only when their full resolved metric contracts match."""
 
@@ -1028,6 +1030,8 @@ def report_compare(
         result = (
             compare_area(run_a, run_b)
             if metric == "area"
+            else compare_power(run_a, run_b)
+            if metric == "power"
             else compare_timing(run_a, run_b, metric=metric)
         )
         console.print_json(result.model_dump_json(indent=2))

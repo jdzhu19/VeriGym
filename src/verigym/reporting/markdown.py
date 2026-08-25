@@ -402,8 +402,8 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
             "",
             "## Synthesis quality partitions",
             "",
-            "Area and optional timing are educational, profile-relative, correctness-gated, "
-            "and non-signoff. Partitions are never ranked against each other.",
+            "Area and optional timing/power are profile-relative, correctness-gated, and "
+            "non-signoff. Partitions are never ranked against each other.",
             "",
         ]
     )
@@ -438,7 +438,19 @@ def render_markdown(aggregate: AggregateReport, inputs: LoadedReportInputs) -> s
                         f"{_format_number(quality_partition.worst_negative_slack_delta_median)} / "
                         f"{_format_number(quality_partition.worst_negative_slack_delta_max)}",
                     ]
-                    if quality_partition.metric_scope == "synthesis_area_timing"
+                    if quality_partition.metric_scope
+                    in {"synthesis_area_timing", "synthesis_area_timing_power"}
+                    else []
+                ),
+                *(
+                    [
+                        f"- Power unit: `{markdown_escape(quality_partition.power_unit or '-')}`",
+                        "- Power-ratio min/median/max: "
+                        f"{_format_number(quality_partition.power_ratio_min)} / "
+                        f"{_format_number(quality_partition.power_ratio_median)} / "
+                        f"{_format_number(quality_partition.power_ratio_max)}",
+                    ]
+                    if quality_partition.metric_scope == "synthesis_area_timing_power"
                     else []
                 ),
                 "",

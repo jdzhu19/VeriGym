@@ -58,6 +58,10 @@ CSV_COLUMNS = [
     "worst_negative_slack",
     "reference_worst_negative_slack",
     "worst_negative_slack_delta",
+    "power",
+    "power_unit",
+    "reference_power",
+    "power_ratio",
     "wall_time_s",
     "model_input_tokens",
     "model_output_tokens",
@@ -110,6 +114,7 @@ CODEX_CLI_CSV_COLUMNS = [
     "chat_eval_compatible",
     "pure_api_model_eval",
     "direct_api_benchmark",
+    "external_model_call_count",
     "external_tool_call_count",
     "external_command_count",
     "external_file_read_count",
@@ -353,6 +358,10 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "worst_negative_slack": ppa.worst_negative_slack if ppa else None,
         "reference_worst_negative_slack": (ppa.reference_worst_negative_slack if ppa else None),
         "worst_negative_slack_delta": ppa.worst_negative_slack_delta if ppa else None,
+        "power": ppa.power if ppa else None,
+        "power_unit": ppa.power_unit if ppa else None,
+        "reference_power": ppa.reference_power if ppa else None,
+        "power_ratio": ppa.power_ratio if ppa else None,
         "wall_time_s": score.efficiency.wall_time_s,
         "model_input_tokens": score.efficiency.model_input_tokens,
         "model_output_tokens": score.efficiency.model_output_tokens,
@@ -369,6 +378,11 @@ def _valid_row(experiment_id: str, run: ValidatedRun) -> dict[str, Any]:
         "turns": score.efficiency.turns,
         "tool_calls": score.efficiency.tool_calls,
         "failed_tool_calls": score.efficiency.failed_tool_calls,
+        "external_model_call_count": (
+            cli_accounting.model_call_count
+            if cli_accounting is not None
+            else score.efficiency.external_model_call_count
+        ),
         "external_tool_call_count": (
             cli_accounting.external_tool_call_count
             if cli_accounting is not None

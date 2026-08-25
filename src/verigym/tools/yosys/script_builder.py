@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Literal
 
 from verigym.core.hashing import hash_bytes
+from verigym.tools.yosys.opensta import (
+    FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS,
+)
+from verigym.tools.yosys.opensta import (
+    build_opensta_script,
+)
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
 
 FLOW_TEMPLATE_ID: Literal["verigym-yosys-area-v1"] = "verigym-yosys-area-v1"
@@ -38,7 +44,7 @@ def safe_source_names(request: YosysSynthesisRequest) -> list[str]:
 def build_yosys_script(request: YosysSynthesisRequest) -> str:
     """Render only the versioned built-in flow; no untrusted command text is accepted."""
 
-    if request.flow_template_id != FLOW_TEMPLATE_ID:
+    if request.flow_template_id not in {FLOW_TEMPLATE_ID, *OPENSTA_FLOW_TEMPLATE_IDS}:
         raise ValueError(f"unsupported Yosys flow template: {request.flow_template_id}")
     if request.liberty_path is None:
         raise ValueError("the canonical Yosys flow requires a Liberty asset")
@@ -74,7 +80,12 @@ def build_yosys_script(request: YosysSynthesisRequest) -> str:
 
 
 def generated_script_hash(request: YosysSynthesisRequest) -> str:
-    return hash_bytes(build_yosys_script(request).encode("utf-8"))
+    synthesis = build_yosys_script(request)
+    if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS:
+        payload = synthesis + "\n--- opensta.tcl ---\n" + build_opensta_script(request)
+    else:
+        payload = synthesis
+    return hash_bytes(payload.encode("utf-8"))
 
 
 __all__ = [

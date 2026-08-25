@@ -43,6 +43,20 @@ class TimingComparison(StrictModel):
     value_a_minus_value_b: float
 
 
+class PowerComparison(StrictModel):
+    metric: Literal["power"] = "power"
+    comparable: Literal[True] = True
+    run_a: str
+    run_b: str
+    power_a: float
+    power_b: float
+    power_unit: str
+    resolved_profile_hash: str
+    winner_run_id: str | None
+    relation: Literal["run_a_better", "run_b_better", "equal"]
+    power_a_over_power_b: float
+
+
 def _load(run_dir: Path) -> tuple[RunManifest, ScoreCard, ResolvedToolchainProfile]:
     root = run_dir.expanduser().resolve()
     manifest_path = root / "run_manifest.json"
@@ -171,7 +185,8 @@ def compare_timing(
     ppa_b = score_b.quality.ppa
     assert ppa_a is not None and ppa_b is not None
     mismatches: list[str] = []
-    if ppa_a.scope != "synthesis_area_timing" or ppa_b.scope != "synthesis_area_timing":
+    timing_scopes = {"synthesis_area_timing", "synthesis_area_timing_power"}
+    if ppa_a.scope not in timing_scopes or ppa_b.scope not in timing_scopes:
         mismatches.append("timing comparison requires area/timing profiles")
     if ppa_a.timing_unit is None or ppa_a.timing_unit != ppa_b.timing_unit:
         mismatches.append("timing unit differs or is unavailable")
@@ -216,4 +231,54 @@ def compare_timing(
     )
 
 
-__all__ = ["AreaComparison", "TimingComparison", "compare_area", "compare_timing"]
+def compare_power(run_a: Path, run_b: Path) -> PowerComparison:
+    """Compare total synthesis-estimated power after exact-profile safeguards."""
+
+    compare_area(run_a, run_b)
+    _manifest_a, score_a, profile_a = _load(run_a)
+    _manifest_b, score_b, profile_b = _load(run_b)
+    ppa_a = score_a.quality.ppa
+    ppa_b = score_b.quality.ppa
+    assert ppa_a is not None and ppa_b is not None
+    mismatches: list[str] = []
+    if ppa_a.scope != "synthesis_area_timing_power" or ppa_b.scope != "synthesis_area_timing_power":
+        mismatches.append("power comparison requires area/timing/power profiles")
+    if ppa_a.power_unit is None or ppa_a.power_unit != ppa_b.power_unit:
+        mismatches.append("power unit differs or is unavailable")
+    if profile_a.power_unit != profile_b.power_unit:
+        mismatches.append("resolved power units differ")
+    if ppa_a.power is None or ppa_b.power is None:
+        mismatches.append("power is unavailable")
+    if mismatches:
+        raise ComparisonError("invalid comparison: " + "; ".join(mismatches))
+    assert ppa_a.power is not None and ppa_b.power is not None and ppa_a.power_unit is not None
+    if ppa_a.power < ppa_b.power:
+        winner = score_a.run_id
+        relation = "run_a_better"
+    elif ppa_b.power < ppa_a.power:
+        winner = score_b.run_id
+        relation = "run_b_better"
+    else:
+        winner = None
+        relation = "equal"
+    return PowerComparison(
+        run_a=score_a.run_id,
+        run_b=score_b.run_id,
+        power_a=ppa_a.power,
+        power_b=ppa_b.power,
+        power_unit=ppa_a.power_unit,
+        resolved_profile_hash=ppa_a.resolved_profile_hash,
+        winner_run_id=winner,
+        relation=relation,  # type: ignore[arg-type]
+        power_a_over_power_b=ppa_a.power / ppa_b.power,
+    )
+
+
+__all__ = [
+    "AreaComparison",
+    "PowerComparison",
+    "TimingComparison",
+    "compare_area",
+    "compare_power",
+    "compare_timing",
+]

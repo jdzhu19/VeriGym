@@ -9,10 +9,14 @@ from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
 
 from verigym_synopsys.dc import (
+    AREA_TIMING_FLOW_TEMPLATE_ID,
     DesignCompilerSynthesisTool,
     _generated_script_hash,
+    _parse_power_report,
+    _script,
 )
 from verigym_synopsys.formality import FormalityEquivalenceTool, _script_identity
+from verigym_synopsys.prepare import main as prepare_profile
 from verigym_synopsys.vcs import VcsSimulationTool
 
 
@@ -26,6 +30,43 @@ def _session(tmp_path: Path, files: dict[str, bytes]) -> tuple[LocalRuntime, Run
     runtime = LocalRuntime()
     session = runtime.create_session(SessionSpec(source_dir=str(source), label="verifier"))
     return runtime, session
+
+
+def test_prepare_profile_requires_exactly_one_db_path(tmp_path: Path) -> None:
+    liberty = tmp_path / "cells.lib"
+    liberty.write_text("library (cells) {}\n", encoding="utf-8")
+    database = tmp_path / "cells.db"
+    database.write_bytes(b"db")
+    sdc = tmp_path / "design.sdc"
+    sdc.write_text("create_clock -period 10 [get_ports clk]\n", encoding="utf-8")
+    common = [
+        "--liberty",
+        str(liberty),
+        "--sdc",
+        str(sdc),
+        "--output-profile",
+        str(tmp_path / "profile.yaml"),
+        "--source",
+        "rtl/counter.v",
+        "--top",
+        "counter",
+        "--clock-period",
+        "10",
+        "--power-base-clock",
+        "clk",
+    ]
+    with pytest.raises(ValueError, match="--output-db is required"):
+        prepare_profile(common)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        prepare_profile(
+            [
+                *common,
+                "--input-db",
+                str(database),
+                "--output-db",
+                str(tmp_path / "converted.db"),
+            ]
+        )
 
 
 def test_vcs_stages_testbench_first_and_redacts_license(
@@ -126,7 +167,17 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         db_hash = hashlib.sha256(db_payload).hexdigest()
         sdc_hash = hashlib.sha256(sdc_payload).hexdigest()
         script_hash = _generated_script_hash(
-            ["rtl/counter.v"], "counter", 10.0, "ns", sdc_hash, True
+            ["rtl/counter.v"],
+            "counter",
+            10.0,
+            "ns",
+            sdc_hash,
+            True,
+            "uW",
+            "global_clock_relative",
+            0.1,
+            0.5,
+            "clk",
         )
         plugin = DesignCompilerSynthesisTool()
         request = plugin.validate_request(
@@ -138,6 +189,11 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
                 "constraints_sha256": sdc_hash,
                 "area_unit": "um^2",
                 "timing_unit": "ns",
+                "power_unit": "uW",
+                "power_activity_mode": "global_clock_relative",
+                "power_activity": 0.1,
+                "power_static_probability": 0.5,
+                "power_base_clock": "clk",
                 "clock_period": 10.0,
                 "expected_flow_script_hash": script_hash,
                 "resolved_profile_hash": "a" * 64,
@@ -148,15 +204,27 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         command = plugin.build_command(request, context)
         flow = session.read_file(".verigym_internal/dc/candidate/flow.tcl").decode()
         assert "is_hierarchical == false" in flow
+        assert "set vg_power_clock [get_clocks clk]" in flow
+        assert "remove_from_collection $vg_primary_inputs $vg_clock_sources" in flow
+        assert (
+            "set_switching_activity -toggle_rate 0.1 -static_probability 0.5 "
+            "-base_clock clk $vg_data_inputs"
+        ) in flow
+        assert "-type inputs" not in flow
         session.write_file(
             ".verigym_internal/dc/candidate/out/metrics.kv",
             (
-                "VERIGYM_DC_METRICS_V2\n"
+                "VERIGYM_DC_METRICS_V4\n"
                 "mapped_area=42.5\n"
                 "critical_path_delay=3.25\n"
                 "worst_negative_slack=-0.125\n"
                 "clock_period=10\n"
                 "num_cells=17\n"
+                "power_unit=uW\n"
+                "power_activity_mode=global_clock_relative\n"
+                "power_activity=0.1\n"
+                "power_static_probability=0.5\n"
+                "power_base_clock=clk\n"
                 "timing_unit=ns\n"
                 f"constraints_sha256={sdc_hash}\n"
             ).encode(),
@@ -164,6 +232,10 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         session.write_file(
             ".verigym_internal/dc/candidate/out/qor.rpt",
             b"Leaf Cell Count: 17\n",
+        )
+        session.write_file(
+            ".verigym_internal/dc/candidate/out/power.rpt",
+            b"Total Dynamic Power = 8.5242 uW\nCell Leakage Power = 327.2023 nW\n",
         )
         result = plugin.parse_result(
             request,
@@ -176,12 +248,37 @@ def test_dc_parses_bounded_area_and_timing_metrics(tmp_path: Path) -> None:
         assert synthesis["critical_path_delay_raw"] == 3.25
         assert synthesis["worst_negative_slack_raw"] == -0.125
         assert synthesis["num_cells"] == 17
+        assert synthesis["total_power_raw"] == pytest.approx(8.8514023)
+        assert synthesis["power_unit"] == "uW"
+        assert synthesis["power_activity_mode"] == "global_clock_relative"
         assert synthesis["timing_constraints_hash"] == sdc_hash
+        assert "power.rpt" in result.artifacts
         assert "qor.rpt" in result.artifacts
         assert (tmp_path / "artifacts" / "qor.rpt").read_text() == "Leaf Cell Count: 17\n"
     finally:
         session.close()
         runtime.close()
+
+
+def test_dc_power_report_normalizes_dynamic_and_leakage_units() -> None:
+    payload = b"Total Dynamic Power = 21.5755 mW\nCell Leakage Power = 427.8876 uW\n"
+    assert _parse_power_report(payload, target_unit="uW") == pytest.approx(22003.3876)
+
+
+def test_dc_v2_script_remains_area_timing_only() -> None:
+    script = _script(
+        sources=["rtl/counter.v"],
+        top="counter",
+        clock_period=10.0,
+        timing_unit="ns",
+        constraints_hash="a" * 64,
+        emit_netlist=True,
+        template_id=AREA_TIMING_FLOW_TEMPLATE_ID,
+    )
+    assert "compile_ultra" in script
+    assert "VERIGYM_DC_METRICS_V2" in script
+    assert "report_qor > out/qor.rpt" in script
+    assert "report_power" not in script
 
 
 @pytest.mark.parametrize(("status", "success"), [("equivalent", True), ("non_equivalent", False)])

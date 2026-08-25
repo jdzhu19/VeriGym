@@ -1,4 +1,4 @@
-"""Synopsys Design Compiler area/timing synthesis backend."""
+"""Synopsys Design Compiler area/timing/power synthesis backend."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from verigym.plugin_api import (
@@ -46,8 +46,20 @@ from .common import license_failure, licensed_environment, redact, resolve_execu
 LEGACY_FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v1"
 _LEGACY_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v1"
 LEGACY_FLOW_TEMPLATE_HASH = hashlib.sha256(_LEGACY_FLOW_TEMPLATE_SOURCE.encode()).hexdigest()
-FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v2"
-_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v2"
+AREA_TIMING_FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-v2"
+_AREA_TIMING_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-template:v2"
+AREA_TIMING_FLOW_TEMPLATE_HASH = hashlib.sha256(
+    _AREA_TIMING_FLOW_TEMPLATE_SOURCE.encode()
+).hexdigest()
+VECTORLESS_POWER_FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-power-v3"
+_VECTORLESS_POWER_FLOW_TEMPLATE_SOURCE = "verigym-synopsys:dc-area-timing-power-template:v3"
+VECTORLESS_POWER_FLOW_TEMPLATE_HASH = hashlib.sha256(
+    _VECTORLESS_POWER_FLOW_TEMPLATE_SOURCE.encode()
+).hexdigest()
+FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-power-explicit-v4"
+_FLOW_TEMPLATE_SOURCE = (
+    "verigym-synopsys:dc-area-timing-power-explicit-template:v4:non-clock-primary-inputs"
+)
 FLOW_TEMPLATE_HASH = hashlib.sha256(_FLOW_TEMPLATE_SOURCE.encode()).hexdigest()
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
@@ -65,10 +77,27 @@ _METRIC_KEYS_V1 = {
     "constraints_sha256",
 }
 _METRIC_KEYS_V2 = {*_METRIC_KEYS_V1, "num_cells"}
+_METRIC_KEYS_V3 = {*_METRIC_KEYS_V2, "power_unit", "power_activity_mode"}
+_METRIC_KEYS_V4 = {
+    *_METRIC_KEYS_V3,
+    "power_activity",
+    "power_static_probability",
+    "power_base_clock",
+}
 _TEMPLATE_HASHES = {
     LEGACY_FLOW_TEMPLATE_ID: LEGACY_FLOW_TEMPLATE_HASH,
+    AREA_TIMING_FLOW_TEMPLATE_ID: AREA_TIMING_FLOW_TEMPLATE_HASH,
+    VECTORLESS_POWER_FLOW_TEMPLATE_ID: VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
 }
+_POWER_UNIT_SCALE_WATTS = {
+    "W": 1.0,
+    "mW": 1.0e-3,
+    "uW": 1.0e-6,
+    "nW": 1.0e-9,
+    "pW": 1.0e-12,
+}
+_POWER_VALUE = r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -149,12 +178,20 @@ class DesignCompilerRequest(StrictModel):
     constraints_sha256: str
     area_unit: str
     timing_unit: str
+    power_unit: str | None = None
+    power_activity_mode: Literal["vectorless_default", "global_clock_relative"] | None = None
+    power_activity: float | None = Field(default=None, gt=0)
+    power_static_probability: float | None = Field(default=None, ge=0, le=1)
+    power_base_clock: str | None = None
     clock_period: float = Field(gt=0)
     emit_netlist_verilog: bool = True
     expected_flow_script_hash: str
-    flow_template_id: Literal["synopsys-dc-area-timing-v1", "synopsys-dc-area-timing-v2"] = (
-        "synopsys-dc-area-timing-v2"
-    )
+    flow_template_id: Literal[
+        "synopsys-dc-area-timing-v1",
+        "synopsys-dc-area-timing-v2",
+        "synopsys-dc-area-timing-power-v3",
+        "synopsys-dc-area-timing-power-explicit-v4",
+    ] = "synopsys-dc-area-timing-power-explicit-v4"
     resolved_profile_hash: str
     tool_identity: dict[str, Any] = Field(default_factory=dict)
     run_label: Literal["candidate", "reference"]
@@ -200,6 +237,43 @@ class DesignCompilerRequest(StrictModel):
             raise ValueError("Design Compiler area and timing units must be explicit")
         if not math.isfinite(self.clock_period):
             raise ValueError("clock period must be finite")
+        if self.flow_template_id == FLOW_TEMPLATE_ID:
+            if self.power_unit not in _POWER_UNIT_SCALE_WATTS:
+                raise ValueError("the Design Compiler power flow requires a supported power unit")
+            if self.power_activity_mode != "global_clock_relative":
+                raise ValueError("the Design Compiler v4 flow requires explicit activity")
+            if (
+                self.power_activity is None
+                or self.power_static_probability is None
+                or self.power_base_clock is None
+                or _IDENTIFIER.fullmatch(self.power_base_clock) is None
+            ):
+                raise ValueError("the Design Compiler v4 activity contract is incomplete")
+        elif self.flow_template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID:
+            if self.power_unit not in _POWER_UNIT_SCALE_WATTS:
+                raise ValueError("the Design Compiler power flow requires a supported power unit")
+            if self.power_activity_mode != "vectorless_default":
+                raise ValueError("the Design Compiler v3 flow requires its legacy activity mode")
+            if any(
+                value is not None
+                for value in (
+                    self.power_activity,
+                    self.power_static_probability,
+                    self.power_base_clock,
+                )
+            ):
+                raise ValueError("the Design Compiler v3 flow cannot declare explicit activity")
+        elif any(
+            value is not None
+            for value in (
+                self.power_unit,
+                self.power_activity_mode,
+                self.power_activity,
+                self.power_static_probability,
+                self.power_base_clock,
+            )
+        ):
+            raise ValueError("legacy Design Compiler flows cannot declare power settings")
         return self
 
 
@@ -223,6 +297,11 @@ def _script(
     timing_unit: str,
     constraints_hash: str,
     emit_netlist: bool,
+    power_unit: str | None = None,
+    power_activity_mode: str | None = None,
+    power_activity: float | None = None,
+    power_static_probability: float | None = None,
+    power_base_clock: str | None = None,
     template_id: str = FLOW_TEMPLATE_ID,
 ) -> str:
     if template_id not in _TEMPLATE_HASHES:
@@ -233,17 +312,96 @@ def _script(
     write_netlist = (
         "write -format verilog -hierarchy -output out/netlist.v\n" if emit_netlist else ""
     )
-    v2 = template_id == FLOW_TEMPLATE_ID
+    has_cell_count = template_id != LEGACY_FLOW_TEMPLATE_ID
+    has_power = template_id in {VECTORLESS_POWER_FLOW_TEMPLATE_ID, FLOW_TEMPLATE_ID}
+    explicit_power = template_id == FLOW_TEMPLATE_ID
+    if has_power and power_unit not in _POWER_UNIT_SCALE_WATTS:
+        raise ValueError("the Design Compiler power flow requires a supported power unit")
+    if explicit_power and (
+        power_activity_mode != "global_clock_relative"
+        or power_activity is None
+        or power_static_probability is None
+        or power_base_clock is None
+        or _IDENTIFIER.fullmatch(power_base_clock) is None
+    ):
+        raise ValueError("the v4 Design Compiler flow requires explicit activity settings")
+    if template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID and (
+        power_activity_mode != "vectorless_default"
+        or any(
+            value is not None
+            for value in (power_activity, power_static_probability, power_base_clock)
+        )
+    ):
+        raise ValueError("the v3 Design Compiler flow requires legacy vectorless settings")
+    if not has_power and any(
+        value is not None
+        for value in (
+            power_unit,
+            power_activity_mode,
+            power_activity,
+            power_static_probability,
+            power_base_clock,
+        )
+    ):
+        raise ValueError("legacy Design Compiler flows cannot declare power settings")
     cell_collection = (
         'set vg_mapped_cells [get_cells -hierarchical * -filter "is_hierarchical == false"]\n'
-        if v2
+        if has_cell_count
         else ""
     )
-    area_collection = "$vg_mapped_cells" if v2 else "[get_cells -hierarchical *]"
-    cell_metric = "set vg_num_cells [sizeof_collection $vg_mapped_cells]\n" if v2 else ""
-    metric_sentinel = "VERIGYM_DC_METRICS_V2" if v2 else "VERIGYM_DC_METRICS_V1"
-    cell_metric_output = 'puts $vg_metrics "num_cells=$vg_num_cells"\n' if v2 else ""
-    qor_report = "report_qor > out/qor.rpt\n" if v2 else ""
+    area_collection = "$vg_mapped_cells" if has_cell_count else "[get_cells -hierarchical *]"
+    cell_metric = (
+        "set vg_num_cells [sizeof_collection $vg_mapped_cells]\n" if has_cell_count else ""
+    )
+    metric_sentinel = (
+        "VERIGYM_DC_METRICS_V4"
+        if explicit_power
+        else "VERIGYM_DC_METRICS_V3"
+        if has_power
+        else "VERIGYM_DC_METRICS_V2"
+        if has_cell_count
+        else "VERIGYM_DC_METRICS_V1"
+    )
+    cell_metric_output = 'puts $vg_metrics "num_cells=$vg_num_cells"\n' if has_cell_count else ""
+    power_metric_output = (
+        f'puts $vg_metrics "power_unit={power_unit}"\n'
+        f'puts $vg_metrics "power_activity_mode={power_activity_mode}"\n'
+        + (
+            f'puts $vg_metrics "power_activity={power_activity:.12g}"\n'
+            f'puts $vg_metrics "power_static_probability={power_static_probability:.12g}"\n'
+            f'puts $vg_metrics "power_base_clock={power_base_clock}"\n'
+            if explicit_power
+            and power_activity is not None
+            and power_static_probability is not None
+            and power_base_clock is not None
+            else ""
+        )
+        if has_power
+        else ""
+    )
+    qor_report = "report_qor > out/qor.rpt\n" if has_cell_count else ""
+    power_report = "report_power > out/power.rpt\n" if has_power else ""
+    activity_annotation = (
+        f"set vg_power_clock [get_clocks {power_base_clock}]\n"
+        "if {[sizeof_collection $vg_power_clock] != 1} { "
+        'error "power base clock was not resolved uniquely" }\n'
+        'set vg_primary_inputs [get_ports * -filter "direction == in"]\n'
+        "set vg_clock_sources [get_attribute $vg_power_clock sources]\n"
+        "set vg_data_inputs [remove_from_collection $vg_primary_inputs $vg_clock_sources]\n"
+        "if {[sizeof_collection $vg_data_inputs] > 0} {\n"
+        f"  set_switching_activity -toggle_rate {power_activity:.12g} "
+        f"-static_probability {power_static_probability:.12g} "
+        f"-base_clock {power_base_clock} $vg_data_inputs\n"
+        "}\n"
+        if explicit_power
+        and power_activity is not None
+        and power_static_probability is not None
+        and power_base_clock is not None
+        else ""
+    )
+    clock_collection = (
+        "set vg_clocks $vg_power_clock\n" if explicit_power else "set vg_clocks [get_clocks *]\n"
+    )
     return (
         "set_app_var sh_continue_on_error false\n"
         "file mkdir out\n"
@@ -258,10 +416,11 @@ def _script(
         "uniquify\n"
         "check_design\n"
         "source profile/constraints.sdc\n"
+        f"{activity_annotation}"
         "compile_ultra\n"
         "set vg_paths [get_timing_paths -delay_type max -max_paths 1]\n"
         'if {[sizeof_collection $vg_paths] != 1} { error "no maximum timing path" }\n'
-        "set vg_clocks [get_clocks *]\n"
+        f"{clock_collection}"
         'if {[sizeof_collection $vg_clocks] < 1} { error "no clock was defined by SDC" }\n'
         f"{cell_collection}"
         "set vg_area 0.0\n"
@@ -283,11 +442,13 @@ def _script(
         'puts $vg_metrics "worst_negative_slack=$vg_wns"\n'
         'puts $vg_metrics "clock_period=$vg_period"\n'
         f"{cell_metric_output}"
+        f"{power_metric_output}"
         f'puts $vg_metrics "timing_unit={timing_unit}"\n'
         f'puts $vg_metrics "constraints_sha256={constraints_hash}"\n'
         "close $vg_metrics\n"
         "report_area > out/area.rpt\n"
         "report_timing -delay_type max -max_paths 1 > out/timing.rpt\n"
+        f"{power_report}"
         f"{qor_report}"
         f"{write_netlist}"
         "exit\n"
@@ -301,6 +462,11 @@ def _generated_script_hash(
     timing_unit: str,
     constraints_hash: str,
     emit_netlist: bool,
+    power_unit: str | None = None,
+    power_activity_mode: str | None = None,
+    power_activity: float | None = None,
+    power_static_probability: float | None = None,
+    power_base_clock: str | None = None,
     template_id: str = FLOW_TEMPLATE_ID,
 ) -> str:
     return _hash_bytes(
@@ -311,6 +477,11 @@ def _generated_script_hash(
             timing_unit=timing_unit,
             constraints_hash=constraints_hash,
             emit_netlist=emit_netlist,
+            power_unit=power_unit,
+            power_activity_mode=power_activity_mode,
+            power_activity=power_activity,
+            power_static_probability=power_static_probability,
+            power_base_clock=power_base_clock,
             template_id=template_id,
         ).encode("utf-8")
     )
@@ -327,6 +498,7 @@ def _descriptor() -> ToolDescriptor:
             "synthesis",
             "mapped_area",
             "static_timing",
+            "power_estimation",
             "licensed",
             "structured_errors",
         ],
@@ -363,8 +535,17 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             errors.append("profile selects a different synthesis backend")
         if profile.flow.template_id not in _TEMPLATE_HASHES:
             errors.append(f"unsupported Design Compiler template: {profile.flow.template_id}")
-        if profile.metrics.scope != "synthesis_area_timing":
-            errors.append("Design Compiler profiles must use the area/timing metric scope")
+        power_flow = profile.flow.template_id in {
+            VECTORLESS_POWER_FLOW_TEMPLATE_ID,
+            FLOW_TEMPLATE_ID,
+        }
+        explicit_power = profile.flow.template_id == FLOW_TEMPLATE_ID
+        expected_scope = "synthesis_area_timing_power" if power_flow else "synthesis_area_timing"
+        if profile.metrics.scope != expected_scope:
+            errors.append(
+                f"Design Compiler template {profile.flow.template_id!r} requires "
+                f"the {expected_scope!r} metric scope"
+            )
         if profile.reproducibility_scope == "public":
             errors.append("licensed host-tool profiles cannot claim public reproducibility")
         if profile.runtime.runtime != "local" or (
@@ -414,6 +595,29 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
         timing_unit = profile.metrics.delay.unit
         if timing_unit != profile.metrics.worst_negative_slack.unit:
             errors.append("delay and worst-negative-slack units must match")
+        if power_flow:
+            if not profile.metrics.power.enabled:
+                errors.append("the Design Compiler power flow requires power metrics")
+            if profile.metrics.power.unit not in _POWER_UNIT_SCALE_WATTS:
+                errors.append("the Design Compiler power flow requires a supported power unit")
+            expected_activity_mode = (
+                "global_clock_relative" if explicit_power else "vectorless_default"
+            )
+            if profile.metadata.get("power_activity_mode") != expected_activity_mode:
+                errors.append("the Design Compiler power activity mode does not match the flow")
+        if explicit_power:
+            for name in ("power_activity", "power_static_probability"):
+                if not isinstance(profile.metadata.get(name), (int, float)):
+                    errors.append(f"the Design Compiler v4 flow requires {name}")
+            activity = profile.metadata.get("power_activity")
+            probability = profile.metadata.get("power_static_probability")
+            if isinstance(activity, (int, float)) and float(activity) <= 0:
+                errors.append("power_activity must be positive")
+            if isinstance(probability, (int, float)) and not 0 <= float(probability) <= 1:
+                errors.append("power_static_probability must be between zero and one")
+            base_clock = profile.metadata.get("power_base_clock")
+            if not isinstance(base_clock, str) or _IDENTIFIER.fullmatch(base_clock) is None:
+                errors.append("the Design Compiler v4 flow requires a valid power_base_clock")
         if profile.environment_allowlist and not set(profile.environment_allowlist).issubset(
             {"SNPSLMD_LICENSE_FILE", "LM_LICENSE_FILE"}
         ):
@@ -439,6 +643,11 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
         assert profile.flow is not None
         assert profile.metrics is not None
         assert profile.reference is not None
+        power_flow = profile.flow.template_id in {
+            VECTORLESS_POWER_FLOW_TEMPLATE_ID,
+            FLOW_TEMPLATE_ID,
+        }
+        explicit_power = profile.flow.template_id == FLOW_TEMPLATE_ID
         if runtime.descriptor.name != "local":
             raise ConfigurationError("Design Compiler profiles require the local runtime")
         if source_paths != profile.flow.default_sources or top_module != profile.flow.top_module:
@@ -456,7 +665,12 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             executable=executable,
             version=version,
             version_output=version,
-            capabilities=["synthesis", "mapped_area", "static_timing"],
+            capabilities=[
+                "synthesis",
+                "mapped_area",
+                "static_timing",
+                *(["power_estimation"] if power_flow else []),
+            ],
             identity_kind="local_executable",
         )
         descriptors: list[ArtifactDescriptor] = [*profile.libraries]
@@ -504,6 +718,11 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             profile.metrics.delay.unit,
             constraints.content_hash,
             profile.flow.emit_netlist_verilog,
+            profile.metrics.power.unit if power_flow else None,
+            (str(profile.metadata["power_activity_mode"]) if power_flow else None),
+            (float(profile.metadata["power_activity"]) if explicit_power else None),
+            (float(profile.metadata["power_static_probability"]) if explicit_power else None),
+            (str(profile.metadata["power_base_clock"]) if explicit_power else None),
             profile.flow.template_id,
         )
         unresolved = ResolvedToolchainProfile(
@@ -523,9 +742,10 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             generated_script_hash=script_hash,
             top_module=top_module,
             source_paths=source_paths,
-            metric_scope="synthesis_area_timing",
+            metric_scope=profile.metrics.scope,
             area_unit=library.unit,
             timing_unit=profile.metrics.delay.unit,
+            power_unit=(profile.metrics.power.unit if power_flow else None),
             reference_strategy=profile.reference.strategy,
             reference_candidate_hash=reference_candidate_hash,
             metadata={
@@ -533,6 +753,24 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "constraints_sha256": constraints.content_hash,
                 "clock_period": clock_period,
                 "flow_template_hash": _TEMPLATE_HASHES[profile.flow.template_id],
+                **(
+                    {
+                        "power_activity_mode": profile.metadata["power_activity_mode"],
+                        **(
+                            {
+                                "power_activity": profile.metadata["power_activity"],
+                                "power_static_probability": profile.metadata[
+                                    "power_static_probability"
+                                ],
+                                "power_base_clock": profile.metadata["power_base_clock"],
+                            }
+                            if explicit_power
+                            else {}
+                        ),
+                    }
+                    if power_flow
+                    else {}
+                ),
             },
         )
         resolved = unresolved.model_copy(
@@ -576,6 +814,30 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             constraints_sha256=constraints.content_hash,
             area_unit=resolved.area_unit,
             timing_unit=resolved.timing_unit or "",
+            power_unit=resolved.power_unit,
+            power_activity_mode=cast(
+                Literal["vectorless_default", "global_clock_relative"] | None,
+                (
+                    str(resolved.metadata["power_activity_mode"])
+                    if resolved.power_unit is not None
+                    else None
+                ),
+            ),
+            power_activity=(
+                float(resolved.metadata["power_activity"])
+                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                else None
+            ),
+            power_static_probability=(
+                float(resolved.metadata["power_static_probability"])
+                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                else None
+            ),
+            power_base_clock=(
+                str(resolved.metadata["power_base_clock"])
+                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                else None
+            ),
             clock_period=float(resolved.metadata["clock_period"]),
             emit_netlist_verilog=profile.flow.emit_netlist_verilog,
             expected_flow_script_hash=resolved.generated_script_hash,
@@ -637,6 +899,11 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             timing_unit=request.timing_unit,
             constraints_hash=request.constraints_sha256,
             emit_netlist=request.emit_netlist_verilog,
+            power_unit=request.power_unit,
+            power_activity_mode=request.power_activity_mode,
+            power_activity=request.power_activity,
+            power_static_probability=request.power_static_probability,
+            power_base_clock=request.power_base_clock,
             template_id=request.flow_template_id,
         )
         if _hash_bytes(script.encode("utf-8")) != request.expected_flow_script_hash:
@@ -728,12 +995,42 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             slack = _finite_float(parsed["worst_negative_slack"], "worst_negative_slack")
             num_cells = (
                 _nonnegative_int(parsed["num_cells"], "num_cells")
-                if request.flow_template_id == FLOW_TEMPLATE_ID
+                if request.flow_template_id != LEGACY_FLOW_TEMPLATE_ID
                 else None
             )
             period = _positive_float(parsed["clock_period"], "clock_period")
             if not math.isclose(period, request.clock_period, rel_tol=0.0, abs_tol=1.0e-9):
                 raise ValueError("Design Compiler clock period differs from the profile")
+            total_power = None
+            if request.flow_template_id in {
+                VECTORLESS_POWER_FLOW_TEMPLATE_ID,
+                FLOW_TEMPLATE_ID,
+            }:
+                if parsed["power_unit"] != request.power_unit:
+                    raise ValueError("Design Compiler power unit differs from the profile")
+                if parsed["power_activity_mode"] != request.power_activity_mode:
+                    raise ValueError("Design Compiler power activity mode differs from the profile")
+                if request.flow_template_id == FLOW_TEMPLATE_ID:
+                    for key, expected_value in (
+                        ("power_activity", request.power_activity),
+                        ("power_static_probability", request.power_static_probability),
+                    ):
+                        assert expected_value is not None
+                        actual_value = _finite_float(parsed[key], key)
+                        if not math.isclose(
+                            actual_value, expected_value, rel_tol=0.0, abs_tol=1.0e-12
+                        ):
+                            raise ValueError(f"Design Compiler {key} differs from the profile")
+                    if parsed["power_base_clock"] != request.power_base_clock:
+                        raise ValueError(
+                            "Design Compiler power_base_clock differs from the profile"
+                        )
+                power_payload = _optional_session_file(
+                    context.session.root, f"{stage}/out/power.rpt", _MAX_ARTIFACT_BYTES
+                )
+                if power_payload is None or request.power_unit is None:
+                    raise ValueError("Design Compiler produced no power report")
+                total_power = _parse_power_report(power_payload, target_unit=request.power_unit)
         except ValueError as exc:
             return self._failure(
                 request,
@@ -758,6 +1055,9 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             timing_unit=request.timing_unit,
             clock_period=period,
             timing_constraints_hash=request.constraints_sha256,
+            total_power_raw=total_power,
+            power_unit=request.power_unit if total_power is not None else None,
+            power_activity_mode=(request.power_activity_mode if total_power is not None else None),
             tool_identity=request.tool_identity,
             resolved_profile_hash=request.resolved_profile_hash,
             generated_script_hash=request.expected_flow_script_hash,
@@ -767,7 +1067,11 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             tool=self.descriptor.name,
             success=True,
             category=ErrorCategory.SUCCESS,
-            message="Design Compiler area/timing synthesis passed",
+            message=(
+                "Design Compiler area/timing/power synthesis passed"
+                if total_power is not None
+                else "Design Compiler area/timing synthesis passed"
+            ),
             exit_code=completed.exit_code,
             stdout=stdout,
             stderr=stderr,
@@ -805,6 +1109,7 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             ("metrics.kv", f"{stage}/out/metrics.kv", "statistics", None),
             ("area.rpt", f"{stage}/out/area.rpt", "statistics", None),
             ("timing.rpt", f"{stage}/out/timing.rpt", "statistics", None),
+            ("power.rpt", f"{stage}/out/power.rpt", "statistics", None),
             ("qor.rpt", f"{stage}/out/qor.rpt", "statistics", None),
             ("netlist.v", f"{stage}/out/netlist.v", "netlist_verilog", None),
         ]
@@ -900,11 +1205,25 @@ def _parse_metrics(payload: bytes, *, template_id: str) -> dict[str, str]:
     except UnicodeDecodeError as exc:
         raise ValueError("Design Compiler metrics are not ASCII") from exc
     expected_sentinel = (
-        "VERIGYM_DC_METRICS_V2" if template_id == FLOW_TEMPLATE_ID else "VERIGYM_DC_METRICS_V1"
+        "VERIGYM_DC_METRICS_V4"
+        if template_id == FLOW_TEMPLATE_ID
+        else "VERIGYM_DC_METRICS_V3"
+        if template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID
+        else "VERIGYM_DC_METRICS_V2"
+        if template_id == AREA_TIMING_FLOW_TEMPLATE_ID
+        else "VERIGYM_DC_METRICS_V1"
     )
     if not lines or lines[0] != expected_sentinel:
         raise ValueError("Design Compiler metrics sentinel is missing")
-    expected_keys = _METRIC_KEYS_V2 if template_id == FLOW_TEMPLATE_ID else _METRIC_KEYS_V1
+    expected_keys = (
+        _METRIC_KEYS_V4
+        if template_id == FLOW_TEMPLATE_ID
+        else _METRIC_KEYS_V3
+        if template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID
+        else _METRIC_KEYS_V2
+        if template_id == AREA_TIMING_FLOW_TEMPLATE_ID
+        else _METRIC_KEYS_V1
+    )
     parsed: dict[str, str] = {}
     for line in lines[1:]:
         if line.count("=") != 1:
@@ -918,6 +1237,34 @@ def _parse_metrics(payload: bytes, *, template_id: str) -> dict[str, str]:
     if set(parsed) != expected_keys:
         raise ValueError("Design Compiler metrics are incomplete")
     return parsed
+
+
+def _parse_power_report(payload: bytes, *, target_unit: str) -> float:
+    if target_unit not in _POWER_UNIT_SCALE_WATTS:
+        raise ValueError("Design Compiler power target unit is unsupported")
+    try:
+        report = payload.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Design Compiler power report is not ASCII") from exc
+
+    def component(label: str) -> float:
+        match = re.search(
+            rf"^{re.escape(label)}\s*=\s*{_POWER_VALUE}\s+(W|mW|uW|nW|pW)\b",
+            report,
+            flags=re.MULTILINE,
+        )
+        if match is None:
+            raise ValueError(f"Design Compiler power report has no {label}")
+        value = _finite_float(match.group(1), label)
+        if value < 0:
+            raise ValueError(f"Design Compiler {label} is negative")
+        return value * _POWER_UNIT_SCALE_WATTS[match.group(2)]
+
+    watts = component("Total Dynamic Power") + component("Cell Leakage Power")
+    total = watts / _POWER_UNIT_SCALE_WATTS[target_unit]
+    if not math.isfinite(total) or total <= 0:
+        raise ValueError("Design Compiler total power is not finite and positive")
+    return total
 
 
 def _finite_float(value: str, field: str) -> float:
@@ -950,8 +1297,12 @@ def _nonnegative_int(value: str, field: str) -> int:
 __all__ = [
     "DesignCompilerRequest",
     "DesignCompilerSynthesisTool",
+    "AREA_TIMING_FLOW_TEMPLATE_HASH",
+    "AREA_TIMING_FLOW_TEMPLATE_ID",
     "FLOW_TEMPLATE_HASH",
     "FLOW_TEMPLATE_ID",
     "LEGACY_FLOW_TEMPLATE_HASH",
     "LEGACY_FLOW_TEMPLATE_ID",
+    "VECTORLESS_POWER_FLOW_TEMPLATE_HASH",
+    "VECTORLESS_POWER_FLOW_TEMPLATE_ID",
 ]

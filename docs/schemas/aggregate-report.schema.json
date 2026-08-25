@@ -904,6 +904,54 @@
           "title": "Partition Id",
           "type": "string"
         },
+        "power_ratio_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio Max"
+        },
+        "power_ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio Median"
+        },
+        "power_ratio_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio Min"
+        },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
+        },
         "ratio_max": {
           "anyOf": [
             {
@@ -1113,6 +1161,30 @@
           "title": "Plan Index",
           "type": "integer"
         },
+        "power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power"
+        },
+        "power_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio"
+        },
         "reference_area": {
           "anyOf": [
             {
@@ -1136,6 +1208,18 @@
           ],
           "default": null,
           "title": "Reference Delay"
+        },
+        "reference_power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Power"
         },
         "reference_worst_negative_slack": {
           "anyOf": [

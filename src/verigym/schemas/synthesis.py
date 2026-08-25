@@ -45,6 +45,9 @@ class SynthesisMetrics(StrictModel):
     timing_unit: str | None = None
     clock_period: float | None = None
     timing_constraints_hash: str | None = None
+    total_power_raw: float | None = None
+    power_unit: str | None = None
+    power_activity_mode: str | None = None
     warnings: list[SynthesisDiagnostic] = Field(default_factory=list)
     unsupported_constructs: list[SynthesisDiagnostic] = Field(default_factory=list)
     tool_identity: dict[str, Any] = Field(default_factory=dict)
@@ -82,6 +85,13 @@ class SynthesisMetrics(StrictModel):
             raise ValueError("worst-negative slack must be finite")
         return value
 
+    @field_validator("total_power_raw")
+    @classmethod
+    def validate_total_power(cls, value: float | None) -> float | None:
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            raise ValueError("total power must be finite and positive")
+        return value
+
     @model_validator(mode="after")
     def validate_timing_identity(self) -> SynthesisMetrics:
         values = (
@@ -92,6 +102,11 @@ class SynthesisMetrics(StrictModel):
         if any(value is not None for value in values):
             if not self.timing_unit or not self.timing_constraints_hash:
                 raise ValueError("timing metrics require a unit and constraints hash")
+        if self.total_power_raw is not None:
+            if not self.power_unit or not self.power_activity_mode:
+                raise ValueError("power metrics require a unit and activity mode")
+        elif self.power_unit is not None or self.power_activity_mode is not None:
+            raise ValueError("power identity cannot be present without total power")
         return self
 
 

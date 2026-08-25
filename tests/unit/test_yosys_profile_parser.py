@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from scripts.prepare_nangate45_ppa_profile import main as prepare_nangate45_profile
 from verigym.core.errors import ConfigurationError, DuplicatePluginError
-from verigym.core.hashing import content_hash
+from verigym.core.hashing import content_hash, hash_bytes
 from verigym.profiles.base import (
     ResolvedArtifactIdentity,
     ResolvedRuntimeIdentity,
@@ -21,6 +22,16 @@ from verigym.profiles.validation import validate_profile
 from verigym.registry.collections import build_registries
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.common import RuntimeRequirement, ToolchainProfile
+from verigym.tools.yosys.opensta import (
+    FLOW_TEMPLATE_ID as OPENSTA_FLOW_TEMPLATE_ID,
+)
+from verigym.tools.yosys.opensta import (
+    LEGACY_FLOW_TEMPLATE_CONTRACT,
+    LEGACY_FLOW_TEMPLATE_ID,
+    build_opensta_script,
+    parse_opensta_metrics,
+    parse_opensta_power_json,
+)
 from verigym.tools.yosys.parser import YosysStatParseError, parse_yosys_stat_json
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
 from verigym.tools.yosys.script_builder import (
@@ -46,6 +57,30 @@ def _request(**updates: object) -> YosysSynthesisRequest:
         "area_unit": "toy_area_unit",
         "require_mapped_area": True,
     }
+    values.update(updates)
+    return YosysSynthesisRequest.model_validate(values)
+
+
+def _opensta_request(**updates: object) -> YosysSynthesisRequest:
+    values = _request().model_dump(mode="json")
+    values.update(
+        {
+            "flow_template_id": OPENSTA_FLOW_TEMPLATE_ID,
+            "constraints_path": ".verigym_profile/constraints.sdc",
+            "constraints_sha256": "b" * 64,
+            "timing_unit": "ns",
+            "power_unit": "uW",
+            "clock_name": "clk",
+            "clock_period": 10.0,
+            "wire_load_model": "5K_hvratio_1_1",
+            "power_activity_mode": "global_clock_relative",
+            "power_activity": 0.1,
+            "power_duty": 0.5,
+            "opensta_executable": "/opt/opensta/bin/sta",
+            "opensta_executable_sha256": "c" * 64,
+            "expected_opensta_version": "3.1.0",
+        }
+    )
     values.update(updates)
     return YosysSynthesisRequest.model_validate(values)
 
@@ -255,6 +290,105 @@ def test_site_specific_local_profile_records_executable_identity(
     assert all(tool.identity_kind == "local_executable" for tool in resolved.tool_identities)
 
 
+def test_nangate_preparer_binds_opensta_binary_into_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdk = tmp_path / "pdk"
+    liberty = pdk / "Front_End" / "Liberty" / "NLDM" / "NangateOpenCellLibrary_typical.lib"
+    liberty.parent.mkdir(parents=True)
+    liberty.write_text("library (cells) {}\n", encoding="utf-8")
+    sdc = tmp_path / "counter.sdc"
+    sdc.write_text("create_clock -name clk -period 10 [get_ports clk]\n", encoding="utf-8")
+    opensta = tmp_path / "sta"
+    opensta.write_bytes(b"fake-opensta")
+    identities = [
+        ResolvedToolIdentity(
+            logical_name="yosys",
+            executable="yosys",
+            version="0.67",
+            version_output="Yosys 0.67 (git sha1 abcdef)",
+            git_hash="abcdef",
+            executable_sha256="a" * 64,
+            capabilities=["synth", "stat_json", "liberty", "abc"],
+            identity_kind="local_executable",
+        ),
+        ResolvedToolIdentity(
+            logical_name="yosys-abc",
+            executable="yosys-abc",
+            version="1.01",
+            version_output="ABC 1.01",
+            executable_sha256="b" * 64,
+            capabilities=["liberty_mapping"],
+            identity_kind="local_executable",
+        ),
+        ResolvedToolIdentity(
+            logical_name="opensta",
+            executable=str(opensta.resolve()),
+            version="3.1.0",
+            version_output="3.1.0",
+            executable_sha256="c" * 64,
+            capabilities=["static_timing", "power_estimation", "wire_load_model"],
+            identity_kind="local_executable",
+        ),
+    ]
+    monkeypatch.setattr(
+        "scripts.prepare_nangate45_ppa_profile.resolve_local_tool_identities",
+        lambda **_kwargs: identities,
+    )
+    profile_path = tmp_path / "profile.yaml"
+    manifest_path = tmp_path / "pdk-manifest.json"
+    assert (
+        prepare_nangate45_profile(
+            [
+                "--pdk-root",
+                str(pdk),
+                "--sdc",
+                str(sdc),
+                "--opensta",
+                str(opensta),
+                "--output-manifest",
+                str(manifest_path),
+                "--output-profile",
+                str(profile_path),
+                "--source",
+                "rtl/counter.v",
+                "--top",
+                "counter",
+                "--clock-name",
+                "clk",
+                "--clock-period",
+                "10",
+            ]
+        )
+        == 0
+    )
+    profile = ToolchainProfileRegistry().load_file(profile_path)
+    assert validate_profile(profile).valid
+    monkeypatch.setattr(
+        "verigym.profiles.resolver.resolve_local_tool_identities",
+        lambda **_kwargs: identities,
+    )
+    resolved = resolve_toolchain_profile(
+        profile,
+        LocalRuntime(),
+        source_paths=["rtl/counter.v"],
+        top_module="counter",
+        reference_candidate_hash="d" * 64,
+    )
+    assert resolved.metadata["opensta_executable_sha256"] == "c" * 64
+
+    changed = profile.model_copy(deep=True)
+    changed.metadata["opensta_executable_sha256"] = "e" * 64
+    with pytest.raises(ConfigurationError, match="OpenSTA executable hash differs"):
+        resolve_toolchain_profile(
+            changed,
+            LocalRuntime(),
+            source_paths=["rtl/counter.v"],
+            top_module="counter",
+            reference_candidate_hash="d" * 64,
+        )
+
+
 def test_script_is_deterministic_fixed_and_has_no_exec_or_original_paths() -> None:
     request = _request(sources=["rtl/name with ; quotes ' []\n.v"])
     first = build_yosys_script(request)
@@ -265,6 +399,71 @@ def test_script_is_deterministic_fixed_and_has_no_exec_or_original_paths() -> No
     assert request.sources[0] not in first
     assert " exec " not in f" {first.lower()} "
     assert FLOW_TEMPLATE_HASH == "0e825470addb47375b7fed24681f6869c793cc996066a6aed22cff9f8ba6ecd0"
+
+
+def test_opensta_script_freezes_wireload_clock_and_activity() -> None:
+    request = _opensta_request()
+    script = build_opensta_script(request)
+    assert "exec yosys -Q -T -l out/yosys.log -s synthesis.ys" in script
+    assert "synthesis.ys 2>@1" in script
+    assert "set_wire_load_model -name 5K_hvratio_1_1" in script
+    assert "set vg_clocks [get_clocks clk]" in script
+    assert "set_power_activity -global -activity 0.1 -duty 0.5 -clock $vg_clock" in script
+    assert "set vg_slack [get_property $vg_path_end slack]" in script
+    assert "report_power -format json -digits 8 > out/power.json" in script
+    assert "sta::redirect_file_begin out/units.rpt\nreport_units\n" in script
+    assert (
+        "sta::redirect_file_begin out/activity_annotation.rpt\n"
+        "report_activity_annotation\n" in script
+    )
+    assert generated_script_hash(request) == generated_script_hash(request.model_copy())
+
+
+def test_opensta_v1_replay_contract_remains_distinct_from_v2_diagnostics() -> None:
+    request = _opensta_request(flow_template_id=LEGACY_FLOW_TEMPLATE_ID)
+    script = build_opensta_script(request)
+    assert "report_power -format json -digits 8 > out/power.json" in script
+    assert "report_units" not in script
+    assert "report_activity_annotation" not in script
+    assert hash_bytes((LEGACY_FLOW_TEMPLATE_CONTRACT + "\n").encode()) == (
+        "3970b2a27fcd92f9cefe950c0741fdc0ead30cca604e273fb38f75b908c7a60b"
+    )
+
+
+def test_opensta_parsers_require_exact_metrics_and_convert_watts() -> None:
+    metrics = parse_opensta_metrics(
+        (
+            "VERIGYM_OPENSTA_METRICS_V1\n"
+            "critical_path_delay=1.25\n"
+            "worst_negative_slack=-0.1\n"
+            "clock_period=10\n"
+            "timing_unit=ns\n"
+            f"constraints_sha256={'b' * 64}\n"
+            "wire_load_model=5K_hvratio_1_1\n"
+            "power_unit=uW\n"
+            "power_activity_mode=opensta_global_clock_relative:activity=0.1:duty=0.5\n"
+        ).encode()
+    )
+    assert metrics["critical_path_delay"] == "1.25"
+    power = parse_opensta_power_json(
+        json.dumps({"Total": {"total": 8.75e-6}}).encode(), target_unit="uW"
+    )
+    assert power == pytest.approx(8.75)
+    with pytest.raises(ValueError, match="fields differ"):
+        parse_opensta_metrics(b"VERIGYM_OPENSTA_METRICS_V1\nclock_period=10\n")
+    with pytest.raises(ValueError, match="Total"):
+        parse_opensta_power_json(b"{}", target_unit="uW")
+
+
+def test_opensta_request_rejects_implicit_or_incomplete_activity() -> None:
+    payload = _opensta_request().model_dump(mode="json")
+    payload["power_activity_mode"] = None
+    with pytest.raises(ValidationError, match="complete timing/power contract"):
+        YosysSynthesisRequest.model_validate(payload)
+    payload = _opensta_request().model_dump(mode="json")
+    payload["wire_load_model"] = "bad; source /host/file"
+    with pytest.raises(ValidationError, match="wire-load"):
+        YosysSynthesisRequest.model_validate(payload)
 
 
 @pytest.mark.parametrize(

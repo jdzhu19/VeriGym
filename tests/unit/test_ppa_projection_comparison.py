@@ -20,7 +20,7 @@ from verigym.profiles.base import (
     ResolvedToolchainProfile,
     ResolvedToolIdentity,
 )
-from verigym.profiles.comparison import compare_area, compare_timing
+from verigym.profiles.comparison import compare_area, compare_power, compare_timing
 from verigym.schemas.common import ToolchainProfileRef
 from verigym.schemas.run import RunConfig
 from verigym.schemas.runtime import WorkspaceDiff
@@ -138,6 +138,42 @@ def _timing_metrics(
     )
 
 
+def _resolved_power() -> ResolvedToolchainProfile:
+    value = _resolved_timing().model_copy(
+        update={
+            "resolved_profile_hash": "",
+            "metric_scope": "synthesis_area_timing_power",
+            "power_unit": "uW",
+            "metadata": {"clock_period": 10.0, "power_activity_mode": "vectorless_default"},
+        }
+    )
+    return value.model_copy(
+        update={"resolved_profile_hash": content_hash(value.identity_payload())}
+    )
+
+
+def test_optional_power_unit_preserves_legacy_resolved_identity_shape() -> None:
+    assert "power_unit" not in _resolved().identity_payload()
+    assert _resolved_power().identity_payload()["power_unit"] == "uW"
+
+
+def _power_metrics(
+    role: str,
+    area: float,
+    delay: float,
+    slack: float,
+    power: float,
+    profile_hash: str,
+) -> SynthesisMetrics:
+    return _timing_metrics(role, area, delay, slack, profile_hash).model_copy(
+        update={
+            "total_power_raw": power,
+            "power_unit": "uW",
+            "power_activity_mode": "vectorless_default",
+        }
+    )
+
+
 def _score(
     *,
     correctness: bool,
@@ -251,6 +287,50 @@ def test_area_timing_projection_keeps_metrics_separate() -> None:
     assert ppa.power is None
 
 
+def test_area_timing_power_projection_reports_reference_ratio() -> None:
+    suite = ToyRtlSuite()
+    task = suite.load_task(next(iter(suite.discover())))
+    resolved = _resolved_power()
+    results = [
+        VerifierResult(
+            node_id="compile_hidden",
+            plugin="iverilog.compile",
+            status=VerifierStatus.PASSED,
+        ),
+        VerifierResult(
+            node_id="run_hidden",
+            plugin="iverilog.run",
+            status=VerifierStatus.PASSED,
+        ),
+    ]
+    card = build_scorecard(
+        run_id="power-run",
+        task=task,
+        results=results,
+        diff=WorkspaceDiff(),
+        tracker=BudgetTracker(task.budget),
+        termination_reason=TerminationReason.FINAL_SUBMISSION,
+        task_hash=content_hash(task),
+        candidate_hash="6" * 64,
+        run_config_hash="7" * 64,
+        profile_refs=[ToolchainProfileRef(id="profile", version="1.0.0", content_hash="8" * 64)],
+        isolation_level="local_trusted",
+        resolved_profile=resolved,
+        candidate_synthesis=_power_metrics(
+            "candidate", 80.0, 4.0, -0.5, 8.0, resolved.resolved_profile_hash
+        ),
+        reference_synthesis=_power_metrics(
+            "reference", 100.0, 5.0, -1.0, 10.0, resolved.resolved_profile_hash
+        ),
+    )
+    ppa = card.quality.ppa
+    assert ppa is not None and ppa.eligible
+    assert ppa.power == 8.0
+    assert ppa.reference_power == 10.0
+    assert ppa.power_ratio == 1.25
+    assert ppa.power_unit == "uW"
+
+
 @pytest.mark.parametrize("area", [0.0, -1.0, math.nan, math.inf, -math.inf])
 def test_synthesis_and_ranked_schemas_reject_invalid_area(area: float) -> None:
     with pytest.raises(ValidationError, match="finite and positive"):
@@ -280,6 +360,7 @@ def _write_ranked_run(
     eligible: bool = True,
     delay: float | None = None,
     worst_negative_slack: float | None = None,
+    power: float | None = None,
 ) -> Path:
     result = VeriGym().run(
         RunConfig(
@@ -321,6 +402,10 @@ def _write_ranked_run(
         worst_negative_slack_delta=(
             worst_negative_slack - -1.0 if eligible and worst_negative_slack is not None else None
         ),
+        power=power if eligible else None,
+        power_unit=(profile.power_unit if eligible and power is not None else None),
+        reference_power=(10.0 if eligible and power is not None else None),
+        power_ratio=(10.0 / power if eligible and power is not None else None),
     )
     scorecard = result.scorecard.model_copy(update={"quality": QualityMetrics(ppa=ppa)})
     dump_json(result.run_dir / "run_manifest.json", manifest)
@@ -379,3 +464,32 @@ def test_timing_comparison_uses_metric_direction(tmp_path: Path) -> None:
     slack = compare_timing(run_a, run_b, metric="worst_negative_slack")
     assert delay.relation == "run_a_better"
     assert slack.relation == "run_a_better"
+
+
+def test_power_comparison_and_cli_use_smaller_is_better(tmp_path: Path) -> None:
+    profile = _resolved_power()
+    run_a = _write_ranked_run(
+        tmp_path / "a",
+        profile=profile,
+        area=80.0,
+        delay=4.0,
+        worst_negative_slack=-0.5,
+        power=8.0,
+    )
+    run_b = _write_ranked_run(
+        tmp_path / "b",
+        profile=profile,
+        area=100.0,
+        delay=5.0,
+        worst_negative_slack=-1.0,
+        power=10.0,
+    )
+    compared = compare_power(run_a, run_b)
+    assert compared.relation == "run_a_better"
+    assert compared.power_a_over_power_b == pytest.approx(0.8)
+
+    invoked = CliRunner().invoke(
+        app, ["report", "compare", str(run_a), str(run_b), "--metric", "power"]
+    )
+    assert invoked.exit_code == 0
+    assert '"metric": "power"' in invoked.output

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import stat
 import time
@@ -15,12 +16,30 @@ from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
-from verigym.schemas.common import ErrorCategory, ToolchainProfile, ToolDescriptor, ToolVisibility
+from verigym.schemas.common import (
+    ArtifactDescriptor,
+    ErrorCategory,
+    ToolchainProfile,
+    ToolDescriptor,
+    ToolVisibility,
+)
 from verigym.schemas.synthesis import SynthesisArtifactRef, SynthesisMetrics
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
 from verigym.tools.yosys.diagnostics import diagnostics_from_log
 from verigym.tools.yosys.identity import local_yosys_health
+from verigym.tools.yosys.opensta import (
+    FLOW_TEMPLATE_ID as OPENSTA_FLOW_TEMPLATE_ID,
+)
+from verigym.tools.yosys.opensta import (
+    FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS,
+)
+from verigym.tools.yosys.opensta import (
+    build_opensta_script,
+    parse_opensta_metrics,
+    parse_opensta_power_json,
+    power_activity_identity,
+)
 from verigym.tools.yosys.parser import YosysStatParseError, parse_yosys_stat_json
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
 from verigym.tools.yosys.script_builder import (
@@ -121,6 +140,15 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
         target = staging / ".verigym_profile" / "cells.lib"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(read_artifact_bytes(libraries[0]))
+        if profile.flow is not None and profile.flow.template_id in OPENSTA_FLOW_TEMPLATE_IDS:
+            constraints = [
+                item
+                for item in profile.constraints
+                if isinstance(item, ArtifactDescriptor) and item.media_type == "application/x-sdc"
+            ]
+            if len(constraints) != 1:
+                raise ValueError("Yosys/OpenSTA synthesis requires exactly one SDC asset")
+            (target.parent / "constraints.sdc").write_bytes(read_artifact_bytes(constraints[0]))
 
     def validate_request(self, request: dict[str, Any]) -> YosysSynthesisRequest:
         return YosysSynthesisRequest.model_validate(request)
@@ -147,23 +175,74 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
             raise ValueError("Liberty asset hash mismatch")
         session.write_file(f"{stage}/profile/cells.lib", liberty)
         script = build_yosys_script(request)
-        script_hash = hash_bytes(script.encode("utf-8"))
+        script_hash = generated_script_hash(request)
         if (
             request.expected_flow_script_hash is not None
             and script_hash != request.expected_flow_script_hash
         ):
             raise ValueError("generated Yosys script hash does not match the resolved profile")
-        session.write_file(f"{stage}/flow.ys", script.encode("utf-8"))
+        synthesis_script_name = (
+            "synthesis.ys" if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS else "flow.ys"
+        )
+        session.write_file(f"{stage}/{synthesis_script_name}", script.encode("utf-8"))
         session.write_file(f"{stage}/out/.verigym_keep", b"")
-        artifacts = [f"{stage}/flow.ys", f"{stage}/out/yosys.log"]
+        artifacts = [f"{stage}/{synthesis_script_name}", f"{stage}/out/yosys.log"]
         if request.emit_stat_json:
             artifacts.append(f"{stage}/out/stat.json")
         if request.emit_netlist_json:
             artifacts.append(f"{stage}/out/netlist.json")
         if request.emit_netlist_verilog:
             artifacts.append(f"{stage}/out/netlist.v")
+        if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS:
+            if (
+                request.constraints_path is None
+                or request.constraints_sha256 is None
+                or request.opensta_executable is None
+                or request.opensta_executable_sha256 is None
+            ):
+                raise ValueError("Yosys/OpenSTA request has no complete execution contract")
+            executable = Path(request.opensta_executable)
+            if executable.is_symlink() or not executable.is_file():
+                raise ValueError("OpenSTA executable is missing or is a symlink")
+            if hash_bytes(executable.read_bytes()) != request.opensta_executable_sha256:
+                raise ValueError("OpenSTA executable hash mismatch")
+            constraints_path = normalize_relative_path(request.constraints_path)
+            constraints = _read_bounded(session.root, constraints_path, _MAX_SOURCE_BYTES)
+            if hash_bytes(constraints) != request.constraints_sha256:
+                raise ValueError("SDC asset hash mismatch")
+            session.write_file(f"{stage}/profile/constraints.sdc", constraints)
+            opensta_script = build_opensta_script(request)
+            session.write_file(f"{stage}/flow.tcl", opensta_script.encode("utf-8"))
+            artifacts.extend(
+                [
+                    f"{stage}/flow.tcl",
+                    f"{stage}/out/opensta.log",
+                    f"{stage}/out/opensta_metrics.kv",
+                    f"{stage}/out/timing.rpt",
+                    f"{stage}/out/slack.rpt",
+                    f"{stage}/out/power.json",
+                    f"{stage}/out/power.rpt",
+                    f"{stage}/out/check_setup.rpt",
+                ]
+            )
+            if request.flow_template_id == OPENSTA_FLOW_TEMPLATE_ID:
+                artifacts.extend(
+                    [
+                        f"{stage}/out/units.rpt",
+                        f"{stage}/out/activity_annotation.rpt",
+                    ]
+                )
+            argv = [
+                request.opensta_executable,
+                "-no_init",
+                "-no_splash",
+                "-exit",
+                "flow.tcl",
+            ]
+        else:
+            argv = ["yosys", "-Q", "-T", "-l", "out/yosys.log", "-s", "flow.ys"]
         return CommandSpec(
-            argv=["yosys", "-Q", "-T", "-l", "out/yosys.log", "-s", "flow.ys"],
+            argv=argv,
             cwd=stage,
             timeout_s=request.timeout_s,
             artifact_globs=artifacts,
@@ -179,6 +258,11 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
         assert isinstance(request, YosysSynthesisRequest)
         assert context.session is not None
         stage = f".verigym_internal/yosys/{request.run_label}"
+        if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS:
+            opensta_log = (completed.stdout + "\n" + completed.stderr).encode(
+                "utf-8", errors="replace"
+            )
+            context.session.write_file(f"{stage}/out/opensta.log", opensta_log)
         artifacts = self._collect_artifacts(request, context, stage)
         log = _optional_bounded_read(
             context.session.root,
@@ -245,6 +329,13 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
                 category = ErrorCategory.PARSER_ERROR
                 candidate_failure = False
                 message = "the profile Liberty asset could not be parsed"
+            elif (
+                request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS
+                and "yosys failed" not in combined
+            ):
+                category = ErrorCategory.TOOL_FAILED
+                candidate_failure = False
+                message = "OpenSTA could not evaluate the mapped netlist under the profile"
             else:
                 category = ErrorCategory.COMPILE_FAILED
                 candidate_failure = True
@@ -286,6 +377,76 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
                 warnings,
                 unsupported,
             )
+        delay: float | None = None
+        slack: float | None = None
+        period: float | None = None
+        total_power: float | None = None
+        timing_unit: str | None = None
+        constraints_hash: str | None = None
+        activity_mode: str | None = None
+        if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS:
+            try:
+                metrics_payload = _read_bounded(
+                    context.session.root,
+                    f"{stage}/out/opensta_metrics.kv",
+                    64 * 1024,
+                )
+                opensta_metrics = parse_opensta_metrics(metrics_payload)
+                delay = _finite_float(
+                    opensta_metrics["critical_path_delay"], "critical_path_delay", positive=True
+                )
+                slack = _finite_float(
+                    opensta_metrics["worst_negative_slack"], "worst_negative_slack"
+                )
+                period = _finite_float(
+                    opensta_metrics["clock_period"], "clock_period", positive=True
+                )
+                if opensta_metrics["timing_unit"] != request.timing_unit:
+                    raise ValueError("OpenSTA timing unit differs from the profile")
+                if opensta_metrics["constraints_sha256"] != request.constraints_sha256:
+                    raise ValueError("OpenSTA constraints identity differs from the profile")
+                if opensta_metrics["wire_load_model"] != request.wire_load_model:
+                    raise ValueError("OpenSTA wire-load model differs from the profile")
+                if opensta_metrics["power_unit"] != request.power_unit:
+                    raise ValueError("OpenSTA power unit differs from the profile")
+                activity_mode = power_activity_identity(request)
+                if opensta_metrics["power_activity_mode"] != activity_mode:
+                    raise ValueError("OpenSTA activity identity differs from the profile")
+                if request.clock_period is None or not math.isclose(
+                    period, request.clock_period, rel_tol=0.0, abs_tol=1.0e-9
+                ):
+                    raise ValueError("OpenSTA clock period differs from the profile")
+                if request.power_unit is None:
+                    raise ValueError("OpenSTA profile has no power unit")
+                power_payload = _read_bounded(
+                    context.session.root,
+                    f"{stage}/out/power.json",
+                    _MAX_ARTIFACT_BYTES,
+                )
+                total_power = parse_opensta_power_json(
+                    power_payload, target_unit=request.power_unit
+                )
+                if request.flow_template_id == OPENSTA_FLOW_TEMPLATE_ID:
+                    for diagnostic_name in ("units.rpt", "activity_annotation.rpt"):
+                        diagnostic_payload = _read_bounded(
+                            context.session.root,
+                            f"{stage}/out/{diagnostic_name}",
+                            _MAX_ARTIFACT_BYTES,
+                        )
+                        if not diagnostic_payload.strip():
+                            raise ValueError(f"OpenSTA {diagnostic_name} is empty")
+                timing_unit = request.timing_unit
+                constraints_hash = request.constraints_sha256
+            except (FileNotFoundError, UnicodeError, ValueError) as exc:
+                return self._failure(
+                    request,
+                    completed,
+                    ErrorCategory.PARSER_ERROR,
+                    str(exc),
+                    artifacts,
+                    warnings,
+                    unsupported,
+                )
         metrics = SynthesisMetrics(
             status="passed",
             synthesis_ok=True,
@@ -301,6 +462,14 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
             mapped_area_raw=parsed.area,
             mapped_area_unit=request.area_unit if parsed.area is not None else None,
             mapped_area_source_hash=(request.liberty_sha256 if parsed.area is not None else None),
+            critical_path_delay_raw=delay,
+            worst_negative_slack_raw=slack,
+            timing_unit=timing_unit,
+            clock_period=period,
+            timing_constraints_hash=constraints_hash,
+            total_power_raw=total_power,
+            power_unit=request.power_unit if total_power is not None else None,
+            power_activity_mode=activity_mode,
             warnings=warnings,
             unsupported_constructs=unsupported,
             tool_identity=request.tool_identity,
@@ -312,7 +481,11 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
             tool=self.descriptor.name,
             success=True,
             category=ErrorCategory.SUCCESS,
-            message="Yosys synthesis and machine-readable statistics passed",
+            message=(
+                "Yosys synthesis and OpenSTA area/timing/power analysis passed"
+                if request.flow_template_id in OPENSTA_FLOW_TEMPLATE_IDS
+                else "Yosys synthesis and machine-readable statistics passed"
+            ),
             exit_code=completed.exit_code,
             stdout=completed.stdout,
             stderr=completed.stderr,
@@ -346,8 +519,23 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
         assert context.session is not None
         entries = [
             ("flow.ys", f"{stage}/flow.ys", "generated_script"),
+            ("synthesis.ys", f"{stage}/synthesis.ys", "generated_script"),
+            ("flow.tcl", f"{stage}/flow.tcl", "generated_script"),
             ("yosys.log", f"{stage}/out/yosys.log", "tool_log"),
+            ("opensta.log", f"{stage}/out/opensta.log", "tool_log"),
             ("stat.json", f"{stage}/out/stat.json", "statistics"),
+            ("opensta_metrics.kv", f"{stage}/out/opensta_metrics.kv", "statistics"),
+            ("timing.rpt", f"{stage}/out/timing.rpt", "statistics"),
+            ("slack.rpt", f"{stage}/out/slack.rpt", "statistics"),
+            ("power.json", f"{stage}/out/power.json", "statistics"),
+            ("power.rpt", f"{stage}/out/power.rpt", "statistics"),
+            ("units.rpt", f"{stage}/out/units.rpt", "statistics"),
+            (
+                "activity_annotation.rpt",
+                f"{stage}/out/activity_annotation.rpt",
+                "statistics",
+            ),
+            ("check_setup.rpt", f"{stage}/out/check_setup.rpt", "statistics"),
             ("netlist.json", f"{stage}/out/netlist.json", "netlist_json"),
             ("netlist.v", f"{stage}/out/netlist.v", "netlist_verilog"),
         ]
@@ -446,6 +634,17 @@ def _optional_bounded_read(root: Path, relative: str, limit: int) -> bytes | Non
         return _read_bounded(root, relative, limit)
     except FileNotFoundError:
         return None
+
+
+def _finite_float(value: str, name: str, *, positive: bool = False) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"OpenSTA {name} is not numeric") from exc
+    if not math.isfinite(parsed) or (positive and parsed <= 0):
+        qualifier = "finite and positive" if positive else "finite"
+        raise ValueError(f"OpenSTA {name} must be {qualifier}")
+    return parsed
 
 
 def builtin_yosys_tools() -> list[ToolPlugin]:

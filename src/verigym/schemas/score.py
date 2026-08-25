@@ -28,7 +28,11 @@ class PPAMetrics(StrictModel):
     profile_id: str
     profile_version: str = ""
     resolved_profile_hash: str = ""
-    scope: Literal["synthesis_area_only", "synthesis_area_timing"] = "synthesis_area_only"
+    scope: Literal[
+        "synthesis_area_only",
+        "synthesis_area_timing",
+        "synthesis_area_timing_power",
+    ] = "synthesis_area_only"
     eligible: bool
     ineligible_reasons: list[str] = Field(default_factory=list)
     area: float | None = None
@@ -36,6 +40,7 @@ class PPAMetrics(StrictModel):
     delay: float | None = None
     frequency: float | None = None
     power: float | None = None
+    power_unit: str | None = None
     worst_negative_slack: float | None = None
     total_negative_slack: float | None = None
     timing_unit: str | None = None
@@ -64,9 +69,22 @@ class PPAMetrics(StrictModel):
                 raise ValueError("ranked area values must be finite and positive")
         elif any(value is not None for value in ranked):
             raise ValueError("ineligible candidates cannot expose ranked area values")
-        power_values = (self.frequency, self.power, self.total_negative_slack, self.reference_power)
-        if any(value is not None for value in power_values) or self.power_ratio is not None:
-            raise ValueError("frequency, power, and TNS are unavailable in synthesis profiles")
+        if self.frequency is not None or self.total_negative_slack is not None:
+            raise ValueError("frequency and TNS are unavailable in synthesis profiles")
+        power = (self.power, self.reference_power, self.power_ratio)
+        if self.scope == "synthesis_area_timing_power":
+            if self.eligible:
+                if any(value is None for value in power) or self.power_unit is None:
+                    raise ValueError(
+                        "eligible area-timing-power metrics require candidate/reference power, "
+                        "ratio, and unit"
+                    )
+                if any(value is None or not math.isfinite(value) or value <= 0 for value in power):
+                    raise ValueError("ranked power values must be finite and positive")
+            elif any(value is not None for value in power) or self.power_unit is not None:
+                raise ValueError("ineligible candidates cannot expose ranked power values")
+        elif any(value is not None for value in power) or self.power_unit is not None:
+            raise ValueError("power is available only in area-timing-power profiles")
         timing = (
             self.delay,
             self.worst_negative_slack,
@@ -124,6 +142,7 @@ class EfficiencyMetrics(StrictModel):
     peak_memory_bytes: int | None = None
     external_cli_process_wall_time_s: float = Field(default=0.0, ge=0.0)
     external_cli_event_count: int = Field(default=0, ge=0)
+    external_model_call_count: int | None = Field(default=None, ge=0)
     external_tool_call_count: int | None = Field(default=None, ge=0)
     external_command_count: int | None = Field(default=None, ge=0)
     external_file_read_count: int | None = Field(default=None, ge=0)

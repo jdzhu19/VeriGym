@@ -6,7 +6,7 @@ import platform
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_bytes
@@ -28,6 +28,8 @@ from verigym.tools.yosys.identity import (
     extract_yosys_version,
     resolve_local_tool_identities,
 )
+from verigym.tools.yosys.opensta import FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS
+from verigym.tools.yosys.opensta import OpenSTAFlowTemplateId
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
 from verigym.tools.yosys.script_builder import FLOW_TEMPLATE_ID, generated_script_hash
 
@@ -258,6 +260,8 @@ def _validate_tools(profile: ToolchainProfile, identities: list[ResolvedToolIden
 def _resolve_assets(profile: ToolchainProfile) -> list[ResolvedArtifactIdentity]:
     resolved: list[ResolvedArtifactIdentity] = []
     descriptors = [*profile.libraries]
+    if profile.pdk is not None:
+        descriptors.append(profile.pdk)
     descriptors.extend(
         script for script in profile.scripts if isinstance(script, ArtifactDescriptor)
     )
@@ -322,6 +326,15 @@ def resolve_yosys_toolchain_profile(
     replay = expected is not None
     _validate_runtime(profile, runtime, replay=replay)
     runtime_identity = _runtime_identity(runtime)
+    opensta_flow = profile.flow.template_id in OPENSTA_FLOW_TEMPLATE_IDS
+    opensta_executable = None
+    if opensta_flow:
+        opensta_requirement = next(
+            (requirement for requirement in profile.tools if requirement.name == "opensta"), None
+        )
+        if opensta_requirement is None or opensta_requirement.executable is None:
+            raise ConfigurationError("Yosys/OpenSTA profile has no OpenSTA executable")
+        opensta_executable = opensta_requirement.executable
     if expected is not None:
         if expected.profile_id != profile.id or expected.profile_version != profile.version:
             raise ConfigurationError("stored resolved profile does not match the declared profile")
@@ -330,11 +343,19 @@ def resolve_yosys_toolchain_profile(
         if runtime_identity.runtime_slug == "docker":
             tool_identities = [item.model_copy(deep=True) for item in expected.tool_identities]
         else:
-            tool_identities = resolve_local_tool_identities()
+            tool_identities = (
+                resolve_local_tool_identities(opensta_executable=opensta_executable)
+                if opensta_executable is not None
+                else resolve_local_tool_identities()
+            )
     elif runtime_identity.runtime_slug == "docker":
         tool_identities = _resolve_docker_tools(runtime)
     else:
-        tool_identities = resolve_local_tool_identities()
+        tool_identities = (
+            resolve_local_tool_identities(opensta_executable=opensta_executable)
+            if opensta_executable is not None
+            else resolve_local_tool_identities()
+        )
     _validate_tools(profile, tool_identities)
     assets = _resolve_assets(profile)
     liberty = next(
@@ -346,22 +367,59 @@ def resolve_yosys_toolchain_profile(
     yosys_identity = next(
         identity for identity in tool_identities if identity.logical_name == "yosys"
     )
-    script_request = YosysSynthesisRequest(
-        sources=source_paths,
-        top=top_module,
-        frontend=profile.flow.frontend,
-        flatten=profile.flow.flatten,
-        liberty_asset_id=liberty.logical_id,
-        liberty_path=".verigym_profile/cells.lib",
-        liberty_sha256=liberty.content_hash,
-        area_unit=liberty.unit,
-        flow_template_id=FLOW_TEMPLATE_ID,
-        emit_netlist_verilog=profile.flow.emit_netlist_verilog,
-        emit_netlist_json=profile.flow.emit_netlist_json,
-        emit_stat_json=profile.flow.emit_stat_json,
-        require_mapped_area=profile.metrics.area.enabled,
-        expected_yosys_version=yosys_identity.version,
-    )
+    if opensta_flow:
+        constraint = next(asset for asset in assets if asset.media_type == "application/x-sdc")
+        opensta_identity = next(
+            identity for identity in tool_identities if identity.logical_name == "opensta"
+        )
+        if opensta_identity.executable_sha256 != profile.metadata["opensta_executable_sha256"]:
+            raise ConfigurationError("OpenSTA executable hash differs from the declared profile")
+        script_request = YosysSynthesisRequest(
+            sources=source_paths,
+            top=top_module,
+            frontend=profile.flow.frontend,
+            flatten=profile.flow.flatten,
+            liberty_asset_id=liberty.logical_id,
+            liberty_path=".verigym_profile/cells.lib",
+            liberty_sha256=liberty.content_hash,
+            area_unit=liberty.unit,
+            flow_template_id=cast(OpenSTAFlowTemplateId, profile.flow.template_id),
+            emit_netlist_verilog=profile.flow.emit_netlist_verilog,
+            emit_netlist_json=profile.flow.emit_netlist_json,
+            emit_stat_json=profile.flow.emit_stat_json,
+            require_mapped_area=profile.metrics.area.enabled,
+            constraints_path=".verigym_profile/constraints.sdc",
+            constraints_sha256=constraint.content_hash,
+            timing_unit=constraint.unit,
+            power_unit=cast(Literal["W", "mW", "uW", "nW", "pW"], profile.metrics.power.unit),
+            clock_name=str(profile.metadata["clock_name"]),
+            clock_period=float(profile.metadata["clock_period"]),
+            wire_load_model=str(profile.metadata["wire_load_model"]),
+            power_activity_mode="global_clock_relative",
+            power_activity=float(profile.metadata["power_activity"]),
+            power_duty=float(profile.metadata["power_duty"]),
+            opensta_executable=opensta_identity.executable,
+            opensta_executable_sha256=opensta_identity.executable_sha256,
+            expected_opensta_version=opensta_identity.version,
+            expected_yosys_version=yosys_identity.version,
+        )
+    else:
+        script_request = YosysSynthesisRequest(
+            sources=source_paths,
+            top=top_module,
+            frontend=profile.flow.frontend,
+            flatten=profile.flow.flatten,
+            liberty_asset_id=liberty.logical_id,
+            liberty_path=".verigym_profile/cells.lib",
+            liberty_sha256=liberty.content_hash,
+            area_unit=liberty.unit,
+            flow_template_id=FLOW_TEMPLATE_ID,
+            emit_netlist_verilog=profile.flow.emit_netlist_verilog,
+            emit_netlist_json=profile.flow.emit_netlist_json,
+            emit_stat_json=profile.flow.emit_stat_json,
+            require_mapped_area=profile.metrics.area.enabled,
+            expected_yosys_version=yosys_identity.version,
+        )
     unresolved = ResolvedToolchainProfile(
         profile_id=profile.id,
         profile_version=profile.version,
@@ -381,6 +439,8 @@ def resolve_yosys_toolchain_profile(
         source_paths=source_paths,
         metric_scope=profile.metrics.scope,
         area_unit=liberty.unit,
+        timing_unit=(constraint.unit if opensta_flow else None),
+        power_unit=(profile.metrics.power.unit if opensta_flow else None),
         reference_strategy=profile.reference.strategy,
         reference_candidate_hash=reference_candidate_hash,
         metadata={
@@ -393,6 +453,21 @@ def resolve_yosys_toolchain_profile(
                     if asset.media_type == "application/x-yosys-script-template"
                 ),
                 None,
+            ),
+            **(
+                {
+                    "constraints_sha256": constraint.content_hash,
+                    "clock_name": profile.metadata["clock_name"],
+                    "clock_period": profile.metadata["clock_period"],
+                    "wire_load_model": profile.metadata["wire_load_model"],
+                    "power_activity_mode": profile.metadata["power_activity_mode"],
+                    "power_activity": profile.metadata["power_activity"],
+                    "power_duty": profile.metadata["power_duty"],
+                    "opensta_executable_sha256": profile.metadata["opensta_executable_sha256"],
+                    "pdk_tree_sha256": profile.metadata["pdk_tree_sha256"],
+                }
+                if opensta_flow
+                else {}
             ),
         },
     )
@@ -451,7 +526,13 @@ def synthesis_request_from_profile(
         asset for asset in resolved.asset_identities if asset.media_type == "application/x-liberty"
     )
     yosys = next(tool for tool in resolved.tool_identities if tool.logical_name == "yosys")
-    request = YosysSynthesisRequest(
+    opensta_flow = profile.flow.template_id in OPENSTA_FLOW_TEMPLATE_IDS
+    tool_identity: dict[str, str | None] = {
+        "yosys_version": yosys.version,
+        "yosys_git_hash": yosys.git_hash,
+        "runtime_image_id": resolved.runtime_identity.resolved_image_id,
+    }
+    common: dict[str, Any] = dict(
         sources=resolved.source_paths,
         top=resolved.top_module,
         frontend=profile.flow.frontend,
@@ -460,21 +541,57 @@ def synthesis_request_from_profile(
         liberty_path=".verigym_profile/cells.lib",
         liberty_sha256=liberty.content_hash,
         area_unit=liberty.unit,
-        flow_template_id=FLOW_TEMPLATE_ID,
         emit_netlist_verilog=profile.flow.emit_netlist_verilog,
         emit_netlist_json=profile.flow.emit_netlist_json,
         emit_stat_json=profile.flow.emit_stat_json,
         require_mapped_area=profile.metrics.area.enabled,
-        expected_flow_script_hash=resolved.generated_script_hash,
         expected_yosys_version=yosys.version,
         resolved_profile_hash=resolved.resolved_profile_hash,
-        tool_identity={
-            "yosys_version": yosys.version,
-            "yosys_git_hash": yosys.git_hash,
-            "runtime_image_id": resolved.runtime_identity.resolved_image_id,
-        },
-        run_label=run_label,
+        tool_identity=tool_identity,
     )
+    if opensta_flow:
+        constraint = next(
+            asset for asset in resolved.asset_identities if asset.media_type == "application/x-sdc"
+        )
+        opensta = next(tool for tool in resolved.tool_identities if tool.logical_name == "opensta")
+        opensta_common = {
+            **common,
+            "tool_identity": {
+                **tool_identity,
+                "opensta_version": opensta.version,
+                "opensta_executable_sha256": opensta.executable_sha256,
+            },
+        }
+        request = YosysSynthesisRequest.model_validate(
+            {
+                **opensta_common,
+                "flow_template_id": profile.flow.template_id,
+                "constraints_path": ".verigym_profile/constraints.sdc",
+                "constraints_sha256": constraint.content_hash,
+                "timing_unit": resolved.timing_unit,
+                "power_unit": resolved.power_unit,
+                "clock_name": str(resolved.metadata["clock_name"]),
+                "clock_period": float(resolved.metadata["clock_period"]),
+                "wire_load_model": str(resolved.metadata["wire_load_model"]),
+                "power_activity_mode": "global_clock_relative",
+                "power_activity": float(resolved.metadata["power_activity"]),
+                "power_duty": float(resolved.metadata["power_duty"]),
+                "opensta_executable": opensta.executable,
+                "opensta_executable_sha256": opensta.executable_sha256,
+                "expected_opensta_version": opensta.version,
+                "expected_flow_script_hash": resolved.generated_script_hash,
+                "run_label": run_label,
+            }
+        )
+    else:
+        request = YosysSynthesisRequest.model_validate(
+            {
+                **common,
+                "flow_template_id": FLOW_TEMPLATE_ID,
+                "expected_flow_script_hash": resolved.generated_script_hash,
+                "run_label": run_label,
+            }
+        )
     return request.model_dump(mode="json")
 
 

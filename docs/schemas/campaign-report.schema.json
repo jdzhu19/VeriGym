@@ -591,6 +591,42 @@
           "title": "Metric Scope",
           "type": "string"
         },
+        "power_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Median"
+        },
+        "power_ratio_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Ratio Median"
+        },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
+        },
         "reference_area_median": {
           "anyOf": [
             {
@@ -618,6 +654,18 @@
           ],
           "default": null,
           "title": "Reference Delay Median"
+        },
+        "reference_power_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Power Median"
         },
         "reference_worst_negative_slack_median": {
           "anyOf": [

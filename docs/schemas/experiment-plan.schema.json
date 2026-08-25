@@ -2399,10 +2399,23 @@
         "metric_scope": {
           "enum": [
             "synthesis_area_only",
-            "synthesis_area_timing"
+            "synthesis_area_timing",
+            "synthesis_area_timing_power"
           ],
           "title": "Metric Scope",
           "type": "string"
+        },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
         },
         "profile_id": {
           "title": "Profile Id",

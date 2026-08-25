@@ -235,7 +235,8 @@
           "default": "synthesis_area_only",
           "enum": [
             "synthesis_area_only",
-            "synthesis_area_timing"
+            "synthesis_area_timing",
+            "synthesis_area_timing_power"
           ],
           "title": "Scope",
           "type": "string"

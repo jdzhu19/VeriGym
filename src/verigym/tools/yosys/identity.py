@@ -14,6 +14,7 @@ from verigym.schemas.tool import HealthCheckResult
 _YOSYS_VERSION = re.compile(r"\bYosys\s+([0-9]+(?:\.[0-9]+)+(?:\+[0-9]+)?)\b")
 _GIT_HASH = re.compile(r"\bgit sha1\s+([0-9a-fA-F]+)\b")
 _ABC_VERSION = re.compile(r"\bABC\s+([0-9]+(?:\.[0-9]+)+)\b")
+_OPENSTA_VERSION = re.compile(r"^([0-9]+(?:\.[0-9]+){1,2})$", re.MULTILINE)
 
 
 def extract_yosys_version(output: str) -> str | None:
@@ -28,6 +29,11 @@ def extract_yosys_git_hash(output: str) -> str | None:
 
 def extract_abc_version(output: str) -> str | None:
     match = _ABC_VERSION.search(output)
+    return match.group(1) if match else None
+
+
+def extract_opensta_version(output: str) -> str | None:
+    match = _OPENSTA_VERSION.search(output.strip())
     return match.group(1) if match else None
 
 
@@ -100,7 +106,9 @@ def local_abc_health() -> HealthCheckResult:
     )
 
 
-def resolve_local_tool_identities() -> list[ResolvedToolIdentity]:
+def resolve_local_tool_identities(
+    *, opensta_executable: str | None = None
+) -> list[ResolvedToolIdentity]:
     yosys = shutil.which("yosys")
     if yosys is None:
         raise FileNotFoundError("yosys was not found on PATH")
@@ -134,7 +142,7 @@ def resolve_local_tool_identities() -> list[ResolvedToolIdentity]:
     abc_version = extract_abc_version(abc_output)
     if abc_completed.returncode != 0 or abc_version is None:
         raise RuntimeError("yosys-abc returned no supported version identity")
-    return [
+    identities = [
         ResolvedToolIdentity(
             logical_name="yosys",
             executable="yosys",
@@ -155,10 +163,44 @@ def resolve_local_tool_identities() -> list[ResolvedToolIdentity]:
             identity_kind="local_executable",
         ),
     ]
+    if opensta_executable is not None:
+        executable_path = (
+            Path(opensta_executable)
+            if Path(opensta_executable).is_absolute()
+            else Path(shutil.which(opensta_executable) or opensta_executable)
+        )
+        if not executable_path.is_file():
+            raise FileNotFoundError("OpenSTA was not found at the profile executable")
+        resolved_opensta = executable_path.resolve(strict=True)
+        opensta_completed = subprocess.run(
+            [str(resolved_opensta), "-version"],
+            capture_output=True,
+            check=False,
+            shell=False,
+            text=True,
+            timeout=10,
+        )
+        opensta_output = (opensta_completed.stdout + "\n" + opensta_completed.stderr).strip()
+        opensta_version = extract_opensta_version(opensta_output)
+        if opensta_completed.returncode != 0 or opensta_version is None:
+            raise RuntimeError("OpenSTA returned no supported version identity")
+        identities.append(
+            ResolvedToolIdentity(
+                logical_name="opensta",
+                executable=str(resolved_opensta),
+                version=opensta_version,
+                version_output=opensta_output,
+                executable_sha256=hash_bytes(resolved_opensta.read_bytes()),
+                capabilities=["static_timing", "power_estimation", "wire_load_model"],
+                identity_kind="local_executable",
+            )
+        )
+    return identities
 
 
 __all__ = [
     "extract_abc_version",
+    "extract_opensta_version",
     "extract_yosys_git_hash",
     "extract_yosys_version",
     "local_abc_health",

@@ -26,11 +26,28 @@ class YosysSynthesisRequest(StrictModel):
     liberty_path: str | None = None
     liberty_sha256: str | None = None
     area_unit: str | None = None
-    flow_template_id: Literal["verigym-yosys-area-v1"] = "verigym-yosys-area-v1"
+    flow_template_id: Literal[
+        "verigym-yosys-area-v1",
+        "verigym-yosys-opensta-atp-v1",
+        "verigym-yosys-opensta-atp-v2",
+    ] = "verigym-yosys-area-v1"
     emit_netlist_verilog: bool = True
     emit_netlist_json: bool = True
     emit_stat_json: bool = True
     require_mapped_area: bool = False
+    constraints_path: str | None = None
+    constraints_sha256: str | None = None
+    timing_unit: str | None = None
+    power_unit: Literal["W", "mW", "uW", "nW", "pW"] | None = None
+    clock_name: str | None = None
+    clock_period: float | None = Field(default=None, gt=0)
+    wire_load_model: str | None = None
+    power_activity_mode: Literal["global_clock_relative"] | None = None
+    power_activity: float | None = Field(default=None, gt=0)
+    power_duty: float | None = Field(default=None, ge=0, le=1)
+    opensta_executable: str | None = None
+    opensta_executable_sha256: str | None = None
+    expected_opensta_version: str | None = None
     timeout_s: int = Field(default=60, ge=1, le=3600)
     max_stat_json_bytes: int = Field(default=1_048_576, ge=1, le=4_194_304)
     expected_flow_script_hash: str | None = None
@@ -65,7 +82,13 @@ class YosysSynthesisRequest(StrictModel):
                 raise ValueError("define values may contain only letters, digits, and underscore")
         return dict(sorted(value.items()))
 
-    @field_validator("liberty_sha256", "expected_flow_script_hash", "resolved_profile_hash")
+    @field_validator(
+        "liberty_sha256",
+        "constraints_sha256",
+        "opensta_executable_sha256",
+        "expected_flow_script_hash",
+        "resolved_profile_hash",
+    )
     @classmethod
     def validate_hashes(cls, value: str | None) -> str | None:
         if value is not None and not _HASH.fullmatch(value):
@@ -92,6 +115,43 @@ class YosysSynthesisRequest(StrictModel):
             raise ValueError("mapped area requires machine-readable statistics")
         if len(set(self.sources)) != len(self.sources):
             raise ValueError("source paths must be unique")
+        timing_power_fields = (
+            self.constraints_path,
+            self.constraints_sha256,
+            self.timing_unit,
+            self.power_unit,
+            self.clock_name,
+            self.clock_period,
+            self.wire_load_model,
+            self.power_activity_mode,
+            self.power_activity,
+            self.power_duty,
+            self.opensta_executable,
+            self.opensta_executable_sha256,
+            self.expected_opensta_version,
+        )
+        if self.flow_template_id in {
+            "verigym-yosys-opensta-atp-v1",
+            "verigym-yosys-opensta-atp-v2",
+        }:
+            if any(value is None for value in timing_power_fields):
+                raise ValueError("the Yosys/OpenSTA flow requires a complete timing/power contract")
+            if not self.emit_netlist_verilog or not self.emit_stat_json:
+                raise ValueError("the Yosys/OpenSTA flow requires Verilog and stat JSON outputs")
+            if self.clock_name is None or not _IDENTIFIER.fullmatch(self.clock_name):
+                raise ValueError("OpenSTA clock name must be an ordinary identifier")
+            if self.wire_load_model is None or not re.fullmatch(
+                r"[A-Za-z0-9_][A-Za-z0-9_.-]*", self.wire_load_model
+            ):
+                raise ValueError("OpenSTA wire-load model has unsupported characters")
+            if self.opensta_executable is None or any(
+                character in self.opensta_executable for character in ("\x00", "\n", "\r")
+            ):
+                raise ValueError("OpenSTA executable is invalid")
+            if not self.timing_unit:
+                raise ValueError("OpenSTA timing unit must be explicit")
+        elif any(value is not None for value in timing_power_fields):
+            raise ValueError("the area-only Yosys flow cannot declare timing/power settings")
         return self
 
 

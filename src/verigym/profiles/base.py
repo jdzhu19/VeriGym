@@ -67,9 +67,14 @@ class ResolvedToolchainProfile(StrictModel):
     generated_script_hash: str
     top_module: str
     source_paths: list[str]
-    metric_scope: Literal["synthesis_area_only", "synthesis_area_timing"]
+    metric_scope: Literal[
+        "synthesis_area_only",
+        "synthesis_area_timing",
+        "synthesis_area_timing_power",
+    ]
     area_unit: str
     timing_unit: str | None = None
+    power_unit: str | None = None
     reference_strategy: str
     reference_candidate_hash: str | None = None
     artifact_visibility_policy: str = "candidate_public_reference_summary_only"
@@ -80,6 +85,10 @@ class ResolvedToolchainProfile(StrictModel):
 
         payload = self.model_dump(mode="json")
         payload.pop("resolved_profile_hash", None)
+        # Preserve hashes of pre-power profiles.  New identity state must only
+        # participate when the profile actually declares a power unit.
+        if payload.get("power_unit") is None:
+            payload.pop("power_unit", None)
         runtime = payload.get("runtime_identity")
         if isinstance(runtime, dict):
             # Mutable human-facing tags are audit metadata, never resolved identity.

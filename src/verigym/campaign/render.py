@@ -55,6 +55,10 @@ CAMPAIGN_CSV_COLUMNS = [
     "worst_negative_slack_median",
     "reference_worst_negative_slack_median",
     "worst_negative_slack_delta_median",
+    "power_unit",
+    "power_median",
+    "reference_power_median",
+    "power_ratio_median",
 ]
 
 
@@ -134,6 +138,10 @@ def render_campaign_csv(report: CampaignReport) -> str:
                     "worst_negative_slack_delta_median": (
                         quality.worst_negative_slack_delta_median
                     ),
+                    "power_unit": quality.power_unit,
+                    "power_median": quality.power_median,
+                    "reference_power_median": quality.reference_power_median,
+                    "power_ratio_median": quality.power_ratio_median,
                 }.items()
             }
         )
@@ -199,8 +207,8 @@ def render_campaign_markdown(report: CampaignReport) -> str:
         lines.extend(
             [
                 "| Input/version | Partition | Task | Eligible | Area cand/ref | "
-                "Delay cand/ref | WNS cand/ref | Ratios A/D |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+                "Delay cand/ref | WNS cand/ref | Power cand/ref | Ratios A/D/P |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for quality in report.quality_partitions:
@@ -216,8 +224,12 @@ def render_campaign_markdown(report: CampaignReport) -> str:
                 f"{_number(quality.worst_negative_slack_median)}/"
                 f"{_number(quality.reference_worst_negative_slack_median)} "
                 f"{markdown_escape(quality.timing_unit or '-')} | "
+                f"{_number(quality.power_median)}/"
+                f"{_number(quality.reference_power_median)} "
+                f"{markdown_escape(quality.power_unit or '-')} | "
                 f"{_number(quality.area_ratio_median)}/"
-                f"{_number(quality.delay_ratio_median)} |"
+                f"{_number(quality.delay_ratio_median)}/"
+                f"{_number(quality.power_ratio_median)} |"
             )
     if report.warnings:
         lines.extend(["", "## Warnings", ""])

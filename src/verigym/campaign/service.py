@@ -507,7 +507,7 @@ def _evolving_summary(
 
 
 def _partition_identity(partition: QualityPartition) -> dict[str, Any]:
-    return {
+    identity = {
         "suite_source_identity": partition.suite_source_identity,
         "task_id": partition.task_id,
         "task_hash": partition.task_hash,
@@ -523,6 +523,9 @@ def _partition_identity(partition: QualityPartition) -> dict[str, Any]:
         "clock_period": partition.clock_period,
         "reference_candidate_hash": partition.reference_candidate_hash,
     }
+    if partition.power_unit is not None:
+        identity["power_unit"] = partition.power_unit
+    return identity
 
 
 def _median(values: list[float | None]) -> float | None:
@@ -556,6 +559,7 @@ def _quality_row(
         metric_scope=partition.metric_scope,
         area_unit=partition.area_unit,
         timing_unit=partition.timing_unit,
+        power_unit=partition.power_unit,
         clock_period=partition.clock_period,
         reference_candidate_hash=partition.reference_candidate_hash,
         eligible_run_count=sum(item.eligible for item in runs),
@@ -573,6 +577,9 @@ def _quality_row(
         worst_negative_slack_delta_median=_median(
             [item.worst_negative_slack_delta for item in runs]
         ),
+        power_median=_median([item.power for item in runs]),
+        reference_power_median=_median([item.reference_power for item in runs]),
+        power_ratio_median=_median([item.power_ratio for item in runs]),
     )
 
 
@@ -598,6 +605,7 @@ def validate_quality_comparison_partitions(
                 "metric_scope",
                 "area_unit",
                 "timing_unit",
+                "power_unit",
                 "clock_period",
                 "reference_candidate_hash",
             },
@@ -612,7 +620,25 @@ def validate_campaign_report(report: CampaignReport) -> CampaignReport:
     payload = report.model_dump(mode="json")
     expected = payload.pop("report_hash")
     if content_hash(payload) != expected:
-        raise ValueError("campaign report identity changed")
+        # Campaign schema 1.0 reports produced before power projection did not
+        # serialize these optional fields. Accept that exact legacy shape while
+        # keeping all newly generated report hashes fully explicit.
+        legacy_payload = dict(payload)
+        legacy_partitions = []
+        for partition in payload["quality_partitions"]:
+            legacy_partition = dict(partition)
+            for field in (
+                "power_unit",
+                "power_median",
+                "reference_power_median",
+                "power_ratio_median",
+            ):
+                if legacy_partition.get(field) is None:
+                    legacy_partition.pop(field, None)
+            legacy_partitions.append(legacy_partition)
+        legacy_payload["quality_partitions"] = legacy_partitions
+        if content_hash(legacy_payload) != expected:
+            raise ValueError("campaign report identity changed")
     validate_quality_comparison_partitions(report.quality_partitions)
     return report
 

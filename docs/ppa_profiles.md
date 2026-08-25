@@ -5,9 +5,11 @@ A `ToolchainProfile` is the contract that gives a synthesis number meaning. The 
 `toy_area_unit`. Its values are profile-relative teaching metrics, not silicon estimates or
 signoff results.
 
-Optional backends can implement `synthesis_area_timing`. The Synopsys DC integration reports area,
-maximum-path delay, and worst-negative slack under an exact DB, SDC, clock period, generated script,
-and tool identity. It does not report power, physical design, frequency, TNS, or signoff quality.
+Optional backends can implement `synthesis_area_timing` or `synthesis_area_timing_power`. VeriGym
+supports a site-specific Yosys/OpenSTA synthesis profile and a site-specific Synopsys DC profile.
+Both report area, maximum-path delay, worst-negative slack, and estimated power under exact
+library, SDC, activity, script, runtime, and tool identities. Neither profile reports physical
+design, frequency, TNS, or signoff quality.
 
 ## Synthesis metrics are not ranked PPA
 
@@ -28,6 +30,9 @@ An incorrect candidate has `ppa.eligible=false` and ranked `area`, `reference_ar
 profile preserve the all-`null` PPA behavior. Area-only profiles keep delay, frequency, power,
 worst-negative slack, and total-negative slack `null`. Area/timing profiles additionally require
 finite delay and WNS for both candidate and reference with the same timing unit and clock period.
+Area/timing/power profiles additionally require finite positive candidate/reference power with the
+same power unit and activity mode. The ranked value is unavailable when any of those identities or
+measurements are missing.
 
 Generic cell count is not area: cell types have different costs, mapping choices matter, and an
 unmapped generic cell has no profile-defined physical area. Only Yosys's Liberty-based area under
@@ -66,10 +71,12 @@ area_ratio = reference_area / candidate_area
 
 Therefore `1.0` means equal mapped area, greater than `1.0` favors the candidate, and less than
 `1.0` means the candidate is larger. Both operands use the same exact resolved profile and unit.
+Delay and power ratios use the same reference-over-candidate convention, so a value above `1.0`
+means the candidate is lower under that exact profile. Each metric remains separately reported.
 
 ## Strict comparison and replay
 
-`verigym report compare LEFT RIGHT --metric area|delay|worst_negative_slack` emits a ranking only
+`verigym report compare LEFT RIGHT --metric area|delay|worst_negative_slack|power` emits a ranking only
 when both scorecards are eligible and
 their task, metric scope/unit, reference strategy, profile ID/version, declared hash, and resolved
 hash match. It refuses incompatible inputs with a configuration error naming the differing
@@ -92,3 +99,49 @@ require immutable Docker resolution, network isolation, and mandatory resource c
 Do not relabel a changed library or flow under an old identity. Do not claim equivalence between a
 host-local exploratory result and the canonical Docker result. Private and commercial profiles
 follow the additional rules in [commercial tools](commercial_tools.md).
+
+## Open-source synthesis timing and power
+
+The built-in `open-yosys-toy-area-v1` profile remains area-only. The versioned
+`verigym-yosys-opensta-atp-v2` template adds site-specific synthesis area, timing, and power:
+
+1. Yosys reads the frozen Liberty and approved RTL, runs synthesis, maps flip-flops and
+   combinational logic through ABC, and emits mapped netlists plus `stat -json` area.
+2. Standalone OpenSTA reads that mapped Verilog, the same Liberty, and one hash-bound SDC.
+3. OpenSTA selects one named clock, verifies its period, applies an explicit Liberty wire-load
+   model, and reports maximum-path arrival and WNS.
+4. OpenSTA power uses a frozen global clock-relative activity and duty factor. The parsed value is
+   `report_power -format json` `Total.total`: internal plus switching plus leakage power.
+5. Every successful run retains `units.rpt` and `activity_annotation.rpt`. The latter reports
+   explicit VCD/SAIF/port annotations; global vectorless fallback activity is intentionally shown
+   as unannotated and is not treated as a failed power run.
+
+The original `verigym-yosys-opensta-atp-v1` contract remains available only for exact replay of
+already frozen results. New profiles use v2; adding diagnostics did not silently relabel the v1
+script or alter its generated-script hash.
+
+`scripts/prepare_nangate45_ppa_profile.py` hashes the complete external NanGate45 PDK tree and
+emits a local profile without copying PDK bytes into the repository. Local execution is for trusted
+RTL smoke tests only. A public campaign profile still needs a digest-locked verifier image,
+network isolation, and resource controls.
+
+```bash
+python scripts/prepare_nangate45_ppa_profile.py \
+  --pdk-root /private/PDK/NangateOpenCellLibrary_PDKv1_3_v2010_12 \
+  --sdc /private/constraints/design.sdc --opensta /private/tools/bin/sta \
+  --output-manifest /private/profiles/nangate45.manifest.json \
+  --output-profile /private/profiles/yosys-opensta.yaml \
+  --source rtl/design.v --top design --clock-name clk --clock-period 10
+verigym profiles validate site-nangate45-yosys-opensta-atp-v2 \
+  --file /private/profiles/yosys-opensta.yaml
+```
+
+Clocked designs should name the SDC clock explicitly. A purely combinational design must use a
+separately identified profile whose SDC creates a virtual clock and defines input/output delays;
+the flow never guesses clocks from port names and never falls back to unconstrained timing.
+
+OpenROAD does not participate in this synthesis profile. Add it only as a separately identified
+physical-PPA profile when placement, clock-tree synthesis, routing, and extracted parasitics are
+intentionally part of the metric. Physical and synthesis-only results must never share a comparison
+partition. VCD/SAIF-annotated and global-activity power likewise require different profile
+identities.
