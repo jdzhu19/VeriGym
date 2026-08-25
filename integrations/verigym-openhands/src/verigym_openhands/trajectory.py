@@ -38,8 +38,7 @@ _HOST_PATH = re.compile(r"/(?:home|data|tmp|hpc)/|[A-Za-z]:\\", re.IGNORECASE)
 _SENSITIVE = re.compile(
     r"(?:\b(?:authorization|password|api[_ -]?key|access[_ -]?token)\s*[:=]|"
     r"\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|\b(?:sk|ds)-[A-Za-z0-9_-]{12,}|"
-    r"(?:reference[_ -]?patch|reference[_ -]?solution|golden[_ -]?patch)|"
-    r"(?:private[_ -]?reasoning|hidden[_ -]?(?:test|asset))[_/.:=-])",
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)",
     re.IGNORECASE,
 )
 _CONTRACT_TOOLS = {

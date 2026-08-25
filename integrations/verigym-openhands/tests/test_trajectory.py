@@ -246,6 +246,29 @@ def test_unresolved_openhands_trajectory_cannot_enter_sft(tmp_path: Path) -> Non
         )
 
 
+def test_security_policy_vocabulary_is_not_treated_as_secret_content() -> None:
+    trajectory = _trajectory(
+        system_text=(
+            "Never access hidden tests, hidden assets, reference solutions, golden patches, "
+            "credentials, or private reasoning blocks."
+        )
+    )
+    assert trajectory["infrastructure_valid"] is True
+
+
+@pytest.mark.parametrize(
+    "secret_text",
+    [
+        "Authorization: Bearer abcdefghijklmnop",
+        "api_key=sk-abcdefghijklmnopqrstuvwxyz",
+        "-----BEGIN PRIVATE KEY-----",
+    ],
+)
+def test_credential_shaped_message_content_still_fails_closed(secret_text: str) -> None:
+    with pytest.raises(OpenHandsTrajectoryError, match="content boundary"):
+        _trajectory(system_text=secret_text)
+
+
 def test_openhands_broker_argument_drift_fails_as_infrastructure() -> None:
     snapshots, turns = _episode()
     changed = list(turns)
