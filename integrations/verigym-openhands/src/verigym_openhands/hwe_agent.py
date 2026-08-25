@@ -129,7 +129,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         self._launched = False
         self._pending_training_trajectory = None
         bridge.emit_event(
-            "openhands_hwe_prompt_policy_bound",
+            "openhands_sdk_hwe_prompt_policy_bound",
             {
                 "prompt_policy_hash": policy.configuration_fingerprint,
                 "configuration_fingerprint": settings.configuration_fingerprint,
@@ -362,7 +362,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         )
         identity = _identity(settings, stats.tool_calls, stats.patches)
         bridge.record_accounting(accounting)
-        bridge.emit_event("openhands_hwe_identity_observed", identity.model_dump(mode="json"))
+        bridge.emit_event("openhands_sdk_identity_observed", identity.model_dump(mode="json"))
         _write_evidence(
             bridge.artifact_root,
             settings=settings,

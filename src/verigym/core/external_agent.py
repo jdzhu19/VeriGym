@@ -35,6 +35,14 @@ from verigym.tools.repository import RepositoryPublicTestRequest, RepositoryPubl
 _EVENT_TYPE = re.compile(
     r"^(?:(?:codex|claude)_cli|openhands_sdk|deepseek_harness)_[a-z0-9_]{1,80}$"
 )
+_IDENTITY_EVENT_TYPES = frozenset(
+    {
+        "codex_cli_identity_observed",
+        "claude_cli_identity_observed",
+        "openhands_sdk_identity_observed",
+        "deepseek_harness_identity_observed",
+    }
+)
 _MAX_EVENT_BYTES = 256 * 1024
 _MAX_TOOL_OUTPUT_BYTES = 256 * 1024
 _WORKSPACE_TOOLS = {tool.descriptor.name: tool for tool in builtin_file_tools()}
@@ -218,11 +226,7 @@ class RuntimeExternalAgentBridge:
             raise ValueError("external-agent event types must use a registered *_cli_* namespace")
         clean = self._sanitize_payload(redact_mapping(payload))
         identity: ExternalAgentCallIdentity | None = None
-        if event_type in {
-            "codex_cli_identity_observed",
-            "claude_cli_identity_observed",
-            "deepseek_harness_identity_observed",
-        }:
+        if event_type in _IDENTITY_EVENT_TYPES:
             identity = ExternalAgentCallIdentity.model_validate(dict(clean))
         bounded, truncated = bound_value(clean, _MAX_EVENT_BYTES)
         if not isinstance(bounded, dict):

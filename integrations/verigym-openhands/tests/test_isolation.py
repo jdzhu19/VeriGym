@@ -106,6 +106,10 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "num_retries=0" in source
     assert "DeepSeekHarnessHweBroker" in source
     assert "deepseek_harness_tool_definitions" in mcp
+    assert '"openhands_sdk_hwe_prompt_policy_bound"' in source
+    assert '"openhands_sdk_identity_observed"' in source
+    assert '"openhands_hwe_prompt_policy_bound"' not in source
+    assert '"openhands_hwe_identity_observed"' not in source
     assert "TerminalTool" not in source
     assert "FileEditor" not in source
     assert "docker.sock" not in source
