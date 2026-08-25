@@ -561,7 +561,7 @@ def _normalize_events(
     terminal_text_seen = False
     total_bytes = 0
     seen_calls: set[str] = set()
-    for raw in snapshots:
+    for event_index, raw in enumerate(snapshots):
         event = dict(raw)
         event_type = event.get("event_type")
         if event_type == "SystemPromptEvent":
@@ -599,7 +599,15 @@ def _normalize_events(
             messages.append(message)
         elif event_type == "ActionEvent":
             if not saw_user or pending is not None or saw_finish or terminal_text_seen:
-                raise OpenHandsTrajectoryError("OpenHands action event is out of sequence")
+                state = (
+                    f"saw_user={str(saw_user).lower()},"
+                    f"pending={str(pending is not None).lower()},"
+                    f"saw_finish={str(saw_finish).lower()},"
+                    f"terminal_text_seen={str(terminal_text_seen).lower()}"
+                )
+                raise OpenHandsTrajectoryError(
+                    f"OpenHands action event {event_index} is out of sequence ({state})"
+                )
             if any(
                 event.get(field) is not False
                 for field in (
