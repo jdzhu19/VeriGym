@@ -169,3 +169,33 @@ def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_p
     monkeypatch.setenv("VERIGYM_OPENHANDS_MCP_PYTHONPATH", "relative")
     with pytest.raises(ValueError, match="absolute"):
         _configured_mcp_pythonpath()
+
+
+def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
+    from verigym_openhands.hwe_agent import _identity
+    from verigym_openhands.hwe_config import OpenHandsHweSettings
+
+    settings = OpenHandsHweSettings(
+        model_id="openai/deepseek-v4-flash",
+        base_url_env="VERIGYM_MODEL_BASE_URL",
+        api_key_env="VERIGYM_MODEL_API_KEY",
+        max_iterations=200,
+        process_timeout_s=4200.0,
+        max_output_tokens=2048,
+        max_context_tokens=65_536,
+        seed=484,
+        campaign_role="training",
+        capture_training_transcript=True,
+        agent_version_id=None,
+        agent_version_hash=None,
+        configuration_fingerprint="a" * 64,
+    )
+
+    identity = _identity(settings, tool_calls=17, patches=1)
+
+    assert identity.tool_event_count == 17
+    assert identity.mcp_tool_event_count == 17
+    assert identity.side_effecting_tool_event_count == 0
+    assert identity.read_only_tool_event_count == 0
+    assert identity.external_network_tool_event_count == 0
+    assert identity.workspace_write_count == 1
