@@ -343,9 +343,14 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
     if not isinstance(messages, list) or not isinstance(decisions, list):
         raise OpenHandsTrajectoryError("OpenHands trajectory messages are malformed")
     _validate_normalized_messages(messages, decisions, tool_contract=tool_contract)
-    if value.get("assistant_decision_count") != len(decisions) or value.get(
-        "broker_turn_count"
-    ) != len(decisions):
+    broker_turn_count = sum(
+        int(item.get("tool_action_count", -1)) if isinstance(item, dict) else -1
+        for item in decisions
+    )
+    if (
+        value.get("assistant_decision_count") != len(decisions)
+        or value.get("broker_turn_count") != broker_turn_count
+    ):
         raise OpenHandsTrajectoryError("OpenHands trajectory decision counts changed")
     _require_hash(str(value.get("configuration_fingerprint", "")), "configuration fingerprint")
     return copy.deepcopy(dict(value))
@@ -400,9 +405,9 @@ def materialize_openhands_decisions(
             "transcript_hash": validated["transcript_hash"],
             "decision_index": decision_index,
             "target_message_index": message_index,
-            "call_ids": [decision["call_id"]],
-            "action_names": [decision["tool_name"]],
-            "tool_action_count": 1,
+            "call_ids": copy.deepcopy(decision["call_ids"]),
+            "action_names": copy.deepcopy(decision["action_names"]),
+            "tool_action_count": decision["tool_action_count"],
             "trajectory_assistant_decision_count": len(decisions),
             "tools": copy.deepcopy(tools),
             "tool_schema_hash": validated["tool_schema_hash"],
@@ -477,6 +482,15 @@ def validate_openhands_decision_record(
         raise OpenHandsTrajectoryError("OpenHands decision eligibility receipt changed")
     if target.get("role") != "assistant" or not target.get("tool_calls"):
         raise OpenHandsTrajectoryError("OpenHands decision target is not a complete tool decision")
+    target_calls = target["tool_calls"]
+    if (
+        not isinstance(target_calls, list)
+        or value.get("tool_action_count") != len(target_calls)
+        or value.get("call_ids") != [item.get("id") for item in target_calls]
+        or value.get("action_names")
+        != [item.get("function", {}).get("name") for item in target_calls]
+    ):
+        raise OpenHandsTrajectoryError("OpenHands decision sibling tool identity changed")
     return copy.deepcopy(dict(value))
 
 
@@ -554,12 +568,12 @@ def _normalize_events(
     messages: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
     receipt_index = 0
-    pending: tuple[str, str, str, int] | None = None
+    pending: list[dict[str, Any]] = []
+    pending_response_id: str | None = None
     saw_system = False
     saw_user = False
     saw_finish = False
     terminal_text_seen = False
-    total_bytes = 0
     seen_calls: set[str] = set()
     for event_index, raw in enumerate(snapshots):
         event = dict(raw)
@@ -579,12 +593,12 @@ def _normalize_events(
                 raise OpenHandsTrajectoryError("OpenHands injected skills, context, or a critic")
             source = event.get("source")
             if source == "user":
-                if not saw_system or saw_user or pending is not None or decisions:
+                if not saw_system or saw_user or pending or decisions:
                     raise OpenHandsTrajectoryError("OpenHands user message is out of sequence")
                 message = _normalized_message(event.get("message"), expected_role="user")
                 saw_user = True
             elif source == "agent":
-                if not saw_finish or pending is not None or terminal_text_seen:
+                if not saw_finish or pending or terminal_text_seen:
                     raise OpenHandsTrajectoryError(
                         "OpenHands final assistant text is out of sequence"
                     )
@@ -598,10 +612,21 @@ def _normalize_events(
                 raise OpenHandsTrajectoryError("OpenHands message source is unsupported")
             messages.append(message)
         elif event_type == "ActionEvent":
-            if not saw_user or pending is not None or saw_finish or terminal_text_seen:
+            response_id = event.get("llm_response_id")
+            if not isinstance(response_id, str) or not response_id or len(response_id) > 1024:
+                raise OpenHandsTrajectoryInfrastructureError(
+                    "OpenHands action omits its bounded LLM response identity"
+                )
+            if (
+                not saw_user
+                or saw_finish
+                or terminal_text_seen
+                or (pending_response_id is not None and response_id != pending_response_id)
+                or any(item["tool_name"] == "finish" for item in pending)
+            ):
                 state = (
                     f"saw_user={str(saw_user).lower()},"
-                    f"pending={str(pending is not None).lower()},"
+                    f"pending={str(bool(pending)).lower()},"
                     f"saw_finish={str(saw_finish).lower()},"
                     f"terminal_text_seen={str(terminal_text_seen).lower()}"
                 )
@@ -620,7 +645,8 @@ def _normalize_events(
                 raise OpenHandsTrajectoryError(
                     "OpenHands action contains private reasoning or critic content"
                 )
-            if receipt_index >= len(broker_turns):
+            broker_index = receipt_index + len(pending)
+            if broker_index >= len(broker_turns):
                 raise OpenHandsTrajectoryInfrastructureError(
                     "OpenHands action has no broker-owned turn"
                 )
@@ -643,7 +669,7 @@ def _normalize_events(
                     "OpenHands action identity differs from its LLM message"
                 )
             seen_calls.add(call_id)
-            receipt = broker_turns[receipt_index]
+            receipt = broker_turns[broker_index]
             if receipt.call_id is not None and receipt.call_id != call_id:
                 raise OpenHandsTrajectoryInfrastructureError(
                     "OpenHands call ID differs from the broker turn"
@@ -653,15 +679,66 @@ def _normalize_events(
                 raise OpenHandsTrajectoryInfrastructureError(
                     "OpenHands tool arguments differ from broker semantics"
                 )
-            message_index = len(messages)
-            messages.append(message)
-            pending = (call_id, name, receipt.observation_sha256, message_index)
+            if name == "finish" and (pending or broker_index != len(broker_turns) - 1):
+                raise OpenHandsTrajectoryError(
+                    "OpenHands finish must be the only action in the terminal decision"
+                )
+            decision: dict[str, Any]
+            if not pending:
+                message_index = len(messages)
+                messages.append(message)
+                decision = {
+                    "decision_index": len(decisions),
+                    "message_index": message_index,
+                    "call_ids": [],
+                    "action_names": [],
+                    "tool_action_count": 0,
+                    "sibling_tool_calls": False,
+                    "actions": [],
+                }
+                decisions.append(decision)
+                pending_response_id = response_id
+            else:
+                decision = decisions[-1]
+                message_index = int(decision["message_index"])
+                if message.get("content") != messages[message_index].get("content"):
+                    raise OpenHandsTrajectoryInfrastructureError(
+                        "OpenHands sibling actions disagree on shared assistant content"
+                    )
+                messages[message_index]["tool_calls"].append(call)
+            action_receipt = {
+                "action_index": len(decision["actions"]),
+                "call_id": call_id,
+                "tool_name": name,
+                "raw_arguments_sha256": hashlib.sha256(arguments.encode()).hexdigest(),
+                "canonical_arguments_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
+                "observation_message_index": None,
+                "observation_sha256": None,
+                "broker_observation_sha256": receipt.observation_sha256,
+            }
+            decision["call_ids"].append(call_id)
+            decision["action_names"].append(name)
+            decision["actions"].append(action_receipt)
+            decision["tool_action_count"] = len(decision["actions"])
+            decision["sibling_tool_calls"] = len(decision["actions"]) > 1
+            pending.append(
+                {
+                    "call_id": call_id,
+                    "tool_name": name,
+                    "observation_sha256": receipt.observation_sha256,
+                    "message_index": message_index,
+                    "action_receipt": action_receipt,
+                }
+            )
         elif event_type == "ObservationEvent":
-            if pending is None:
+            if not pending:
                 raise OpenHandsTrajectoryInfrastructureError(
                     "OpenHands observation has no pending action"
                 )
-            call_id, name, expected_observation_hash, message_index = pending
+            expected = pending[0]
+            call_id = expected["call_id"]
+            name = expected["tool_name"]
+            expected_observation_hash = expected["observation_sha256"]
             if event.get("extended_content_present") is not False:
                 raise OpenHandsTrajectoryError("OpenHands observation injected dynamic context")
             if event.get("tool_name") != name or event.get("tool_call_id") != call_id:
@@ -682,35 +759,22 @@ def _normalize_events(
                     "OpenHands observation differs from the broker-owned compact result"
                 )
             messages.append(message)
-            raw_arguments = messages[message_index]["tool_calls"][0]["function"]["arguments"]
-            decisions.append(
-                {
-                    "decision_index": len(decisions),
-                    "message_index": message_index,
-                    "call_id": call_id,
-                    "tool_name": name,
-                    "raw_arguments_sha256": hashlib.sha256(raw_arguments.encode()).hexdigest(),
-                    "canonical_arguments_sha256": hashlib.sha256(
-                        broker_turns[receipt_index].arguments_json.encode()
-                    ).hexdigest(),
-                    "observation_sha256": content_hash(observation),
-                    "broker_observation_sha256": expected_observation_hash,
-                }
-            )
+            action_receipt = expected["action_receipt"]
+            action_receipt["observation_message_index"] = len(messages) - 1
+            action_receipt["observation_sha256"] = content_hash(observation)
             receipt_index += 1
-            pending = None
-            saw_finish = name == "finish"
+            pending.pop(0)
+            if not pending:
+                pending_response_id = None
+                saw_finish = name == "finish"
         else:
             raise OpenHandsTrajectoryError(
                 f"OpenHands training stream contains unsupported {event_type!r}"
             )
-        if messages:
-            total_bytes += len(
-                json.dumps(messages[-1], ensure_ascii=False, separators=(",", ":")).encode()
-            )
-            if total_bytes > _MAX_TRAJECTORY_BYTES:
-                raise OpenHandsTrajectoryError("OpenHands training trajectory exceeds its bound")
-    if pending is not None or receipt_index != len(broker_turns):
+    total_bytes = len(json.dumps(messages, ensure_ascii=False, separators=(",", ":")).encode())
+    if total_bytes > _MAX_TRAJECTORY_BYTES:
+        raise OpenHandsTrajectoryError("OpenHands training trajectory exceeds its bound")
+    if pending or pending_response_id is not None or receipt_index != len(broker_turns):
         raise OpenHandsTrajectoryInfrastructureError("OpenHands and broker turn counts differ")
     if not saw_system or not saw_user or not saw_finish:
         raise OpenHandsTrajectoryError("OpenHands trajectory lacks system, user, or typed finish")
@@ -726,56 +790,84 @@ def _validate_normalized_messages(
     for raw in decisions:
         if not isinstance(raw, dict) or not isinstance(raw.get("message_index"), int):
             raise OpenHandsTrajectoryError("OpenHands decision receipt is malformed")
-        decision_by_message[raw["message_index"]] = raw
-    pending: tuple[str, str, str] | None = None
+        message_index = raw["message_index"]
+        if message_index in decision_by_message:
+            raise OpenHandsTrajectoryError("OpenHands decision message identity is duplicated")
+        decision_by_message[message_index] = raw
+    pending: list[dict[str, Any]] = []
     saw_finish = False
     observed_decisions = 0
+    observed_actions = 0
+    seen_calls: set[str] = set()
     for index, raw in enumerate(messages):
         message = _normalized_message(raw, expected_role=None)
         role = message["role"]
         if index < 2:
             continue
         if role == "assistant" and message.get("tool_calls"):
-            if pending is not None or saw_finish:
+            if pending or saw_finish:
                 raise OpenHandsTrajectoryError("OpenHands decision order changed")
-            call = message["tool_calls"][0]
-            call_id = call["id"]
-            name = call["function"]["name"]
-            arguments = call["function"]["arguments"]
-            canonical = _canonical_arguments(name, arguments, tool_contract=tool_contract)
             receipt = decision_by_message.get(index)
-            if (
-                receipt is None
-                or receipt.get("decision_index") != observed_decisions
-                or receipt.get("call_id") != call_id
-                or receipt.get("tool_name") != name
-                or receipt.get("raw_arguments_sha256")
-                != hashlib.sha256(arguments.encode()).hexdigest()
-                or receipt.get("canonical_arguments_sha256")
-                != hashlib.sha256(canonical.encode()).hexdigest()
-            ):
+            if receipt is None or receipt.get("decision_index") != observed_decisions:
                 raise OpenHandsTrajectoryError("OpenHands decision receipt changed")
-            pending = (call_id, name, str(receipt.get("broker_observation_sha256")))
+            calls = message["tool_calls"]
+            actions = receipt.get("actions")
+            call_ids = [call["id"] for call in calls]
+            action_names = [call["function"]["name"] for call in calls]
+            if (
+                not isinstance(actions, list)
+                or len(actions) != len(calls)
+                or receipt.get("call_ids") != call_ids
+                or receipt.get("action_names") != action_names
+                or receipt.get("tool_action_count") != len(calls)
+                or receipt.get("sibling_tool_calls") is not (len(calls) > 1)
+                or any(call_id in seen_calls for call_id in call_ids)
+                or ("finish" in action_names and len(calls) != 1)
+            ):
+                raise OpenHandsTrajectoryError("OpenHands sibling decision receipt changed")
+            seen_calls.update(call_ids)
+            for action_index, (call, action) in enumerate(zip(calls, actions, strict=True)):
+                if not isinstance(action, dict):
+                    raise OpenHandsTrajectoryError("OpenHands action receipt is malformed")
+                call_id = call["id"]
+                name = call["function"]["name"]
+                arguments = call["function"]["arguments"]
+                canonical = _canonical_arguments(name, arguments, tool_contract=tool_contract)
+                if (
+                    action.get("action_index") != action_index
+                    or action.get("call_id") != call_id
+                    or action.get("tool_name") != name
+                    or action.get("raw_arguments_sha256")
+                    != hashlib.sha256(arguments.encode()).hexdigest()
+                    or action.get("canonical_arguments_sha256")
+                    != hashlib.sha256(canonical.encode()).hexdigest()
+                    or not isinstance(action.get("observation_message_index"), int)
+                    or not isinstance(action.get("observation_sha256"), str)
+                ):
+                    raise OpenHandsTrajectoryError("OpenHands action receipt changed")
+                pending.append(action)
+                observed_actions += 1
             observed_decisions += 1
         elif role == "tool":
-            if pending is None:
+            if not pending:
                 raise OpenHandsTrajectoryError("OpenHands tool message has no decision")
-            call_id, name, broker_observation_hash = pending
+            action = pending.pop(0)
+            call_id = action["call_id"]
+            name = action["tool_name"]
+            broker_observation_hash = str(action.get("broker_observation_sha256"))
             content = message.get("content")
             broker_observation = _broker_observation_text(content, tool_name=name)
-            receipt = decision_by_message.get(index - 1)
             if (
                 message.get("tool_call_id") != call_id
                 or message.get("name") != name
                 or hashlib.sha256(broker_observation.encode()).hexdigest()
                 != broker_observation_hash
-                or receipt is None
-                or receipt.get("observation_sha256") != content_hash(content)
-                or receipt.get("broker_observation_sha256") != broker_observation_hash
+                or action.get("observation_message_index") != index
+                or action.get("observation_sha256") != content_hash(content)
             ):
                 raise OpenHandsTrajectoryError("OpenHands observation receipt changed")
-            pending = None
-            saw_finish = name == "finish"
+            if not pending:
+                saw_finish = name == "finish"
         elif (
             role == "assistant"
             and message.get("content")
@@ -785,7 +877,16 @@ def _validate_normalized_messages(
             continue
         else:
             raise OpenHandsTrajectoryError("OpenHands normalized message sequence changed")
-    if pending is not None or not saw_finish or observed_decisions != len(decisions):
+    expected_actions = sum(
+        int(item.get("tool_action_count", -1)) if isinstance(item, dict) else -1
+        for item in decisions
+    )
+    if (
+        pending
+        or not saw_finish
+        or observed_decisions != len(decisions)
+        or observed_actions != expected_actions
+    ):
         raise OpenHandsTrajectoryError("OpenHands normalized trajectory is incomplete")
 
 
@@ -809,9 +910,13 @@ def _normalized_message(value: Any, *, expected_role: str | None) -> dict[str, A
     result: dict[str, Any] = {"role": role, "content": content}
     calls = raw.get("tool_calls")
     if calls:
-        if role != "assistant" or not isinstance(calls, list) or len(calls) != 1:
+        if role != "assistant" or not isinstance(calls, list) or not 1 <= len(calls) <= 64:
             raise OpenHandsTrajectoryError("OpenHands tool call message is malformed")
-        result["tool_calls"] = [_normalized_tool_call(calls[0])]
+        normalized_calls = [_normalized_tool_call(call) for call in calls]
+        call_ids = [call["id"] for call in normalized_calls]
+        if len(call_ids) != len(set(call_ids)):
+            raise OpenHandsTrajectoryError("OpenHands sibling tool call IDs are duplicated")
+        result["tool_calls"] = normalized_calls
     tool_call_id = raw.get("tool_call_id")
     name = raw.get("name")
     if role == "tool":

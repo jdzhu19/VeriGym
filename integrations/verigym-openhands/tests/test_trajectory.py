@@ -83,7 +83,13 @@ def _message(role: str, content: str) -> dict[str, Any]:
     }
 
 
-def _action(call_id: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _action(
+    call_id: str,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    response_id: str | None = None,
+) -> dict[str, Any]:
     arguments_json = json.dumps(arguments, separators=(",", ":"), ensure_ascii=False)
     return {
         "event_type": "ActionEvent",
@@ -109,7 +115,7 @@ def _action(call_id: str, name: str, arguments: dict[str, Any]) -> dict[str, Any
         },
         "tool_name": name,
         "tool_call_id": call_id,
-        "llm_response_id": f"response-{call_id}",
+        "llm_response_id": response_id or f"response-{call_id}",
         "reasoning_content_present": False,
         "thinking_blocks_present": False,
         "responses_reasoning_present": False,
@@ -235,6 +241,91 @@ def test_exact_openhands_trajectory_to_decision_dataset_round_trip(tmp_path: Pat
     assert manifest["only_verifier_resolved"] is True
     assert manifest["production_training_ready"] is False
     assert (output / "train.jsonl").read_text(encoding="utf-8").count("\n") == 2
+
+
+def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> None:
+    first_observation = '{"entries":["TASK.md"]}'
+    second_observation = '{"entries":["src"]}'
+    finish_observation = '{"accepted":true,"terminal":true}'
+    snapshots = [
+        {
+            "event_type": "SystemPromptEvent",
+            "event_id": "system",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("system", "Bounded repository repair system."),
+            "dynamic_context_present": False,
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "user",
+            "parent_id": "system",
+            "source": "user",
+            "message": _message("user", "Repair the visible task."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action(
+            "call-list-root",
+            "list_files",
+            {"path": ".", "summary": "inspect root"},
+            response_id="response-siblings",
+        ),
+        _action(
+            "call-list-src",
+            "list_files",
+            {"path": "src", "summary": "inspect source"},
+            response_id="response-siblings",
+        ),
+        _observation("call-list-root", "list_files", first_observation),
+        _observation("call-list-src", "list_files", second_observation),
+        _action("call-finish", "finish", {"message": "done"}),
+        _observation("call-finish", "finish", finish_observation),
+    ]
+    turns = (
+        RepositoryToolBrokerTurn(
+            tool_name="list_files",
+            arguments_json='{"path":".","recursive":true}',
+            observation_json=first_observation,
+        ),
+        RepositoryToolBrokerTurn(
+            tool_name="list_files",
+            arguments_json='{"path":"src","recursive":true}',
+            observation_json=second_observation,
+        ),
+        RepositoryToolBrokerTurn(
+            tool_name="finish",
+            arguments_json='{"message":"done"}',
+            observation_json=finish_observation,
+        ),
+    )
+    trajectory = build_openhands_training_trajectory(
+        task_id="suite/repository/task-siblings",
+        provider="openai-compatible",
+        model_id="local/Qwen3.5-9B",
+        configuration_fingerprint=content_hash({"configuration": "siblings"}),
+        event_snapshots=snapshots,
+        tools=_tools(),
+        broker_turns=repository_broker_receipts(turns),
+        tool_contract="repository_action.v2",
+    )
+
+    assert trajectory["assistant_decision_count"] == 2
+    assert trajectory["broker_turn_count"] == 3
+    assert len(trajectory["messages"][2]["tool_calls"]) == 2
+    assert trajectory["assistant_decisions"][0]["sibling_tool_calls"] is True
+    assert trajectory["assistant_decisions"][0]["tool_action_count"] == 2
+
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=_tokenizer(tmp_path),
+    )
+    assert len(records) == 2
+    assert records[0]["tool_action_count"] == 2
+    assert records[0]["call_ids"] == ["call-list-root", "call-list-src"]
 
 
 def test_unresolved_openhands_trajectory_cannot_enter_sft(tmp_path: Path) -> None:
@@ -434,6 +525,6 @@ def test_hwe_native_shell_openhands_metadata_binds_to_broker() -> None:
     )
 
     assert trajectory["tool_contract"] == "hwe_native_shell_v2"
-    assert trajectory["assistant_decisions"][0]["tool_name"] == "shell"
+    assert trajectory["assistant_decisions"][0]["action_names"] == ["shell"]
     arguments = trajectory["messages"][2]["tool_calls"][0]["function"]["arguments"]
     assert arguments.endswith('"summary":"locate CSR"}')
