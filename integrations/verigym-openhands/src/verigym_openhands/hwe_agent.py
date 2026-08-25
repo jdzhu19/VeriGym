@@ -187,6 +187,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         event_types: dict[str, int] = {}
         final_response = ""
         broker: Any = None
+        failure_stage = "temporary_directory"
+        failure_receipt_emitted = False
         try:
             with tempfile.TemporaryDirectory(prefix="oh-hwe-", dir=control_root) as raw:
                 control = Path(raw)
@@ -194,11 +196,13 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 persistence = control / "state"
                 workspace.mkdir(mode=0o700)
                 persistence.mkdir(mode=0o700)
+                failure_stage = "broker_initialization"
                 broker = DeepSeekHarnessHweBroker(
                     bridge=bridge,
                     socket_path=control / "b" / "broker.sock",
                     private_audit_root=private_root,
                 )
+                failure_stage = "llm_initialization"
                 llm = openhands.LLM(
                     model=settings.model_id,
                     base_url=os.environ[settings.base_url_env],
@@ -225,6 +229,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "thinking_mode": "none",
                     },
                 )
+                failure_stage = "mcp_configuration"
                 server = MCPServer(
                     command="/usr/bin/env",
                     args=[
@@ -240,6 +245,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     ],
                     timeout=1810.0,
                 )
+                failure_stage = "agent_initialization"
                 agent = openhands.Agent(
                     llm=llm,
                     tools=[],
@@ -250,6 +256,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     condenser=None,
                     tool_concurrency_limit=1,
                 )
+                failure_stage = "conversation_initialization"
                 conversation = openhands.Conversation(
                     agent=agent,
                     workspace=workspace,
@@ -262,10 +269,13 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     visualizer=None,
                     delete_on_close=True,
                 )
+                failure_stage = "broker_start"
                 broker.start()
                 try:
+                    failure_stage = "send_message"
                     conversation.send_message(task_prompt)
                     try:
+                        failure_stage = "agent_loop"
                         asyncio.run(
                             asyncio.wait_for(
                                 conversation.arun(),
@@ -273,10 +283,13 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             )
                         )
                     except Exception as exc:
+                        receipt = _sdk_failure_receipt(exc, conversation.state.events)
+                        receipt["failure_stage"] = failure_stage
                         bridge.emit_event(
                             "openhands_sdk_hwe_episode_failed",
-                            _sdk_failure_receipt(exc, conversation.state.events),
+                            receipt,
                         )
+                        failure_receipt_emitted = True
                         raise
                     post_stage = "tool_contract"
                     try:
@@ -304,6 +317,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             "openhands_sdk_hwe_post_episode_failed",
                             receipt,
                         )
+                        failure_receipt_emitted = True
                         raise
                 finally:
                     try:
@@ -323,6 +337,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 infrastructure=True,
             ) from exc
         except Exception as exc:
+            if not failure_receipt_emitted:
+                receipt = _sdk_failure_receipt(exc, [])
+                receipt["failure_stage"] = failure_stage
+                bridge.emit_event("openhands_sdk_hwe_episode_failed", receipt)
             raise _termination(
                 "openhands_hwe_sdk_episode",
                 f"OpenHands HWE episode failed: {type(exc).__name__}",
