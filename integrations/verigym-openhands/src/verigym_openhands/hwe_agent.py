@@ -177,6 +177,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 infrastructure=True,
             )
         control_root = _configured_control_root()
+        mcp_pythonpath = _configured_mcp_pythonpath()
         private_root = bridge.artifact_root.parent.parent / "private-audit"
         private_root.mkdir(mode=0o700, exist_ok=True)
         os.chmod(private_root, 0o700)
@@ -229,6 +230,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "-i",
                         "PATH=/usr/local/bin:/usr/bin:/bin",
                         "LANG=C.UTF-8",
+                        f"PYTHONPATH={mcp_pythonpath}",
                         sys.executable,
                         "-m",
                         "verigym_openhands.hwe_mcp_stdio",
@@ -506,6 +508,27 @@ def _configured_control_root() -> Path:
     if not resolved.is_dir() or len(os.fsencode(resolved)) > 72:
         raise ValueError("OpenHands HWE control root must be a short real directory")
     return resolved
+
+
+def _configured_mcp_pythonpath() -> str:
+    raw = os.environ.get("VERIGYM_OPENHANDS_MCP_PYTHONPATH")
+    if not raw or len(os.fsencode(raw)) > 4096:
+        raise ValueError("VERIGYM_OPENHANDS_MCP_PYTHONPATH is required and bounded")
+    entries = raw.split(os.pathsep)
+    if not 1 <= len(entries) <= 16:
+        raise ValueError("OpenHands MCP Python path entry count is invalid")
+    resolved: list[str] = []
+    for entry in entries:
+        path = Path(entry)
+        if not path.is_absolute() or path.is_symlink():
+            raise ValueError("OpenHands MCP Python paths must be absolute non-symlinks")
+        target = path.resolve(strict=True)
+        if not target.is_dir():
+            raise ValueError("OpenHands MCP Python paths must be directories")
+        resolved.append(str(target))
+    if len(resolved) != len(set(resolved)):
+        raise ValueError("OpenHands MCP Python paths must be unique")
+    return os.pathsep.join(resolved)
 
 
 def _identity(

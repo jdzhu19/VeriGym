@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -106,6 +107,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "num_retries=0" in source
     assert "DeepSeekHarnessHweBroker" in source
     assert "deepseek_harness_tool_definitions" in mcp
+    assert 'f"PYTHONPATH={mcp_pythonpath}"' in source
     assert '"openhands_sdk_hwe_prompt_policy_bound"' in source
     assert '"openhands_sdk_identity_observed"' in source
     assert '"openhands_hwe_prompt_policy_bound"' not in source
@@ -145,3 +147,18 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
             },
             task_wall_time_s=100,
         )
+
+
+def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_path: Path) -> None:
+    from verigym_openhands.hwe_agent import _configured_mcp_pythonpath
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setenv("VERIGYM_OPENHANDS_MCP_PYTHONPATH", f"{first}{os.pathsep}{second}")
+    assert _configured_mcp_pythonpath() == f"{first}{os.pathsep}{second}"
+
+    monkeypatch.setenv("VERIGYM_OPENHANDS_MCP_PYTHONPATH", "relative")
+    with pytest.raises(ValueError, match="absolute"):
+        _configured_mcp_pythonpath()
