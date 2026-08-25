@@ -283,6 +283,9 @@ def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> 
         _action("call-finish", "finish", {"message": "done"}),
         _observation("call-finish", "finish", finish_observation),
     ]
+    snapshots[2]["message"]["content"] = [
+        {"type": "text", "text": "Inspect the root and source directories together."}
+    ]
     turns = (
         RepositoryToolBrokerTurn(
             tool_name="list_files",
@@ -314,6 +317,7 @@ def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> 
     assert trajectory["assistant_decision_count"] == 2
     assert trajectory["broker_turn_count"] == 3
     assert len(trajectory["messages"][2]["tool_calls"]) == 2
+    assert trajectory["messages"][2]["content"].startswith("Inspect the root")
     assert trajectory["assistant_decisions"][0]["sibling_tool_calls"] is True
     assert trajectory["assistant_decisions"][0]["tool_action_count"] == 2
 

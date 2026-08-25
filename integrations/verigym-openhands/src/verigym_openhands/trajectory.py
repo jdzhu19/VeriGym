@@ -261,6 +261,8 @@ def build_openhands_training_trajectory(
         "typed_finish_observed": True,
         "causal_validation": "passed",
         "exact_model_visible_context": True,
+        "openhands_text_content_normalization": "ordered_text_block_concatenation",
+        "model_visible_text_bytes_preserved": True,
         "openhands_tool_metadata_preserved": True,
         "broker_semantics_hash_bound": True,
         "verifier_resolved": False,
@@ -311,6 +313,8 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         "typed_finish_observed": True,
         "causal_validation": "passed",
         "exact_model_visible_context": True,
+        "openhands_text_content_normalization": "ordered_text_block_concatenation",
+        "model_visible_text_bytes_preserved": True,
         "openhands_tool_metadata_preserved": True,
         "broker_semantics_hash_bound": True,
         "infrastructure_valid": True,
@@ -701,9 +705,11 @@ def _normalize_events(
             else:
                 decision = decisions[-1]
                 message_index = int(decision["message_index"])
-                if message.get("content") != messages[message_index].get("content"):
+                # OpenHands 1.42.1 attaches the shared assistant text only to
+                # the first ActionEvent in one parallel tool-call response.
+                if message.get("content") is not None:
                     raise OpenHandsTrajectoryInfrastructureError(
-                        "OpenHands sibling actions disagree on shared assistant content"
+                        "OpenHands sibling action repeats shared assistant content"
                     )
                 messages[message_index]["tool_calls"].append(call)
             action_receipt = {
@@ -907,6 +913,8 @@ def _normalized_message(value: Any, *, expected_role: str | None) -> dict[str, A
     if thinking_blocks is not None and thinking_blocks != () and thinking_blocks != []:
         raise OpenHandsTrajectoryError("OpenHands LLM message contains thinking blocks")
     content = _message_content(raw.get("content"))
+    if role != "tool" and isinstance(content, list):
+        content = "".join(block["text"] for block in content) or None
     result: dict[str, Any] = {"role": role, "content": content}
     calls = raw.get("tool_calls")
     if calls:
