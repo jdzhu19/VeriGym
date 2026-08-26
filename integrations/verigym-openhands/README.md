@@ -35,8 +35,23 @@ trajectory can then be converted with `materialize_openhands_decisions` into too
 input-ID, and loss-mask receipts; overlength rows fail instead of truncating. Dataset directories
 are created with `write_openhands_decision_dataset` and are never overwritten.
 
+The HWE backend uses the SDK's Stop Hook extension point to correct OpenHands 1.42.1's
+content-only completion behavior. The broker's successful typed `finish` is the only completion
+authority. Before that point, the first content-only stop is denied and receives one canonical
+same-session recovery message; a second premature stop fails closed without resetting the
+workspace or retrying the episode. Recovered transcripts use the v2 trajectory/decision/dataset
+formats. They retain and hash-bind the premature assistant message and recovery feedback as
+loss-masked context. Existing v1 trajectories and hashes remain valid and unchanged.
+
 This integration establishes the collection and export path. A bounded development run remains a
 pilot and is not a benchmark score or a production-training-readiness claim.
+
+`scripts/run_cva6_hwe_openhands_recovery_diagnostic.py` freezes a distinct v2 agent identity and
+runs exactly one no-retry PR-2032 regression episode. It hash-binds the prior v1 missing-`finish`
+failure and accepts the recovery regression only when the same OpenHands session consumes its one
+recovery allowance and subsequently reaches broker-authoritative typed `finish`. Verifier
+correctness is reported separately. Even a verifier-passed diagnostic trajectory is not admitted
+to a dataset automatically.
 
 ## Five-task HWE collection pilot
 

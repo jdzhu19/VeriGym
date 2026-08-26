@@ -109,6 +109,9 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "num_retries=0" in source
     assert 'litellm_extra_body={"thinking": {"type": "disabled"}}' in source
     assert "DeepSeekHarnessHweBroker" in source
+    assert "HookConfig" in source
+    assert 'with_name("hwe_stop_hook.py")' in source
+    assert "hook_config=hook_config" in source
     assert "deepseek_harness_tool_definitions" in mcp
     assert 'f"PYTHONPATH={mcp_pythonpath}"' in source
     assert '"openhands_sdk_hwe_prompt_policy_bound"' in source
@@ -144,6 +147,9 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert settings.max_iterations == 200
     assert settings.max_context_tokens == 65_536
     assert settings.capture_training_transcript is True
+    assert settings.safe_dict()["format_recovery_budget"] == 1
+    assert settings.safe_dict()["whole_episode_retries"] == 0
+    assert settings.safe_dict()["termination_authority"] == "broker_typed_finish"
     assert "127.0.0.1" not in str(settings.safe_dict())
     assert "test-only-key" not in str(settings.safe_dict())
 

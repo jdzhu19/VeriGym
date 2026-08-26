@@ -14,6 +14,8 @@ from verigym_training_reference.hwe_decision_sft_64k import (
     DECISION_BALANCED_OBJECTIVE,
     OPENHANDS_DATASET_FORMAT,
     OPENHANDS_RECORD_FORMAT,
+    OPENHANDS_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_RECOVERY_RECORD_FORMAT,
     V4_RECORD_FORMAT,
     V4_TOOL_NAMES,
     ToolAwareParquetInputs,
@@ -330,6 +332,147 @@ def test_openhands_dataset_registers_lossless_exact_rows(tmp_path: Path) -> None
     output = tmp_path / "openhands.parquet"
     write_tool_aware_parquet(inputs, output)
     assert read_tool_aware_parquet(output) == list(inputs.rows)
+
+
+def test_openhands_recovery_dataset_preserves_masked_same_session_context(
+    tmp_path: Path,
+) -> None:
+    tokenizer = _FakeTokenizer()
+    tools = _tools()
+    recovery_message = (
+        "[Stop hook feedback] Your previous response did not call a tool. Continue in this same "
+        "session with exactly one typed tool call and no prose. If the task is complete, call "
+        "finish."
+    )
+    input_messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "task"},
+        {"role": "assistant", "content": "I will submit now."},
+        {"role": "user", "content": recovery_message},
+    ]
+    target = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call-finish",
+                "type": "function",
+                "function": {"name": "finish", "arguments": '{"value":"done"}'},
+            }
+        ],
+    }
+    messages = [*input_messages, target]
+    receipt = _receipt(tokenizer, messages, tools)
+    recovery = {
+        "recovery_index": 0,
+        "reason": "assistant_content_without_typed_tool",
+        "assistant_message_index": 2,
+        "assistant_message_sha256": content_hash(input_messages[2]),
+        "hook_event_index": 3,
+        "feedback_message_index": 3,
+        "feedback_message_sha256": content_hash(input_messages[3]),
+        "feedback_text_sha256": hashlib.sha256(recovery_message.encode()).hexdigest(),
+        "same_session": True,
+        "whole_episode_retries": 0,
+        "broker_typed_finish_before": False,
+    }
+    record_base = {
+        "schema_version": "2.0",
+        "format_id": OPENHANDS_RECOVERY_RECORD_FORMAT,
+        "sample_id": "1" * 64,
+        "task_id": "task-recovered",
+        "task_hash": "2" * 64,
+        "source_hash": "3" * 64,
+        "candidate_hash": "4" * 64,
+        "verifier_hash": "5" * 64,
+        "transcript_hash": "6" * 64,
+        "decision_index": 0,
+        "target_message_index": 4,
+        "call_ids": ["call-finish"],
+        "action_names": ["finish"],
+        "tool_action_count": 1,
+        "trajectory_assistant_decision_count": 1,
+        "tools": tools,
+        "tool_schema_hash": content_hash(tools),
+        "input_messages": input_messages,
+        "target_message": target,
+        **receipt,
+        "max_length": 65_536,
+        "truncation": "error",
+        "eligible": True,
+        "verifier_resolved": True,
+        "infrastructure_valid": True,
+        "input_loss_masked": True,
+        "exact_model_visible_context": True,
+        "context_transformed_after_collection": False,
+        "raw_provider_events_exported": False,
+        "raw_observations_exported": False,
+        "private_reasoning_exported": False,
+        "hidden_assets_exported": False,
+        "reference_solutions_exported": False,
+        "credential_values_exported": False,
+        "raw_host_paths_exported": False,
+        "source_trajectory_format": "verigym_openhands_exact_tool_trajectory_v2",
+        "format_recovery_policy_id": "openhands_broker_stop_hook_recovery_v1",
+        "trajectory_format_recovery_count": 1,
+        "format_recovery_count": 1,
+        "format_recoveries": [recovery],
+        "same_session_recovery": True,
+        "whole_episode_retries": 0,
+        "termination_authority": "broker_typed_finish",
+    }
+    record = {**record_base, "record_hash": content_hash(record_base)}
+    line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+    manifest_base = {
+        "schema_version": "2.0",
+        "format_id": OPENHANDS_RECOVERY_DATASET_FORMAT,
+        "record_count": 1,
+        "record_hashes": [record["record_hash"]],
+        "records_sha256": hashlib.sha256(line.encode()).hexdigest(),
+        "trajectory_count": 1,
+        "trajectory_hashes": ["6" * 64],
+        "supervised_decision_count": 1,
+        "max_observed_token_count": receipt["token_count"],
+        "max_length": 65_536,
+        "truncation": "error",
+        "overlength_records": [],
+        "exact_token_receipts": True,
+        "only_verifier_resolved": True,
+        "infrastructure_invalid_excluded": True,
+        "raw_provider_events_exported": False,
+        "raw_observations_exported": False,
+        "private_reasoning_exported": False,
+        "hidden_assets_exported": False,
+        "reference_solutions_exported": False,
+        "credential_values_exported": False,
+        "raw_host_paths_exported": False,
+        "record_formats": [OPENHANDS_RECOVERY_RECORD_FORMAT],
+        "format_recovery_policy_id": "openhands_broker_stop_hook_recovery_v1",
+        "format_recovery_trajectory_count": 1,
+        "format_recovery_count": 1,
+        "same_session_recovery_hash_bound": True,
+        "whole_episode_retries": 0,
+        "termination_authority": "broker_typed_finish",
+    }
+    manifest = {**manifest_base, "dataset_hash": content_hash(manifest_base)}
+    dataset = tmp_path / "openhands-recovery"
+    dataset.mkdir()
+    (dataset / "train.jsonl").write_text(line, encoding="utf-8")
+    (dataset / "dataset-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    inputs = load_openhands_tool_aware_dataset(dataset)
+    exact = tool_aware_exact_final_decision_tokens(
+        _FakeTokenizer(),
+        messages=inputs.rows[0]["messages"],
+        tools=inputs.rows[0]["tools"],
+        expected_receipt=inputs.rows[0]["exact_token_receipt"],
+        tokenizer_id="Qwen3.5-9B/local-frozen-chat-template",
+        tokenizer_hash="a" * 64,
+    )
+
+    assert inputs.rows[0]["format_id"] == OPENHANDS_RECOVERY_RECORD_FORMAT
+    assert inputs.rows[0]["messages"][2:4] == input_messages[2:4]
+    assert exact.loss_mask[: receipt["input_tokens"]] == [0] * receipt["input_tokens"]
 
 
 def test_full_trajectory_objective_supervises_every_assistant_decision() -> None:

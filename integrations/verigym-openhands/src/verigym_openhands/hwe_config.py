@@ -14,6 +14,11 @@ from verigym.evolution.memory import validate_agent_version
 from verigym.plugin_api import JsonValue
 from verigym.schemas.evolution import AgentVersionManifest
 
+from verigym_openhands._recovery import (
+    OPENHANDS_FORMAT_RECOVERY_BUDGET,
+    OPENHANDS_FORMAT_RECOVERY_POLICY,
+)
+
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _OPTIONS = {
@@ -67,6 +72,10 @@ class OpenHandsHweSettings:
             "temperature": 0,
             "top_p": 1,
             "whole_episode_retries": 0,
+            "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+            "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+            "same_session_recovery": True,
+            "termination_authority": "broker_typed_finish",
             "provider_thinking_mode": "disabled",
             "campaign_role": self.campaign_role,
             "capture_training_transcript": self.capture_training_transcript,
@@ -154,6 +163,10 @@ def resolve_hwe_settings(
         "temperature": 0,
         "top_p": 1,
         "whole_episode_retries": 0,
+        "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+        "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+        "same_session_recovery": True,
+        "termination_authority": "broker_typed_finish",
         "provider_thinking_mode": "disabled",
         "campaign_role": role,
         "capture_training_transcript": capture,

@@ -34,6 +34,7 @@ from verigym.schemas.tool import CommandSpec, ToolResult
 _MAX_REQUEST_BYTES = 5 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TOOLS = frozenset({"list_files", "read_file", "apply_patch", "shell", "inspect_diff", "finish"})
+_TERMINAL_STATUS_OPERATION = "verigym_hwe_terminal_status_v1"
 
 
 @dataclass(frozen=True)
@@ -210,6 +211,14 @@ class DeepSeekHarnessHweBroker:
     def _dispatch(self, request: object) -> dict[str, Any]:
         if not isinstance(request, dict):
             return self._reject("invalid_request", "tool request must be an object")
+        if request == {"operation": _TERMINAL_STATUS_OPERATION}:
+            with self._lock:
+                return {
+                    "ok": True,
+                    "finished": self._finished,
+                    "policy_failed": self._policy_failure is not None,
+                    "infrastructure_failed": self._infrastructure_failure is not None,
+                }
         call_id = request.get("id")
         name = request.get("name")
         arguments = request.get("arguments")

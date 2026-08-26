@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import tempfile
 import time
@@ -37,8 +38,13 @@ from verigym.plugin_api import (
     validate_prompt_text,
 )
 
+from ._recovery import (
+    OPENHANDS_FORMAT_RECOVERY_BUDGET,
+    OPENHANDS_FORMAT_RECOVERY_POLICY,
+)
 from ._version import __version__
 from .hwe_config import OpenHandsHweSettings, resolve_hwe_settings
+from .hwe_stop_hook import read_recovery_count
 from .trajectory import (
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
@@ -49,9 +55,9 @@ from .trajectory import (
     snapshot_openhands_tools,
 )
 
-PROMPT_CONTRACT_ID = "openhands_hwe_native_shell_training_v1"
-PROMPT_CONTRACT_VERSION = "1.0.0"
-BASE_INSTRUCTION_POLICY = "openhands_hwe_exact_one_tool_v1"
+PROMPT_CONTRACT_ID = "openhands_hwe_native_shell_training_v2"
+PROMPT_CONTRACT_VERSION = "2.0.0"
+BASE_INSTRUCTION_POLICY = "openhands_hwe_exact_one_tool_bounded_recovery_v2"
 _TOOL_NAMES = sorted(item["function"]["name"] for item in deepseek_harness_tool_definitions())
 
 
@@ -84,6 +90,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             "verifier_gated_training_trajectory",
             "decision_sft_64k_export",
             "single_external_episode",
+            "same_session_format_recovery",
+            "broker_authoritative_typed_finish",
         ],
     )
 
@@ -152,6 +160,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             from openhands.sdk.conversation import (  # type: ignore[import-not-found]
                 get_agent_final_response,
             )
+            from openhands.sdk.hooks import (  # type: ignore[import-not-found]
+                HookConfig,
+                HookDefinition,
+                HookMatcher,
+            )
             from openhands.sdk.mcp import MCPServer  # type: ignore[import-not-found]
         except ImportError as exc:
             raise _termination(
@@ -186,6 +199,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         effective_tools: list[dict[str, Any]] = []
         event_types: dict[str, int] = {}
         final_response = ""
+        format_recovery_count = 0
         broker: Any = None
         failure_stage = "temporary_directory"
         failure_receipt_emitted = False
@@ -194,6 +208,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 control = Path(raw)
                 workspace = control / "empty-workspace"
                 persistence = control / "state"
+                recovery_state = control / "format-recovery.json"
                 workspace.mkdir(mode=0o700)
                 persistence.mkdir(mode=0o700)
                 failure_stage = "broker_initialization"
@@ -256,6 +271,25 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     condenser=None,
                     tool_concurrency_limit=1,
                 )
+                hook_command = " ".join(
+                    shlex.quote(value)
+                    for value in (
+                        sys.executable,
+                        str(_stop_hook_script()),
+                        "--socket",
+                        str(broker.socket_path),
+                        "--state",
+                        str(recovery_state),
+                    )
+                )
+                hook_config = HookConfig(
+                    stop=[
+                        HookMatcher(
+                            matcher="*",
+                            hooks=[HookDefinition(command=hook_command, timeout=5)],
+                        )
+                    ]
+                )
                 failure_stage = "conversation_initialization"
                 conversation = openhands.Conversation(
                     agent=agent,
@@ -266,6 +300,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     client_tools=[],
                     max_iteration_per_run=settings.max_iterations,
                     stuck_detection=False,
+                    hook_config=hook_config,
                     visualizer=None,
                     delete_on_close=True,
                 )
@@ -291,6 +326,19 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         )
                         failure_receipt_emitted = True
                         raise
+                    format_recovery_count = read_recovery_count(recovery_state)
+                    if format_recovery_count:
+                        bridge.emit_event(
+                            "openhands_sdk_hwe_format_recovery_observed",
+                            {
+                                "policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+                                "recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+                                "recovery_count": format_recovery_count,
+                                "same_session": True,
+                                "whole_episode_retries": 0,
+                                "model_visible_content_persisted": False,
+                            },
+                        )
                     post_stage = "tool_contract"
                     try:
                         if sorted(conversation.agent.tools_map) != _TOOL_NAMES:
@@ -378,6 +426,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 event_types=event_types,
                 final_response=final_response,
                 duration_s=duration_s,
+                format_recovery_count=format_recovery_count,
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -423,6 +472,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     tools=effective_tools,
                     broker_turns=hwe_broker_receipts(broker_events, broker_call_ids),
                     tool_contract="hwe_native_shell_v2",
+                    recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
                 )
             except OpenHandsTrajectoryInfrastructureError as exc:
                 persist_evidence(
@@ -513,7 +563,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
 def _system_prompt() -> str:
     return (
         "You are a hardware repository repair agent using the frozen OpenHands HWE native-shell "
-        "v1 contract. Every assistant decision must contain exactly one typed tool call. Use only "
+        "v2 contract. Every assistant decision must contain exactly one typed tool call. One "
+        "same-session format recovery may be supplied if a response omits its tool call. Use only "
         "list_files, read_file, apply_patch, shell, inspect_diff, and finish. Read TASK.md and "
         "relevant source before editing, make only necessary workspace-relative changes, run "
         "focused local diagnostics, inspect the final diff, and call finish exactly once. Never "
@@ -603,6 +654,13 @@ def _configured_mcp_pythonpath() -> str:
     return os.pathsep.join(resolved)
 
 
+def _stop_hook_script() -> Path:
+    path = Path(__file__).with_name("hwe_stop_hook.py")
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("OpenHands HWE Stop hook must be a regular package file")
+    return path.resolve(strict=True)
+
+
 def _sdk_failure_receipt(exc: BaseException, events: list[Any]) -> dict[str, Any]:
     chain: list[str] = []
     current: BaseException | None = exc
@@ -648,13 +706,13 @@ def _identity(
         executable_name="python",
         executable_sha256=hash_bytes(Path(sys.executable).read_bytes()),
         executable_version=f"python-{sys.version_info.major}.{sys.version_info.minor}",
-        capability_fingerprint=hashlib.sha256(b"openhands-sdk-1.42.1-hwe-v1").hexdigest(),
+        capability_fingerprint=hashlib.sha256(b"openhands-sdk-1.42.1-hwe-v2").hexdigest(),
         configuration_fingerprint=settings.configuration_fingerprint,
         invocation_count=1,
         integration_track="openhands_sdk_agent",
         execution_surface="openhands_sdk",
         interaction_class="sdk_agent_broker_tools",
-        harness_id="openhands-sdk-1.42.1-hwe-native-shell-v1",
+        harness_id="openhands-sdk-1.42.1-hwe-native-shell-v2",
         model_client_kind="sdk_agent_mediated",
         agent_harness_kind="openhands_sdk",
         tool_availability_policy="hwe_exact_six_typed_tools_v2",
@@ -685,6 +743,7 @@ def _write_evidence(
     event_types: dict[str, int],
     final_response: str,
     duration_s: float,
+    format_recovery_count: int,
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -711,6 +770,11 @@ def _write_evidence(
             "plugins_loaded": False,
             "condenser_enabled": False,
             "whole_episode_retries": 0,
+            "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+            "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+            "format_recovery_count": format_recovery_count,
+            "same_session_recovery": True,
+            "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
             "benchmark_score_claimed": False,
         },

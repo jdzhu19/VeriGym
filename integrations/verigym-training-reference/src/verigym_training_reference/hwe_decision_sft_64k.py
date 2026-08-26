@@ -25,7 +25,14 @@ V4_EXPECTED_RECORDS = 83
 V4_EXPECTED_TOOL_ACTIONS = 85
 V4_EXPECTED_MAX_TOKENS = 50_117
 OPENHANDS_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v1"
+OPENHANDS_RECOVERY_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v2"
 OPENHANDS_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v1"
+OPENHANDS_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v2"
+OPENHANDS_RECOVERY_POLICY = "openhands_broker_stop_hook_recovery_v1"
+OPENHANDS_RECOVERY_MESSAGE = (
+    "[Stop hook feedback] Your previous response did not call a tool. Continue in this same "
+    "session with exactly one typed tool call and no prose. If the task is complete, call finish."
+)
 DECISION_BALANCED_OBJECTIVE = "decision_balanced_target_token_mean_batch1_v1"
 TRAJECTORY_BALANCED_OBJECTIVE = "trajectory_balanced_all_assistant_token_mean_batch1_v1"
 TRAJECTORY_BALANCED_DECISION_OBJECTIVE = "trajectory_balanced_decision_target_token_mean_batch1_v1"
@@ -180,7 +187,10 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
         manifest = json.loads(manifest_payload)
     except json.JSONDecodeError as exc:
         raise ValueError("OpenHands 64K manifest is invalid JSON") from exc
-    if not isinstance(manifest, dict) or manifest.get("format_id") != OPENHANDS_DATASET_FORMAT:
+    if not isinstance(manifest, dict) or manifest.get("format_id") not in {
+        OPENHANDS_DATASET_FORMAT,
+        OPENHANDS_RECOVERY_DATASET_FORMAT,
+    }:
         raise ValueError("OpenHands 64K dataset format changed")
     expected_dataset_hash = manifest.get("dataset_hash")
     manifest_base = {key: value for key, value in manifest.items() if key != "dataset_hash"}
@@ -205,6 +215,41 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
     }
     if any(manifest.get(key) != expected for key, expected in manifest_contract.items()):
         raise ValueError("OpenHands 64K dataset eligibility or safety contract changed")
+    if manifest["format_id"] == OPENHANDS_RECOVERY_DATASET_FORMAT:
+        recovery_contract = {
+            "schema_version": "2.0",
+            "format_recovery_policy_id": OPENHANDS_RECOVERY_POLICY,
+            "same_session_recovery_hash_bound": True,
+            "whole_episode_retries": 0,
+            "termination_authority": "broker_typed_finish",
+        }
+        if any(manifest.get(key) != expected for key, expected in recovery_contract.items()):
+            raise ValueError("OpenHands 64K recovery dataset contract changed")
+        record_formats = manifest.get("record_formats")
+        if (
+            not isinstance(record_formats, list)
+            or not record_formats
+            or record_formats != sorted(set(record_formats))
+            or not set(record_formats)
+            <= {OPENHANDS_RECORD_FORMAT, OPENHANDS_RECOVERY_RECORD_FORMAT}
+            or OPENHANDS_RECOVERY_RECORD_FORMAT not in record_formats
+        ):
+            raise ValueError("OpenHands 64K recovery record formats changed")
+        recovery_count = manifest.get("format_recovery_count")
+        recovery_trajectory_count = manifest.get("format_recovery_trajectory_count")
+        trajectory_count = manifest.get("trajectory_count")
+        if (
+            not isinstance(recovery_count, int)
+            or isinstance(recovery_count, bool)
+            or recovery_count < 0
+            or not isinstance(recovery_trajectory_count, int)
+            or isinstance(recovery_trajectory_count, bool)
+            or recovery_trajectory_count < 0
+            or not isinstance(trajectory_count, int)
+            or recovery_trajectory_count > trajectory_count
+            or recovery_count != recovery_trajectory_count
+        ):
+            raise ValueError("OpenHands 64K recovery accounting changed")
 
     raw_lines = train_payload.decode("utf-8").splitlines()
     record_count = manifest.get("record_count")
@@ -218,6 +263,14 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
         raise ValueError("OpenHands 64K train.jsonl contains invalid JSON") from exc
     if any(not isinstance(record, dict) for record in records):
         raise ValueError("OpenHands 64K train.jsonl row is not an object")
+    observed_record_formats = sorted({str(record.get("format_id")) for record in records})
+    expected_record_formats = (
+        manifest.get("record_formats")
+        if manifest["format_id"] == OPENHANDS_RECOVERY_DATASET_FORMAT
+        else [OPENHANDS_RECORD_FORMAT]
+    )
+    if observed_record_formats != expected_record_formats:
+        raise ValueError("OpenHands 64K source record formats changed")
     hashes = [record.get("record_hash") for record in records]
     if hashes != manifest.get("record_hashes"):
         raise ValueError("OpenHands 64K parquet row order or record identity changed")
@@ -485,7 +538,7 @@ def _parquet_row(example: HweDeepSeekHarnessDecisionSftExampleV4) -> dict[str, A
 def _validate_parquet_row(row: Any, *, index: int) -> None:
     if not isinstance(row, dict):
         raise ValueError(f"tool-aware parquet row {index} is not an object")
-    if row.get("format_id") == OPENHANDS_RECORD_FORMAT:
+    if row.get("format_id") in {OPENHANDS_RECORD_FORMAT, OPENHANDS_RECOVERY_RECORD_FORMAT}:
         _validate_openhands_parquet_row(row, index=index)
         return
     required = {
@@ -560,7 +613,7 @@ def _openhands_parquet_row(
     if not isinstance(input_messages, list) or not isinstance(target_message, dict):
         raise ValueError(f"OpenHands 64K source row {index} messages are malformed")
     row = {
-        "format_id": OPENHANDS_RECORD_FORMAT,
+        "format_id": record.get("format_id"),
         "source_dataset_hash": dataset_hash,
         "source_record_index": index,
         "record_hash": expected_record_hash,
@@ -648,7 +701,7 @@ def _validate_openhands_parquet_row(row: dict[str, Any], *, index: int) -> None:
     ):
         raise ValueError(f"OpenHands tool-aware parquet row {index} eligibility changed")
     source_contract = {
-        "format_id": OPENHANDS_RECORD_FORMAT,
+        "format_id": row.get("format_id"),
         "input_loss_masked": True,
         "exact_model_visible_context": True,
         "context_transformed_after_collection": False,
@@ -662,9 +715,89 @@ def _validate_openhands_parquet_row(row: dict[str, Any], *, index: int) -> None:
     }
     if any(source.get(key) != expected for key, expected in source_contract.items()):
         raise ValueError(f"OpenHands tool-aware parquet row {index} safety contract changed")
+    if row.get("format_id") == OPENHANDS_RECOVERY_RECORD_FORMAT:
+        recoveries = source.get("format_recoveries")
+        recovery_count = source.get("format_recovery_count")
+        trajectory_recovery_count = source.get("trajectory_format_recovery_count")
+        recovery_contract = {
+            "schema_version": "2.0",
+            "source_trajectory_format": "verigym_openhands_exact_tool_trajectory_v2",
+            "format_recovery_policy_id": OPENHANDS_RECOVERY_POLICY,
+            "same_session_recovery": True,
+            "whole_episode_retries": 0,
+            "termination_authority": "broker_typed_finish",
+        }
+        if (
+            any(source.get(key) != expected for key, expected in recovery_contract.items())
+            or not isinstance(recoveries, list)
+            or recovery_count != len(recoveries)
+            or not isinstance(trajectory_recovery_count, int)
+            or isinstance(trajectory_recovery_count, bool)
+            or trajectory_recovery_count not in {0, 1}
+            or len(recoveries) > trajectory_recovery_count
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} recovery changed")
+        _validate_openhands_recovery_source(source, index=index)
     token_count = receipt.get("token_count", V4_MAX_LENGTH + 1)
     if not isinstance(token_count, int) or token_count > V4_MAX_LENGTH:
         raise ValueError(f"OpenHands tool-aware parquet row {index} is overlength")
+
+
+def _validate_openhands_recovery_source(source: dict[str, Any], *, index: int) -> None:
+    messages = source.get("input_messages")
+    receipts = source.get("format_recoveries")
+    if not isinstance(messages, list) or not isinstance(receipts, list):
+        raise ValueError(f"OpenHands tool-aware parquet row {index} recovery is malformed")
+    expected_fields = {
+        "recovery_index",
+        "reason",
+        "assistant_message_index",
+        "assistant_message_sha256",
+        "hook_event_index",
+        "feedback_message_index",
+        "feedback_message_sha256",
+        "feedback_text_sha256",
+        "same_session",
+        "whole_episode_retries",
+        "broker_typed_finish_before",
+    }
+    feedback_text_hash = hashlib.sha256(OPENHANDS_RECOVERY_MESSAGE.encode()).hexdigest()
+    for recovery_index, receipt in enumerate(receipts):
+        if not isinstance(receipt, dict) or set(receipt) != expected_fields:
+            raise ValueError(f"OpenHands tool-aware parquet row {index} recovery fields changed")
+        assistant_index = receipt.get("assistant_message_index")
+        feedback_index = receipt.get("feedback_message_index")
+        hook_index = receipt.get("hook_event_index")
+        if (
+            receipt.get("recovery_index") != recovery_index
+            or receipt.get("reason") != "assistant_content_without_typed_tool"
+            or not isinstance(assistant_index, int)
+            or isinstance(assistant_index, bool)
+            or not isinstance(feedback_index, int)
+            or isinstance(feedback_index, bool)
+            or not isinstance(hook_index, int)
+            or isinstance(hook_index, bool)
+            or not 2 <= assistant_index < feedback_index < len(messages)
+            or hook_index < 0
+            or receipt.get("same_session") is not True
+            or receipt.get("whole_episode_retries") != 0
+            or receipt.get("broker_typed_finish_before") is not False
+            or receipt.get("feedback_text_sha256") != feedback_text_hash
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} recovery receipt changed")
+        assistant = messages[assistant_index]
+        feedback = messages[feedback_index]
+        if (
+            not isinstance(assistant, dict)
+            or assistant.get("role") != "assistant"
+            or not assistant.get("content")
+            or assistant.get("tool_calls")
+            or not isinstance(feedback, dict)
+            or feedback != {"role": "user", "content": OPENHANDS_RECOVERY_MESSAGE}
+            or receipt.get("assistant_message_sha256") != content_hash(assistant)
+            or receipt.get("feedback_message_sha256") != content_hash(feedback)
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} recovery binding changed")
 
 
 def _encode_parquet_payloads(row: dict[str, Any]) -> dict[str, Any]:
@@ -829,6 +962,8 @@ __all__ = [
     "ExactToolAwareTokens",
     "OPENHANDS_DATASET_FORMAT",
     "OPENHANDS_RECORD_FORMAT",
+    "OPENHANDS_RECOVERY_DATASET_FORMAT",
+    "OPENHANDS_RECOVERY_RECORD_FORMAT",
     "OpenHandsToolAwareParquetInputs",
     "ToolAwareParquetInputs",
     "TRAJECTORY_BALANCED_OBJECTIVE",

@@ -14,7 +14,15 @@ from verigym.hwe.qwen_action_tokenizer import QwenDecisionExampleTokenizer
 from verigym.hwe.trajectory import HweNormalizedEvent
 from verigym.protocols.repository_action import repository_tool_definitions
 
+from verigym_openhands._recovery import (
+    OPENHANDS_FORMAT_RECOVERY_MESSAGE,
+    OPENHANDS_FORMAT_RECOVERY_POLICY,
+    OPENHANDS_FORMAT_RECOVERY_REASON_SHA256,
+)
 from verigym_openhands.trajectory import (
+    OPENHANDS_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_RECOVERY_DECISION_FORMAT,
+    OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
     build_openhands_training_trajectory,
@@ -22,6 +30,7 @@ from verigym_openhands.trajectory import (
     materialize_openhands_decisions,
     repository_broker_receipts,
     set_openhands_verifier_result,
+    snapshot_openhands_events,
     validate_openhands_training_trajectory,
     write_openhands_decision_dataset,
 )
@@ -144,6 +153,29 @@ def _observation(call_id: str, name: str, content: str) -> dict[str, Any]:
     }
 
 
+def _stop_hook(*, blocked: bool) -> dict[str, Any]:
+    reason = "format recovery" if blocked else "broker typed finish observed"
+    return {
+        "event_type": "HookExecutionEvent",
+        "event_id": "hook-recovery" if blocked else "hook-terminal",
+        "parent_id": None,
+        "source": "hook",
+        "hook_event_type": "Stop",
+        "success": not blocked,
+        "blocked": blocked,
+        "exit_code": 2 if blocked else 0,
+        "reason_sha256": (
+            OPENHANDS_FORMAT_RECOVERY_REASON_SHA256
+            if blocked
+            else hashlib.sha256(reason.encode()).hexdigest()
+        ),
+        "stdout_present": True,
+        "stderr_present": False,
+        "additional_context_present": False,
+        "error_present": False,
+    }
+
+
 def _episode(
     *, system_text: str = "Bounded repository repair system."
 ) -> tuple[list[dict[str, Any]], tuple[RepositoryToolBrokerTurn, ...]]:
@@ -215,6 +247,8 @@ def _binding() -> dict[str, str]:
 
 def test_exact_openhands_trajectory_to_decision_dataset_round_trip(tmp_path: Path) -> None:
     pending = _trajectory()
+    assert pending["format_id"] == "verigym_openhands_exact_tool_trajectory_v1"
+    assert "format_recoveries" not in pending
     assert pending["verifier_resolved"] is False
     assert pending["sft_eligible"] is False
     assert pending["assistant_decision_count"] == 2
@@ -241,6 +275,156 @@ def test_exact_openhands_trajectory_to_decision_dataset_round_trip(tmp_path: Pat
     assert manifest["only_verifier_resolved"] is True
     assert manifest["production_training_ready"] is False
     assert (output / "train.jsonl").read_text(encoding="utf-8").count("\n") == 2
+
+
+def test_stop_hook_snapshot_exports_only_content_free_receipt() -> None:
+    hook_type = type(
+        "HookExecutionEvent",
+        (),
+        {
+            "id": "hook-1",
+            "parent_id": None,
+            "source": "hook",
+            "hook_event_type": "Stop",
+            "hook_command": "/private/host/path/hook.py",
+            "success": False,
+            "blocked": True,
+            "exit_code": 2,
+            "stdout": '{"decision":"deny"}',
+            "stderr": "",
+            "reason": "canonical feedback",
+            "additional_context": None,
+            "error": None,
+        },
+    )
+
+    snapshot = snapshot_openhands_events([hook_type()])[0]
+
+    assert snapshot["reason_sha256"] == hashlib.sha256(b"canonical feedback").hexdigest()
+    assert snapshot["stdout_present"] is True
+    assert "hook_command" not in snapshot
+    assert "stdout" not in snapshot
+    assert "reason" not in snapshot
+
+
+def test_same_session_recovery_is_hash_bound_and_loss_masked(tmp_path: Path) -> None:
+    list_observation = '{"entries":["TASK.md"]}'
+    finish_observation = '{"accepted":true,"terminal":true}'
+    recovery_feedback = _message("user", OPENHANDS_FORMAT_RECOVERY_MESSAGE)
+    snapshots = [
+        {
+            "event_type": "SystemPromptEvent",
+            "event_id": "system",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("system", "Bounded repository repair system."),
+            "dynamic_context_present": False,
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "user",
+            "parent_id": "system",
+            "source": "user",
+            "message": _message("user", "Repair the visible task."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action("call-list", "list_files", {"path": ".", "summary": "inspect files"}),
+        _observation("call-list", "list_files", list_observation),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "premature-content",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("assistant", "I will now submit the completed repair."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _stop_hook(blocked=True),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "recovery-feedback",
+            "parent_id": None,
+            "source": "environment",
+            "message": recovery_feedback,
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action("call-finish", "finish", {"message": "done"}),
+        _observation("call-finish", "finish", finish_observation),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "terminal-content",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("assistant", "The typed finish was accepted."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _stop_hook(blocked=False),
+    ]
+    turns = (
+        RepositoryToolBrokerTurn(
+            tool_name="list_files",
+            arguments_json='{"path":".","recursive":true}',
+            observation_json=list_observation,
+        ),
+        RepositoryToolBrokerTurn(
+            tool_name="finish",
+            arguments_json='{"message":"done"}',
+            observation_json=finish_observation,
+        ),
+    )
+    trajectory = build_openhands_training_trajectory(
+        task_id="suite/repository/recovered",
+        provider="openai-compatible",
+        model_id="local/Qwen3.5-9B",
+        configuration_fingerprint=content_hash({"configuration": "recovered"}),
+        event_snapshots=snapshots,
+        tools=_tools(),
+        broker_turns=repository_broker_receipts(turns),
+        tool_contract="repository_action.v2",
+        recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+    )
+
+    assert trajectory["format_id"] == OPENHANDS_RECOVERY_TRAJECTORY_FORMAT
+    assert trajectory["format_recovery_count"] == 1
+    assert trajectory["terminal_hook_allow_count"] == 1
+    assert trajectory["messages"][4]["role"] == "assistant"
+    assert trajectory["messages"][5] == {
+        "role": "user",
+        "content": OPENHANDS_FORMAT_RECOVERY_MESSAGE,
+    }
+
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=tokenizer,
+    )
+    assert [record["format_id"] for record in records] == [
+        OPENHANDS_RECOVERY_DECISION_FORMAT,
+        OPENHANDS_RECOVERY_DECISION_FORMAT,
+    ]
+    assert records[0]["format_recovery_count"] == 0
+    assert records[1]["format_recovery_count"] == 1
+    assert records[1]["input_messages"][4:6] == trajectory["messages"][4:6]
+    output = tmp_path / "recovered-dataset"
+    manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    assert manifest["format_id"] == OPENHANDS_RECOVERY_DATASET_FORMAT
+    assert manifest["format_recovery_count"] == 1
+
+    changed = copy.deepcopy(trajectory)
+    changed["messages"][5]["content"] = "changed recovery"
+    changed_base = {key: value for key, value in changed.items() if key != "transcript_hash"}
+    changed["transcript_hash"] = content_hash(changed_base)
+    with pytest.raises(OpenHandsTrajectoryError, match="recovery"):
+        validate_openhands_training_trajectory(changed)
 
 
 def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> None:

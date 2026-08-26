@@ -116,14 +116,24 @@ optional HWE native-shell actions remain broker-owned. HWE shell commands execut
 task-keyed networkless agent container through the existing DeepSeek HWE broker; they are not host
 shell commands.
 
-Training transcript capture is explicit and training-role-only. The collector accepts exactly one
-linear system/user/action/observation trajectory ending in typed `finish`. It rejects private
-reasoning, thinking blocks, dynamic context, skills, critics, foreign events, sibling actions,
-duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK event
-and broker-owned canonical arguments or compact-observation hash. The exact effective OpenHands
-tool schemas, including SDK-added metadata fields, are retained so downstream token receipts bind
-the actual model-visible contract. Raw provider events, uncompacted observations, private
-reasoning, credentials, host paths, hidden assets, and reference solutions are not exported.
+Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
+one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2
+collector additionally permits one frozen same-session format recovery: when OpenHands attempts
+to stop before the broker has accepted typed `finish`, a trusted Stop hook reads only the broker's
+content-free terminal state over its private mode-0600 Unix socket, denies that stop once, and
+injects one canonical user feedback message. A private mode-0600 state file enforces the recovery
+budget; a second premature stop is allowed to unwind and then fails the broker-owned finish gate.
+No workspace reset or whole-episode retry occurs. The v2 trajectory hash binds the premature
+assistant text, canonical feedback, hook receipt, and recovery count; downstream SFT masks that
+history as input and supervises only complete later assistant tool decisions.
+
+Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
+events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
+event and broker-owned canonical arguments or compact-observation hash. The exact effective
+OpenHands tool schemas, including SDK-added metadata fields, are retained so downstream token
+receipts bind the actual model-visible contract. Raw hook output, raw provider events, uncompacted
+observations, private reasoning, credentials, host paths, hidden assets, and reference solutions
+are not exported.
 
 Message content remains in memory until the ordinary verifier completes. A public training
 trajectory is written only for a resolved, infrastructure-valid episode; all other episodes remain
