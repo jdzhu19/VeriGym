@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one frozen OpenHands recovery-state forced-finish diagnostic on CVA6 PR-2032."""
+"""Run one frozen OpenHands validated-recovery finish diagnostic on CVA6 PR-2032."""
 
 from __future__ import annotations
 
@@ -65,18 +65,18 @@ _optional_json = _recovery_runner._optional_json
 _qualified_sources = _recovery_runner._qualified_sources
 _validated_split = _recovery_runner._validated_split
 
-_PRIOR_V5_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-recovery-forced-finish-merged-diagnostic-v5"
+_PRIOR_V6_AGENT_VERSION_ID = (
+    "openhands-deepseek-v4-flash-hwe-recovery-state-forced-finish-diagnostic-v6"
 )
-_PRIOR_V5_STATUS = "recovery_forced_finish_regression_failed"
-_PRIOR_V5_FAILURE_CATEGORY = "openhands_hwe_missing_finish"
+_PRIOR_V6_STATUS = "recovery_forced_finish_regression_failed"
+_PRIOR_V6_FAILURE_CATEGORY = "openhands_hwe_missing_finish"
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qualification-root", type=Path, required=True)
     parser.add_argument("--image-lock-dir", type=Path, required=True)
-    parser.add_argument("--prior-v5-report", type=Path, required=True)
+    parser.add_argument("--prior-v6-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
@@ -125,7 +125,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     entry = training[OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_TASK]
     if lock.task_hash != entry.task_hash or lock.source_hash != entry.source_hash:
         raise ConfigurationError("OpenHands tool-choice task/source/image identity changed")
-    prior = _prior_v5_failure(arguments.prior_v5_report)
+    prior = _prior_v6_failure(arguments.prior_v6_report)
 
     from verigym_openhands.hwe_agent import (
         OpenHandsHweAgentAdapter,
@@ -138,7 +138,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     runtime_config = _docker_config(lock)
     runtime = DockerRuntime(runtime_config)
     try:
-        runtime.prepare("openhands-recovery-state-forced-finish-v6-pr2032")
+        runtime.prepare("openhands-validated-recovery-finish-v7-pr2032")
     finally:
         runtime.close()
 
@@ -185,9 +185,10 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "source_hash": entry.source_hash,
         "source_commit": source_commit,
         "image_lock_hash": lock.lock_hash,
-        "prior_v5_report_hash": prior["report_hash"],
-        "prior_v5_agent_version_hash": prior["agent_version_hash"],
-        "prior_v5_failure_category": _PRIOR_V5_FAILURE_CATEGORY,
+        "prior_v6_report_hash": prior["report_hash"],
+        "prior_v6_agent_version_hash": prior["agent_version_hash"],
+        "prior_v6_summary_sha256": prior["summary_sha256"],
+        "prior_v6_failure_category": _PRIOR_V6_FAILURE_CATEGORY,
         "model_transport_id": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL,
         "model_identity": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL_IDENTITY,
         "agent_version_id": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_AGENT_VERSION_ID,
@@ -264,7 +265,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 run_id=run_id,
                 experiment_id=arguments.campaign_id,
                 plan_item_id=run_id,
-                system_id="openhands-deepseek-v4-flash-hwe-recovery-state-forced-finish-v6",
+                system_id="openhands-deepseek-v4-flash-hwe-validated-recovery-finish-v7",
                 base_seed=OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_SEED,
             )
         )
@@ -296,6 +297,24 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         and raw_recovery_count in {0, 1}
     )
     recovery_count = raw_recovery_count if recovery_count_valid else 0
+    raw_forced_count = summary.get("recovery_forced_request_count", 0) if summary else 0
+    forced_count_valid = (
+        isinstance(raw_forced_count, int)
+        and not isinstance(raw_forced_count, bool)
+        and raw_forced_count in {0, 1}
+    )
+    forced_count = raw_forced_count if forced_count_valid else 0
+    raw_validated_count = summary.get("recovery_validated_finish_count", 0) if summary else 0
+    validated_count_valid = (
+        isinstance(raw_validated_count, int)
+        and not isinstance(raw_validated_count, bool)
+        and raw_validated_count in {0, 1}
+    )
+    validated_count = raw_validated_count if validated_count_valid else 0
+    event_type_counts = summary.get("event_type_counts") if summary else None
+    interrupt_free = (
+        isinstance(event_type_counts, dict) and event_type_counts.get("InterruptEvent", 0) == 0
+    )
     tool_choice_bound = (
         summary is not None and summary.get("tool_choice_policy") == OPENHANDS_TOOL_CHOICE_POLICY
     )
@@ -304,6 +323,10 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         and summary is not None
         and accounting is not None
         and recovery_count_valid
+        and forced_count_valid
+        and validated_count_valid
+        and validated_count <= forced_count
+        and interrupt_free
         and tool_choice_bound
     )
     infrastructure_valid = not _infrastructure_invalid(result.scorecard) and evidence_complete
@@ -314,6 +337,8 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         infrastructure_valid=infrastructure_valid,
         typed_finish_observed=typed_finish,
         recovery_count=recovery_count,
+        forced_request_count=forced_count,
+        validated_finish_count=validated_count,
         failure_category=failure_category,
     )
 
@@ -370,6 +395,9 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             "typed_finish_observed": typed_finish,
             "format_recovery_count": recovery_count,
             "recovery_path_exercised": recovery_count == 1,
+            "recovery_forced_request_count": forced_count,
+            "recovery_validated_finish_count": validated_count,
+            "interrupt_free": interrupt_free,
             "model_call_count": accounting.get("model_call_count") if accounting else None,
             "tool_call_count": broker.get("tool_calls") if broker else None,
             "patch_call_count": broker.get("patches") if broker else None,
@@ -393,32 +421,51 @@ def _validate_package_versions() -> None:
             raise ConfigurationError(f"{package} differs from the frozen tool-choice diagnostic")
 
 
-def _prior_v5_failure(path: Path) -> dict[str, str]:
-    report = _json(path.resolve(strict=True))
+def _prior_v6_failure(path: Path) -> dict[str, str]:
+    report_path = path.resolve(strict=True)
+    report = _json(report_path)
     observed = report.get("report_hash")
     base = {key: value for key, value in report.items() if key != "report_hash"}
     trajectory = report.get("trajectory")
     if (
         not isinstance(observed, str)
         or content_hash(base) != observed
-        or report.get("agent_version_id") != _PRIOR_V5_AGENT_VERSION_ID
-        or report.get("status") != _PRIOR_V5_STATUS
-        or report.get("scorecard_failure_category") != _PRIOR_V5_FAILURE_CATEGORY
+        or report.get("agent_version_id") != _PRIOR_V6_AGENT_VERSION_ID
+        or report.get("status") != _PRIOR_V6_STATUS
+        or report.get("scorecard_failure_category") != _PRIOR_V6_FAILURE_CATEGORY
         or report.get("infrastructure_valid") is not True
         or report.get("tool_choice_bound") is not True
         or report.get("typed_finish_observed") is not False
         or report.get("format_recovery_count") != 1
-        or report.get("model_call_count") != 14
-        or report.get("tool_call_count") != 14
+        or report.get("model_call_count") != 69
+        or report.get("tool_call_count") != 69
         or report.get("patch_call_count") != 0
         or not isinstance(trajectory, dict)
         or trajectory.get("exported") is not False
     ):
-        raise ConfigurationError("prior OpenHands v5 forced-finish failure changed")
+        raise ConfigurationError("prior OpenHands v6 forced-finish failure changed")
     version_hash = report.get("agent_version_hash")
     if not isinstance(version_hash, str) or len(version_hash) != 64:
-        raise ConfigurationError("prior OpenHands v5 agent version hash is absent")
-    return {"report_hash": observed, "agent_version_hash": version_hash}
+        raise ConfigurationError("prior OpenHands v6 agent version hash is absent")
+    runs = sorted((report_path.parent / "runs").iterdir())
+    if len(runs) != 1:
+        raise ConfigurationError("prior OpenHands v6 run inventory changed")
+    summary_path = runs[0] / "artifacts" / "openhands_sdk" / "summary.json"
+    summary = _json(summary_path.resolve(strict=True))
+    event_counts = summary.get("event_type_counts")
+    if (
+        summary.get("tool_choice_policy") != "recovery_state_forced_finish_v6"
+        or summary.get("format_recovery_count") != 1
+        or not isinstance(event_counts, dict)
+        or event_counts.get("InterruptEvent") != 1
+        or event_counts.get("AgentErrorEvent") != 1
+    ):
+        raise ConfigurationError("prior OpenHands v6 interruption evidence changed")
+    return {
+        "report_hash": observed,
+        "agent_version_hash": version_hash,
+        "summary_sha256": hash_bytes(summary_path.read_bytes()),
+    }
 
 
 def main() -> int:

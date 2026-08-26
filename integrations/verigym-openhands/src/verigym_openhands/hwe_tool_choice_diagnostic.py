@@ -19,16 +19,16 @@ from ._recovery import (
 )
 from .hwe_agent import OpenHandsHweAgentAdapter
 
-OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_FORMAT = "verigym_openhands_hwe_tool_choice_diagnostic_v6"
+OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_FORMAT = "verigym_openhands_hwe_tool_choice_diagnostic_v7"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_tool_choice_diagnostic_report_v6"
+    "verigym_openhands_hwe_tool_choice_diagnostic_report_v7"
 )
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_CAMPAIGN_ID = (
-    "openhands-hwe-recovery-state-forced-finish-diagnostic-v6"
+    "openhands-hwe-validated-recovery-finish-diagnostic-v7"
 )
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-recovery-state-forced-finish-diagnostic-v6"
+    "openhands-deepseek-v4-flash-hwe-validated-recovery-finish-diagnostic-v7"
 )
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_HWE_TOOL_CHOICE_DIAGNOSTIC"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
@@ -42,7 +42,7 @@ OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_SEED = 484
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_ITERATIONS = 200
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_OUTPUT_TOKENS = 2_048
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_CONTEXT_TOKENS = 65_536
-OPENHANDS_TOOL_CHOICE_POLICY = "recovery_state_forced_finish_v6"
+OPENHANDS_TOOL_CHOICE_POLICY = "validated_recovery_state_forced_finish_v7"
 
 _OPENHANDS_SDK_WHEEL_SHA256 = "10af3d6caf1075ecbb8520db1150c0ec0179ee352b19f0395d2273afda6004d2"
 _LITELLM_WHEEL_SHA256 = "ad5f7bf4e10cefa32273f0e8092eaf6c757aeb1c6484c0c3d8908e0342bde759"
@@ -151,18 +151,31 @@ def classify_tool_choice_diagnostic(
     infrastructure_valid: bool,
     typed_finish_observed: bool,
     recovery_count: int,
+    forced_request_count: int,
+    validated_finish_count: int,
     failure_category: str | None,
 ) -> tuple[str, bool]:
     """Require the trusted recovery turn to produce broker-authoritative typed finish."""
 
     if recovery_count not in {0, 1}:
         raise ValueError("OpenHands tool-choice diagnostic count is outside the frozen budget")
+    if forced_request_count not in {0, 1} or validated_finish_count not in {0, 1}:
+        raise ValueError("OpenHands validated finish counters are outside the frozen budget")
+    if validated_finish_count > forced_request_count:
+        raise ValueError("OpenHands validated finish count exceeds its forced request count")
     if not infrastructure_valid:
         return "infrastructure_invalid", False
-    if typed_finish_observed and recovery_count == 1:
+    if (
+        typed_finish_observed
+        and recovery_count == 1
+        and forced_request_count == 1
+        and validated_finish_count == 1
+    ):
         return "recovery_forced_finish_regression_passed", True
     if typed_finish_observed:
         return "direct_finish_passed_recovery_not_exercised", False
+    if failure_category == "openhands_hwe_recovery_tool_choice_violation":
+        return "recovery_finish_response_rejected", False
     if failure_category == "openhands_hwe_missing_finish":
         return "recovery_forced_finish_regression_failed", False
     return "model_rejected_before_typed_finish", False

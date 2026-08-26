@@ -72,13 +72,21 @@ a second content-only stop: the Stop-hook receipt proved that recovery occurred,
 agent message shape remained an unreliable policy boundary. It made 14 accepted read/shell calls,
 no patch, no `finish`, and no trajectory.
 
-`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v6 diagnostic.
+The v6 diagnostic bound named `finish` to the Stop hook's private recovery receipt rather than a
+message layout. Its real run exercised one recovery, but the provider returned further ordinary
+tools instead of reaching broker-authoritative `finish`; after 69 accepted actions the invalid run
+was interrupted to prevent further API consumption. It made no patch or trajectory. The sealed v6
+report contains one `InterruptEvent`, so it is failure evidence rather than an ordinary completed
+sample.
+
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v7 diagnostic.
 Ordinary turns remain `auto`; after the Stop hook atomically writes its private, validated recovery
-receipt, the next request selects the concrete `finish` function. Missing, altered, unsafe, or
-out-of-budget receipts fail closed. The run binds the sealed v5 failure and passes only with one
-recovery plus broker-authoritative typed `finish`. It does not monkeypatch the SDK or synthesize an
-action. Verifier correctness and trajectory eligibility remain separate, and no diagnostic result
-is admitted to a dataset.
+receipt, the next request selects the concrete `finish` function. The local LLM subclass then
+accepts only a provider response containing exactly one `finish` call before OpenHands can dispatch
+anything to the broker. It records separate forced-request and validated-finish counters, rejects
+interrupted evidence, and fails closed on any other response. The run binds the sealed v6 failure.
+It does not monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory
+eligibility remain separate, and no diagnostic result is admitted to a dataset.
 
 ## Five-task HWE collection pilot
 

@@ -114,6 +114,12 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "RecoveryForcedFinishLLM" in source
     assert 'settings.tool_choice_policy == "recovery_state_forced_finish_v6"' in source
     assert "RecoveryStateForcedFinishLLM" in source
+    assert 'settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"' in source
+    assert "ValidatedRecoveryStateForcedFinishLLM" in source
+    assert '"openhands_hwe_recovery_tool_choice_violation"' in source
+    assert '"recovery_forced_request_count"' in source
+    assert '"recovery_validated_finish_count"' in source
+    assert source.index("if recovery_protocol_failure:") < source.index("if not stats.finished:")
     assert "DeepSeekHarnessHweBroker" in source
     assert "HookConfig" in source
     assert 'with_name("hwe_stop_hook.py")' in source
@@ -192,6 +198,15 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
         task_wall_time_s=100,
     )
     assert recovery.tool_choice_policy == "recovery_state_forced_finish_v6"
+
+    validated = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_recovery_state_forced_finish_v7",
+        },
+        task_wall_time_s=100,
+    )
+    assert validated.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
 
     with pytest.raises(ValueError, match="unsupported"):
         module.resolve_hwe_settings(
@@ -287,4 +302,17 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
     assert (
         state_identity.tool_use_policy
         == "repository_action_state_machine_recovery_state_forced_finish_v6"
+    )
+
+    validated_state = settings.__class__(
+        **{
+            **settings.__dict__,
+            "tool_choice_policy": "validated_recovery_state_forced_finish_v7",
+        }
+    )
+    validated_identity = _identity(validated_state, tool_calls=18, patches=1)
+    assert validated_identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v7"
+    assert (
+        validated_identity.tool_use_policy
+        == "repository_action_state_machine_validated_recovery_finish_v7"
     )

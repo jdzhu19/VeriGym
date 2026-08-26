@@ -41,26 +41,49 @@ def test_tool_choice_diagnostic_agent_version_is_frozen_and_repeatable() -> None
 
 
 @pytest.mark.parametrize(
-    ("infrastructure", "finished", "recoveries", "failure", "status", "passed"),
+    (
+        "infrastructure",
+        "finished",
+        "recoveries",
+        "forced",
+        "validated",
+        "failure",
+        "status",
+        "passed",
+    ),
     [
-        (True, True, 1, None, "recovery_forced_finish_regression_passed", True),
-        (True, True, 0, None, "direct_finish_passed_recovery_not_exercised", False),
+        (True, True, 1, 1, 1, None, "recovery_forced_finish_regression_passed", True),
+        (True, True, 0, 0, 0, None, "direct_finish_passed_recovery_not_exercised", False),
         (
             True,
             False,
             1,
+            1,
+            0,
+            "openhands_hwe_recovery_tool_choice_violation",
+            "recovery_finish_response_rejected",
+            False,
+        ),
+        (
+            True,
+            False,
+            1,
+            0,
+            0,
             "openhands_hwe_missing_finish",
             "recovery_forced_finish_regression_failed",
             False,
         ),
-        (True, False, 0, "other", "model_rejected_before_typed_finish", False),
-        (False, False, 0, "runtime", "infrastructure_invalid", False),
+        (True, False, 0, 0, 0, "other", "model_rejected_before_typed_finish", False),
+        (False, False, 0, 0, 0, "runtime", "infrastructure_invalid", False),
     ],
 )
 def test_tool_choice_diagnostic_requires_direct_typed_finish(
     infrastructure: bool,
     finished: bool,
     recoveries: int,
+    forced: int,
+    validated: int,
     failure: str | None,
     status: str,
     passed: bool,
@@ -69,6 +92,8 @@ def test_tool_choice_diagnostic_requires_direct_typed_finish(
         infrastructure_valid=infrastructure,
         typed_finish_observed=finished,
         recovery_count=recoveries,
+        forced_request_count=forced,
+        validated_finish_count=validated,
         failure_category=failure,
     ) == (status, passed)
 
@@ -79,5 +104,19 @@ def test_tool_choice_diagnostic_rejects_out_of_budget_count() -> None:
             infrastructure_valid=True,
             typed_finish_observed=True,
             recovery_count=2,
+            forced_request_count=1,
+            validated_finish_count=1,
+            failure_category=None,
+        )
+
+
+def test_tool_choice_diagnostic_rejects_invalid_validation_counts() -> None:
+    with pytest.raises(ValueError, match="exceeds"):
+        classify_tool_choice_diagnostic(
+            infrastructure_valid=True,
+            typed_finish_observed=True,
+            recovery_count=1,
+            forced_request_count=0,
+            validated_finish_count=1,
             failure_category=None,
         )

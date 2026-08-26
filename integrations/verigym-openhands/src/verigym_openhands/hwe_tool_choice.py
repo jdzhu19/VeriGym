@@ -18,6 +18,7 @@ from openhands.sdk.llm.streaming import (  # type: ignore[import-not-found]
     TokenCallbackType,
 )
 from openhands.sdk.tool import ToolDefinition  # type: ignore[import-not-found]
+from pydantic import PrivateAttr
 
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
 from .hwe_stop_hook import read_recovery_count
@@ -25,6 +26,11 @@ from .hwe_stop_hook import read_recovery_count
 OPENHANDS_HWE_TOOL_CHOICE_REQUIRED = "required"
 OPENHANDS_HWE_RECOVERY_FORCED_FINISH = "recovery_forced_finish"
 OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH = "recovery_state_forced_finish_v6"
+OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH = "validated_recovery_state_forced_finish_v7"
+
+
+class RecoveryToolChoiceViolation(RuntimeError):
+    """The provider violated the recovery turn's named-finish response contract."""
 
 
 def _required_tool_choice_kwargs(
@@ -155,20 +161,31 @@ def _recovery_state_finish_kwargs(
     recovery_state_path: Path,
     tools: Sequence[ToolDefinition] | None,
     kwargs: dict[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     """Force finish only after validating the Stop hook's private recovery receipt."""
 
     if "tool_choice" in kwargs:
         raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
     if read_recovery_count(recovery_state_path) == 0:
-        return kwargs
+        return kwargs, False
     finish_tools = [tool for tool in tools or [] if tool.name == "finish"]
     if len(finish_tools) != 1:
         raise ValueError("OpenHands HWE recovery requires exactly one finish tool")
-    return {
-        **kwargs,
-        "tool_choice": {"type": "function", "function": {"name": "finish"}},
-    }
+    return (
+        {
+            **kwargs,
+            "tool_choice": {"type": "function", "function": {"name": "finish"}},
+        },
+        True,
+    )
+
+
+def _validate_recovery_finish_response(response: LLMResponse) -> None:
+    calls = response.message.tool_calls or []
+    if len(calls) != 1 or calls[0].name != "finish":
+        raise RecoveryToolChoiceViolation(
+            "OpenHands HWE recovery response was not exactly one finish tool call"
+        )
 
 
 class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
@@ -185,13 +202,16 @@ class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         call_context: LLMCallContext | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
+        request_kwargs, _forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
         return super().completion(
             messages=messages,
             tools=tools,
             add_security_risk_prediction=add_security_risk_prediction,
             on_token=on_token,
             call_context=call_context,
-            **_recovery_state_finish_kwargs(self.recovery_state_path, tools, kwargs),
+            **request_kwargs,
         )
 
     async def acompletion(
@@ -203,21 +223,97 @@ class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         call_context: LLMCallContext | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
+        request_kwargs, _forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
         return await super().acompletion(
             messages=messages,
             tools=tools,
             add_security_risk_prediction=add_security_risk_prediction,
             on_token=on_token,
             call_context=call_context,
-            **_recovery_state_finish_kwargs(self.recovery_state_path, tools, kwargs),
+            **request_kwargs,
         )
+
+
+class ValidatedRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+    """Require the provider to honor the recovery turn's named finish choice."""
+
+    recovery_state_path: Path
+    _recovery_forced_request_count: int = PrivateAttr(default=0)
+    _recovery_validated_finish_count: int = PrivateAttr(default=0)
+
+    @property
+    def recovery_forced_request_count(self) -> int:
+        return self._recovery_forced_request_count
+
+    @property
+    def recovery_validated_finish_count(self) -> int:
+        return self._recovery_validated_finish_count
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        request_kwargs, forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
+        if forced:
+            self._recovery_forced_request_count += 1
+        response = super().completion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **request_kwargs,
+        )
+        if forced:
+            _validate_recovery_finish_response(response)
+            self._recovery_validated_finish_count += 1
+        return response
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        request_kwargs, forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
+        if forced:
+            self._recovery_forced_request_count += 1
+        response = await super().acompletion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **request_kwargs,
+        )
+        if forced:
+            _validate_recovery_finish_response(response)
+            self._recovery_validated_finish_count += 1
+        return response
 
 
 __all__ = [
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
     "OPENHANDS_HWE_RECOVERY_FORCED_FINISH",
     "OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH",
+    "OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH",
     "RecoveryForcedFinishLLM",
     "RecoveryStateForcedFinishLLM",
+    "RecoveryToolChoiceViolation",
     "RequiredToolChoiceLLM",
+    "ValidatedRecoveryStateForcedFinishLLM",
 ]

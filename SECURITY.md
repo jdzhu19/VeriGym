@@ -123,14 +123,17 @@ fails closed if the policy is weakened, if the exact six-tool contract is empty,
 content-only Stop-hook recovery is still needed. The broker-observed typed `finish` remains the
 only completion authority.
 
-The current recovery-state-forced-finish profile leaves ordinary turns at the SDK/provider default
+The current validated-recovery-state profile leaves ordinary turns at the SDK/provider default
 `auto`. It selects the concrete `finish` function only after validating the private mode-0600 state
 receipt atomically written by the trusted Stop hook for a content-only completion attempt. The
-model cannot access that host control path. A missing, altered, unsafe, or out-of-budget receipt, a
-caller-supplied tool choice, a missing or duplicate `finish` schema, or any later broker mismatch
-fails closed. The provider still emits the typed call; the adapter does not synthesize an action or
-infer completion from arbitrary assistant text. Earlier message-shape-bound v4/v5 profiles remain
-separately versioned historical diagnostics.
+model cannot access that host control path. Before OpenHands dispatch, the local LLM subclass also
+requires the provider response to contain exactly one `finish` call and records content-free request
+and validation counters. A missing, altered, unsafe, or out-of-budget receipt, a caller-supplied
+tool choice, a missing or duplicate `finish` schema, a non-finish provider response, an interrupted
+run, or any later broker mismatch fails closed. The provider still emits the typed call; the
+adapter does not synthesize an action or infer completion from arbitrary assistant text. Earlier
+message-shape-bound v4/v5 and unvalidated state-bound v6 profiles remain separately versioned
+historical diagnostics.
 
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2

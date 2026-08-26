@@ -200,7 +200,12 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         event_types: dict[str, int] = {}
         final_response = ""
         format_recovery_count = 0
+        recovery_forced_request_count = 0
+        recovery_validated_finish_count = 0
         broker: Any = None
+        llm: Any = None
+        recovery_violation_type: type[Exception] | None = None
+        recovery_protocol_failure = False
         failure_stage = "temporary_directory"
         failure_receipt_emitted = False
         try:
@@ -234,8 +239,19 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     from .hwe_tool_choice import RecoveryStateForcedFinishLLM
 
                     llm_type = RecoveryStateForcedFinishLLM
+                elif settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7":
+                    from .hwe_tool_choice import (
+                        RecoveryToolChoiceViolation,
+                        ValidatedRecoveryStateForcedFinishLLM,
+                    )
+
+                    llm_type = ValidatedRecoveryStateForcedFinishLLM
+                    recovery_violation_type = RecoveryToolChoiceViolation
                 llm_options: dict[str, Any] = {}
-                if settings.tool_choice_policy == "recovery_state_forced_finish_v6":
+                if settings.tool_choice_policy in {
+                    "recovery_state_forced_finish_v6",
+                    "validated_recovery_state_forced_finish_v7",
+                }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
                     model=settings.model_id,
@@ -339,13 +355,24 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         )
                     except Exception as exc:
                         receipt = _sdk_failure_receipt(exc, conversation.state.events)
+                        receipt.update(_recovery_choice_counts(llm))
                         receipt["failure_stage"] = failure_stage
                         bridge.emit_event(
                             "openhands_sdk_hwe_episode_failed",
                             receipt,
                         )
                         failure_receipt_emitted = True
-                        raise
+                        if recovery_violation_type is not None and isinstance(
+                            exc, recovery_violation_type
+                        ):
+                            recovery_protocol_failure = True
+                        else:
+                            raise
+                    choice_counts = _recovery_choice_counts(llm)
+                    recovery_forced_request_count = choice_counts["recovery_forced_request_count"]
+                    recovery_validated_finish_count = choice_counts[
+                        "recovery_validated_finish_count"
+                    ]
                     format_recovery_count = read_recovery_count(recovery_state)
                     if format_recovery_count:
                         bridge.emit_event(
@@ -447,6 +474,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 final_response=final_response,
                 duration_s=duration_s,
                 format_recovery_count=format_recovery_count,
+                recovery_forced_request_count=recovery_forced_request_count,
+                recovery_validated_finish_count=recovery_validated_finish_count,
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -469,6 +498,16 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             raise _termination(
                 "openhands_hwe_action_policy",
                 "OpenHands emitted an action outside the HWE contract",
+                infrastructure=False,
+            )
+        if recovery_protocol_failure:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
+            raise _termination(
+                "openhands_hwe_recovery_tool_choice_violation",
+                "OpenHands HWE provider violated the named finish recovery contract",
                 infrastructure=False,
             )
         if not stats.finished:
@@ -723,6 +762,7 @@ def _identity(
         "recovery_forced_finish": "v4",
         "recovery_forced_finish_v5": "v5",
         "recovery_state_forced_finish_v6": "v6",
+        "validated_recovery_state_forced_finish_v7": "v7",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -756,6 +796,8 @@ def _identity(
             else "repository_action_state_machine_recovery_forced_finish_merged_v5"
             if settings.tool_choice_policy == "recovery_forced_finish_v5"
             else "repository_action_state_machine_recovery_state_forced_finish_v6"
+            if settings.tool_choice_policy == "recovery_state_forced_finish_v6"
+            else "repository_action_state_machine_validated_recovery_finish_v7"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,
@@ -784,6 +826,8 @@ def _write_evidence(
     final_response: str,
     duration_s: float,
     format_recovery_count: int,
+    recovery_forced_request_count: int,
+    recovery_validated_finish_count: int,
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -814,12 +858,26 @@ def _write_evidence(
             "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
             "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
             "format_recovery_count": format_recovery_count,
+            "recovery_forced_request_count": recovery_forced_request_count,
+            "recovery_validated_finish_count": recovery_validated_finish_count,
             "same_session_recovery": True,
             "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
             "benchmark_score_claimed": False,
         },
     )
+
+
+def _recovery_choice_counts(llm: Any) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for name in ("recovery_forced_request_count", "recovery_validated_finish_count"):
+        value = getattr(llm, name, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise OpenHandsTrajectoryInfrastructureError(
+                "OpenHands recovery tool-choice counter is invalid"
+            )
+        result[name] = value
+    return result
 
 
 def _termination(category: str, message: str, *, infrastructure: bool) -> AgentTerminationError:
