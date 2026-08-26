@@ -97,6 +97,14 @@ its exact trace hash.
 It does not monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory
 eligibility remain separate, and no diagnostic result is admitted to a dataset.
 
+The bounded real v8 run made 12 ordinary actions, exercised one recovery, recorded
+forced-request count 1, and rejected the provider response with validated-finish count 0. It ended
+as the infrastructure-valid model failure `openhands_hwe_recovery_tool_choice_violation`, with no
+interrupt, further broker action, patch, finish, trajectory, or dataset row. This closes the unsafe
+continuation and misclassification defects, but it does not establish successful OpenHands
+termination for this model. Production collection remains blocked until the provider/model returns
+the requested typed `finish` under the actual agent history.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
