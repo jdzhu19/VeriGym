@@ -162,5 +162,7 @@ def test_pilot_cli_statically_forbids_retry_training_and_gpu() -> None:
     assert '"optimizer_steps": 0' in source
     assert '"hpc_jobs_submitted": False' in source
     assert '"gpu_seconds": 0' in source
+    assert "dry_run_decision_record_v4" in source
+    assert "dry_run_decision_record," not in source
     assert "optimizer.step" not in source
     assert "bsub" not in source

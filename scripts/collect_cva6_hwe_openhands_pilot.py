@@ -45,7 +45,7 @@ from verigym.evolution.splits import validate_task_split
 from verigym.experiments.state import atomic_dump_json
 from verigym.hwe.qwen_action_tokenizer import (
     QwenDecisionExampleTokenizer,
-    dry_run_decision_record,
+    dry_run_decision_record_v4,
 )
 from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import InteractionMode
@@ -207,7 +207,8 @@ def collect(
     attempts: list[dict[str, Any]] = [predecessor_attempt]
     all_records = list(predecessor_records)
     dry_runs = [
-        dry_run_decision_record(record, tokenizer=exact_tokenizer) for record in predecessor_records
+        dry_run_decision_record_v4(record, tokenizer=exact_tokenizer)
+        for record in predecessor_records
     ]
     base_report = {
         "schema_version": "1.0",
@@ -445,7 +446,7 @@ def collect(
             rejection_reason = None
             all_records.extend(records)
             dry_runs.extend(
-                dry_run_decision_record(record, tokenizer=exact_tokenizer) for record in records
+                dry_run_decision_record_v4(record, tokenizer=exact_tokenizer) for record in records
             )
             _write_trajectory_records(
                 records_root / f"pr-{suffix}.jsonl",
