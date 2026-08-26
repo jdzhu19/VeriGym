@@ -79,12 +79,21 @@ was interrupted to prevent further API consumption. It made no patch or trajecto
 report contains one `InterruptEvent`, so it is failure evidence rather than an ordinary completed
 sample.
 
-`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v7 diagnostic.
+The v7 diagnostic added response validation. Its real run made 26 ordinary actions, exercised one
+recovery, and rejected the provider's non-finish response before broker dispatch with
+forced-request count 1 and validated-finish count 0. OpenHands wrapped the local violation in
+`ConversationRunError`; the v7 evidence finalizer checked only the outer exception and therefore
+reported an infrastructure error without the normal broker summary. No patch or trajectory was
+produced.
+
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v8 diagnostic.
 Ordinary turns remain `auto`; after the Stop hook atomically writes its private, validated recovery
 receipt, the next request selects the concrete `finish` function. The local LLM subclass then
 accepts only a provider response containing exactly one `finish` call before OpenHands can dispatch
 anything to the broker. It records separate forced-request and validated-finish counters, rejects
-interrupted evidence, and fails closed on any other response. The run binds the sealed v6 failure.
+interrupted evidence, recognizes the controlled violation through OpenHands' bounded causal
+exception chain, and fails closed on any other response. The run binds the sealed v7 failure and
+its exact trace hash.
 It does not monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory
 eligibility remain separate, and no diagnostic result is admitted to a dataset.
 

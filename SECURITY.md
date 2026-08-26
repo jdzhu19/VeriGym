@@ -130,10 +130,12 @@ model cannot access that host control path. Before OpenHands dispatch, the local
 requires the provider response to contain exactly one `finish` call and records content-free request
 and validation counters. A missing, altered, unsafe, or out-of-budget receipt, a caller-supplied
 tool choice, a missing or duplicate `finish` schema, a non-finish provider response, an interrupted
-run, or any later broker mismatch fails closed. The provider still emits the typed call; the
-adapter does not synthesize an action or infer completion from arbitrary assistant text. Earlier
-message-shape-bound v4/v5 and unvalidated state-bound v6 profiles remain separately versioned
-historical diagnostics.
+run, an unexpected exception wrapper, or any later broker mismatch fails closed. The adapter walks
+only the bounded local `__cause__`/`__context__` chain needed to recognize its own controlled
+protocol violation; it never persists raw exception text or model content. The provider still emits
+the typed call; the adapter does not synthesize an action or infer completion from arbitrary
+assistant text. Earlier message-shape-bound v4/v5, unvalidated state-bound v6, and outer-exception-
+only v7 profiles remain separately versioned historical diagnostics.
 
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2

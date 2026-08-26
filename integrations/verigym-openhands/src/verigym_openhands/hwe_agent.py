@@ -239,7 +239,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     from .hwe_tool_choice import RecoveryStateForcedFinishLLM
 
                     llm_type = RecoveryStateForcedFinishLLM
-                elif settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7":
+                elif settings.tool_choice_policy in {
+                    "validated_recovery_state_forced_finish_v7",
+                    "validated_recovery_state_forced_finish_v8",
+                }:
                     from .hwe_tool_choice import (
                         RecoveryToolChoiceViolation,
                         ValidatedRecoveryStateForcedFinishLLM,
@@ -251,6 +254,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 if settings.tool_choice_policy in {
                     "recovery_state_forced_finish_v6",
                     "validated_recovery_state_forced_finish_v7",
+                    "validated_recovery_state_forced_finish_v8",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -362,7 +366,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             receipt,
                         )
                         failure_receipt_emitted = True
-                        if recovery_violation_type is not None and isinstance(
+                        if recovery_violation_type is not None and _exception_chain_contains(
                             exc, recovery_violation_type
                         ):
                             recovery_protocol_failure = True
@@ -763,6 +767,7 @@ def _identity(
         "recovery_forced_finish_v5": "v5",
         "recovery_state_forced_finish_v6": "v6",
         "validated_recovery_state_forced_finish_v7": "v7",
+        "validated_recovery_state_forced_finish_v8": "v8",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -798,6 +803,8 @@ def _identity(
             else "repository_action_state_machine_recovery_state_forced_finish_v6"
             if settings.tool_choice_policy == "recovery_state_forced_finish_v6"
             else "repository_action_state_machine_validated_recovery_finish_v7"
+            if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
+            else "repository_action_state_machine_validated_recovery_finish_v8"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,
@@ -878,6 +885,19 @@ def _recovery_choice_counts(llm: Any) -> dict[str, int]:
             )
         result[name] = value
     return result
+
+
+def _exception_chain_contains(exc: BaseException, expected: type[BaseException]) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    for _index in range(8):
+        if current is None or id(current) in seen:
+            return False
+        if isinstance(current, expected):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _termination(category: str, message: str, *, infrastructure: bool) -> AgentTerminationError:
