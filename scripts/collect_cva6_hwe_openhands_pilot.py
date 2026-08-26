@@ -375,8 +375,7 @@ def collect(
         trajectory_path = run_directory / "artifacts" / "openhands_sdk" / "training-trajectory.json"
         trajectory: dict[str, Any] | None = None
         records: list[dict[str, Any]] = []
-        status = "verifier_rejected"
-        rejection_reason: str | None = "ordinary_verifier_rejected"
+        status, rejection_reason = _nonpositive_outcome(scorecard)
         if scorecard.resolved:
             if trajectory_path.is_symlink() or not trajectory_path.is_file():
                 attempt = _infrastructure_attempt(
@@ -473,7 +472,33 @@ def collect(
             raise ConfigurationError("OpenHands pilot exported an ineligible positive trajectory")
 
         accounting_path = run_directory / "artifacts" / "openhands_sdk" / "accounting.json"
-        accounting = _json(accounting_path)
+        accounting_available = accounting_path.is_file() and not accounting_path.is_symlink()
+        if accounting_available:
+            accounting = _json(accounting_path)
+        elif (
+            scorecard.failure is not None
+            and scorecard.failure.infrastructure is False
+            and scorecard.failure.kind == "model"
+        ):
+            # Agent versions predating failure-accounting persistence can legitimately lack this
+            # artifact after a model/policy rejection. The scorecard remains the sealed outcome.
+            accounting = {}
+        else:
+            attempt = _infrastructure_attempt(
+                task_id,
+                run_id,
+                "openhands_accounting_missing",
+                run_hash=run_hash,
+            )
+            attempts.append(attempt)
+            stopped = {
+                **base_report,
+                "status": "stopped_infrastructure_invalid",
+                "attempts": attempts,
+                "stop_reason": "openhands_accounting_missing",
+            }
+            _write_stopped_report(root, stopped)
+            raise ConfigurationError(f"OpenHands pilot stopped on missing accounting for {task_id}")
         attempt = {
             "task_id": task_id,
             "run_id": run_id,
@@ -491,6 +516,7 @@ def collect(
             ),
             "model_call_count": accounting.get("model_call_count"),
             "process_wall_time_s": accounting.get("process_wall_time_s"),
+            "accounting_available": accounting_available,
             "rejection_reason": rejection_reason,
             "whole_episode_retries": 0,
         }
@@ -684,6 +710,19 @@ def _infrastructure_attempt(
         "rejection_reason": reason,
         "whole_episode_retries": 0,
     }
+
+
+def _nonpositive_outcome(scorecard: Any) -> tuple[str, str | None]:
+    if scorecard.resolved:
+        return "eligible", None
+    failure = scorecard.failure
+    if failure is None:
+        return "verifier_rejected", "ordinary_verifier_rejected"
+    if failure.infrastructure:
+        raise ConfigurationError("infrastructure-invalid scorecard reached outcome classification")
+    if failure.kind == "model":
+        return "model_rejected", str(failure.category)
+    return "verifier_rejected", str(failure.category)
 
 
 def _write_trajectory_records(

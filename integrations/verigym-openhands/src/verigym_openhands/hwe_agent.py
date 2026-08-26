@@ -350,19 +350,63 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             if broker is not None:
                 broker.stop()
         stats_value = broker_stats_dict(stats)
+        duration_s = time.monotonic() - started
+        accounting = ExternalAgentAccounting(
+            process_wall_time_s=duration_s,
+            cli_event_count=sum(event_types.values()),
+            model_call_count=stats.decision_steps,
+            external_tool_call_count=stats.tool_calls,
+            external_command_count=stats.command_calls,
+            public_test_invocation_count=0,
+            external_file_read_count=stats.file_reads,
+            external_file_write_count=stats.patches,
+            external_patch_count=stats.patches,
+        )
+        identity = _identity(settings, stats.tool_calls, stats.patches)
+
+        def persist_evidence(
+            *, trajectory_captured: bool, ordinary_hidden_verifier_pending: bool
+        ) -> None:
+            bridge.record_accounting(accounting)
+            bridge.emit_event("openhands_sdk_identity_observed", identity.model_dump(mode="json"))
+            _write_evidence(
+                bridge.artifact_root,
+                settings=settings,
+                stats=stats_value,
+                identity=identity,
+                accounting=accounting,
+                event_types=event_types,
+                final_response=final_response,
+                duration_s=duration_s,
+                trajectory_captured=trajectory_captured,
+                ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
+            )
+
         if stats.infrastructure_failure is not None:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
             raise _termination(
                 "openhands_hwe_broker_infrastructure",
                 "OpenHands HWE broker reported an infrastructure failure",
                 infrastructure=True,
             )
         if stats.policy_failure is not None or stats.rejected_calls:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
             raise _termination(
                 "openhands_hwe_action_policy",
                 "OpenHands emitted an action outside the HWE contract",
                 infrastructure=False,
             )
         if not stats.finished:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
             raise _termination(
                 "openhands_hwe_missing_finish",
                 "OpenHands HWE did not complete through typed finish",
@@ -381,42 +425,28 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     tool_contract="hwe_native_shell_v2",
                 )
             except OpenHandsTrajectoryInfrastructureError as exc:
+                persist_evidence(
+                    trajectory_captured=False,
+                    ordinary_hidden_verifier_pending=False,
+                )
                 raise _termination(
                     "openhands_hwe_training_causal_mismatch",
                     str(exc),
                     infrastructure=True,
                 ) from exc
             except OpenHandsTrajectoryError as exc:
+                persist_evidence(
+                    trajectory_captured=False,
+                    ordinary_hidden_verifier_pending=False,
+                )
                 raise _termination(
                     "openhands_hwe_training_ineligible",
                     str(exc),
                     infrastructure=False,
                 ) from exc
-        duration_s = time.monotonic() - started
-        accounting = ExternalAgentAccounting(
-            process_wall_time_s=duration_s,
-            cli_event_count=sum(event_types.values()),
-            model_call_count=stats.decision_steps,
-            external_tool_call_count=stats.tool_calls,
-            external_command_count=stats.command_calls,
-            public_test_invocation_count=0,
-            external_file_read_count=stats.file_reads,
-            external_file_write_count=stats.patches,
-            external_patch_count=stats.patches,
-        )
-        identity = _identity(settings, stats.tool_calls, stats.patches)
-        bridge.record_accounting(accounting)
-        bridge.emit_event("openhands_sdk_identity_observed", identity.model_dump(mode="json"))
-        _write_evidence(
-            bridge.artifact_root,
-            settings=settings,
-            stats=stats_value,
-            identity=identity,
-            accounting=accounting,
-            event_types=event_types,
-            final_response=final_response,
-            duration_s=duration_s,
+        persist_evidence(
             trajectory_captured=self._pending_training_trajectory is not None,
+            ordinary_hidden_verifier_pending=True,
         )
         return FinalSubmissionAction(
             message="OpenHands completed one typed HWE episode; submit to the verifier."
@@ -656,6 +686,7 @@ def _write_evidence(
     final_response: str,
     duration_s: float,
     trajectory_captured: bool,
+    ordinary_hidden_verifier_pending: bool,
 ) -> None:
     atomic_dump_json(root / "configuration.json", settings.safe_dict())
     atomic_dump_json(root / "broker.json", stats)
@@ -680,7 +711,7 @@ def _write_evidence(
             "plugins_loaded": False,
             "condenser_enabled": False,
             "whole_episode_retries": 0,
-            "ordinary_hidden_verifier_pending": True,
+            "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
             "benchmark_score_claimed": False,
         },
     )

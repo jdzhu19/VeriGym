@@ -115,6 +115,8 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert '"openhands_sdk_hwe_episode_failed"' in source
     assert '"openhands_sdk_hwe_post_episode_failed"' in source
     assert '"openhands_sdk_identity_observed"' in source
+    assert source.index("def persist_evidence(") < source.index("if not stats.finished:")
+    assert "ordinary_hidden_verifier_pending=False" in source
     assert '"openhands_hwe_prompt_policy_bound"' not in source
     assert '"openhands_hwe_identity_observed"' not in source
     assert "conversation.agent.tools_map" in source
