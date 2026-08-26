@@ -49,6 +49,19 @@ def _recovery_messages() -> list[Message]:
     ]
 
 
+def _merged_recovery_messages() -> list[Message]:
+    return [
+        Message(role="system", content=[TextContent(text="Use tools.")]),
+        Message(
+            role="user",
+            content=[
+                TextContent(text="Original task context."),
+                TextContent(text=OPENHANDS_FORMAT_RECOVERY_MESSAGE),
+            ],
+        ),
+    ]
+
+
 def test_required_tool_choice_reaches_sync_sdk_completion() -> None:
     llm = _llm()
     with patch(
@@ -118,6 +131,38 @@ def test_recovery_policy_forces_finish_through_async_sdk_path() -> None:
         "type": "function",
         "function": {"name": "finish"},
     }
+
+
+def test_recovery_policy_accepts_sdk_merged_user_blocks() -> None:
+    llm = _recovery_llm()
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=object(),
+    ) as completion:
+        llm.completion(messages=_merged_recovery_messages(), tools=_tools())
+
+    assert completion.call_args.kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "finish"},
+    }
+
+
+def test_recovery_policy_rejects_feedback_that_is_not_the_final_block() -> None:
+    messages = _merged_recovery_messages()
+    messages[-1].content = [
+        TextContent(text=OPENHANDS_FORMAT_RECOVERY_MESSAGE),
+        TextContent(text="Untrusted trailing text."),
+    ]
+    llm = _recovery_llm()
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=object(),
+    ) as completion:
+        llm.completion(messages=messages, tools=_tools())
+
+    assert "tool_choice" not in completion.call_args.kwargs
 
 
 def test_recovery_policy_rejects_missing_finish_tool() -> None:

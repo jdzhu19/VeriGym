@@ -124,11 +124,13 @@ content-only Stop-hook recovery is still needed. The broker-observed typed `fini
 only completion authority.
 
 The follow-up recovery-forced-finish profile leaves ordinary turns at the SDK/provider default
-`auto`. It selects the concrete `finish` function only when the latest model-visible message is
-the exact trusted Stop-hook feedback for a content-only completion attempt. A caller-supplied
-tool choice, a missing or duplicate `finish` schema, altered feedback, or any later broker
-mismatch fails closed. The provider still emits the typed call; the adapter does not synthesize an
-action or infer completion from arbitrary assistant text.
+`auto`. It selects the concrete `finish` function only when the final independent content block
+of the latest model-visible user message exactly equals the trusted Stop-hook feedback for a
+content-only completion attempt. This accommodates the SDK's adjacent plain-user-message merging
+without accepting a substring, prefix, or untrusted trailing block. A caller-supplied tool choice,
+a missing or duplicate `finish` schema, altered feedback, or any later broker mismatch fails
+closed. The provider still emits the typed call; the adapter does not synthesize an action or
+infer completion from arbitrary assistant text.
 
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2

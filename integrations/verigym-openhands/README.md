@@ -60,13 +60,19 @@ PR-2032 diagnostic proved the provider accepted that parameter and eliminated co
 but DeepSeek made 200 accepted tools without choosing `finish`; the broker rejected decision 201
 at its frozen limit. No patch, verifier result, trajectory, or dataset row was produced.
 
-`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v4 diagnostic.
-Ordinary turns keep `tool_choice=auto`; only the exact trusted Stop-hook recovery feedback forces
-the concrete `finish` function on the next provider request. This preserves the model's observed
-completion intent while requiring the provider to emit a real typed call. The run binds the sealed
-v3 tool-loop failure and passes only with one recovery plus broker-authoritative typed `finish`.
-It does not monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory
-eligibility remain separate, and no diagnostic result is admitted to a dataset.
+The v4 adaptive diagnostic kept ordinary turns at `tool_choice=auto` and attempted to force the
+concrete `finish` function after trusted Stop-hook feedback. Its real run exercised one recovery,
+but its exact-whole-message detector did not account for the SDK merging adjacent plain-user
+messages. The next response was content-only again, so the run failed closed with 13 accepted
+tools, no patch, and no trajectory.
+
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v5 diagnostic.
+It recognizes recovery only when the latest user message's final independent content block exactly
+equals the canonical feedback; substrings and trailing content remain ineligible. That turn forces
+the concrete `finish` function while ordinary turns remain `auto`. The run binds the sealed v4
+failure and passes only with one recovery plus broker-authoritative typed `finish`. It does not
+monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory eligibility remain
+separate, and no diagnostic result is admitted to a dataset.
 
 ## Five-task HWE collection pilot
 

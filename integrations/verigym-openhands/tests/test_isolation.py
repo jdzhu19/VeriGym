@@ -251,3 +251,16 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
         adaptive_identity.tool_use_policy
         == "repository_action_state_machine_recovery_forced_finish_v4"
     )
+
+    merged_adaptive = settings.__class__(
+        **{
+            **settings.__dict__,
+            "tool_choice_policy": "recovery_forced_finish_v5",
+        }
+    )
+    merged_identity = _identity(merged_adaptive, tool_calls=18, patches=1)
+    assert merged_identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v5"
+    assert (
+        merged_identity.tool_use_policy
+        == "repository_action_state_machine_recovery_forced_finish_merged_v5"
+    )

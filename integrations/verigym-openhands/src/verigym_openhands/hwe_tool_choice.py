@@ -90,10 +90,12 @@ def _recovery_finish_kwargs(
     if not messages:
         return kwargs
     latest = messages[-1]
+    content_parts = content_to_str(latest.content)
     recovery_turn = (
         latest.role == "user"
         and latest.tool_calls is None
-        and content_to_str(latest.content) == [OPENHANDS_FORMAT_RECOVERY_MESSAGE]
+        and bool(content_parts)
+        and content_parts[-1] == OPENHANDS_FORMAT_RECOVERY_MESSAGE
     )
     if not recovery_turn:
         return kwargs

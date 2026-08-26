@@ -223,7 +223,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     from .hwe_tool_choice import RequiredToolChoiceLLM
 
                     llm_type = RequiredToolChoiceLLM
-                elif settings.tool_choice_policy == "recovery_forced_finish":
+                elif settings.tool_choice_policy in {
+                    "recovery_forced_finish",
+                    "recovery_forced_finish_v5",
+                }:
                     from .hwe_tool_choice import RecoveryForcedFinishLLM
 
                     llm_type = RecoveryForcedFinishLLM
@@ -706,7 +709,12 @@ def _sdk_failure_receipt(exc: BaseException, events: list[Any]) -> dict[str, Any
 def _identity(
     settings: OpenHandsHweSettings, tool_calls: int, patches: int
 ) -> ExternalAgentCallIdentity:
-    policy_versions = {"auto": "v2", "required": "v3", "recovery_forced_finish": "v4"}
+    policy_versions = {
+        "auto": "v2",
+        "required": "v3",
+        "recovery_forced_finish": "v4",
+        "recovery_forced_finish_v5": "v5",
+    }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
         adapter_name="openhands-hwe-agent",
@@ -735,6 +743,8 @@ def _identity(
             else "repository_action_state_machine_required_tool_v3"
             if settings.tool_choice_policy == "required"
             else "repository_action_state_machine_recovery_forced_finish_v4"
+            if settings.tool_choice_policy == "recovery_forced_finish"
+            else "repository_action_state_machine_recovery_forced_finish_merged_v5"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,
