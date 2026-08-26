@@ -54,12 +54,19 @@ correctness is reported separately. Even a verifier-passed diagnostic trajectory
 to a dataset automatically. A relaunch after a pre-model infrastructure failure must use a new
 frozen attempt identity and hash-bind evidence of zero model calls and zero workspace changes.
 
-`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` is the distinct v3 follow-up. It uses a
-local `LLM` subclass through the SDK's public completion methods to send
-`tool_choice="required"` on every sync and async chat request; it does not monkeypatch the SDK.
-The run binds the sealed v2 termination failure and passes only when PR-2032 reaches a direct
-broker-authoritative typed `finish` with zero Stop-hook recoveries. Verifier correctness and
-trajectory eligibility remain separate, and no diagnostic result is admitted to a dataset.
+The v3 required-tool follow-up used a local `LLM` subclass through the SDK's public completion
+methods to send `tool_choice="required"` on every sync and async chat request. Its bounded real
+PR-2032 diagnostic proved the provider accepted that parameter and eliminated content-only stops,
+but DeepSeek made 200 accepted tools without choosing `finish`; the broker rejected decision 201
+at its frozen limit. No patch, verifier result, trajectory, or dataset row was produced.
+
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v4 diagnostic.
+Ordinary turns keep `tool_choice=auto`; only the exact trusted Stop-hook recovery feedback forces
+the concrete `finish` function on the next provider request. This preserves the model's observed
+completion intent while requiring the provider to emit a real typed call. The run binds the sealed
+v3 tool-loop failure and passes only with one recovery plus broker-authoritative typed `finish`.
+It does not monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory
+eligibility remain separate, and no diagnostic result is admitted to a dataset.
 
 ## Five-task HWE collection pilot
 

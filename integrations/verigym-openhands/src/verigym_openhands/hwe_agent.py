@@ -223,6 +223,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     from .hwe_tool_choice import RequiredToolChoiceLLM
 
                     llm_type = RequiredToolChoiceLLM
+                elif settings.tool_choice_policy == "recovery_forced_finish":
+                    from .hwe_tool_choice import RecoveryForcedFinishLLM
+
+                    llm_type = RecoveryForcedFinishLLM
                 llm = llm_type(
                     model=settings.model_id,
                     base_url=os.environ[settings.base_url_env],
@@ -702,8 +706,8 @@ def _sdk_failure_receipt(exc: BaseException, events: list[Any]) -> dict[str, Any
 def _identity(
     settings: OpenHandsHweSettings, tool_calls: int, patches: int
 ) -> ExternalAgentCallIdentity:
-    required_tool_choice = settings.tool_choice_policy == "required"
-    policy_version = "v3" if required_tool_choice else "v2"
+    policy_versions = {"auto": "v2", "required": "v3", "recovery_forced_finish": "v4"}
+    policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
         adapter_name="openhands-hwe-agent",
         adapter_version=__version__,
@@ -726,9 +730,11 @@ def _identity(
         agent_harness_kind="openhands_sdk",
         tool_availability_policy="hwe_exact_six_typed_tools_v2",
         tool_use_policy=(
-            "repository_action_state_machine_required_tool_v3"
-            if required_tool_choice
-            else "repository_action_state_machine_v2"
+            "repository_action_state_machine_v2"
+            if settings.tool_choice_policy == "auto"
+            else "repository_action_state_machine_required_tool_v3"
+            if settings.tool_choice_policy == "required"
+            else "repository_action_state_machine_recovery_forced_finish_v4"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,

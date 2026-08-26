@@ -110,6 +110,8 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert 'litellm_extra_body={"thinking": {"type": "disabled"}}' in source
     assert 'settings.tool_choice_policy == "required"' in source
     assert "RequiredToolChoiceLLM" in source
+    assert 'settings.tool_choice_policy == "recovery_forced_finish"' in source
+    assert "RecoveryForcedFinishLLM" in source
     assert "DeepSeekHarnessHweBroker" in source
     assert "HookConfig" in source
     assert 'with_name("hwe_stop_hook.py")' in source
@@ -236,3 +238,16 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
     assert identity.workspace_write_count == 1
     assert identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v3"
     assert identity.tool_use_policy == "repository_action_state_machine_required_tool_v3"
+
+    adaptive = settings.__class__(
+        **{
+            **settings.__dict__,
+            "tool_choice_policy": "recovery_forced_finish",
+        }
+    )
+    adaptive_identity = _identity(adaptive, tool_calls=18, patches=1)
+    assert adaptive_identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v4"
+    assert (
+        adaptive_identity.tool_use_policy
+        == "repository_action_state_machine_recovery_forced_finish_v4"
+    )

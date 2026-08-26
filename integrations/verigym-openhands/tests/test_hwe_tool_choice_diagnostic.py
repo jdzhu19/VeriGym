@@ -43,14 +43,14 @@ def test_tool_choice_diagnostic_agent_version_is_frozen_and_repeatable() -> None
 @pytest.mark.parametrize(
     ("infrastructure", "finished", "recoveries", "failure", "status", "passed"),
     [
-        (True, True, 0, None, "required_tool_choice_regression_passed", True),
-        (True, True, 1, None, "required_tool_choice_weakened", False),
+        (True, True, 1, None, "recovery_forced_finish_regression_passed", True),
+        (True, True, 0, None, "direct_finish_passed_recovery_not_exercised", False),
         (
             True,
             False,
             1,
             "openhands_hwe_missing_finish",
-            "required_tool_choice_regression_failed",
+            "recovery_forced_finish_regression_failed",
             False,
         ),
         (True, False, 0, "other", "model_rejected_before_typed_finish", False),

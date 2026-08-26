@@ -19,14 +19,14 @@ from ._recovery import (
 )
 from .hwe_agent import OpenHandsHweAgentAdapter
 
-OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_FORMAT = "verigym_openhands_hwe_tool_choice_diagnostic_v3"
+OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_FORMAT = "verigym_openhands_hwe_tool_choice_diagnostic_v4"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_tool_choice_diagnostic_report_v3"
+    "verigym_openhands_hwe_tool_choice_diagnostic_report_v4"
 )
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
-OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_CAMPAIGN_ID = "openhands-hwe-required-tool-choice-diagnostic-v3"
+OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_CAMPAIGN_ID = "openhands-hwe-recovery-forced-finish-diagnostic-v4"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-required-tool-choice-diagnostic-v3"
+    "openhands-deepseek-v4-flash-hwe-recovery-forced-finish-diagnostic-v4"
 )
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_HWE_TOOL_CHOICE_DIAGNOSTIC"
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
@@ -40,7 +40,7 @@ OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_SEED = 484
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_ITERATIONS = 200
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_OUTPUT_TOKENS = 2_048
 OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_CONTEXT_TOKENS = 65_536
-OPENHANDS_TOOL_CHOICE_POLICY = "required"
+OPENHANDS_TOOL_CHOICE_POLICY = "recovery_forced_finish"
 
 _OPENHANDS_SDK_WHEEL_SHA256 = "10af3d6caf1075ecbb8520db1150c0ec0179ee352b19f0395d2273afda6004d2"
 _LITELLM_WHEEL_SHA256 = "ad5f7bf4e10cefa32273f0e8092eaf6c757aeb1c6484c0c3d8908e0342bde759"
@@ -151,18 +151,18 @@ def classify_tool_choice_diagnostic(
     recovery_count: int,
     failure_category: str | None,
 ) -> tuple[str, bool]:
-    """Require direct typed completion without the content-only recovery path."""
+    """Require the trusted recovery turn to produce broker-authoritative typed finish."""
 
     if recovery_count not in {0, 1}:
         raise ValueError("OpenHands tool-choice diagnostic count is outside the frozen budget")
     if not infrastructure_valid:
         return "infrastructure_invalid", False
-    if typed_finish_observed and recovery_count == 0:
-        return "required_tool_choice_regression_passed", True
+    if typed_finish_observed and recovery_count == 1:
+        return "recovery_forced_finish_regression_passed", True
     if typed_finish_observed:
-        return "required_tool_choice_weakened", False
+        return "direct_finish_passed_recovery_not_exercised", False
     if failure_category == "openhands_hwe_missing_finish":
-        return "required_tool_choice_regression_failed", False
+        return "recovery_forced_finish_regression_failed", False
     return "model_rejected_before_typed_finish", False
 
 

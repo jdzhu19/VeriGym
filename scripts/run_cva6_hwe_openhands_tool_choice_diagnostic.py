@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one frozen OpenHands required-tool-choice diagnostic on CVA6 PR-2032."""
+"""Run one frozen OpenHands recovery-forced-finish diagnostic on CVA6 PR-2032."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from verigym_openhands.hwe_tool_choice_diagnostic import (
     seal_tool_choice_diagnostic_report,
 )
 from verigym_openhands.trajectory import (
-    OPENHANDS_TRAJECTORY_FORMAT,
+    OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
     validate_openhands_training_trajectory,
 )
 
@@ -65,16 +65,16 @@ _optional_json = _recovery_runner._optional_json
 _qualified_sources = _recovery_runner._qualified_sources
 _validated_split = _recovery_runner._validated_split
 
-_PRIOR_V2_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-stop-recovery-diagnostic-v2-attempt2"
-_PRIOR_V2_STATUS = "termination_regression_failed"
-_PRIOR_V2_FAILURE_CATEGORY = "openhands_hwe_missing_finish"
+_PRIOR_V3_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-required-tool-choice-diagnostic-v3"
+_PRIOR_V3_STATUS = "model_rejected_before_typed_finish"
+_PRIOR_V3_FAILURE_CATEGORY = "openhands_hwe_action_policy"
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qualification-root", type=Path, required=True)
     parser.add_argument("--image-lock-dir", type=Path, required=True)
-    parser.add_argument("--prior-v2-report", type=Path, required=True)
+    parser.add_argument("--prior-v3-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
@@ -84,7 +84,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def run(arguments: argparse.Namespace) -> dict[str, Any]:
-    """Execute one no-retry required-tool episode and seal its evidence."""
+    """Execute one no-retry recovery-forced-finish episode and seal its evidence."""
 
     if os.environ.get(OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_OPT_IN_ENV) != "1":
         raise ConfigurationError(f"{OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_OPT_IN_ENV}=1 is required")
@@ -123,7 +123,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     entry = training[OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_TASK]
     if lock.task_hash != entry.task_hash or lock.source_hash != entry.source_hash:
         raise ConfigurationError("OpenHands tool-choice task/source/image identity changed")
-    prior = _prior_v2_failure(arguments.prior_v2_report)
+    prior = _prior_v3_failure(arguments.prior_v3_report)
 
     from verigym_openhands.hwe_agent import (
         OpenHandsHweAgentAdapter,
@@ -136,7 +136,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     runtime_config = _docker_config(lock)
     runtime = DockerRuntime(runtime_config)
     try:
-        runtime.prepare("openhands-required-tool-choice-v3-pr2032")
+        runtime.prepare("openhands-recovery-forced-finish-v4-pr2032")
     finally:
         runtime.close()
 
@@ -183,9 +183,9 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "source_hash": entry.source_hash,
         "source_commit": source_commit,
         "image_lock_hash": lock.lock_hash,
-        "prior_v2_report_hash": prior["report_hash"],
-        "prior_v2_agent_version_hash": prior["agent_version_hash"],
-        "prior_v2_failure_category": _PRIOR_V2_FAILURE_CATEGORY,
+        "prior_v3_report_hash": prior["report_hash"],
+        "prior_v3_agent_version_hash": prior["agent_version_hash"],
+        "prior_v3_failure_category": _PRIOR_V3_FAILURE_CATEGORY,
         "model_transport_id": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL,
         "model_identity": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MODEL_IDENTITY,
         "agent_version_id": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_AGENT_VERSION_ID,
@@ -201,7 +201,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "max_context_tokens": OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_MAX_CONTEXT_TOKENS,
         "tool_choice_policy": OPENHANDS_TOOL_CHOICE_POLICY,
         "format_recovery_budget": 1,
-        "acceptance_requires_recovery_count": 0,
+        "acceptance_requires_recovery_count": 1,
         "same_session_recovery": True,
         "whole_episode_retries": 0,
         "provider_request_retries": 0,
@@ -262,7 +262,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 run_id=run_id,
                 experiment_id=arguments.campaign_id,
                 plan_item_id=run_id,
-                system_id="openhands-deepseek-v4-flash-hwe-required-tool-choice-v3",
+                system_id="openhands-deepseek-v4-flash-hwe-recovery-forced-finish-v4",
                 base_seed=OPENHANDS_TOOL_CHOICE_DIAGNOSTIC_SEED,
             )
         )
@@ -294,7 +294,9 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         and raw_recovery_count in {0, 1}
     )
     recovery_count = raw_recovery_count if recovery_count_valid else 0
-    tool_choice_bound = summary is not None and summary.get("tool_choice_policy") == "required"
+    tool_choice_bound = (
+        summary is not None and summary.get("tool_choice_policy") == "recovery_forced_finish"
+    )
     evidence_complete = (
         broker is not None
         and summary is not None
@@ -321,18 +323,19 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         trajectory_path = trajectory_paths[0]
         trajectory = validate_openhands_training_trajectory(_json(trajectory_path))
         if (
-            trajectory.get("format_id") != OPENHANDS_TRAJECTORY_FORMAT
+            trajectory.get("format_id") != OPENHANDS_RECOVERY_TRAJECTORY_FORMAT
             or trajectory.get("verifier_resolved") is not True
             or trajectory.get("sft_eligible") is not True
+            or trajectory.get("format_recovery_count") != 1
         ):
-            raise ConfigurationError("tool-choice diagnostic trajectory is not eligible v1 data")
+            raise ConfigurationError("tool-choice diagnostic trajectory is not eligible v2 data")
         trajectory_summary = {
             "exported": True,
             "format_id": trajectory["format_id"],
             "transcript_hash": trajectory["transcript_hash"],
             "file_sha256": hash_bytes(trajectory_path.read_bytes()),
             "assistant_decision_count": trajectory["assistant_decision_count"],
-            "recovery_count": 0,
+            "recovery_count": trajectory["format_recovery_count"],
             "dataset_admitted": False,
         }
     elif trajectory_paths:
@@ -388,7 +391,7 @@ def _validate_package_versions() -> None:
             raise ConfigurationError(f"{package} differs from the frozen tool-choice diagnostic")
 
 
-def _prior_v2_failure(path: Path) -> dict[str, str]:
+def _prior_v3_failure(path: Path) -> dict[str, str]:
     report = _json(path.resolve(strict=True))
     observed = report.get("report_hash")
     base = {key: value for key, value in report.items() if key != "report_hash"}
@@ -396,19 +399,23 @@ def _prior_v2_failure(path: Path) -> dict[str, str]:
     if (
         not isinstance(observed, str)
         or content_hash(base) != observed
-        or report.get("agent_version_id") != _PRIOR_V2_AGENT_VERSION_ID
-        or report.get("status") != _PRIOR_V2_STATUS
-        or report.get("scorecard_failure_category") != _PRIOR_V2_FAILURE_CATEGORY
+        or report.get("agent_version_id") != _PRIOR_V3_AGENT_VERSION_ID
+        or report.get("status") != _PRIOR_V3_STATUS
+        or report.get("scorecard_failure_category") != _PRIOR_V3_FAILURE_CATEGORY
         or report.get("infrastructure_valid") is not True
+        or report.get("tool_choice_bound") is not True
         or report.get("typed_finish_observed") is not False
-        or report.get("format_recovery_count") != 1
+        or report.get("format_recovery_count") != 0
+        or report.get("model_call_count") != 201
+        or report.get("tool_call_count") != 200
+        or report.get("patch_call_count") != 0
         or not isinstance(trajectory, dict)
         or trajectory.get("exported") is not False
     ):
-        raise ConfigurationError("prior OpenHands v2 termination failure changed")
+        raise ConfigurationError("prior OpenHands v3 required-tool failure changed")
     version_hash = report.get("agent_version_hash")
     if not isinstance(version_hash, str) or len(version_hash) != 64:
-        raise ConfigurationError("prior OpenHands v2 agent version hash is absent")
+        raise ConfigurationError("prior OpenHands v3 agent version hash is absent")
     return {"report_hash": observed, "agent_version_hash": version_hash}
 
 

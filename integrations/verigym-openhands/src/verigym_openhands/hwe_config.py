@@ -138,7 +138,7 @@ def resolve_hwe_settings(
     ):
         raise ValueError("OpenHands HWE collection profile changed")
     tool_choice_policy = _text(options.get("tool_choice_policy", "auto"), "tool_choice_policy")
-    if tool_choice_policy not in {"auto", "required"}:
+    if tool_choice_policy not in {"auto", "required", "recovery_forced_finish"}:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
