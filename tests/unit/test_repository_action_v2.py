@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from verigym.core.hashing import content_hash
 from verigym.protocols.repository_action import (
     RepositoryActionProtocolViolation,
     action_registry,
@@ -235,6 +236,9 @@ def test_registry_prompt_and_resolver_are_deterministic_and_fail_closed() -> Non
     assert first is not None
     assert first.action_registry_hash
     assert first.state_machine_id == "repository_action_state_machine_v2"
+    assert first.configuration_fingerprint == content_hash(
+        first.model_dump(mode="json", exclude={"schema_version", "configuration_fingerprint"})
+    )
     assert action_registry()["one_action_per_turn"] is True
     assert prompt_contract()["registry_hash"] == first.action_registry_hash
     validate_repository_action_protocol_binding(expected=first, resolved=second)

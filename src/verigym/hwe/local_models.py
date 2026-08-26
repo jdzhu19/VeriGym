@@ -8,6 +8,7 @@ explicitly provide local model directories and both adapters use ``local_files_o
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import multiprocessing
 import os
@@ -657,7 +658,8 @@ class LocalCoactGenerator:
 def _imports() -> tuple[Any, Any]:
     try:
         import torch  # type: ignore[import-not-found]
-        import transformers
+
+        transformers = importlib.import_module("transformers")
     except ImportError as exc:  # pragma: no cover - depends on optional environment
         raise LocalModelUnavailable(
             "local HWE NAP/CoACT inference requires torch and transformers"
