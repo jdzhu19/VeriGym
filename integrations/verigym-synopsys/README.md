@@ -27,6 +27,9 @@ and emits a script-bound structured equivalence result. All plugins are verifier
 for site-controlled runtimes. Detailed Formality point reports are not exported because they can
 reveal golden-design identifiers.
 
+A bounded two-host run through the MCP client, fixed SSH transport, and real Design Compiler is
+recorded in the [remote Synopsys MCP smoke audit](../../docs/audits/synopsys_mcp_real_dc_smoke.md).
+
 ## Prepare a site profile
 
 Prefer the PDK's prebuilt `.db` when available. The paired Liberty remains hash-bound provenance:
