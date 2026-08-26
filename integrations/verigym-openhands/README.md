@@ -37,3 +37,16 @@ are created with `write_openhands_decision_dataset` and are never overwritten.
 
 This integration establishes the collection and export path. A bounded development run remains a
 pilot and is not a benchmark score or a production-training-readiness claim.
+
+## Five-task HWE collection pilot
+
+`scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
+reuses the sealed verifier-passed PR-2944 trajectory and makes one no-retry OpenHands attempt for
+PR-2032, PR-2549, PR-2248, and PR-2282, all from the existing frozen CVA6 training split. The
+runner stops on infrastructure-invalid or exact-64K failures. Ordinary verifier rejection remains
+a valid negative outcome and never creates an SFT row.
+
+The runner requires `VERIGYM_RUN_OPENHANDS_HWE_PILOT=1`, the existing DeepSeek endpoint variable
+names, a short `VERIGYM_OPENHANDS_BROKER_ROOT`, and an explicit
+`VERIGYM_OPENHANDS_MCP_PYTHONPATH`. It writes only to a new experiment directory. Full runs and
+datasets remain local; only sanitized reports and hashes belong in Git.
