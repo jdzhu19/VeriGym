@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_openhands_decision_sft_64k_loader_v1",
+  "scope": "loader_qualification_only",
+  "dataset": {
+    "format_id": "verigym_openhands_decision_sft_dataset_64k_v1",
+    "qualified_dataset_hash": "e1331ed287cedc76141d9f882992c4a159b76c759371170d259aa6d15492f511",
+    "record_count": 20,
+    "trajectory_count": 1,
+    "tool_action_count": 22,
+    "max_observed_token_count": 13107,
+    "max_length": 65536,
+    "truncation": "error",
+    "scaffold": "openhands-sdk-1.42.1-verigym-broker-v1"
+  },
+  "objective": {
+    "id": "decision_balanced_target_token_mean_batch1_v1",
+    "global_batch_size": 1,
+    "normalization": "supervised_target_tokens_within_each_decision",
+    "equivalent_to_full_trajectory_mle": false,
+    "formal_training_recipe": false
+  },
+  "software": {
+    "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+    "verl_version": "0.8.0",
+    "transformers_commit": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
+    "trust_remote_code": false
+  },
+  "loader": {
+    "dispatcher": "VeriGymOpenHandsDecisionSft64kTrainer",
+    "backend": "VeriGymOpenHandsDecisionSft64kBackend",
+    "custom_dataset_class": "VeriGymHweDecisionSft64kDataset",
+    "messages_key": "messages",
+    "tools_key": "tools",
+    "exact_receipt_key": "exact_token_receipt",
+    "all_rows_dry_run_required": true
+  },
+  "scheduler": {
+    "policy": "ephemeral_noninteractive_lsf_payload_v1",
+    "persistent_bash_allocation_allowed": false,
+    "submit_only_when_gpu_work_is_ready": true,
+    "auto_exit_on_payload_completion": true
+  },
+  "acceptance": {
+    "loader_ready": true,
+    "gpu_qualification_required_before_training": true,
+    "production_training_ready": false,
+    "training_started": false,
+    "optimizer_steps": 0,
+    "checkpoint_written": false,
+    "adapter_written": false
+  }
+}

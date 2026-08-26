@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_exact_sft_objective_ab_v1",
+  "scope": "development_ab_preregistration_draft",
+  "shared": {
+    "base_model": "Qwen3.5-9B",
+    "max_length": 65536,
+    "truncation": "error",
+    "exact_tools_required": true,
+    "exact_chat_template_required": true,
+    "same_base_checkpoint_required": true,
+    "same_supervised_token_budget_required": true,
+    "same_heldout_tasks_required": true,
+    "global_batch_size": 1,
+    "micro_batch_size_per_gpu": 1
+  },
+  "arms": [
+    {
+      "id": "full_trajectory_all_assistant_v1",
+      "objective_id": "trajectory_balanced_all_assistant_token_mean_batch1_v1",
+      "row_unit": "one_verifier_passed_trajectory",
+      "supervised_targets": "all_complete_assistant_decisions",
+      "trajectory_weighting": "one_target_token_mean_update_per_trajectory",
+      "tokenizer_function": "tool_aware_exact_all_assistant_tokens"
+    },
+    {
+      "id": "decision_only_v1",
+      "objective_id": "trajectory_balanced_decision_target_token_mean_batch1_v1",
+      "row_unit": "one_complete_assistant_decision",
+      "supervised_targets": "final_complete_assistant_decision_only",
+      "trajectory_weighting": "deterministic_equal_trajectory_epoch_within_trajectory_decision_resampling",
+      "dataset_class": "VeriGymTrajectoryBalancedDecisionSft64kDataset",
+      "tokenizer_function": "tool_aware_exact_final_decision_tokens"
+    }
+  ],
+  "required_data_gate": {
+    "scaffold": "openhands-sdk-1.42.1-verigym-broker-v1",
+    "minimum_distinct_training_tasks": 50,
+    "minimum_verifier_passed_trajectories": 50,
+    "current_qualified_openhands_trajectories": 1,
+    "gate_satisfied": false
+  },
+  "evaluation": {
+    "primary": "heldout_verifier_pass_at_1",
+    "secondary": [
+      "valid_tool_call_rate",
+      "mean_decision_steps",
+      "empty_patch_rate"
+    ]
+  },
+  "scheduler": {
+    "policy": "ephemeral_noninteractive_lsf_payload_v1",
+    "persistent_bash_allocation_allowed": false
+  },
+  "production_training_ready": false,
+  "training_started": false
+}
