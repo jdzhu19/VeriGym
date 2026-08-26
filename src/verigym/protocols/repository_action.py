@@ -419,8 +419,6 @@ def resolve_repository_action_protocol(
         "agent_descriptor_hash": content_hash(agent_descriptor),
         "task_tool_contract_hash": content_hash(task_tool_contract),
     }
-    if observation_policy is not None:
-        payload["observation_policy"] = observation_policy.identity()
     return RepositoryActionProtocolDescriptor.model_validate(
         {**payload, "configuration_fingerprint": content_hash(payload)}
     )
