@@ -421,22 +421,8 @@ def resolve_repository_action_protocol(
     }
     if observation_policy is not None:
         payload["observation_policy"] = observation_policy.identity()
-    return RepositoryActionProtocolDescriptor(
-        resolver_id="repository_action_protocol_resolver_v1",
-        protocol_id=protocol_spec.protocol_id,
-        protocol_version=protocol_spec.protocol_version,
-        action_transport=transport,
-        one_action_per_turn=True,
-        action_registry_hash=registry_hash,
-        prompt_contract_id=protocol_spec.prompt_contract_id,
-        prompt_contract_hash=contract_hash,
-        normalizer_id=protocol_spec.normalizer_id,
-        state_machine_id=protocol_spec.state_machine_id,
-        max_completion_calls=max_calls,
-        max_response_bytes=max_bytes,
-        agent_descriptor_hash=content_hash(agent_descriptor),
-        task_tool_contract_hash=content_hash(task_tool_contract),
-        configuration_fingerprint=content_hash(payload),
+    return RepositoryActionProtocolDescriptor.model_validate(
+        {**payload, "configuration_fingerprint": content_hash(payload)}
     )
 
 
