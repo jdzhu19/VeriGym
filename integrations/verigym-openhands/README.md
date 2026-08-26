@@ -51,7 +51,8 @@ runs exactly one no-retry PR-2032 regression episode. It hash-binds the prior v1
 failure and accepts the recovery regression only when the same OpenHands session consumes its one
 recovery allowance and subsequently reaches broker-authoritative typed `finish`. Verifier
 correctness is reported separately. Even a verifier-passed diagnostic trajectory is not admitted
-to a dataset automatically.
+to a dataset automatically. A relaunch after a pre-model infrastructure failure must use a new
+frozen attempt identity and hash-bind evidence of zero model calls and zero workspace changes.
 
 ## Five-task HWE collection pilot
 

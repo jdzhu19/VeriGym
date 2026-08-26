@@ -22,15 +22,16 @@ from .hwe_agent import OpenHandsHweAgentAdapter
 OPENHANDS_RECOVERY_DIAGNOSTIC_FORMAT = "verigym_openhands_hwe_recovery_diagnostic_v2"
 OPENHANDS_RECOVERY_DIAGNOSTIC_REPORT_FORMAT = "verigym_openhands_hwe_recovery_diagnostic_report_v2"
 OPENHANDS_RECOVERY_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
-OPENHANDS_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = "openhands-hwe-stop-recovery-diagnostic-v2"
+OPENHANDS_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = "openhands-hwe-stop-recovery-diagnostic-v2-attempt2"
 OPENHANDS_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-stop-recovery-diagnostic-v2"
+    "openhands-deepseek-v4-flash-hwe-stop-recovery-diagnostic-v2-attempt2"
 )
 OPENHANDS_RECOVERY_DIAGNOSTIC_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_HWE_RECOVERY_DIAGNOSTIC"
 OPENHANDS_RECOVERY_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
 OPENHANDS_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY = "deepseek-v4-flash"
 OPENHANDS_RECOVERY_DIAGNOSTIC_SDK_VERSION = "1.42.1"
 OPENHANDS_RECOVERY_DIAGNOSTIC_LITELLM_VERSION = "1.93.0"
+OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION = "0.7.0"
 OPENHANDS_RECOVERY_DIAGNOSTIC_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
 OPENHANDS_RECOVERY_DIAGNOSTIC_API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 OPENHANDS_RECOVERY_DIAGNOSTIC_SEED = 484
@@ -40,6 +41,7 @@ OPENHANDS_RECOVERY_DIAGNOSTIC_MAX_CONTEXT_TOKENS = 65_536
 
 _OPENHANDS_SDK_WHEEL_SHA256 = "10af3d6caf1075ecbb8520db1150c0ec0179ee352b19f0395d2273afda6004d2"
 _LITELLM_WHEEL_SHA256 = "ad5f7bf4e10cefa32273f0e8092eaf6c757aeb1c6484c0c3d8908e0342bde759"
+_TIKTOKEN_WHEEL_SHA256 = "d20b5c6af30e621b4aca094ee61777a44118f52d886dbe4f02b70dfe05c15350"
 
 
 def build_recovery_diagnostic_agent_version(
@@ -101,6 +103,7 @@ def build_recovery_diagnostic_agent_version(
                 "python_executable_sha256": hash_bytes(Path(sys.executable).read_bytes()),
                 "openhands_sdk_version": OPENHANDS_RECOVERY_DIAGNOSTIC_SDK_VERSION,
                 "litellm_version": OPENHANDS_RECOVERY_DIAGNOSTIC_LITELLM_VERSION,
+                "tiktoken_version": OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION,
                 "diagnostic_profile_id": OPENHANDS_RECOVERY_DIAGNOSTIC_FORMAT,
                 "collection_profile_id": "hwe_production_native_shell_v2",
                 "tool_contract_id": "hwe_native_shell_v2",
@@ -119,6 +122,7 @@ def build_recovery_diagnostic_agent_version(
         package_hashes={
             "litellm-1.93.0-wheel": _LITELLM_WHEEL_SHA256,
             "openhands-sdk-1.42.1-wheel": _OPENHANDS_SDK_WHEEL_SHA256,
+            "tiktoken-0.7.0-wheel": _TIKTOKEN_WHEEL_SHA256,
             "verigym-openhands-source": content_hash(source_hashes),
             "verigym-source-commit": content_hash(source_commit),
         },
@@ -182,6 +186,7 @@ __all__ = [
     "OPENHANDS_RECOVERY_DIAGNOSTIC_SDK_VERSION",
     "OPENHANDS_RECOVERY_DIAGNOSTIC_SEED",
     "OPENHANDS_RECOVERY_DIAGNOSTIC_TASK",
+    "OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION",
     "build_recovery_diagnostic_agent_version",
     "classify_recovery_diagnostic",
     "seal_recovery_diagnostic_report",

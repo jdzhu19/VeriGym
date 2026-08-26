@@ -30,6 +30,7 @@ from verigym_openhands.hwe_recovery_diagnostic import (
     OPENHANDS_RECOVERY_DIAGNOSTIC_SDK_VERSION,
     OPENHANDS_RECOVERY_DIAGNOSTIC_SEED,
     OPENHANDS_RECOVERY_DIAGNOSTIC_TASK,
+    OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION,
     build_recovery_diagnostic_agent_version,
     classify_recovery_diagnostic,
     seal_recovery_diagnostic_report,
@@ -60,6 +61,7 @@ _qualified_sources = _collection._qualified_sources
 
 _PRIOR_V1_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-five-task-pilot-v1"
 _PRIOR_V1_FAILURE_CATEGORY = "openhands_hwe_missing_finish"
+_SUPERSEDED_ZERO_CALL_CAMPAIGN_ID = "openhands-hwe-stop-recovery-diagnostic-v2"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -67,6 +69,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--qualification-root", type=Path, required=True)
     parser.add_argument("--image-lock-dir", type=Path, required=True)
     parser.add_argument("--prior-v1-report", type=Path, required=True)
+    parser.add_argument("--superseded-zero-call-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
@@ -90,6 +93,8 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         raise ConfigurationError("OpenHands SDK differs from frozen version 1.42.1")
     if importlib.metadata.version("litellm") != OPENHANDS_RECOVERY_DIAGNOSTIC_LITELLM_VERSION:
         raise ConfigurationError("LiteLLM differs from frozen version 1.93.0")
+    if importlib.metadata.version("tiktoken") != OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION:
+        raise ConfigurationError("tiktoken differs from frozen version 0.7.0")
 
     source_commit = _clean_source_commit()
     qualification = arguments.qualification_root.resolve(strict=True)
@@ -122,6 +127,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     if lock.task_hash != entry.task_hash or lock.source_hash != entry.source_hash:
         raise ConfigurationError("OpenHands recovery diagnostic task/source/image identity changed")
     prior = _prior_v1_failure(arguments.prior_v1_report)
+    superseded = _superseded_zero_call_failure(arguments.superseded_zero_call_report)
 
     from verigym_openhands.hwe_agent import (
         OpenHandsHweAgentAdapter,
@@ -184,12 +190,16 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "prior_v1_report_hash": prior["report_hash"],
         "prior_v1_run_hash": prior["run_hash"],
         "prior_v1_failure_category": _PRIOR_V1_FAILURE_CATEGORY,
+        "superseded_zero_call_report_hash": superseded["report_hash"],
+        "superseded_zero_call_source_commit": superseded["source_commit"],
+        "superseded_model_call_count": 0,
         "model_transport_id": OPENHANDS_RECOVERY_DIAGNOSTIC_MODEL,
         "model_identity": OPENHANDS_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY,
         "agent_version_id": OPENHANDS_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID,
         "agent_version_hash": version.version_hash,
         "openhands_sdk_version": OPENHANDS_RECOVERY_DIAGNOSTIC_SDK_VERSION,
         "litellm_version": OPENHANDS_RECOVERY_DIAGNOSTIC_LITELLM_VERSION,
+        "tiktoken_version": OPENHANDS_RECOVERY_DIAGNOSTIC_TIKTOKEN_VERSION,
         "seed": OPENHANDS_RECOVERY_DIAGNOSTIC_SEED,
         "temperature": 0,
         "top_p": 1,
@@ -421,6 +431,64 @@ def _clean_source_commit() -> str:
     if len(commit) != 40:
         raise ConfigurationError("OpenHands recovery diagnostic could not resolve a full Git SHA")
     return commit
+
+
+def _superseded_zero_call_failure(path: Path) -> dict[str, str]:
+    report_path = path.resolve(strict=True)
+    report = _json(report_path)
+    observed = report.get("report_hash")
+    base = {key: value for key, value in report.items() if key != "report_hash"}
+    trajectory = report.get("trajectory")
+    if (
+        not isinstance(observed, str)
+        or content_hash(base) != observed
+        or report.get("campaign_id") != _SUPERSEDED_ZERO_CALL_CAMPAIGN_ID
+        or report.get("status") != "infrastructure_invalid"
+        or report.get("scorecard_failure_category") != "openhands_hwe_sdk_episode"
+        or report.get("model_call_count") is not None
+        or report.get("typed_finish_observed") is not False
+        or not isinstance(trajectory, dict)
+        or trajectory.get("exported") is not False
+    ):
+        raise ConfigurationError("superseded OpenHands zero-call report identity changed")
+    run_directories = [item for item in (report_path.parent / "runs").iterdir() if item.is_dir()]
+    if len(run_directories) != 1:
+        raise ConfigurationError("superseded OpenHands run directory count changed")
+    run = run_directories[0]
+    trace_path = run / "trace.jsonl"
+    if trace_path.is_symlink() or not trace_path.is_file():
+        raise ConfigurationError("superseded OpenHands zero-call trace is unsafe")
+    trace = [_json_line(line) for line in trace_path.read_text().splitlines()]
+    prompt = [
+        item for item in trace if item.get("event_type") == "openhands_sdk_hwe_prompt_policy_bound"
+    ]
+    failures = [
+        item for item in trace if item.get("event_type") == "openhands_sdk_hwe_episode_failed"
+    ]
+    prompt_payload = prompt[0].get("payload") if len(prompt) == 1 else None
+    failure_payload = failures[0].get("payload") if len(failures) == 1 else None
+    raw_manifest = _json(run / "private-audit" / "raw-observations-manifest.json")
+    if (
+        not isinstance(prompt_payload, dict)
+        or prompt_payload.get("model_call_count") != 0
+        or not isinstance(failure_payload, dict)
+        or failure_payload.get("failure_stage") != "broker_initialization"
+        or raw_manifest.get("record_count") != 0
+        or (run / "workspace_diff.patch").stat().st_size != 0
+        or (run / "repository.patch").stat().st_size != 0
+    ):
+        raise ConfigurationError("superseded OpenHands run was not a clean zero-call failure")
+    source_commit = report.get("source_commit")
+    if not isinstance(source_commit, str) or len(source_commit) != 40:
+        raise ConfigurationError("superseded OpenHands source commit is absent")
+    return {"report_hash": observed, "source_commit": source_commit}
+
+
+def _json_line(line: str) -> dict[str, Any]:
+    value = json.loads(line)
+    if not isinstance(value, dict):
+        raise ConfigurationError("OpenHands zero-call trace contains a non-object event")
+    return value
 
 
 def _new_output(path: Path) -> Path:
