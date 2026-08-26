@@ -2259,6 +2259,7 @@ def test_hwe_action_conditioned_format_accepts_long_context_source_without_relab
 
     transcript_path = tmp_path / "transcript.json"
     transcript_path.write_text(json.dumps(transcript), encoding="utf-8")
+    pytest.importorskip("tiktoken", reason="frozen HWE tokenizer is unavailable")
     analysis = analyze_transcripts([transcript_path], windows=[8, 10, 16])
     assert analysis["format_id"] == "verigym_hwe_observation_masking_analysis_v1"
     assert analysis["selected_window"] == 16

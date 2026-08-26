@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import importlib.metadata
 import re
 from collections.abc import Iterable, Sequence
@@ -55,7 +56,7 @@ class TiktokenO200kCounter:
     def __init__(self) -> None:
         try:
             version = importlib.metadata.version("tiktoken")
-            import tiktoken
+            tiktoken = importlib.import_module("tiktoken")
         except (ImportError, importlib.metadata.PackageNotFoundError) as exc:
             raise RuntimeError("HWE SFT collection requires tiktoken==0.7.0") from exc
         if version != "0.7.0":
