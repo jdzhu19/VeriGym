@@ -40,6 +40,7 @@ _OPTIONS = {
     "agent_version_hash",
     "agent_version_manifest_json",
     "collection_profile_id",
+    "tool_choice_policy",
 }
 
 
@@ -55,6 +56,7 @@ class OpenHandsHweSettings:
     seed: int
     campaign_role: str
     capture_training_transcript: bool
+    tool_choice_policy: str
     agent_version_id: str | None
     agent_version_hash: str | None
     configuration_fingerprint: str
@@ -77,6 +79,7 @@ class OpenHandsHweSettings:
             "same_session_recovery": True,
             "termination_authority": "broker_typed_finish",
             "provider_thinking_mode": "disabled",
+            "tool_choice_policy": self.tool_choice_policy,
             "campaign_role": self.campaign_role,
             "capture_training_transcript": self.capture_training_transcript,
             "agent_version_id": self.agent_version_id,
@@ -134,6 +137,9 @@ def resolve_hwe_settings(
         "hwe_production_native_shell_v2"
     ):
         raise ValueError("OpenHands HWE collection profile changed")
+    tool_choice_policy = _text(options.get("tool_choice_policy", "auto"), "tool_choice_policy")
+    if tool_choice_policy not in {"auto", "required"}:
+        raise ValueError("OpenHands HWE tool choice policy is unsupported")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
         raise ValueError("OpenHands HWE campaign role is unsupported")
@@ -168,6 +174,7 @@ def resolve_hwe_settings(
         "same_session_recovery": True,
         "termination_authority": "broker_typed_finish",
         "provider_thinking_mode": "disabled",
+        "tool_choice_policy": tool_choice_policy,
         "campaign_role": role,
         "capture_training_transcript": capture,
         "agent_version_id": version_id,
@@ -187,6 +194,7 @@ def resolve_hwe_settings(
         seed=seed,
         campaign_role=role,
         capture_training_transcript=capture,
+        tool_choice_policy=tool_choice_policy,
         agent_version_id=version_id,
         agent_version_hash=version_hash,
         configuration_fingerprint=content_hash(safe),

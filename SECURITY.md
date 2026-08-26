@@ -116,6 +116,13 @@ optional HWE native-shell actions remain broker-owned. HWE shell commands execut
 task-keyed networkless agent container through the existing DeepSeek HWE broker; they are not host
 shell commands.
 
+The separately versioned required-tool HWE profile subclasses the public OpenHands `LLM`
+completion interface and supplies `tool_choice=required` to every synchronous and asynchronous
+chat request. It does not modify the installed SDK or accept content-only completion. The profile
+fails closed if the policy is weakened, if the exact six-tool contract is empty, or if a
+content-only Stop-hook recovery is still needed. The broker-observed typed `finish` remains the
+only completion authority.
+
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2
 collector additionally permits one frozen same-session format recovery: when OpenHands attempts

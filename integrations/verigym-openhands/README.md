@@ -54,6 +54,13 @@ correctness is reported separately. Even a verifier-passed diagnostic trajectory
 to a dataset automatically. A relaunch after a pre-model infrastructure failure must use a new
 frozen attempt identity and hash-bind evidence of zero model calls and zero workspace changes.
 
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` is the distinct v3 follow-up. It uses a
+local `LLM` subclass through the SDK's public completion methods to send
+`tool_choice="required"` on every sync and async chat request; it does not monkeypatch the SDK.
+The run binds the sealed v2 termination failure and passes only when PR-2032 reaches a direct
+broker-authoritative typed `finish` with zero Stop-hook recoveries. Verifier correctness and
+trajectory eligibility remain separate, and no diagnostic result is admitted to a dataset.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

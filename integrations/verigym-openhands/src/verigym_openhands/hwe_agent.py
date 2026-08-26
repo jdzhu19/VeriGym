@@ -218,7 +218,12 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     private_audit_root=private_root,
                 )
                 failure_stage = "llm_initialization"
-                llm = openhands.LLM(
+                llm_type = openhands.LLM
+                if settings.tool_choice_policy == "required":
+                    from .hwe_tool_choice import RequiredToolChoiceLLM
+
+                    llm_type = RequiredToolChoiceLLM
+                llm = llm_type(
                     model=settings.model_id,
                     base_url=os.environ[settings.base_url_env],
                     api_key=os.environ[settings.api_key_env],
@@ -697,6 +702,8 @@ def _sdk_failure_receipt(exc: BaseException, events: list[Any]) -> dict[str, Any
 def _identity(
     settings: OpenHandsHweSettings, tool_calls: int, patches: int
 ) -> ExternalAgentCallIdentity:
+    required_tool_choice = settings.tool_choice_policy == "required"
+    policy_version = "v3" if required_tool_choice else "v2"
     return ExternalAgentCallIdentity(
         adapter_name="openhands-hwe-agent",
         adapter_version=__version__,
@@ -706,17 +713,23 @@ def _identity(
         executable_name="python",
         executable_sha256=hash_bytes(Path(sys.executable).read_bytes()),
         executable_version=f"python-{sys.version_info.major}.{sys.version_info.minor}",
-        capability_fingerprint=hashlib.sha256(b"openhands-sdk-1.42.1-hwe-v2").hexdigest(),
+        capability_fingerprint=hashlib.sha256(
+            f"openhands-sdk-1.42.1-hwe-{policy_version}".encode()
+        ).hexdigest(),
         configuration_fingerprint=settings.configuration_fingerprint,
         invocation_count=1,
         integration_track="openhands_sdk_agent",
         execution_surface="openhands_sdk",
         interaction_class="sdk_agent_broker_tools",
-        harness_id="openhands-sdk-1.42.1-hwe-native-shell-v2",
+        harness_id=f"openhands-sdk-1.42.1-hwe-native-shell-{policy_version}",
         model_client_kind="sdk_agent_mediated",
         agent_harness_kind="openhands_sdk",
         tool_availability_policy="hwe_exact_six_typed_tools_v2",
-        tool_use_policy="repository_action_state_machine_v2",
+        tool_use_policy=(
+            "repository_action_state_machine_required_tool_v3"
+            if required_tool_choice
+            else "repository_action_state_machine_v2"
+        ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,
         read_only_tool_event_count=0,
@@ -769,6 +782,7 @@ def _write_evidence(
             "default_tools_exposed": False,
             "plugins_loaded": False,
             "condenser_enabled": False,
+            "tool_choice_policy": settings.tool_choice_policy,
             "whole_episode_retries": 0,
             "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
             "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,

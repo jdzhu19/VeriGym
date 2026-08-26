@@ -108,6 +108,8 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "native_tool_calling=True" in source
     assert "num_retries=0" in source
     assert 'litellm_extra_body={"thinking": {"type": "disabled"}}' in source
+    assert 'settings.tool_choice_policy == "required"' in source
+    assert "RequiredToolChoiceLLM" in source
     assert "DeepSeekHarnessHweBroker" in source
     assert "HookConfig" in source
     assert 'with_name("hwe_stop_hook.py")' in source
@@ -141,12 +143,15 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
             "temperature": 0,
             "top_p": 1,
             "whole_episode_retries": 0,
+            "tool_choice_policy": "required",
         },
         task_wall_time_s=4200,
     )
     assert settings.max_iterations == 200
     assert settings.max_context_tokens == 65_536
     assert settings.capture_training_transcript is True
+    assert settings.tool_choice_policy == "required"
+    assert settings.safe_dict()["tool_choice_policy"] == "required"
     assert settings.safe_dict()["format_recovery_budget"] == 1
     assert settings.safe_dict()["whole_episode_retries"] == 0
     assert settings.safe_dict()["termination_authority"] == "broker_typed_finish"
@@ -159,6 +164,27 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
                 "model_id": "local/Qwen3.5-9B",
                 "campaign_role": "development",
                 "capture_training_transcript": True,
+            },
+            task_wall_time_s=100,
+        )
+
+
+def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> None:
+    monkeypatch.setenv("VERIGYM_MODEL_BASE_URL", "http://127.0.0.1:8000/v1")
+    monkeypatch.setenv("VERIGYM_MODEL_API_KEY", "test-only-key")
+    module = _hwe_config_module()
+
+    settings = module.resolve_hwe_settings(
+        {"model_id": "local/Qwen3.5-9B"},
+        task_wall_time_s=100,
+    )
+    assert settings.tool_choice_policy == "auto"
+
+    with pytest.raises(ValueError, match="unsupported"):
+        module.resolve_hwe_settings(
+            {
+                "model_id": "local/Qwen3.5-9B",
+                "tool_choice_policy": "best-effort",
             },
             task_wall_time_s=100,
         )
@@ -194,6 +220,7 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
         seed=484,
         campaign_role="training",
         capture_training_transcript=True,
+        tool_choice_policy="required",
         agent_version_id=None,
         agent_version_hash=None,
         configuration_fingerprint="a" * 64,
@@ -207,3 +234,5 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
     assert identity.read_only_tool_event_count == 0
     assert identity.external_network_tool_event_count == 0
     assert identity.workspace_write_count == 1
+    assert identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v3"
+    assert identity.tool_use_policy == "repository_action_state_machine_required_tool_v3"
