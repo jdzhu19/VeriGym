@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from openhands.sdk.llm import Message, TextContent
 from openhands.sdk.tool import FinishTool, ToolDefinition
 
-from verigym_openhands._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
-from verigym_openhands.hwe_tool_choice import RecoveryForcedFinishLLM, RequiredToolChoiceLLM
+from verigym_openhands._recovery import (
+    OPENHANDS_FORMAT_RECOVERY_BUDGET,
+    OPENHANDS_FORMAT_RECOVERY_MESSAGE,
+    OPENHANDS_FORMAT_RECOVERY_MESSAGE_SHA256,
+    OPENHANDS_FORMAT_RECOVERY_POLICY,
+)
+from verigym_openhands.hwe_tool_choice import (
+    RecoveryForcedFinishLLM,
+    RecoveryStateForcedFinishLLM,
+    RequiredToolChoiceLLM,
+)
 
 
 def _messages() -> list[Message]:
@@ -38,6 +49,39 @@ def _recovery_llm() -> RecoveryForcedFinishLLM:
         api_mode="chat",
         native_tool_calling=True,
         capability_overrides={"supports_responses_api": False},
+    )
+
+
+def _recovery_state_llm(path: Path) -> RecoveryStateForcedFinishLLM:
+    return RecoveryStateForcedFinishLLM(
+        model="openai/test-model",
+        api_key="test-only",
+        base_url="https://example.invalid/v1",
+        api_mode="chat",
+        native_tool_calling=True,
+        capability_overrides={"supports_responses_api": False},
+        recovery_state_path=path,
+    )
+
+
+def _write_recovery_state(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "format_id": "verigym_openhands_format_recovery_state_v1",
+                "policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+                "recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+                "recovery_count": 1,
+                "model_visible_message_sha256": OPENHANDS_FORMAT_RECOVERY_MESSAGE_SHA256,
+                "same_session": True,
+                "whole_episode_retries": 0,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -177,3 +221,62 @@ def test_recovery_policy_rejects_caller_owned_tool_choice() -> None:
             tools=_tools(),
             tool_choice="required",
         )
+
+
+def test_recovery_state_policy_keeps_normal_turn_on_auto(tmp_path: Path) -> None:
+    llm = _recovery_state_llm(tmp_path / "recovery.json")
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=object(),
+    ) as completion:
+        llm.completion(messages=_messages(), tools=_tools())
+
+    assert "tool_choice" not in completion.call_args.kwargs
+
+
+def test_recovery_state_policy_forces_finish_after_valid_receipt(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _recovery_state_llm(state)
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=object(),
+    ) as completion:
+        llm.completion(messages=_messages(), tools=_tools())
+
+    assert completion.call_args.kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "finish"},
+    }
+
+
+def test_recovery_state_policy_forces_finish_through_async_path(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _recovery_state_llm(state)
+    completion = AsyncMock(return_value=object())
+    with patch("openhands.sdk.llm.llm.LLM.acompletion", completion):
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+
+    assert completion.call_args.kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "finish"},
+    }
+
+
+def test_recovery_state_policy_fails_closed_on_tampered_receipt(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    state.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="state changed"):
+        _recovery_state_llm(state).completion(messages=_messages(), tools=_tools())
+
+
+def test_recovery_state_policy_rejects_missing_finish_after_receipt(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+
+    with pytest.raises(ValueError, match="exactly one finish tool"):
+        _recovery_state_llm(state).completion(messages=_messages(), tools=[])

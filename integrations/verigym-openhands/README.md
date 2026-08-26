@@ -66,13 +66,19 @@ but its exact-whole-message detector did not account for the SDK merging adjacen
 messages. The next response was content-only again, so the run failed closed with 13 accepted
 tools, no patch, and no trajectory.
 
-`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v5 diagnostic.
-It recognizes recovery only when the latest user message's final independent content block exactly
-equals the canonical feedback; substrings and trailing content remain ineligible. That turn forces
-the concrete `finish` function while ordinary turns remain `auto`. The run binds the sealed v4
-failure and passes only with one recovery plus broker-authoritative typed `finish`. It does not
-monkeypatch the SDK or synthesize an action. Verifier correctness and trajectory eligibility remain
-separate, and no diagnostic result is admitted to a dataset.
+The v5 diagnostic recognized recovery only when the latest user message's final independent content
+block exactly equaled the canonical feedback. Its real run exercised one recovery but still produced
+a second content-only stop: the Stop-hook receipt proved that recovery occurred, but the effective
+agent message shape remained an unreliable policy boundary. It made 14 accepted read/shell calls,
+no patch, no `finish`, and no trajectory.
+
+`scripts/run_cva6_hwe_openhands_tool_choice_diagnostic.py` now freezes the distinct v6 diagnostic.
+Ordinary turns remain `auto`; after the Stop hook atomically writes its private, validated recovery
+receipt, the next request selects the concrete `finish` function. Missing, altered, unsafe, or
+out-of-budget receipts fail closed. The run binds the sealed v5 failure and passes only with one
+recovery plus broker-authoritative typed `finish`. It does not monkeypatch the SDK or synthesize an
+action. Verifier correctness and trajectory eligibility remain separate, and no diagnostic result
+is admitted to a dataset.
 
 ## Five-task HWE collection pilot
 

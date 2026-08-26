@@ -230,6 +230,13 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     from .hwe_tool_choice import RecoveryForcedFinishLLM
 
                     llm_type = RecoveryForcedFinishLLM
+                elif settings.tool_choice_policy == "recovery_state_forced_finish_v6":
+                    from .hwe_tool_choice import RecoveryStateForcedFinishLLM
+
+                    llm_type = RecoveryStateForcedFinishLLM
+                llm_options: dict[str, Any] = {}
+                if settings.tool_choice_policy == "recovery_state_forced_finish_v6":
+                    llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
                     model=settings.model_id,
                     base_url=os.environ[settings.base_url_env],
@@ -255,6 +262,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "supports_vision": False,
                         "thinking_mode": "none",
                     },
+                    **llm_options,
                 )
                 failure_stage = "mcp_configuration"
                 server = MCPServer(
@@ -714,6 +722,7 @@ def _identity(
         "required": "v3",
         "recovery_forced_finish": "v4",
         "recovery_forced_finish_v5": "v5",
+        "recovery_state_forced_finish_v6": "v6",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -745,6 +754,8 @@ def _identity(
             else "repository_action_state_machine_recovery_forced_finish_v4"
             if settings.tool_choice_policy == "recovery_forced_finish"
             else "repository_action_state_machine_recovery_forced_finish_merged_v5"
+            if settings.tool_choice_policy == "recovery_forced_finish_v5"
+            else "repository_action_state_machine_recovery_state_forced_finish_v6"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,

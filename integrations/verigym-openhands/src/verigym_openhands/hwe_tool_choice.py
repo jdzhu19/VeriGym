@@ -1,8 +1,9 @@
-"""OpenHands LLM policy that requires one native tool call on every HWE turn."""
+"""OpenHands LLM policies for bounded native HWE tool selection."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from openhands.sdk.llm import (  # type: ignore[import-not-found]
@@ -19,9 +20,11 @@ from openhands.sdk.llm.streaming import (  # type: ignore[import-not-found]
 from openhands.sdk.tool import ToolDefinition  # type: ignore[import-not-found]
 
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
+from .hwe_stop_hook import read_recovery_count
 
 OPENHANDS_HWE_TOOL_CHOICE_REQUIRED = "required"
 OPENHANDS_HWE_RECOVERY_FORCED_FINISH = "recovery_forced_finish"
+OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH = "recovery_state_forced_finish_v6"
 
 
 def _required_tool_choice_kwargs(
@@ -148,9 +151,73 @@ class RecoveryForcedFinishLLM(LLM):  # type: ignore[misc]
         )
 
 
+def _recovery_state_finish_kwargs(
+    recovery_state_path: Path,
+    tools: Sequence[ToolDefinition] | None,
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Force finish only after validating the Stop hook's private recovery receipt."""
+
+    if "tool_choice" in kwargs:
+        raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
+    if read_recovery_count(recovery_state_path) == 0:
+        return kwargs
+    finish_tools = [tool for tool in tools or [] if tool.name == "finish"]
+    if len(finish_tools) != 1:
+        raise ValueError("OpenHands HWE recovery requires exactly one finish tool")
+    return {
+        **kwargs,
+        "tool_choice": {"type": "function", "function": {"name": "finish"}},
+    }
+
+
+class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+    """Bind recovery tool choice to the Stop hook's validated private state receipt."""
+
+    recovery_state_path: Path
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        return super().completion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **_recovery_state_finish_kwargs(self.recovery_state_path, tools, kwargs),
+        )
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        return await super().acompletion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **_recovery_state_finish_kwargs(self.recovery_state_path, tools, kwargs),
+        )
+
+
 __all__ = [
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
     "OPENHANDS_HWE_RECOVERY_FORCED_FINISH",
+    "OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH",
     "RecoveryForcedFinishLLM",
+    "RecoveryStateForcedFinishLLM",
     "RequiredToolChoiceLLM",
 ]

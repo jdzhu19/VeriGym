@@ -143,6 +143,7 @@ def resolve_hwe_settings(
         "required",
         "recovery_forced_finish",
         "recovery_forced_finish_v5",
+        "recovery_state_forced_finish_v6",
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
