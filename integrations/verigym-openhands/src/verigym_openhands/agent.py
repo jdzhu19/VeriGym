@@ -42,6 +42,15 @@ from verigym.protocols.repository_action import repository_tool_definitions
 
 from ._version import __version__
 from .config import OpenHandsSettings, openhands_settings
+from .trajectory import (
+    OpenHandsTrajectoryError,
+    OpenHandsTrajectoryInfrastructureError,
+    build_openhands_training_trajectory,
+    repository_broker_receipts,
+    set_openhands_verifier_result,
+    snapshot_openhands_events,
+    snapshot_openhands_tools,
+)
 
 
 class OpenHandsRepositoryAgentAdapter(AgentAdapter):
@@ -72,6 +81,8 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
             "runtime_mcp_tools",
             "repository_action.v2",
             "single_external_episode",
+            "verifier_gated_training_trajectory",
+            "exact_tool_schema_capture",
         ],
     )
 
@@ -82,6 +93,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
         self._prompt: str | None = None
         self._launched = False
         self._artifact_root: Path | None = None
+        self._pending_training_trajectory: dict[str, Any] | None = None
 
     def start(self, context: AgentContext) -> None:
         bridge = context.external_bridge
@@ -107,6 +119,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
         self._prompt = prompt
         self._launched = False
         self._artifact_root = bridge.artifact_root
+        self._pending_training_trajectory = None
 
     def act(self, observation: Observation) -> AgentAction:
         del observation
@@ -115,11 +128,11 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
         self._launched = True
         context, bridge, settings, prompt = self._configured()
         try:
-            import openhands.sdk as openhands  # type: ignore[import-not-found]
-            from openhands.sdk.conversation import (  # type: ignore[import-not-found]
+            import openhands.sdk as openhands
+            from openhands.sdk.conversation import (
                 get_agent_final_response,
             )
-            from openhands.sdk.mcp import MCPServer  # type: ignore[import-not-found]
+            from openhands.sdk.mcp import MCPServer
         except ImportError as exc:
             raise _termination("sdk_unavailable", "OpenHands SDK 1.42.1 is unavailable") from exc
         if openhands.__version__ != "1.42.1":
@@ -128,6 +141,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
         started = time.monotonic()
         event_count = 0
         final_response = ""
+        training_trajectory: dict[str, Any] | None = None
         try:
             with tempfile.TemporaryDirectory(prefix="openhands-", dir=broker_root) as raw:
                 control = Path(raw)
@@ -139,6 +153,8 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                     bridge=bridge,
                     socket_path=control / "b" / "mcp.sock",
                     public_test_ids=_public_test_ids(context),
+                    capture_training_transcript=settings.capture_training_transcript,
+                    campaign_role=settings.campaign_role,
                 )
                 llm = openhands.LLM(
                     model=settings.model_id,
@@ -157,7 +173,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                         "LANG=C.UTF-8",
                         sys.executable,
                         "-m",
-                        "verigym.protocols.repository_mcp_stdio",
+                        "verigym_openhands.repository_mcp_stdio",
                         "--socket",
                         str(broker.socket_path),
                     ],
@@ -171,7 +187,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                     filter_tools_regex="^(?:" + "|".join(map(re.escape, allowed)) + ")$",
                     system_prompt=_system_prompt(),
                 )
-                conversation = openhands.Conversation(
+                conversation: Any = openhands.Conversation(
                     agent=agent,
                     workspace=workspace,
                     persistence_dir=persistence,
@@ -186,7 +202,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                 broker.start()
                 try:
                     conversation.send_message(prompt)
-                    if sorted(agent.tools_map) != sorted(allowed):
+                    if sorted(conversation.agent.tools_map) != sorted(allowed):
                         raise RuntimeError(
                             "OpenHands exposed tools outside the repository registry"
                         )
@@ -195,6 +211,16 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                     )
                     event_count = len(conversation.state.events)
                     final_response = get_agent_final_response(conversation.state.events)
+                    event_snapshots = (
+                        snapshot_openhands_events(conversation.state.events)
+                        if settings.capture_training_transcript
+                        else []
+                    )
+                    effective_tools = (
+                        snapshot_openhands_tools(list(conversation.agent.tools_map.values()))
+                        if settings.capture_training_transcript
+                        else []
+                    )
                 finally:
                     try:
                         conversation.close()
@@ -203,6 +229,30 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                 broker_stats = broker.stats()
                 if not broker_stats.finished:
                     raise RuntimeError("OpenHands did not terminate through the broker finish tool")
+                if settings.capture_training_transcript:
+                    try:
+                        training_trajectory = build_openhands_training_trajectory(
+                            task_id=context.task.id,
+                            provider="openai-compatible",
+                            model_id=settings.model_id,
+                            configuration_fingerprint=settings.configuration_fingerprint,
+                            event_snapshots=event_snapshots,
+                            tools=effective_tools,
+                            broker_turns=repository_broker_receipts(broker.training_turns()),
+                            tool_contract="repository_action.v2",
+                        )
+                    except OpenHandsTrajectoryInfrastructureError as exc:
+                        raise _termination(
+                            "training_trajectory_causal_mismatch",
+                            str(exc),
+                            infrastructure=True,
+                        ) from exc
+                    except OpenHandsTrajectoryError as exc:
+                        raise _termination(
+                            "training_trajectory_ineligible",
+                            str(exc),
+                            infrastructure=False,
+                        ) from exc
         except AgentTerminationError:
             raise
         except Exception as exc:
@@ -210,6 +260,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                 "sdk_episode", f"OpenHands episode failed: {type(exc).__name__}"
             ) from exc
         duration = time.monotonic() - started
+        self._pending_training_trajectory = training_trajectory
         identity = _identity(settings, broker_stats)
         accounting = ExternalAgentAccounting(
             process_wall_time_s=duration,
@@ -232,6 +283,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
             duration_s=duration,
             event_count=event_count,
             final_response=final_response,
+            training_trajectory_captured=training_trajectory is not None,
         )
         return FinalSubmissionAction(
             message="OpenHands broker episode finished; submit the candidate to VeriGym."
@@ -252,8 +304,24 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                 "development_pilot": self._settings is not None
                 and self._settings.campaign_role == "development",
                 "benchmark_score_claimed": False,
+                "training_trajectory_captured": self._pending_training_trajectory is not None,
+                "training_trajectory_exported": False,
             }
         )
+        if self._pending_training_trajectory is not None and result.resolved:
+            trajectory = set_openhands_verifier_result(
+                self._pending_training_trajectory,
+                verifier_resolved=True,
+            )
+            _atomic_json(self._artifact_root / "training-trajectory.json", trajectory)
+            current.update(
+                {
+                    "training_trajectory_exported": True,
+                    "training_trajectory_hash": trajectory["transcript_hash"],
+                    "message_content_persisted": True,
+                    "private_reasoning_persisted": False,
+                }
+            )
         _atomic_json(path, current)
 
     def _configured(self) -> tuple[AgentContext, ExternalAgentBridge, OpenHandsSettings, str]:
@@ -373,6 +441,7 @@ def _write_evidence(
     duration_s: float,
     event_count: int,
     final_response: str,
+    training_trajectory_captured: bool,
 ) -> None:
     _atomic_json(root / "configuration.json", settings.safe_dict())
     _atomic_json(root / "broker.json", broker.__dict__)
@@ -395,6 +464,8 @@ def _write_evidence(
             "plugins_loaded": False,
             "ordinary_hidden_verifier_pending": True,
             "benchmark_score_claimed": False,
+            "training_trajectory_captured": training_trajectory_captured,
+            "training_trajectory_exported": False,
         },
     )
 
@@ -405,14 +476,16 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     atomic_dump_json(path, value)
 
 
-def _termination(category: str, message: str) -> AgentTerminationError:
+def _termination(
+    category: str, message: str, *, infrastructure: bool = True
+) -> AgentTerminationError:
     return AgentTerminationError(
-        TerminationReason.MODEL_ERROR,
+        TerminationReason.MODEL_ERROR if infrastructure else TerminationReason.POLICY_VIOLATION,
         EpisodeFailure(
             kind="model",
             category=category,
             message=message[:2000],
-            infrastructure=True,
+            infrastructure=infrastructure,
         ),
     )
 

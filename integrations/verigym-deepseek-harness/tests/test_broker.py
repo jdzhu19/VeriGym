@@ -58,6 +58,16 @@ def test_broker_accepts_one_typed_finish_and_closes_the_episode(tmp_path: Path) 
         assert broker.events()[0].action == "finish"
         assert broker.call_ids() == ("call-1",)
         assert broker.stats().finished is True
+        terminal = broker._dispatch(  # noqa: SLF001
+            {"operation": "verigym_hwe_terminal_status_v1"}
+        )
+        assert terminal == {
+            "ok": True,
+            "finished": True,
+            "policy_failed": False,
+            "infrastructure_failed": False,
+        }
+        assert broker.stats().tool_calls == 1
         rejected = broker._dispatch(  # noqa: SLF001
             {"id": "call-2", "name": "inspect_diff", "arguments": {}}
         )

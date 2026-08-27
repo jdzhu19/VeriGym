@@ -105,6 +105,85 @@ that counterfactual next-action validation was not run, remain primary-ineligibl
 mixed into the frozen primary dataset formats. Because the Codex app-server owns live provider
 history, the exec-server broker does not claim or attempt retroactive rollout-history mutation.
 
+### OpenHands SDK trajectory boundary
+
+The optional `verigym-openhands` integration runs OpenHands SDK 1.42.1 as a trusted host control
+plane with an empty private workspace. Default OpenHands terminal, file-editor, browser, plugin,
+skill, client-tool, condenser, and repository-mount surfaces are disabled. The SDK receives only
+one owner-controlled MCP server and never receives the Docker socket, hidden verifier assets,
+reference solutions, host home, or another run's workspace. Ordinary repository actions and the
+optional HWE native-shell actions remain broker-owned. HWE shell commands execute only in the
+task-keyed networkless agent container through the existing DeepSeek HWE broker; they are not host
+shell commands.
+
+The separately versioned required-tool HWE profile subclasses the public OpenHands `LLM`
+completion interface and supplies `tool_choice=required` to every synchronous and asynchronous
+chat request. It does not modify the installed SDK or accept content-only completion. The profile
+fails closed if the policy is weakened, if the exact six-tool contract is empty, or if a
+content-only Stop-hook recovery is still needed. The broker-observed typed `finish` remains the
+only completion authority.
+
+The current validated-recovery-state profile leaves ordinary turns at the SDK/provider default
+`auto`. It selects the concrete `finish` function only after validating the private mode-0600 state
+receipt atomically written by the trusted Stop hook for a content-only completion attempt. The
+model cannot access that host control path. Before OpenHands dispatch, the local LLM subclass also
+requires the provider response to contain exactly one `finish` call and records content-free request
+and validation counters. A missing, altered, unsafe, or out-of-budget receipt, a caller-supplied
+tool choice, a missing or duplicate `finish` schema, a non-finish provider response, an interrupted
+run, an unexpected exception wrapper, or any later broker mismatch fails closed. The adapter walks
+only the bounded local `__cause__`/`__context__` chain needed to recognize its own controlled
+protocol violation; it never persists raw exception text or model content. The provider still emits
+the typed call; the adapter does not synthesize an action or infer completion from arbitrary
+assistant text. Earlier message-shape-bound v4/v5, unvalidated state-bound v6, and outer-exception-
+only v7 profiles remain separately versioned historical diagnostics.
+
+The separately versioned v9 profile keeps every ordinary action on the historical Chat
+Completions route. Only the private-receipt-bound recovery request uses the provider's Responses
+API, with the same complete message history and exact six-tool contract. Because OpenHands SDK
+1.42.1 normalizes Responses tool choice back to `auto`, the local subclass rebinds only its own
+named `finish` choice after the SDK serializer returns; it does not modify the installed SDK,
+remove tools, synthesize a call, or expose recovery state. The response must still contain exactly
+one provider-emitted `finish` call before broker dispatch. Responses thinking is explicitly
+disabled, storage is disabled, raw request and response bodies are not persisted, and all existing
+receipt, counter, exception-chain, interruption, verifier, and trajectory gates remain in force.
+For the text-only HWE contract, the adapter additionally normalizes the SDK's multiple adjacent
+`function_call_output` items for one tool message into one output with byte-preserving text
+concatenation. It rejects non-text output, missing call IDs, and reuse of a closed call ID. The
+diagnostic records the normalization count and requires a nonzero count before claiming the
+full-history regression passed.
+The subsequent response-shape diagnostic stores only bounded raw output types, exact names from
+the already-public six-tool contract, raw/converted item counts, and text-part counts. Unexpected
+names are replaced by their SHA-256 digest. It never stores response text, arguments, reasoning,
+provider response IDs, raw bodies, or credentials.
+
+Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
+one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2
+collector additionally permits one frozen same-session format recovery: when OpenHands attempts
+to stop before the broker has accepted typed `finish`, a trusted Stop hook reads only the broker's
+content-free terminal state over its private mode-0600 Unix socket, denies that stop once, and
+injects one canonical user feedback message. A private mode-0600 state file enforces the recovery
+budget; a second premature stop is allowed to unwind and then fails the broker-owned finish gate.
+No workspace reset or whole-episode retry occurs. The v2 trajectory hash binds the premature
+assistant text, canonical feedback, hook receipt, and recovery count; downstream SFT masks that
+history as input and supervises only complete later assistant tool decisions.
+
+Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
+events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
+event and broker-owned canonical arguments or compact-observation hash. The exact effective
+OpenHands tool schemas, including SDK-added metadata fields, are retained so downstream token
+receipts bind the actual model-visible contract. Raw hook output, raw provider events, uncompacted
+observations, private reasoning, credentials, host paths, hidden assets, and reference solutions
+are not exported.
+
+Message content remains in memory until the ordinary verifier completes. A public training
+trajectory is written only for a resolved, infrastructure-valid episode; all other episodes remain
+SFT-ineligible. Downstream decision export supervises one complete assistant tool decision at a
+time, passes the same tools to the frozen Qwen chat template, fails above 65,536 tokens without
+truncation, and seals input-ID and loss-mask hashes. The residual trusted computing base adds
+OpenHands SDK, its model client dependencies, the reviewed MCP adapter and broker, Docker daemon,
+and host kernel. The model endpoint remains external, and Docker does not protect against a
+compromised trusted host control plane.
+
 ### DeepSeek Harness HWE controller boundary
 
 The opt-in `verigym-deepseek-harness` integration runs the pinned official Harness source in a

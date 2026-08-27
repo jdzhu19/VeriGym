@@ -82,6 +82,7 @@ _POLICIES = {
         entry_markers=(
             "[verigym.agents]",
             "openhands-repository-agent = verigym_openhands:OpenHandsRepositoryAgentAdapter",
+            "openhands-hwe-agent = verigym_openhands.hwe_agent:OpenHandsHweAgentAdapter",
         ),
         forbidden_member_suffixes=frozenset(
             {".db", ".jsonl", ".patch", ".pem", ".sqlite", ".trace"}

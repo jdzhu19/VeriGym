@@ -147,13 +147,35 @@ PR2170 example. It requires a frozen training split and source-lock v2 source th
 is an explicit four-24-GiB-GPU smoke resource envelope; the workflow itself still delegates turn
 count to the task budget and sets no per-action token override.
 
-On the current cluster, run GPU service/training and GPU-coupled rollouts directly in the existing
-`gpu01` allocation; run CPU-only controller/verifier work in the existing `bmcpu07` allocation.
-Both nodes provide Docker. The login VM is only a control plane and image relay. The trusted
-controller container uses the node Docker socket to launch digest-locked sibling benchmark
-sandboxes; it never uses privileged Docker-in-Docker. For schedulers that truly expose Docker only
-on a login node, the older split native fallback remains documented in
-`../../docs/online_training.md`.
+On the current LSF cluster, do not retain an interactive GPU `bash` allocation. Submit each bounded
+GPU qualification, training run, or GPU-coupled rollout as its own non-interactive payload and let
+the allocation exit when that payload returns. `scripts/submit_ephemeral_lsf_gpu_job.py` constructs
+an argv-only `bsub`, rejects shell payloads and interactive flags, requests job-exclusive GPUs on
+one host, and writes a secret-free submission receipt beside the scheduler logs. For example:
+
+```bash
+PYTHONPATH=src:integrations/verigym-training-reference/src \
+python scripts/submit_ephemeral_lsf_gpu_job.py \
+  --job-name hwe-sft-probe --gpus 4 --cpus 16 --wall-minutes 120 \
+  --working-directory /hpc/home/connect.jzhu484/agent/VeriGym \
+  --output-directory /hpc/home/connect.jzhu484/agent/experiments/hwe-sft-probe-001 \
+  -- python -m verigym_training_reference.hwe_decision_sft_64k_entry <bound arguments>
+```
+
+Do not put credentials in payload arguments: LSF owns job command metadata even though VeriGym's
+receipt intentionally does not persist the arguments. CPU-only controller/verifier work remains a
+separate scheduler payload. The login VM is only a control plane and image relay. The trusted
+controller container uses the compute-node Docker socket to launch digest-locked sibling benchmark
+sandboxes; it never uses privileged Docker-in-Docker. For schedulers that expose Docker only on a
+login node, the older split native fallback remains documented in `../../docs/online_training.md`.
+
+The exact 64K HWE loader declares its current batch-one objective as
+`decision_balanced_target_token_mean_batch1_v1`: each decision is one optimizer batch and veRL
+normalizes over that decision's supervised target tokens. This is deliberately not described as
+full-trajectory maximum likelihood. OpenHands SDK decision datasets have their own explicit
+`VeriGymOpenHandsDecisionSft64kTrainer` dispatcher and preserve the SDK-visible tool schemas through
+the same parquet and Qwen template boundary. This dispatcher remains loader-qualification-only
+until a matched full-trajectory-versus-decision objective is frozen.
 
 ## Verified multi-turn SFT mainline
 

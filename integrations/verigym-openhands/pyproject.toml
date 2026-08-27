@@ -11,8 +11,12 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = ["openhands-sdk==1.42.1", "verigym==0.1.0"]
 
+[project.optional-dependencies]
+hwe = ["verigym-deepseek-harness==0.2.0"]
+
 [project.entry-points."verigym.agents"]
 openhands-repository-agent = "verigym_openhands:OpenHandsRepositoryAgentAdapter"
+openhands-hwe-agent = "verigym_openhands.hwe_agent:OpenHandsHweAgentAdapter"
 
 [tool.setuptools.packages.find]
 where = ["src"]

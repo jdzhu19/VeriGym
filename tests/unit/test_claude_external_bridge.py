@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from verigym.core.external_agent import RuntimeExternalAgentBridge
+from verigym.core.external_agent import _IDENTITY_EVENT_TYPES, RuntimeExternalAgentBridge
 from verigym.core.orchestrator import (
     _external_agent_artifact_namespace,
     _external_agent_isolation_label,
@@ -98,3 +98,4 @@ def test_external_agent_artifacts_and_isolation_are_role_aware() -> None:
         )
         == "host_deepseek_harness_control_plane_runtime_tools_delegated"
     )
+    assert "openhands_sdk_identity_observed" in _IDENTITY_EVENT_TYPES

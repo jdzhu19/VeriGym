@@ -16,9 +16,12 @@ from rllm.trainer.sft.spec import SFTSpec  # type: ignore[import-not-found]
 from rllm.trainer.sft.verl_backend import VerlSFTBackend  # type: ignore[import-not-found]
 
 from .hwe_decision_sft_64k import (
+    DECISION_BALANCED_OBJECTIVE,
     V4_EXPECTED_RECORDS,
     V4_MAX_LENGTH,
+    OpenHandsToolAwareParquetInputs,
     ToolAwareParquetInputs,
+    load_openhands_tool_aware_dataset,
     load_tool_aware_v4_dataset,
     write_tool_aware_parquet,
 )
@@ -38,7 +41,13 @@ class VeriGymHweDecisionSft64kBackend(VerlSFTBackend):  # type: ignore[misc]
 
     name = "verigym_hwe_decision_sft_64k_qualification"
 
-    def __init__(self, spec: SFTSpec, *, inputs: ToolAwareParquetInputs, offload: bool) -> None:
+    def __init__(
+        self,
+        spec: SFTSpec,
+        *,
+        inputs: ToolAwareParquetInputs | OpenHandsToolAwareParquetInputs,
+        offload: bool,
+    ) -> None:
         super().__init__(spec)
         self.inputs = inputs
         self.offload = offload
@@ -97,6 +106,7 @@ class VeriGymHweDecisionSft64kBackend(VerlSFTBackend):  # type: ignore[misc]
                         "name": CUSTOM_DATASET_NAME,
                     },
                     "rllm": {"tokenize_and_mask_method": "tool_aware_exact_final_decision"},
+                    "verigym_objective_id": DECISION_BALANCED_OBJECTIVE,
                 },
                 "engine": {
                     "strategy": "fsdp2",
@@ -236,6 +246,85 @@ class VeriGymHweDecisionSft64kTrainer:
         raise RuntimeError("64K qualification dispatcher never starts training")
 
 
+class VeriGymOpenHandsDecisionSft64kBackend(VeriGymHweDecisionSft64kBackend):
+    """Prepare exact OpenHands SDK decision rows for the frozen veRL loader."""
+
+    name = "verigym_openhands_decision_sft_64k_loader_qualification"
+
+    def validate_spec(self) -> None:
+        if not isinstance(self.inputs, OpenHandsToolAwareParquetInputs):
+            raise SFTConfigError("OpenHands loader requires an OpenHands decision dataset")
+        rows = self.spec.train_dataset.get_data()
+        expected_count = self.inputs.manifest["record_count"]
+        if len(rows) != expected_count or tuple(rows) != self.inputs.rows:
+            raise SFTConfigError("OpenHands loader requires every ordered exact decision row")
+        if self.spec.val_dataset is not None:
+            raise SFTConfigError("OpenHands loader qualification does not accept validation data")
+        if (
+            self.spec.max_length != V4_MAX_LENGTH
+            or self.spec.batch_size != 1
+            or self.spec.lora_rank != 8
+            or self.spec.epochs != 1
+            or any(
+                row.get("sft_objective") != DECISION_BALANCED_OBJECTIVE for row in self.inputs.rows
+            )
+        ):
+            raise SFTConfigError("OpenHands loader differs from its exact batch-one objective")
+
+
+class VeriGymOpenHandsDecisionSft64kTrainer:
+    """Explicit rLLM dispatcher for OpenHands rows; it never starts training."""
+
+    def __init__(
+        self,
+        *,
+        dataset_root: Path,
+        model_root: Path,
+        scratch_root: Path,
+        offload: bool = False,
+    ) -> None:
+        inputs = load_openhands_tool_aware_dataset(dataset_root)
+        dataset = Dataset(data=list(inputs.rows), name="verigym_openhands_decision_sft_64k_v1")
+        scratch = _new_named_scratch_directory(
+            scratch_root,
+            name="openhands-offload" if offload else "openhands-primary",
+        )
+        spec = SFTSpec(
+            model=str(model_root.resolve(strict=True)),
+            train_dataset=dataset,
+            val_dataset=None,
+            lr=1e-4,
+            lr_schedule="constant",
+            epochs=1,
+            batch_size=1,
+            max_length=V4_MAX_LENGTH,
+            tokenize_method="hf_template",
+            lora_rank=8,
+            save_freq=-1,
+            val_freq=-1,
+            project="verigym-hwe-loader-qualification",
+            experiment="openhands-decision-sft-64k-v1",
+            output_dir=str(scratch),
+        )
+        self.backend = VeriGymOpenHandsDecisionSft64kBackend(
+            spec,
+            inputs=inputs,
+            offload=offload,
+        )
+
+    def prepare(self) -> VeriGymOpenHandsDecisionSft64kBackend:
+        self.backend.validate_spec()
+        self.backend.build_config()
+        self.backend.prepare_data()
+        return self.backend
+
+    def train(self) -> None:
+        raise RuntimeError(
+            "OpenHands loader qualification is not a formal training recipe; "
+            "freeze an A/B objective first"
+        )
+
+
 def assert_qualification_config(config: Any, *, offload: bool) -> None:
     """Verify the resolved config rather than trusting requested overrides."""
 
@@ -259,6 +348,7 @@ def assert_qualification_config(config: Any, *, offload: bool) -> None:
         "data.num_workers": 0,
         "data.custom_cls.path": CUSTOM_DATASET_PATH,
         "data.custom_cls.name": CUSTOM_DATASET_NAME,
+        "data.verigym_objective_id": DECISION_BALANCED_OBJECTIVE,
         "engine.strategy": "fsdp2",
         "engine.model_dtype": "bf16",
         "engine.dtype": "bfloat16",
@@ -356,6 +446,17 @@ def _new_scratch_directory(root: Path, *, offload: bool) -> Path:
     return destination
 
 
+def _new_named_scratch_directory(root: Path, *, name: str) -> Path:
+    if root.is_symlink():
+        raise ValueError("64K loader scratch root cannot be a symlink")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = root / name
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("64K loader scratch profile already exists")
+    destination.mkdir(mode=0o700)
+    return destination
+
+
 __all__ = [
     "COMPATIBILITY_MODULE",
     "CUSTOM_DATASET_NAME",
@@ -367,6 +468,8 @@ __all__ = [
     "VERL_VERSION",
     "VeriGymHweDecisionSft64kBackend",
     "VeriGymHweDecisionSft64kTrainer",
+    "VeriGymOpenHandsDecisionSft64kBackend",
+    "VeriGymOpenHandsDecisionSft64kTrainer",
     "assert_qualification_config",
     "validate_qualification_runtime",
 ]
