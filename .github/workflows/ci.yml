@@ -110,7 +110,6 @@ jobs:
     env:
       PIP_CONSTRAINT: >-
         ${{ github.workspace }}/configs/runtime/openhands_sdk_1.42.1_constraints.txt
-      VERIGYM_TIKTOKEN_OVERLAY: ${{ runner.temp }}/verigym-tiktoken-0.7-overlay
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -119,6 +118,7 @@ jobs:
           cache: pip
       - name: Install the frozen credential-free test closure
         run: |
+          tiktoken_overlay="$RUNNER_TEMP/verigym-tiktoken-0.7-overlay"
           python -m pip install -e '.[dev,openai-compatible]'
           python -m pip install -e integrations/verigym-deepseek-harness
           python -m pip install -e 'integrations/verigym-openhands[hwe]'
@@ -133,9 +133,9 @@ jobs:
           print("frozen OpenHands base dependency closure verified")
           PY
           env -u PIP_CONSTRAINT python -m pip install \
-            --no-compile --no-deps --target "$VERIGYM_TIKTOKEN_OVERLAY" \
+            --no-compile --no-deps --target "$tiktoken_overlay" \
             'tiktoken==0.7.0'
-          PYTHONPATH="$VERIGYM_TIKTOKEN_OVERLAY" python - <<'PY'
+          PYTHONPATH="$tiktoken_overlay" python - <<'PY'
           from importlib.metadata import version
           from pathlib import Path
 
@@ -146,9 +146,8 @@ jobs:
           assert "verigym-tiktoken-0.7-overlay" in overlay.parts
           print("frozen HWE exact-token overlay verified")
           PY
+          printf 'PYTHONPATH=%s\n' "$tiktoken_overlay" >> "$GITHUB_ENV"
       - name: Lint, type, and run zero-model tests
-        env:
-          PYTHONPATH: ${{ runner.temp }}/verigym-tiktoken-0.7-overlay
         run: |
           ruff format --check integrations/verigym-openhands
           ruff check integrations/verigym-openhands
