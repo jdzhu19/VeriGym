@@ -358,10 +358,11 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
         }
     )
     responses_identity = _identity(responses_state, tool_calls=18, patches=1)
-    assert responses_identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v9"
+    assert responses_identity.harness_id == "openhands-sdk-1.42.1-hwe-native-shell-v10"
     assert (
         responses_identity.tool_use_policy
-        == "repository_action_state_machine_validated_responses_recovery_finish_v9"
+        == "repository_action_state_machine_validated_responses_recovery_"
+        "masked_invalid_arguments_v10"
     )
 
 

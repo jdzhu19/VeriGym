@@ -20,6 +20,9 @@ from verigym_openhands._recovery import (
     OPENHANDS_FORMAT_RECOVERY_REASON_SHA256,
 )
 from verigym_openhands.trajectory import (
+    OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
+    OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
     OPENHANDS_RECOVERY_DATASET_FORMAT,
     OPENHANDS_RECOVERY_DECISION_FORMAT,
     OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
@@ -132,7 +135,9 @@ def _action(
     }
 
 
-def _observation(call_id: str, name: str, content: str) -> dict[str, Any]:
+def _observation(
+    call_id: str, name: str, content: str, *, is_error: bool = False
+) -> dict[str, Any]:
     message = _message("tool", content)
     message["content"] = [
         {"type": "text", "text": f"[Tool '{name}' executed.]"},
@@ -150,6 +155,7 @@ def _observation(call_id: str, name: str, content: str) -> dict[str, Any]:
         "tool_call_id": call_id,
         "action_id": f"event-{call_id}",
         "extended_content_present": False,
+        "observation_error": is_error,
     }
 
 
@@ -506,10 +512,11 @@ def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> 
     assert trajectory["assistant_decisions"][0]["tool_action_count"] == 2
 
     resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
     records = materialize_openhands_decisions(
         resolved,
         binding=_binding(),
-        tokenizer=_tokenizer(tmp_path),
+        tokenizer=tokenizer,
     )
     assert len(records) == 2
     assert records[0]["tool_action_count"] == 2
@@ -716,3 +723,113 @@ def test_hwe_native_shell_openhands_metadata_binds_to_broker() -> None:
     assert trajectory["assistant_decisions"][0]["action_names"] == ["shell"]
     arguments = trajectory["messages"][2]["tool_calls"][0]["function"]["arguments"]
     assert arguments.endswith('"summary":"locate CSR"}')
+
+
+def test_hwe_recoverable_invalid_arguments_are_context_only(tmp_path: Path) -> None:
+    rejected_observation = "invalid_arguments: shell environment assignment is forbidden"
+    shell_observation = "exit_code=0\ncore/decoder.sv"
+    finish_observation = "Candidate diff inspected."
+    snapshots = [
+        {
+            "event_type": "SystemPromptEvent",
+            "event_id": "system",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("system", "Bounded HWE repair system."),
+            "dynamic_context_present": False,
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "user",
+            "parent_id": "system",
+            "source": "user",
+            "message": _message("user", "Repair TASK.md."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action(
+            "call-rejected",
+            "shell",
+            {"command": "BUILD=1 make", "cwd": ".", "summary": "try build"},
+        ),
+        _observation(
+            "call-rejected",
+            "shell",
+            rejected_observation,
+            is_error=True,
+        ),
+        _action(
+            "call-shell",
+            "shell",
+            {"command": "rg -n zext.h core/decoder.sv", "cwd": ".", "summary": "inspect"},
+        ),
+        _observation("call-shell", "shell", shell_observation),
+        _action("call-finish", "finish", {"summary": "validated candidate"}),
+        _observation("call-finish", "finish", finish_observation),
+        _stop_hook(blocked=False),
+    ]
+    events = (
+        HweNormalizedEvent(
+            sequence=0,
+            action="shell",
+            arguments={"command": "rg -n zext.h core/decoder.sv", "cwd": "."},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(shell_observation.encode()).hexdigest(),
+        ),
+        HweNormalizedEvent(
+            sequence=1,
+            action="finish",
+            arguments={"summary": "validated candidate"},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(finish_observation.encode()).hexdigest(),
+        ),
+    )
+    tools = copy.deepcopy(deepseek_harness_tool_definitions())
+    for tool in tools:
+        if tool["function"]["name"] != "finish":
+            tool["function"]["parameters"]["properties"]["summary"] = {
+                "default": None,
+                "type": ["string", "null"],
+            }
+
+    trajectory = build_openhands_training_trajectory(
+        task_id="hwe-bench/repo-repair-v1/task-masked",
+        provider="openai-compatible",
+        model_id="local/Qwen3.5-9B",
+        configuration_fingerprint=content_hash({"configuration": "hwe-masked"}),
+        event_snapshots=snapshots,
+        tools=tools,
+        broker_turns=hwe_broker_receipts(events, ("call-shell", "call-finish")),
+        tool_contract="hwe_native_shell_v2",
+        recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+        retain_recoverable_invalid_arguments=True,
+    )
+
+    assert trajectory["format_id"] == OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT
+    assert trajectory["assistant_decision_count"] == 3
+    assert trajectory["supervised_decision_count"] == 2
+    assert trajectory["masked_policy_error_decision_count"] == 1
+    assert trajectory["assistant_decisions"][0]["supervised_target"] is False
+    assert trajectory["assistant_decisions"][1]["supervised_target"] is True
+    assert trajectory["messages"][3]["role"] == "tool"
+
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=tokenizer,
+    )
+    assert len(records) == 2
+    assert all(
+        record["format_id"] == OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT for record in records
+    )
+    assert records[0]["decision_index"] == 1
+    assert records[0]["input_messages"][2]["tool_calls"][0]["id"] == "call-rejected"
+    output = tmp_path / "masked-dataset"
+    manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    assert manifest["format_id"] == OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT
+    assert manifest["masked_policy_error_decision_count"] == 1

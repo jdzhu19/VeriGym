@@ -515,7 +515,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 "OpenHands HWE broker reported an infrastructure failure",
                 infrastructure=True,
             )
-        if stats.policy_failure is not None or stats.rejected_calls:
+        recoverable_invalid_arguments = (
+            stats.finished
+            and stats.rejected_calls > 0
+            and set(stats.rejection_codes) <= {"invalid_arguments"}
+        )
+        if (stats.policy_failure is not None or stats.rejected_calls) and not (
+            recoverable_invalid_arguments
+        ):
             persist_evidence(
                 trajectory_captured=False,
                 ordinary_hidden_verifier_pending=False,
@@ -557,6 +564,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     broker_turns=hwe_broker_receipts(broker_events, broker_call_ids),
                     tool_contract="hwe_native_shell_v2",
                     recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+                    retain_recoverable_invalid_arguments=recoverable_invalid_arguments,
                 )
             except OpenHandsTrajectoryInfrastructureError as exc:
                 persist_evidence(
@@ -789,7 +797,7 @@ def _identity(
         "recovery_state_forced_finish_v6": "v6",
         "validated_recovery_state_forced_finish_v7": "v7",
         "validated_recovery_state_forced_finish_v8": "v8",
-        "validated_responses_recovery_state_forced_finish_v9": "v9",
+        "validated_responses_recovery_state_forced_finish_v9": "v10",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -828,7 +836,10 @@ def _identity(
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
             else "repository_action_state_machine_validated_recovery_finish_v8"
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v8"
-            else "repository_action_state_machine_validated_responses_recovery_finish_v9"
+            else (
+                "repository_action_state_machine_validated_responses_recovery_"
+                "masked_invalid_arguments_v10"
+            )
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,
@@ -895,6 +906,15 @@ def _write_evidence(
             "recovery_validated_finish_count": recovery_validated_finish_count,
             "recovery_coalesced_output_count": recovery_coalesced_output_count,
             "recovery_response_shape": recovery_response_shape,
+            "recoverable_invalid_arguments": (
+                stats.get("finished") is True
+                and isinstance(stats.get("rejected_calls"), int)
+                and stats.get("rejected_calls", 0) > 0
+                and set(stats.get("rejection_codes", [])) <= {"invalid_arguments"}
+            ),
+            "failed_decisions_retained_as_context": trajectory_captured
+            and stats.get("rejected_calls", 0) > 0,
+            "failed_decisions_supervised": False,
             "same_session_recovery": True,
             "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
