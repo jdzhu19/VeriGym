@@ -20,20 +20,20 @@ from ._recovery import (
 from .hwe_agent import OpenHandsHweAgentAdapter
 
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_v12"
+    "verigym_openhands_hwe_finish_trajectory_qualification_v13"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_report_v12"
+    "verigym_openhands_hwe_finish_trajectory_qualification_report_v13"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = (
-    "openhands-hwe-responses-recovery-finish-diagnostic-v12"
+    "openhands-hwe-finish-trajectory-qualification-v13"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v12"
+    "openhands-deepseek-v4-flash-hwe-finish-trajectory-qualification-v13"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_OPT_IN_ENV = (
-    "VERIGYM_RUN_OPENHANDS_HWE_RESPONSES_RECOVERY_DIAGNOSTIC_V12"
+    "VERIGYM_RUN_OPENHANDS_HWE_FINISH_TRAJECTORY_QUALIFICATION_V13"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY = "deepseek-v4-flash"
@@ -160,8 +160,10 @@ def classify_responses_recovery_diagnostic(
     validated_finish_count: int,
     coalesced_output_count: int,
     failure_category: str | None,
+    ordinary_verifier_resolved: bool,
+    trajectory_exported: bool,
 ) -> tuple[str, bool]:
-    """Require the trusted recovery turn to produce broker-authoritative typed finish."""
+    """Require broker finish, ordinary verifier pass, and an eligible trajectory export."""
 
     if recovery_count not in {0, 1}:
         raise ValueError(
@@ -175,6 +177,17 @@ def classify_responses_recovery_diagnostic(
         raise ValueError("OpenHands coalesced output count is invalid")
     if not infrastructure_valid:
         return "infrastructure_invalid", False
+    if typed_finish_observed and ordinary_verifier_resolved and trajectory_exported:
+        if (
+            recovery_count == 1
+            and forced_request_count == 1
+            and validated_finish_count == 1
+            and coalesced_output_count > 0
+        ):
+            return "responses_recovery_verifier_passed_trajectory_exported", True
+        if recovery_count == 0 and forced_request_count == 0 and validated_finish_count == 0:
+            return "direct_finish_verifier_passed_trajectory_exported", True
+        return "finish_trajectory_export_accounting_mismatch", False
     if (
         typed_finish_observed
         and recovery_count == 1
@@ -182,7 +195,7 @@ def classify_responses_recovery_diagnostic(
         and validated_finish_count == 1
         and coalesced_output_count > 0
     ):
-        return "responses_recovery_finish_regression_passed", True
+        return "responses_recovery_finish_without_eligible_trajectory", False
     if typed_finish_observed:
         if recovery_count == 1 and coalesced_output_count == 0:
             return "responses_recovery_output_coalescing_not_exercised", False

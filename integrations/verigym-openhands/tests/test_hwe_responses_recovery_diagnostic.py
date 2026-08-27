@@ -48,6 +48,8 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
         "validated",
         "coalesced",
         "failure",
+        "resolved",
+        "exported",
         "expected",
     ),
     [
@@ -59,7 +61,9 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
             1,
             1,
             None,
-            ("responses_recovery_finish_regression_passed", True),
+            True,
+            True,
+            ("responses_recovery_verifier_passed_trajectory_exported", True),
         ),
         (
             True,
@@ -69,6 +73,8 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
             0,
             1,
             "openhands_hwe_recovery_tool_choice_violation",
+            False,
+            False,
             ("responses_recovery_finish_response_rejected", False),
         ),
         (
@@ -79,6 +85,8 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
             1,
             0,
             None,
+            False,
+            False,
             ("responses_recovery_output_coalescing_not_exercised", False),
         ),
         (
@@ -89,7 +97,21 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
             0,
             0,
             "runtime",
+            False,
+            False,
             ("infrastructure_invalid", False),
+        ),
+        (
+            True,
+            True,
+            0,
+            0,
+            0,
+            0,
+            None,
+            True,
+            True,
+            ("direct_finish_verifier_passed_trajectory_exported", True),
         ),
     ],
 )
@@ -101,6 +123,8 @@ def test_responses_recovery_requires_broker_typed_finish(
     validated: int,
     coalesced: int,
     failure: str | None,
+    resolved: bool,
+    exported: bool,
     expected: tuple[str, bool],
 ) -> None:
     assert (
@@ -112,6 +136,8 @@ def test_responses_recovery_requires_broker_typed_finish(
             validated_finish_count=validated,
             coalesced_output_count=coalesced,
             failure_category=failure,
+            ordinary_verifier_resolved=resolved,
+            trajectory_exported=exported,
         )
         == expected
     )
