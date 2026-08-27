@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import shlex
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +92,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             "verifier_gated_training_trajectory",
             "decision_sft_64k_export",
             "single_external_episode",
+            "exact_provider_call_budget",
             "same_session_format_recovery",
             "broker_authoritative_typed_finish",
         ],
@@ -209,6 +212,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         llm: Any = None
         recovery_violation_type: type[Exception] | None = None
         recovery_protocol_failure = False
+        provider_budget_failure = False
         failure_stage = "temporary_directory"
         failure_receipt_emitted = False
         try:
@@ -226,7 +230,12 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     private_audit_root=private_root,
                 )
                 failure_stage = "llm_initialization"
-                llm_type: Any = openhands.LLM
+                from .hwe_tool_choice import (
+                    BoundedProviderCallLLM,
+                    ProviderCallBudgetExceeded,
+                )
+
+                llm_type: Any = BoundedProviderCallLLM
                 if settings.tool_choice_policy == "required":
                     from .hwe_tool_choice import RequiredToolChoiceLLM
 
@@ -309,6 +318,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "supports_vision": False,
                         "thinking_mode": "none",
                     },
+                    max_provider_calls=settings.max_iterations,
                     **llm_options,
                 )
                 failure_stage = "mcp_configuration"
@@ -378,12 +388,13 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     conversation.send_message(task_prompt)
                     try:
                         failure_stage = "agent_loop"
-                        asyncio.run(
-                            asyncio.wait_for(
-                                conversation.arun(),
-                                timeout=settings.process_timeout_s,
+                        with _frozen_hook_locale():
+                            asyncio.run(
+                                asyncio.wait_for(
+                                    conversation.arun(),
+                                    timeout=settings.process_timeout_s,
+                                )
                             )
-                        )
                     except Exception as exc:
                         receipt = _sdk_failure_receipt(exc, conversation.state.events)
                         receipt.update(_recovery_choice_counts(llm))
@@ -398,6 +409,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             exc, recovery_violation_type
                         ):
                             recovery_protocol_failure = True
+                        elif _exception_chain_contains(exc, ProviderCallBudgetExceeded):
+                            provider_budget_failure = True
                         else:
                             raise
                     choice_counts = _recovery_choice_counts(llm)
@@ -483,16 +496,29 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 broker.stop()
         stats_value = broker_stats_dict(stats)
         duration_s = time.monotonic() - started
+        try:
+            provider = _provider_accounting_receipt(
+                llm,
+                max_provider_calls=settings.max_iterations,
+            )
+        except OpenHandsTrajectoryInfrastructureError as exc:
+            raise _termination(
+                "openhands_hwe_provider_accounting",
+                str(exc),
+                infrastructure=True,
+            ) from exc
         accounting = ExternalAgentAccounting(
             process_wall_time_s=duration_s,
             cli_event_count=sum(event_types.values()),
-            model_call_count=stats.decision_steps,
+            model_call_count=provider["provider_call_count"],
             external_tool_call_count=stats.tool_calls,
             external_command_count=stats.command_calls,
             public_test_invocation_count=0,
             external_file_read_count=stats.file_reads,
             external_file_write_count=stats.patches,
             external_patch_count=stats.patches,
+            input_tokens=provider["input_tokens"],
+            output_tokens=provider["output_tokens"],
         )
         identity = _identity(settings, stats.tool_calls, stats.patches)
 
@@ -510,6 +536,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 event_types=event_types,
                 final_response=final_response,
                 duration_s=duration_s,
+                provider=provider,
                 format_recovery_count=format_recovery_count,
                 recovery_forced_request_count=recovery_forced_request_count,
                 recovery_validated_finish_count=recovery_validated_finish_count,
@@ -529,6 +556,16 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 "openhands_hwe_broker_infrastructure",
                 "OpenHands HWE broker reported an infrastructure failure",
                 infrastructure=True,
+            )
+        if provider_budget_failure:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
+            raise _termination(
+                "openhands_hwe_provider_call_budget",
+                "OpenHands HWE exhausted its exact provider-request budget",
+                infrastructure=False,
             )
         recoverable_invalid_arguments = (
             stats.finished
@@ -740,6 +777,24 @@ def _configured_control_root() -> Path:
     return resolved
 
 
+@contextlib.contextmanager
+def _frozen_hook_locale() -> Iterator[None]:
+    """Give OpenHands hook subprocesses a portable, warning-free POSIX locale."""
+
+    names = ("LANG", "LC_ALL", "LC_CTYPE")
+    previous = {name: os.environ.get(name) for name in names}
+    try:
+        for name in names:
+            os.environ[name] = "C"
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def _configured_mcp_pythonpath() -> str:
     raw = os.environ.get("VERIGYM_OPENHANDS_MCP_PYTHONPATH")
     if not raw or len(os.fsencode(raw)) > 4096:
@@ -885,6 +940,7 @@ def _write_evidence(
     event_types: dict[str, int],
     final_response: str,
     duration_s: float,
+    provider: dict[str, int],
     format_recovery_count: int,
     recovery_forced_request_count: int,
     recovery_validated_finish_count: int,
@@ -905,6 +961,14 @@ def _write_evidence(
             "integration_track": "openhands_sdk_hwe_native_shell",
             "sdk_version": "1.42.1",
             "duration_s": duration_s,
+            "provider_call_budget": settings.max_iterations,
+            "provider_call_count": provider["provider_call_count"],
+            "successful_provider_response_count": provider["successful_provider_response_count"],
+            "provider_usage_record_count": provider["provider_usage_record_count"],
+            "provider_input_tokens": provider["input_tokens"],
+            "provider_output_tokens": provider["output_tokens"],
+            "broker_decision_steps": stats.get("decision_steps"),
+            "hook_subprocess_locale": "C",
             "event_type_counts": event_types,
             "final_response_sha256": hashlib.sha256(final_response.encode()).hexdigest(),
             "training_trajectory_captured": trajectory_captured,
@@ -958,6 +1022,52 @@ def _recovery_choice_counts(llm: Any) -> dict[str, int]:
             )
         result[name] = value
     return result
+
+
+def _provider_accounting_receipt(
+    llm: Any,
+    *,
+    max_provider_calls: int,
+) -> dict[str, int]:
+    """Bind provider requests and aggregate token usage without retaining content."""
+
+    call_count = getattr(llm, "provider_call_count", None)
+    if (
+        isinstance(call_count, bool)
+        or not isinstance(call_count, int)
+        or not 0 <= call_count <= max_provider_calls
+    ):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands provider request counter is invalid"
+        )
+    metrics = getattr(llm, "metrics", None)
+    response_latencies = getattr(metrics, "response_latencies", None)
+    token_usages = getattr(metrics, "token_usages", None)
+    accumulated = getattr(metrics, "accumulated_token_usage", None)
+    if not isinstance(response_latencies, list) or not isinstance(token_usages, list):
+        raise OpenHandsTrajectoryInfrastructureError("OpenHands provider metrics are unavailable")
+    successful_responses = len(response_latencies)
+    usage_records = len(token_usages)
+    if successful_responses > call_count or usage_records > call_count:
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands provider metrics exceed attempted requests"
+        )
+    input_tokens = getattr(accumulated, "prompt_tokens", None)
+    output_tokens = getattr(accumulated, "completion_tokens", None)
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in (input_tokens, output_tokens)
+    ):
+        raise OpenHandsTrajectoryInfrastructureError("OpenHands provider token totals are invalid")
+    assert isinstance(input_tokens, int)
+    assert isinstance(output_tokens, int)
+    return {
+        "provider_call_count": call_count,
+        "successful_provider_response_count": successful_responses,
+        "provider_usage_record_count": usage_records,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
 def _recovery_response_shape(llm: Any) -> dict[str, Any]:

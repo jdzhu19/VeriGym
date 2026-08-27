@@ -18,6 +18,8 @@ from verigym_openhands._recovery import (
     OPENHANDS_FORMAT_RECOVERY_POLICY,
 )
 from verigym_openhands.hwe_tool_choice import (
+    BoundedProviderCallLLM,
+    ProviderCallBudgetExceeded,
     RecoveryForcedFinishLLM,
     RecoveryStateForcedFinishLLM,
     RecoveryToolChoiceViolation,
@@ -44,6 +46,18 @@ def _llm() -> RequiredToolChoiceLLM:
         api_mode="chat",
         native_tool_calling=True,
         capability_overrides={"supports_responses_api": False},
+    )
+
+
+def _bounded_llm(*, max_provider_calls: int = 1) -> BoundedProviderCallLLM:
+    return BoundedProviderCallLLM(
+        model="openai/test-model",
+        api_key="test-only",
+        base_url="https://example.invalid/v1",
+        api_mode="chat",
+        native_tool_calling=True,
+        capability_overrides={"supports_responses_api": False},
+        max_provider_calls=max_provider_calls,
     )
 
 
@@ -159,6 +173,51 @@ def _recovery_messages() -> list[Message]:
         Message(role="assistant", content=[TextContent(text="Task complete.")]),
         Message(role="user", content=[TextContent(text=OPENHANDS_FORMAT_RECOVERY_MESSAGE)]),
     ]
+
+
+def test_provider_call_budget_counts_attempts_and_rejects_before_overrun() -> None:
+    llm = _bounded_llm()
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=_response("finish"),
+    ) as completion:
+        llm.completion(messages=_messages(), tools=_tools())
+        with pytest.raises(ProviderCallBudgetExceeded, match="1-request"):
+            llm.completion(messages=_messages(), tools=_tools())
+
+    assert completion.call_count == 1
+    assert llm.provider_call_count == 1
+
+
+def test_provider_call_budget_counts_async_attempts() -> None:
+    llm = _bounded_llm()
+    completion = AsyncMock(return_value=_response("finish"))
+    with patch("openhands.sdk.llm.llm.LLM.acompletion", completion):
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+        with pytest.raises(ProviderCallBudgetExceeded, match="1-request"):
+            asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+
+    assert completion.call_count == 1
+    assert llm.provider_call_count == 1
+
+
+def test_responses_recovery_uses_the_same_provider_call_budget(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _validated_responses_recovery_state_llm(state)
+    llm.max_provider_calls = 1
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        return_value=_response("finish"),
+    ) as responses:
+        llm.completion(messages=_messages(), tools=_tools())
+        with pytest.raises(ProviderCallBudgetExceeded, match="1-request"):
+            llm.completion(messages=_messages(), tools=_tools())
+
+    assert responses.call_count == 1
+    assert llm.provider_call_count == 1
 
 
 def _merged_recovery_messages() -> list[Message]:

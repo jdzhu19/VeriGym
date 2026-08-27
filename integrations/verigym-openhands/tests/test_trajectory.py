@@ -28,6 +28,7 @@ from verigym_openhands.trajectory import (
     OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
+    _validate_public_text,
     build_openhands_training_trajectory,
     hwe_broker_receipts,
     materialize_openhands_decisions,
@@ -80,6 +81,27 @@ def _tools() -> list[dict[str, Any]]:
             "type": ["string", "null"],
         }
     return tools
+
+
+def test_container_tmp_tool_argument_is_not_misclassified_as_a_host_path() -> None:
+    _validate_public_text(
+        '{"command":"mkdir -p /tmp/verigym-build"}',
+        allow_host_paths=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"path":"/home/user/private"}',
+        '{"path":"/data/private"}',
+        '{"path":"/hpc/private"}',
+        '{"path":"C:\\\\private"}',
+    ],
+)
+def test_actual_host_path_prefixes_remain_ineligible(value: str) -> None:
+    with pytest.raises(OpenHandsTrajectoryError, match="raw host path"):
+        _validate_public_text(value, allow_host_paths=False)
 
 
 def _message(role: str, content: str) -> dict[str, Any]:

@@ -19,7 +19,7 @@ from openhands.sdk.llm.streaming import (
     TokenCallbackType,
 )
 from openhands.sdk.tool import ToolDefinition as GenericToolDefinition
-from pydantic import PrivateAttr
+from pydantic import Field, PrivateAttr
 
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
 from .hwe_stop_hook import read_recovery_count
@@ -43,6 +43,112 @@ _RESPONSES_REQUIRED_TOOL_CHOICE = "required"
 
 class RecoveryToolChoiceViolation(RuntimeError):
     """The provider violated the recovery turn's named-finish response contract."""
+
+
+class ProviderCallBudgetExceeded(RuntimeError):
+    """The exact provider-request budget was exhausted before a new request."""
+
+
+class BoundedProviderCallLLM(LLM):
+    """Count high-level provider attempts and reject requests beyond a hard bound."""
+
+    max_provider_calls: int = Field(default=200, ge=1, le=200)
+    _provider_call_count: int = PrivateAttr(default=0)
+
+    @property
+    def provider_call_count(self) -> int:
+        return self._provider_call_count
+
+    def _claim_provider_call(self) -> None:
+        if self._provider_call_count >= self.max_provider_calls:
+            raise ProviderCallBudgetExceeded(
+                f"OpenHands HWE reached its {self.max_provider_calls}-request provider limit"
+            )
+        self._provider_call_count += 1
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        self._claim_provider_call()
+        return super().completion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        self._claim_provider_call()
+        return await super().acompletion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
+
+    def responses(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        include: list[str] | None = None,
+        store: bool | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        self._claim_provider_call()
+        return super().responses(
+            messages=messages,
+            tools=tools,
+            include=include,
+            store=store,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
+
+    async def aresponses(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        include: list[str] | None = None,
+        store: bool | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        self._claim_provider_call()
+        return await super().aresponses(
+            messages=messages,
+            tools=tools,
+            include=include,
+            store=store,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
 
 
 def _coalesce_responses_function_outputs(
@@ -112,7 +218,7 @@ def _required_tool_choice_kwargs(
     return {**kwargs, "tool_choice": OPENHANDS_HWE_TOOL_CHOICE_REQUIRED}
 
 
-class RequiredToolChoiceLLM(LLM):
+class RequiredToolChoiceLLM(BoundedProviderCallLLM):
     """Use the public LLM completion interface while forcing native tool selection."""
 
     def completion(
@@ -182,7 +288,7 @@ def _recovery_finish_kwargs(
     }
 
 
-class RecoveryForcedFinishLLM(LLM):
+class RecoveryForcedFinishLLM(BoundedProviderCallLLM):
     """Keep normal tool choice until the trusted Stop hook confirms completion intent."""
 
     def completion(
@@ -264,7 +370,7 @@ def _validate_recovery_required_tool_response(
         )
 
 
-class RecoveryStateForcedFinishLLM(LLM):
+class RecoveryStateForcedFinishLLM(BoundedProviderCallLLM):
     """Bind recovery tool choice to the Stop hook's validated private state receipt."""
 
     recovery_state_path: Path
@@ -312,7 +418,7 @@ class RecoveryStateForcedFinishLLM(LLM):
         )
 
 
-class ValidatedRecoveryStateForcedFinishLLM(LLM):
+class ValidatedRecoveryStateForcedFinishLLM(BoundedProviderCallLLM):
     """Require the provider to honor the recovery turn's named finish choice."""
 
     recovery_state_path: Path
@@ -382,7 +488,7 @@ class ValidatedRecoveryStateForcedFinishLLM(LLM):
         return response
 
 
-class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):
+class ValidatedResponsesRecoveryStateForcedFinishLLM(BoundedProviderCallLLM):
     """Use DeepSeek's Responses API only for the receipt-bound finish turn.
 
     Ordinary OpenHands turns retain the frozen Chat Completions path.  After the
@@ -625,7 +731,7 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
         if "tool_choice" in kwargs:
             raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
         if not self._recovery_required():
-            return LLM.completion(
+            return BoundedProviderCallLLM.completion(
                 self,
                 messages=messages,
                 tools=tools,
@@ -638,7 +744,7 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
         if not allowed:
             raise ValueError("OpenHands HWE recovery requires a non-empty tool contract")
         self._recovery_forced_request_count += 1
-        response = LLM.responses(
+        response = BoundedProviderCallLLM.responses(
             self,
             messages=messages,
             tools=tools,
@@ -664,7 +770,7 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
         if "tool_choice" in kwargs:
             raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
         if not self._recovery_required():
-            return await LLM.acompletion(
+            return await BoundedProviderCallLLM.acompletion(
                 self,
                 messages=messages,
                 tools=tools,
@@ -677,7 +783,7 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
         if not allowed:
             raise ValueError("OpenHands HWE recovery requires a non-empty tool contract")
         self._recovery_forced_request_count += 1
-        response = await LLM.aresponses(
+        response = await BoundedProviderCallLLM.aresponses(
             self,
             messages=messages,
             tools=tools,
@@ -693,12 +799,14 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
 
 
 __all__ = [
+    "BoundedProviderCallLLM",
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
     "OPENHANDS_HWE_RECOVERY_FORCED_FINISH",
     "OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_REQUIRED_TOOL",
+    "ProviderCallBudgetExceeded",
     "RecoveryForcedFinishLLM",
     "RecoveryStateForcedFinishLLM",
     "RecoveryToolChoiceViolation",
