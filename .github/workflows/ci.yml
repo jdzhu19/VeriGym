@@ -152,9 +152,12 @@ jobs:
           python -m ruff format --check integrations/verigym-openhands
           python -m ruff check integrations/verigym-openhands
       - name: Type-check the plugin
+        env:
+          MYPYPATH: integrations/verigym-openhands/src
         run: >-
-          python -m mypy --strict --explicit-package-bases
-          integrations/verigym-openhands/src/verigym_openhands
+          python -m mypy
+          --config-file integrations/verigym-openhands/pyproject.toml
+          -p verigym_openhands
       - name: Run zero-model plugin tests
         run: |
           python -m pytest -c integrations/verigym-openhands/pyproject.toml \
