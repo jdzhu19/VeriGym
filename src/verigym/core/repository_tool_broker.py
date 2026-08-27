@@ -21,6 +21,7 @@ from verigym.protocols.repository_action import (
     repository_action_state_failure,
     repository_tool_definitions,
 )
+from verigym.schemas.agent_feedback import AgentFeedbackContract
 from verigym.schemas.options import JsonValue
 
 _MAX_MESSAGE_BYTES = 2 * 1024 * 1024
@@ -107,12 +108,19 @@ class RepositoryToolBroker:
         capture_training_transcript: bool = False,
         campaign_role: str | None = None,
         limits: RepositoryToolBrokerLimits | None = None,
+        agent_feedback_contract: AgentFeedbackContract | None = None,
     ) -> None:
         if capture_training_transcript and campaign_role != "training":
             raise ValueError("repository broker transcript capture is training-only")
         self._bridge = bridge
         self.socket_path = socket_path
         self._public_test_ids = frozenset(public_test_ids)
+        self._feedback_contract = agent_feedback_contract
+        self._state_machine_id = (
+            agent_feedback_contract.state_machine_id
+            if agent_feedback_contract is not None
+            else "repository_action_state_machine_v2"
+        )
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
@@ -129,6 +137,7 @@ class RepositoryToolBroker:
         self._current_call_rejected = False
         self._patch_applied = False
         self._public_observed = False
+        self._compile_passed = False
         self._diff_observed = False
         self._finished = False
         self._policy_failure: str | None = None
@@ -297,12 +306,24 @@ class RepositoryToolBroker:
             )
             state_failure = repository_action_state_failure(
                 name,
-                state_machine_id="repository_action_state_machine_v2",
+                state_machine_id=self._state_machine_id,
                 public_test_required=bool(self._public_test_ids),
                 patch_applied=self._patch_applied,
                 public_observed=self._public_observed,
                 diff_observed=self._diff_observed,
                 finished=self._finished,
+                public_test_id=(arguments.get("test_id") if name == "run_public_test" else None),
+                compile_test_id=(
+                    self._feedback_contract.compile_test_id
+                    if self._feedback_contract is not None
+                    else None
+                ),
+                compile_passed=self._compile_passed,
+                compile_required_for_finish=(
+                    self._feedback_contract.compile_required_for_finish
+                    if self._feedback_contract is not None
+                    else False
+                ),
             )
             if state_failure is not None:
                 self._record_rejection_locked()
@@ -329,6 +350,10 @@ class RepositoryToolBroker:
                 if success:
                     with self._lock:
                         self._patch_applied = True
+                        if self._feedback_contract is not None:
+                            self._public_observed = False
+                            self._compile_passed = False
+                            self._diff_observed = False
                 return self._capture_response(name, canonical_arguments, response)
             if name == "run_public_test":
                 response = self._run_public_test(arguments)
@@ -506,6 +531,11 @@ class RepositoryToolBroker:
         is_error = completed.exit_code not in {0}
         with self._lock:
             self._public_observed = True
+            if (
+                self._feedback_contract is not None
+                and test_id == self._feedback_contract.compile_test_id
+            ):
+                self._compile_passed = completed.exit_code == 0
         return self._payload_result(name, payload, is_error=is_error)
 
     @staticmethod

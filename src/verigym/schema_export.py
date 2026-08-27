@@ -30,6 +30,7 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentAction, Observation
+from verigym.schemas.agent_feedback import AgentFeedbackContract, AgentFeedbackEvaluation
 from verigym.schemas.audit import AuditManifest, EvidenceEntry
 from verigym.schemas.common import (
     AgentDescriptor,
@@ -173,6 +174,8 @@ def _model(model: type[BaseModel]) -> SchemaFactory:
 _SCHEMAS: dict[str, SchemaFactory] = {
     "action": lambda: TypeAdapter(AgentAction).json_schema(mode="serialization"),
     "agent-descriptor": _model(AgentDescriptor),
+    "agent-feedback-contract": _model(AgentFeedbackContract),
+    "agent-feedback-evaluation": _model(AgentFeedbackEvaluation),
     "canonical-repository-action": _model(CanonicalRepositoryAction),
     "agent-prompt-policy-spec": _model(AgentPromptPolicySpec),
     "agent-lineage": _model(AgentLineage),

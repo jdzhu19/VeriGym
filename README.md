@@ -50,6 +50,10 @@ upstream data explicitly. See the
 [VerilogEval source guide](integrations/verigym-verilog-eval-codecomplete/README.md) and
 [RTL-Repo adapter guide](docs/rtl_repo.md).
 
+The three RTL integrations also provide independently partitioned multi-turn
+[AgentEval v1 variants](docs/rtl_agent_eval.md). They do not change or aggregate the existing
+single-turn scores.
+
 The optional [external training reference](docs/external_training_reference.md) covers
 verifier-filtered strong-model SFT and a bounded rLLM/VeriGym/verl GRPO path. Training frameworks,
 GPU runtimes, model weights, and credentials remain outside the evaluator package.

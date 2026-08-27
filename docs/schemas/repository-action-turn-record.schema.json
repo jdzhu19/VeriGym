@@ -169,6 +169,8 @@
             "awaiting_action",
             "candidate_modified",
             "public_test_observed",
+            "compile_observed",
+            "ppa_observed",
             "diff_observed",
             "finished"
           ],
@@ -186,6 +188,8 @@
         "awaiting_action",
         "candidate_modified",
         "public_test_observed",
+        "compile_observed",
+        "ppa_observed",
         "diff_observed",
         "finished"
       ],

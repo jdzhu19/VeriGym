@@ -8,11 +8,17 @@ import pytest
 from verigym.plugin_api import ConfigurationError, InteractionMode, SuiteSourceConfig
 
 from verigym_rtl_repo import RtlRepoSuite
-from verigym_rtl_repo.dataset import VARIANT, build_official_prompt
+from verigym_rtl_repo.dataset import AGENT_EVAL_VARIANT, VARIANT, build_official_prompt
 
 
 def configured(source: Path) -> RtlRepoSuite:
     return RtlRepoSuite().with_source(SuiteSourceConfig(source_root=source, variant=VARIANT))
+
+
+def configured_agent_eval(source: Path) -> RtlRepoSuite:
+    return RtlRepoSuite().with_source(
+        SuiteSourceConfig(source_root=source, variant=AGENT_EVAL_VARIANT)
+    )
 
 
 def test_external_source_is_required() -> None:
@@ -58,6 +64,31 @@ def test_reference_and_known_bad_conformance_are_separate(synthetic_source: Path
 
     assert [case.expected_resolved for case in cases] == [True, False]
     assert cases[0].candidate.files["completion.txt"] == "assign y = a & b;"
+
+
+def test_agent_eval_is_an_official_context_projection_without_target_leaks(
+    synthetic_source: Path,
+) -> None:
+    suite = configured_agent_eval(synthetic_source)
+    ref = next(ref for ref in suite.discover() if ref.native_id == "test-000000")
+    task = suite.load_task(ref)
+    assets = suite.resolve_assets(task)
+    visible = Path(assets.visible_root)
+    visible_files = {
+        path.relative_to(visible).as_posix(): path.read_text(encoding="utf-8")
+        for path in visible.rglob("*")
+        if path.is_file()
+    }
+
+    assert task.id.startswith(f"rtl-repo/{AGENT_EVAL_VARIANT}/")
+    assert task.description.startswith("Complete exactly the next line")
+    assert task.workspace.editable_globs == ["repository/completion.txt"]
+    assert task.metadata["projection_kind"] == "official-context projection"
+    assert "repository/context/index.json" in visible_files
+    assert "repository/target/cropped_target.sv" in visible_files
+    assert "assign y = a & b;" not in "\n".join(visible_files.values())
+    assert "all_code" not in "\n".join(visible_files.values())
+    assert assets.hidden_assets[0].content == "assign y = a & b;"
 
 
 def test_source_mutation_is_detected_after_task_freeze(synthetic_source: Path) -> None:

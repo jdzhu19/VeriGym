@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 VARIANT = "official-parquet-v1"
+AGENT_EVAL_VARIANT = "official-parquet-v1-agent-eval-v1"
 NATIVE_LAYOUT = "huggingface-parquet-rtl-repo-v1"
 EXPECTED_SPLIT_COUNTS = {"train": 2_924, "test": 1_174}
 MAX_PARQUET_BYTES = 512 * 1024 * 1024
@@ -66,6 +67,8 @@ class Problem:
     content_hash: str
     prompt_hash: str
     target_hash: str
+    cropped_code: str
+    context: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -81,8 +84,8 @@ class Catalog:
 
 
 def resolve_layout(raw_root: Path, variant: str | None) -> Layout:
-    if variant not in {None, VARIANT}:
-        raise ValueError(f"suite supports only variant {VARIANT!r}")
+    if variant not in {None, VARIANT, AGENT_EVAL_VARIANT}:
+        raise ValueError(f"suite supports variants {VARIANT!r} and {AGENT_EVAL_VARIANT!r}")
     expanded = raw_root.expanduser()
     if expanded.is_symlink():
         raise ValueError("source root must not be a symlink")
@@ -292,6 +295,8 @@ def load_problem(ref: RowRef) -> Problem:
         content_hash=_content_hash(identity),
         prompt_hash=sha256_bytes(prompt.encode("utf-8")),
         target_hash=sha256_bytes(target.encode("utf-8")),
+        cropped_code=cropped_code,
+        context=tuple((item["path"], item["snippet"]) for item in context),
     )
 
 

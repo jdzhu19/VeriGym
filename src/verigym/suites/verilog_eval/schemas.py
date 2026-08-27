@@ -13,6 +13,7 @@ from verigym.schemas.task import ValidationIssue
 
 class VerilogEvalVariant(StrEnum):
     V2_SPEC_TO_RTL = "v2-spec-to-rtl"
+    V2_SPEC_TO_RTL_AGENT_EVAL_V1 = "v2-spec-to-rtl-agent-eval-v1"
 
 
 class IcarusCompatibility(StrEnum):

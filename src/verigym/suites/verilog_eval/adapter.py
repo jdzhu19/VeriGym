@@ -6,8 +6,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from verigym.core.agent_feedback_assets import (
+    AgentEvalWorkspace,
+    compile_feedback_contract,
+    materialize_agent_eval_workspace,
+)
 from verigym.core.errors import ConfigurationError
-from verigym.core.hashing import hash_bytes
+from verigym.core.hashing import content_hash, hash_bytes
 from verigym.registry.base import PluginRegistry
 from verigym.runtimes.base import Runtime
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
@@ -46,12 +51,14 @@ from verigym.suites.verilog_eval.schemas import (
     IcarusCompatibility,
     VerilogEvalCatalog,
     VerilogEvalProblem,
+    VerilogEvalVariant,
 )
 from verigym.suites.verilog_eval.source import build_source_snapshot, resolve_layout
 from verigym.suites.verilog_eval.toolchain import detect_icarus
 
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "v2-spec-to-rtl-compat-1"
+AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
 
 
 class VerilogEvalSuite(SuiteAdapter):
@@ -81,6 +88,7 @@ class VerilogEvalSuite(SuiteAdapter):
         self._catalog_cache: VerilogEvalCatalog | None = None
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._workspace_root = Path(__file__).parent / "assets" / "workspace"
+        self._agent_workspaces: list[AgentEvalWorkspace] = []
 
     def with_source(self, config: SuiteSourceConfig) -> VerilogEvalSuite:
         return VerilogEvalSuite(config.model_copy(deep=True))
@@ -133,8 +141,33 @@ class VerilogEvalSuite(SuiteAdapter):
             raise ConfigurationError(
                 "VerilogEval source task content differs from the frozen task snapshot"
             )
+        if self._is_agent_eval():
+            contract = compile_feedback_contract(
+                source_paths=["rtl/TopModule.sv"],
+                top_module="TopModule",
+                language="2012",
+            )
+            materialized = materialize_agent_eval_workspace(
+                task_description=task.description,
+                repository_files={
+                    "README.md": (self._workspace_root / "README.md").read_text(encoding="utf-8"),
+                    "rtl/TopModule.sv": (self._workspace_root / "rtl/TopModule.sv").read_text(
+                        encoding="utf-8"
+                    ),
+                },
+                compile_contract=contract,
+                ppa_available=False,
+            )
+            self._agent_workspaces.append(materialized)
+            visible_root = str(materialized.visible_root)
+            read_only_mounts = (
+                [materialized.read_only_mount] if materialized.read_only_mount is not None else []
+            )
+        else:
+            visible_root = str(self._workspace_root.resolve(strict=True))
+            read_only_mounts = []
         return ResolvedTaskAssets(
-            visible_root=str(self._workspace_root.resolve(strict=True)),
+            visible_root=visible_root,
             hidden_assets=[
                 AssetRef(
                     kind="inline",
@@ -149,6 +182,7 @@ class VerilogEvalSuite(SuiteAdapter):
                     mount_path="verifier/testbench.sv",
                 ),
             ],
+            read_only_mounts=read_only_mounts,
         )
 
     def validate_source(self, source_root: Path | None = None) -> ValidationReport:
@@ -177,8 +211,9 @@ class VerilogEvalSuite(SuiteAdapter):
         )
         if problem is None:
             return None
+        path = "repository/rtl/TopModule.sv" if self._is_agent_eval() else "rtl/TopModule.sv"
         return Candidate(
-            files={"rtl/TopModule.sv": transform_reference_candidate(problem.reference)},
+            files={path: transform_reference_candidate(problem.reference)},
             label="reference-derived",
         )
 
@@ -199,7 +234,13 @@ class VerilogEvalSuite(SuiteAdapter):
             ConformanceCase(
                 name=f"{catalog.problems[0].native_id}-wrong",
                 candidate=Candidate(
-                    files={"rtl/TopModule.sv": "module TopModule; endmodule\n"},
+                    files={
+                        (
+                            "repository/rtl/TopModule.sv"
+                            if self._is_agent_eval()
+                            else "rtl/TopModule.sv"
+                        ): "module TopModule; endmodule\n"
+                    },
                     label="known-bad",
                 ),
                 expected_resolved=False,
@@ -243,7 +284,11 @@ class VerilogEvalSuite(SuiteAdapter):
             else:
                 compatibility = IcarusCompatibility.UNVERIFIED
         return ToolchainProfile(
-            id="verilog-eval-v2-icarus",
+            id=(
+                "verilog-eval-v2-agent-eval-icarus12"
+                if self._is_agent_eval()
+                else "verilog-eval-v2-icarus"
+            ),
             version="1.0.0",
             description=("VerilogEval V2 Icarus profile; upstream reference is Icarus v12."),
             tools=[
@@ -304,7 +349,14 @@ class VerilogEvalSuite(SuiteAdapter):
         snapshot: SuiteSourceSnapshot,
     ) -> VeriTask:
         variant = snapshot.variant
+        agent_eval = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
+        candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
+        compile_contract = compile_feedback_contract(
+            source_paths=["rtl/TopModule.sv"],
+            top_module="TopModule",
+            language="2012",
+        )
         hidden_assets = [
             AssetRef(
                 kind="inline",
@@ -320,14 +372,14 @@ class VerilogEvalSuite(SuiteAdapter):
         return VeriTask(
             id=task_id,
             suite="verilog-eval",
-            suite_version=SUITE_VERSION,
+            suite_version=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
             task_type=TaskType.GENERATION,
             title=f"VerilogEval V2 {problem.native_id}",
             description=problem.prompt,
             source=SourceSpec(
                 kind="synthetic" if snapshot.synthetic_fixture else "benchmark",
                 uri=f"verilog-eval://{variant}/{problem.native_id}",
-                revision=SUITE_VERSION,
+                revision=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
                 commit=snapshot.git_commit,
                 license=snapshot.license_id,
                 attribution=(
@@ -339,22 +391,31 @@ class VerilogEvalSuite(SuiteAdapter):
             ),
             workspace=WorkspaceSpec(
                 base=AssetRef(kind="directory", path="workspace"),
-                editable_globs=["rtl/TopModule.sv"],
-                readonly_globs=["README.md"],
+                editable_globs=[candidate_path],
+                readonly_globs=(
+                    ["TASK.md", "PUBLIC_TESTS.md", "repository/README.md"]
+                    if agent_eval
+                    else ["README.md"]
+                ),
                 excluded_globs=["verifier", "verifier/**", "hidden", "hidden/**"],
-                entrypoints=["rtl/TopModule.sv"],
+                entrypoints=[candidate_path],
                 hidden_assets=hidden_assets,
                 max_changed_files=1,
                 max_patch_lines=2_000,
             ),
             interaction=InteractionSpec(
-                supported_modes=[InteractionMode.CHAT, InteractionMode.AGENT],
-                default_mode=InteractionMode.CHAT,
+                supported_modes=(
+                    [InteractionMode.AGENT]
+                    if agent_eval
+                    else [InteractionMode.CHAT, InteractionMode.AGENT]
+                ),
+                default_mode=InteractionMode.AGENT if agent_eval else InteractionMode.CHAT,
                 allowed_tools=[
                     "file.list",
                     "file.read",
                     "file.apply_patch",
                     "file.diff",
+                    *(["repository.public_test"] if agent_eval else []),
                 ],
                 denied_tools=[],
                 allow_general_shell=False,
@@ -364,7 +425,7 @@ class VerilogEvalSuite(SuiteAdapter):
                     include_readme=True,
                     include_entrypoints=False,
                 ),
-                final_submission=SubmissionPolicy(kind="file", path="rtl/TopModule.sv"),
+                final_submission=SubmissionPolicy(kind="file", path=candidate_path),
             ),
             budget=BudgetSpec(
                 max_turns=20,
@@ -389,9 +450,9 @@ class VerilogEvalSuite(SuiteAdapter):
                             "sources": [
                                 "verifier/golden.sv",
                                 "verifier/testbench.sv",
-                                "rtl/TopModule.sv",
+                                candidate_path,
                             ],
-                            "candidate": "rtl/TopModule.sv",
+                            "candidate": candidate_path,
                             "top": problem.testbench_top,
                             "output": ".verigym_internal/verilog_eval/simv",
                             "language": "2012",
@@ -425,7 +486,25 @@ class VerilogEvalSuite(SuiteAdapter):
                 "task_content_hash": problem.content_hash,
                 "adapter_version": ADAPTER_VERSION,
                 "synthetic_fixture": snapshot.synthetic_fixture,
+                **(
+                    {
+                        "agent_eval": {
+                            "benchmark_variant": variant,
+                            "compile_test_id": "compile",
+                            "ppa_supported": False,
+                            "public_test_contract_hash": content_hash(compile_contract),
+                        }
+                    }
+                    if agent_eval
+                    else {}
+                ),
             },
+        )
+
+    def _is_agent_eval(self) -> bool:
+        return bool(
+            self._config is not None
+            and self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value
         )
 
 

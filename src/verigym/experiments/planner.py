@@ -7,6 +7,10 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from verigym.core.agent_feedback import (
+    resolve_agent_feedback_contract,
+    task_with_agent_feedback_contract,
+)
 from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
@@ -473,6 +477,19 @@ class ExperimentPlanner:
             correctness_hash = correctness_definition_hash(task)
             repository_identity = repository_plan_identity(task)
             tool_policy = self._tool_policy(task, config.runs.mode)
+            resolved = resolved_profiles.get(task.id)
+            feedback_contract = resolve_agent_feedback_contract(
+                task=task,
+                ppa_enabled=config.runs.agent_ppa_feedback,
+                ppa_max_executions=config.runs.agent_ppa_max_calls,
+                resolved_profile=resolved,
+                profile_backend=(
+                    profile.flow.backend_plugin
+                    if profile is not None and profile.flow is not None
+                    else None
+                ),
+            )
+            execution_task = task_with_agent_feedback_contract(task, feedback_contract)
             for system in systems:
                 agent = self.service.registries.agents.get(system.agent_id)
                 try:
@@ -480,13 +497,13 @@ class ExperimentPlanner:
                         interaction_mode=config.runs.mode,
                         agent=agent,
                         agent_options=system.agent_options,
-                        task=task,
+                        task=execution_task,
                     )
                     action_protocol = resolve_repository_action_protocol(
                         agent_descriptor=agent.descriptor,
                         protocol_spec=agent.action_protocol_spec,
                         agent_options=system.agent_options,
-                        task=task,
+                        task=execution_task,
                     )
                 except ValueError as exc:
                     raise ConfigurationError(
@@ -503,7 +520,6 @@ class ExperimentPlanner:
                             base_seed=base_seed,
                             sample_index=sample_index,
                         )
-                        resolved = resolved_profiles.get(task.id)
                         execution_profile = profile or default_profiles[task.id]
                         profile_ref = ToolchainProfileRef(
                             id=execution_profile.id,
@@ -540,6 +556,7 @@ class ExperimentPlanner:
                             "prompt_policy_hash": (
                                 prompt.configuration_fingerprint if prompt is not None else None
                             ),
+                            "agent_feedback_contract": feedback_contract,
                             "tool_policy": tool_policy,
                             "tool_policy_hash": content_hash(tool_policy),
                             "base_seed": base_seed,
@@ -590,6 +607,7 @@ class ExperimentPlanner:
                             "toolchain_profiles": [profile_ref],
                             "declared_profile_hash": raw["declared_profile_hash"],
                             "resolved_profile_hash": raw["resolved_profile_hash"],
+                            "agent_feedback_contract": feedback_contract,
                         }
                         if action_protocol is not None:
                             raw["action_protocol"] = action_protocol

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
+    AgentEvalWorkspace,
     AssetRef,
     BudgetSpec,
     Candidate,
@@ -41,12 +43,16 @@ from verigym.plugin_api import (
     VerifierNode,
     VeriTask,
     WorkspaceSpec,
+    compile_feedback_contract,
+    content_hash,
+    materialize_agent_eval_workspace,
 )
 
 ADAPTER_VERSION = "0.3.0"
 SUITE_VERSION = "rtllm-41b2689-counter12-v1"
 UP_DOWN_SUITE_VERSION = "rtllm-41b2689-up-down-counter-v1"
 UP_DOWN_ICARUS_TRAINING_SUITE_VERSION = "rtllm-41b2689-up-down-counter-icarus-training-v1"
+AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-agent-eval-v1"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 TASK_ROOT = Path("Control/Counter/counter_12")
@@ -89,7 +95,10 @@ _UP_DOWN_EXPECTED_HASHES = {
     ),
 }
 _UP_DOWN_ICARUS_TRAINING_VARIANT = "up_down_counter_iverilog_training"
-_SUPPORTED_VARIANTS = frozenset({"counter_12", "up_down_counter", _UP_DOWN_ICARUS_TRAINING_VARIANT})
+_AGENT_EVAL_VARIANTS = frozenset({"counter_12_agent_eval_v1", "up_down_counter_agent_eval_v1"})
+_SUPPORTED_VARIANTS = frozenset(
+    {"counter_12", "up_down_counter", _UP_DOWN_ICARUS_TRAINING_VARIANT, *_AGENT_EVAL_VARIANTS}
+)
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
 
@@ -158,6 +167,7 @@ class RTLLMSuite(SuiteAdapter):
         self._workspace_root = Path(__file__).parent / "assets" / "workspace"
         self._up_down_workspace_root = Path(__file__).parent / "assets" / "workspace_up_down"
         self._snapshot_cache: SuiteSourceSnapshot | None = None
+        self._agent_workspaces: list[AgentEvalWorkspace] = []
 
     def with_source(self, config: SuiteSourceConfig) -> RTLLMSuite:
         if config.variant not in {None, *_SUPPORTED_VARIANTS}:
@@ -180,10 +190,13 @@ class RTLLMSuite(SuiteAdapter):
         base_variant = self._base_variant()
         up_down = base_variant == "up_down_counter"
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
+        agent_eval = variant in _AGENT_EVAL_VARIANTS
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
         suite_version = (
-            UP_DOWN_ICARUS_TRAINING_SUITE_VERSION
+            AGENT_EVAL_SUITE_VERSION
+            if agent_eval
+            else UP_DOWN_ICARUS_TRAINING_SUITE_VERSION
             if icarus_training
             else UP_DOWN_SUITE_VERSION
             if up_down
@@ -194,7 +207,9 @@ class RTLLMSuite(SuiteAdapter):
         testbench_top = "testbench" if up_down else "counter_12_tb"
         pass_marker = UP_DOWN_PASS_MARKER if up_down else PASS_MARKER
         fail_marker = UP_DOWN_FAIL_MARKER if up_down else FAIL_MARKER
-        candidate_path = f"rtl/{base_variant}.v"
+        candidate_path = (
+            f"repository/rtl/{base_variant}.v" if agent_eval else f"rtl/{base_variant}.v"
+        )
         root = self._source_root()
         report = self.validate_source()
         if not report.valid:
@@ -233,7 +248,11 @@ class RTLLMSuite(SuiteAdapter):
                     path="workspace_up_down" if up_down else "workspace",
                 ),
                 editable_globs=[candidate_path],
-                readonly_globs=["README.md"],
+                readonly_globs=(
+                    ["TASK.md", "PUBLIC_TESTS.md", "repository/README.md"]
+                    if agent_eval
+                    else ["README.md"]
+                ),
                 excluded_globs=["verifier", "verifier/**", "hidden", "hidden/**"],
                 entrypoints=[candidate_path],
                 hidden_assets=[hidden],
@@ -241,13 +260,18 @@ class RTLLMSuite(SuiteAdapter):
                 max_patch_lines=2_000,
             ),
             interaction=InteractionSpec(
-                supported_modes=[InteractionMode.CHAT, InteractionMode.AGENT],
-                default_mode=InteractionMode.CHAT,
+                supported_modes=(
+                    [InteractionMode.AGENT]
+                    if agent_eval
+                    else [InteractionMode.CHAT, InteractionMode.AGENT]
+                ),
+                default_mode=(InteractionMode.AGENT if agent_eval else InteractionMode.CHAT),
                 allowed_tools=[
                     "file.list",
                     "file.read",
                     "file.apply_patch",
                     "file.diff",
+                    *(["repository.public_test"] if agent_eval else []),
                 ],
                 allow_general_shell=False,
                 network_policy="none",
@@ -302,7 +326,7 @@ class RTLLMSuite(SuiteAdapter):
                             },
                         ),
                     ]
-                    if icarus_training
+                    if icarus_training or agent_eval
                     else [
                         VerifierNode(
                             id="vcs_regression",
@@ -325,7 +349,9 @@ class RTLLMSuite(SuiteAdapter):
             ),
             scoring=ScoringSpec(
                 correctness_required_nodes=(
-                    ["compile_hidden", "run_hidden"] if icarus_training else ["vcs_regression"]
+                    ["compile_hidden", "run_hidden"]
+                    if icarus_training or agent_eval
+                    else ["vcs_regression"]
                 ),
                 ppa_enabled=not icarus_training,
             ),
@@ -339,7 +365,29 @@ class RTLLMSuite(SuiteAdapter):
                 "adapter_version": ADAPTER_VERSION,
                 "pinned_commit": PINNED_COMMIT,
                 "evaluation_profile": (
-                    "icarus-training-long-context-v1" if icarus_training else "vcs-benchmark-v1"
+                    "icarus12-agent-eval-v1"
+                    if agent_eval
+                    else "icarus-training-long-context-v1"
+                    if icarus_training
+                    else "vcs-benchmark-v1"
+                ),
+                **(
+                    {
+                        "agent_eval": {
+                            "benchmark_variant": variant,
+                            "compile_test_id": "compile",
+                            "ppa_supported": True,
+                            "public_test_contract_hash": content_hash(
+                                compile_feedback_contract(
+                                    source_paths=[f"rtl/{base_variant}.v"],
+                                    top_module=candidate_top,
+                                    language="2005",
+                                )
+                            ),
+                        }
+                    }
+                    if agent_eval
+                    else {}
                 ),
             },
         )
@@ -355,12 +403,38 @@ class RTLLMSuite(SuiteAdapter):
         if task.source.content_hash != snapshot.dataset_content_hash:
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
         testbench = _read_exact(root, (task_root / "testbench.v").as_posix())
-        return ResolvedTaskAssets(
-            visible_root=str(
+        if variant in _AGENT_EVAL_VARIANTS:
+            base_workspace = self._up_down_workspace_root if up_down else self._workspace_root
+            public_contract = compile_feedback_contract(
+                source_paths=[f"rtl/{self._base_variant()}.v"],
+                top_module="up_down_counter" if up_down else "counter_12",
+                language="2005",
+            )
+            materialized = materialize_agent_eval_workspace(
+                task_description=task.description,
+                repository_files={
+                    "README.md": (base_workspace / "README.md").read_text(encoding="utf-8"),
+                    f"rtl/{self._base_variant()}.v": (
+                        base_workspace / "rtl" / f"{self._base_variant()}.v"
+                    ).read_text(encoding="utf-8"),
+                },
+                compile_contract=public_contract,
+                ppa_available=True,
+            )
+            self._agent_workspaces.append(materialized)
+            visible_root = str(materialized.visible_root)
+            read_only_mounts = (
+                [materialized.read_only_mount] if materialized.read_only_mount is not None else []
+            )
+        else:
+            visible_root = str(
                 (self._up_down_workspace_root if up_down else self._workspace_root).resolve(
                     strict=True
                 )
-            ),
+            )
+            read_only_mounts = []
+        return ResolvedTaskAssets(
+            visible_root=visible_root,
             hidden_assets=[
                 AssetRef(
                     kind="inline",
@@ -369,6 +443,7 @@ class RTLLMSuite(SuiteAdapter):
                     mount_path="verifier/testbench.v",
                 )
             ],
+            read_only_mounts=read_only_mounts,
         )
 
     def validate_source(self, source_root: Path | None = None) -> ValidationReport:
@@ -379,7 +454,7 @@ class RTLLMSuite(SuiteAdapter):
             return _invalid("source_configuration", str(exc))
         expected_hashes = (
             _UP_DOWN_EXPECTED_HASHES
-            if adapter._variant() == "up_down_counter"
+            if adapter._base_variant() == "up_down_counter"
             else _EXPECTED_HASHES
         )
         issues: list[ValidationIssue] = []
@@ -439,7 +514,11 @@ class RTLLMSuite(SuiteAdapter):
         needle = f"module verified_{base_variant}" if not up_down else "module up_down_counter"
         if source.count(needle) != 1:
             raise ConfigurationError("RTLLM reference module normalization is no longer exact")
-        candidate_path = f"rtl/{base_variant}.v"
+        candidate_path = (
+            f"repository/rtl/{base_variant}.v"
+            if variant in _AGENT_EVAL_VARIANTS
+            else f"rtl/{base_variant}.v"
+        )
         return Candidate(
             files={candidate_path: source.replace(needle, f"module {base_variant}", 1)},
             label="pinned-upstream-reference",
@@ -485,7 +564,9 @@ class RTLLMSuite(SuiteAdapter):
         return self._snapshot().model_copy(deep=True)
 
     def toolchain_profile(self, runtime: Runtime, tools: Any) -> ToolchainProfile | None:
-        if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT:
+        if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT or self._variant() in (
+            _AGENT_EVAL_VARIANTS
+        ):
             image = runtime.descriptor.image
             if image is None:
                 compiler = tools.get("iverilog.compile").health_check()
@@ -499,12 +580,26 @@ class RTLLMSuite(SuiteAdapter):
                 compiler_version = image.iverilog_version
                 runner_version = image.vvp_version
                 compatibility = image.compatibility_status or "unverified_tool_version"
+            if self._variant() in _AGENT_EVAL_VARIANTS and not all(
+                _is_icarus12_version(version) for version in (compiler_version, runner_version)
+            ):
+                raise ConfigurationError(
+                    "RTLLM AgentEval requires qualified Icarus and vvp major version 12"
+                )
+            if self._variant() in _AGENT_EVAL_VARIANTS:
+                compatibility = "reference_compatible"
             return ToolchainProfile(
-                id="rtllm-icarus-training-v1",
+                id=(
+                    "rtllm-icarus12-agent-eval-v1"
+                    if self._variant() in _AGENT_EVAL_VARIANTS
+                    else "rtllm-icarus-training-v1"
+                ),
                 version="1.0.0",
                 description=(
-                    "Pinned Icarus training verifier for RTLLM sampling; scores are not VCS "
-                    "benchmark results."
+                    "Pinned Icarus functional verifier for an RTLLM AgentEval partition."
+                    if self._variant() in _AGENT_EVAL_VARIANTS
+                    else "Pinned Icarus training verifier for RTLLM sampling; scores are not "
+                    "VCS benchmark results."
                 ),
                 tools=[
                     ToolRequirement(name="iverilog", version=compiler_version),
@@ -557,6 +652,8 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if variant == _UP_DOWN_ICARUS_TRAINING_VARIANT:
             return "up_down_counter"
+        if variant.endswith("_agent_eval_v1"):
+            return variant.removesuffix("_agent_eval_v1")
         return variant
 
     def _source_root(self) -> Path:
@@ -613,6 +710,15 @@ class RTLLMSuite(SuiteAdapter):
             synthetic_fixture=False,
         )
         return self._snapshot_cache
+
+
+def _is_icarus12_version(version: str | None) -> bool:
+    if version is None:
+        return False
+    match = re.search(r"\bversion\s+(\d+)(?:\.|\b)", version, flags=re.IGNORECASE)
+    if match is None:
+        match = re.match(r"\s*(\d+)(?:\.|\b)", version)
+    return match is not None and int(match.group(1)) == 12
 
 
 def _invalid(code: str, message: str) -> ValidationReport:

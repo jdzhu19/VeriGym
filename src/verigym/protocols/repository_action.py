@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 
+from verigym.core.agent_feedback import public_feedback_test_ids
 from verigym.core.hashing import content_hash, hash_bytes
 from verigym.core.repository_observation import (
     BOUNDED_REPOSITORY_OBSERVATION_POLICY,
@@ -307,6 +308,7 @@ def prompt_contract(
     prompt_contract_id = {
         "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
         "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
+        "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
     }[state_machine_id]
     contract: dict[str, Any] = {
         "schema_version": "1.0",
@@ -332,7 +334,10 @@ def prompt_contract(
             "Never request credentials, network, hidden assets, or reference patches.",
         ],
     }
-    if state_machine_id == "repository_action_state_machine_v2":
+    if state_machine_id in {
+        "repository_action_state_machine_v2",
+        "repository_action_state_machine_v3",
+    }:
         contract["state_machine_id"] = state_machine_id
         contract["observation_policy"] = BOUNDED_REPOSITORY_OBSERVATION_POLICY.identity()
         contract["rules"].extend(
@@ -341,6 +346,15 @@ def prompt_contract(
                 "large trees.",
                 "Use read_file start_line/end_line or concise=true for large files.",
                 "Every bounded omission is explicit; never infer that an omitted region is empty.",
+            ]
+        )
+    if state_machine_id == "repository_action_state_machine_v3":
+        contract["rules"].extend(
+            [
+                "Every successful patch invalidates compile, PPA, and diff evidence.",
+                "PPA requires compile to pass for the exact current candidate revision.",
+                "Finish requires a current compile pass when compile is exposed and a current "
+                "diff.",
             ]
         )
     return contract
@@ -360,9 +374,21 @@ def resolve_repository_action_protocol(
     raw_observation_policy = agent_options.get(
         "observation_policy_id", agent_options.get("observation_policy")
     )
-    if raw_observation_policy is None and protocol_spec.state_machine_id == (
-        "repository_action_state_machine_v2"
-    ):
+    feedback = task.metadata.get("agent_feedback_contract")
+    effective_state_machine: RepositoryActionStateMachine = (
+        "repository_action_state_machine_v3"
+        if isinstance(feedback, dict)
+        else protocol_spec.state_machine_id
+    )
+    effective_prompt_contract_id = {
+        "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
+        "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
+        "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
+    }[effective_state_machine]
+    if raw_observation_policy is None and effective_state_machine in {
+        "repository_action_state_machine_v2",
+        "repository_action_state_machine_v3",
+    }:
         raw_observation_policy = "repository_observation_v1"
     observation_policy = resolve_repository_observation_policy(raw_observation_policy)
     requested_protocol = agent_options.get("action_protocol")
@@ -388,10 +414,10 @@ def resolve_repository_action_protocol(
         raise ValueError("repository action completion-call limit exceeds the task model budget")
     registry_hash = (
         legacy_repository_action_registry_hash()
-        if protocol_spec.state_machine_id == "repository_action_state_machine_v1"
+        if effective_state_machine == "repository_action_state_machine_v1"
         else content_hash(action_registry())
     )
-    contract_hash = content_hash(prompt_contract(protocol_spec.state_machine_id))
+    contract_hash = content_hash(prompt_contract(effective_state_machine))
     public_ids = _public_test_ids(task)
     task_tool_contract: dict[str, Any] = {
         "allowed_tools": sorted(task.interaction.allowed_tools),
@@ -403,6 +429,8 @@ def resolve_repository_action_protocol(
     }
     if observation_policy is not None:
         task_tool_contract["observation_policy"] = observation_policy.identity()
+    if isinstance(feedback, dict):
+        task_tool_contract["agent_feedback_contract_hash"] = content_hash(feedback)
     payload: dict[str, Any] = {
         "resolver_id": "repository_action_protocol_resolver_v1",
         "protocol_id": protocol_spec.protocol_id,
@@ -410,10 +438,10 @@ def resolve_repository_action_protocol(
         "action_transport": transport,
         "one_action_per_turn": True,
         "action_registry_hash": registry_hash,
-        "prompt_contract_id": protocol_spec.prompt_contract_id,
+        "prompt_contract_id": effective_prompt_contract_id,
         "prompt_contract_hash": contract_hash,
         "normalizer_id": protocol_spec.normalizer_id,
-        "state_machine_id": protocol_spec.state_machine_id,
+        "state_machine_id": effective_state_machine,
         "max_completion_calls": max_calls,
         "max_response_bytes": max_bytes,
         "agent_descriptor_hash": content_hash(agent_descriptor),
@@ -451,6 +479,10 @@ def repository_action_state_failure(
     public_observed: bool,
     diff_observed: bool,
     finished: bool,
+    public_test_id: str | None = None,
+    compile_test_id: str | None = None,
+    compile_passed: bool = False,
+    compile_required_for_finish: bool = False,
 ) -> RepositoryProtocolError | None:
     """Validate one state transition without depending on an execution provider."""
 
@@ -458,19 +490,37 @@ def repository_action_state_failure(
         return "agent_invalid_state_transition"
     if action in {"run_public_test", "inspect_diff"} and not patch_applied:
         return "agent_invalid_state_transition"
+    if (
+        state_machine_id == "repository_action_state_machine_v3"
+        and action == "run_public_test"
+        and public_test_id == "ppa"
+        and not compile_passed
+    ):
+        return "agent_invalid_state_transition"
     required_public_observation = (
         True if state_machine_id == "repository_action_state_machine_v1" else public_test_required
     )
-    if action == "finish" and not (
-        patch_applied and diff_observed and (public_observed or not required_public_observation)
-    ):
-        return "agent_finish_invalid"
+    if action == "finish":
+        if state_machine_id == "repository_action_state_machine_v3":
+            if not (
+                patch_applied
+                and diff_observed
+                and (compile_passed or not compile_required_for_finish)
+            ):
+                return "agent_finish_invalid"
+        elif not (
+            patch_applied and diff_observed and (public_observed or not required_public_observation)
+        ):
+            return "agent_finish_invalid"
     return None
 
 
 def task_requires_public_test(task: VeriTask) -> bool:
     """Return whether the public action state machine requires a test observation."""
 
+    feedback = task.metadata.get("agent_feedback_contract")
+    if isinstance(feedback, dict):
+        return bool(feedback.get("compile_required_for_finish"))
     return bool(_public_test_ids(task))
 
 
@@ -730,11 +780,7 @@ def _validate_no_forbidden_controls(value: object) -> None:
 
 
 def _public_test_ids(task: VeriTask) -> list[str]:
-    repository = task.metadata.get("repository_repair")
-    raw = repository.get("public_test_ids") if isinstance(repository, dict) else None
-    if not isinstance(raw, list) or not all(isinstance(value, str) for value in raw):
-        return []
-    return sorted(raw)
+    return public_feedback_test_ids(task)
 
 
 def bounded_tool_result_identity(result: ToolResult) -> dict[str, Any]:

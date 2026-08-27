@@ -42,6 +42,11 @@ contact the network.
 
 ## One-task ChatEval
 
+The separate `v2-spec-to-rtl-agent-eval-v1` variant provides multi-turn file actions and a public,
+candidate-only Icarus compile check. Its hidden golden/testbench mismatch regression is unchanged,
+PPA is always disabled, and its results are not included in native ChatEval pass@k. See
+[RTL AgentEval v1](rtl_agent_eval.md).
+
 The normalized candidate contract is one complete `rtl/TopModule.sv`. Raw RTL and exactly one
 fenced Verilog/SystemVerilog block are accepted by the existing single-turn parser.
 

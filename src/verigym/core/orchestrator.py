@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
+from verigym.core.agent_feedback import (
+    AgentFeedbackController,
+    resolve_agent_feedback_contract,
+    task_with_agent_feedback_contract,
+)
 from verigym.core.artifact_policy import bound_value
 from verigym.core.artifacts import RunLayout
 from verigym.core.environment import VeriGymEnv
@@ -186,6 +191,7 @@ class VeriGym:
         synthesis_profile: ToolchainProfile | None = None
         resolved_profile: ResolvedToolchainProfile | None = None
         synthesis_backend: SynthesisBackendPlugin | None = None
+        feedback_controller: AgentFeedbackController | None = None
         try:
             runtime.prepare(run_id)
             if config.toolchain_profile is not None:
@@ -211,6 +217,28 @@ class VeriGym:
                     expected=config.expected_resolved_profile,
                     backend=synthesis_backend,
                 )
+            agent_feedback_contract = resolve_agent_feedback_contract(
+                task=task,
+                ppa_enabled=config.agent_ppa_feedback,
+                ppa_max_executions=config.agent_ppa_max_calls,
+                resolved_profile=resolved_profile,
+                profile_backend=(
+                    synthesis_profile.flow.backend_plugin
+                    if synthesis_profile is not None and synthesis_profile.flow is not None
+                    else None
+                ),
+            )
+            if config.expected_agent_feedback_contract != agent_feedback_contract:
+                if config.expected_agent_feedback_contract is not None:
+                    raise ConfigurationError(
+                        "agent feedback contract changed after experiment planning"
+                    )
+            if (
+                config.resolved_agent_feedback_contract is not None
+                and config.resolved_agent_feedback_contract != agent_feedback_contract
+            ):
+                raise ConfigurationError("batch agent feedback resolution was not preserved")
+            execution_task = task_with_agent_feedback_contract(task, agent_feedback_contract)
             # Agent and model registries are intentionally consulted only after profile
             # resolution, so a bad image/tool/asset can never trigger a model lookup.
             agent: AgentAdapter = self.registries.agents.get(config.agent)
@@ -247,7 +275,7 @@ class VeriGym:
                     interaction_mode=config.mode,
                     agent=agent,
                     agent_options=config.agent_options,
-                    task=task,
+                    task=execution_task,
                 )
                 resolved_prompt_policy_hash = (
                     resolved_prompt_policy.configuration_fingerprint
@@ -258,7 +286,7 @@ class VeriGym:
                     agent_descriptor=agent.descriptor,
                     protocol_spec=agent.action_protocol_spec,
                     agent_options=config.agent_options,
-                    task=task,
+                    task=execution_task,
                 )
                 if config.expected_agent_configuration_hash is not None:
                     if actual_agent_configuration_hash != config.expected_agent_configuration_hash:
@@ -295,6 +323,8 @@ class VeriGym:
                         config.resolved_agent_configuration_hash,
                         config.expected_action_protocol,
                         config.resolved_action_protocol,
+                        config.expected_agent_feedback_contract,
+                        config.resolved_agent_feedback_contract,
                     )
                 ):
                     raise ValueError("run prompt binding is incomplete")
@@ -329,13 +359,15 @@ class VeriGym:
         )
         external_agent_selected = "external_coding_agent" in agent.descriptor.capabilities
         if (
-            repository_plan_identity(task) is not None
+            (repository_plan_identity(task) is not None or agent_feedback_contract is not None)
             and (agent.requires_model or external_agent_selected)
             and runtime.descriptor.isolation_level != "docker_standard"
         ):
             runtime.close()
             raise ConfigurationError(
-                "model-bearing repository repair requires the Docker security boundary"
+                "model-bearing repository AgentEval requires the Docker security boundary"
+                if agent_feedback_contract is not None
+                else "model-bearing repository repair requires the Docker security boundary"
             )
         tool_policy = ToolPolicySnapshot(
             allowed_tools=allowed_tools,
@@ -389,6 +421,12 @@ class VeriGym:
             agent_harness=agent.descriptor,
             prompt_policy=resolved_prompt_policy,
             action_protocol=resolved_action_protocol,
+            agent_feedback_contract=agent_feedback_contract,
+            agent_feedback_contract_hash=(
+                content_hash(agent_feedback_contract)
+                if agent_feedback_contract is not None
+                else None
+            ),
             tool_policy=tool_policy,
             generation=(
                 GenerationParameters(
@@ -499,7 +537,10 @@ class VeriGym:
             bounded_action_protocol=(
                 resolved_action_protocol is not None
                 and resolved_action_protocol.state_machine_id
-                == "repository_action_state_machine_v2"
+                in {
+                    "repository_action_state_machine_v2",
+                    "repository_action_state_machine_v3",
+                }
             ),
         )
         raw_observation_audit: RawObservationAuditWriter | None = None
@@ -511,14 +552,26 @@ class VeriGym:
             raw_observation_audit = RawObservationAuditWriter(
                 layout.root / "private-audit" / "raw-observations.ndjson"
             )
+        if agent_feedback_contract is not None:
+            feedback_controller = AgentFeedbackController(
+                contract=agent_feedback_contract,
+                task=task,
+                runtime=runtime,
+                profile=synthesis_profile,
+                resolved_profile=resolved_profile,
+                backend=synthesis_backend,
+            )
         env = VeriGymEnv(
-            task=task,
+            task=execution_task,
             assets=assets,
             runtime=runtime,
             tools=self.registries.tools,
             mode=config.mode,
             observation_policy=observation_policy,
             audit_callback=raw_observation_audit,
+            public_test_executor=(
+                feedback_controller.execute if feedback_controller is not None else None
+            ),
         )
         verifier_results: list[VerifierResult] = []
         synthesis_evaluation: SynthesisEvaluation | None = None
@@ -540,6 +593,14 @@ class VeriGym:
                     trace=trace,
                     observation_policy=observation_policy,
                     audit_callback=raw_observation_audit,
+                    public_test_executor=(
+                        feedback_controller.execute if feedback_controller is not None else None
+                    ),
+                    agent_feedback_action_callback=(
+                        env.record_delegated_agent_feedback_action
+                        if agent_feedback_contract is not None
+                        else None
+                    ),
                 )
             model_gateway = (
                 ModelGateway(
@@ -569,7 +630,7 @@ class VeriGym:
             agent.start(
                 AgentContext(
                     run_id=run_id,
-                    task=task,
+                    task=execution_task,
                     seed=config.seed,
                     model_gateway=model_gateway,
                     prompt_builder=prompt_builder,
@@ -578,6 +639,7 @@ class VeriGym:
                     external_bridge=external_bridge,
                     prompt_policy=resolved_prompt_policy,
                     action_protocol=resolved_action_protocol,
+                    agent_feedback_contract=agent_feedback_contract,
                 )
             )
             agent_log = layout.logs / "agent.log"
@@ -841,6 +903,11 @@ class VeriGym:
                 else []
             )
             manifest.action_protocol_records = agent.action_protocol_records()
+            if feedback_controller is not None:
+                manifest.agent_feedback_evaluations = feedback_controller.evaluations
+                manifest.agent_feedback_evaluations_hash = content_hash(
+                    manifest.agent_feedback_evaluations
+                )
             manifest.external_agent_observations = (
                 external_bridge.observations if external_bridge is not None else []
             )

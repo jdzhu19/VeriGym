@@ -525,6 +525,18 @@ def run_task(
         dir_okay=False,
         help="Load a site-specific synthesis profile from YAML or JSON.",
     ),
+    agent_ppa_feedback: bool = typer.Option(
+        False,
+        "--agent-ppa-feedback",
+        help="Enable revision-bound candidate-only PPA feedback for an RTLLM AgentEval task.",
+    ),
+    agent_ppa_max_calls: int = typer.Option(
+        3,
+        "--agent-ppa-max-calls",
+        min=1,
+        max=8,
+        help="Maximum real agent-visible synthesis executions (cached calls remain tool calls).",
+    ),
     seed: int = typer.Option(0, "--seed"),
     output: Path = typer.Option(Path("runs"), "--output"),
 ) -> None:
@@ -589,6 +601,8 @@ def run_task(
             runtime=runtime,
             docker_config=docker_config,
             toolchain_profile=toolchain_profile,
+            agent_ppa_feedback=agent_ppa_feedback,
+            agent_ppa_max_calls=agent_ppa_max_calls,
             seed=seed,
             output=output,
         )

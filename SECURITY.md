@@ -281,6 +281,12 @@ cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](
 
 ### Verifier-only Synopsys MCP transport
 
+RTL AgentEval phase one keeps this transport verifier-only. A frozen RTLLM candidate may use
+DC/MCP for final PPA, but requesting agent-visible PPA with a commercial backend fails before any
+model call. MCP transport, license configuration, PDK/library paths, raw reports, and reference
+artifacts never enter the agent container. Candidate-visible commercial PPA requires a separate
+isolated worker and threat-model update; it is not covered by the current security claim.
+
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
 verifier host; it is not a model-visible tool or a general remote shell. The control plane launches
 one regular, executable, SHA-256-bound wrapper without arguments or a shell. A profile may pass

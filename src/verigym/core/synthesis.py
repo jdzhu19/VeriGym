@@ -378,4 +378,43 @@ def execute_synthesis_quality(
     )
 
 
-__all__ = ["SynthesisEvaluation", "execute_synthesis_quality"]
+def execute_candidate_synthesis_feedback(
+    *,
+    task: VeriTask,
+    candidate_dir: Path,
+    runtime: Runtime,
+    profile: ToolchainProfile,
+    resolved: ResolvedToolchainProfile,
+    plugin: SynthesisBackendPlugin,
+) -> tuple[VerifierResult, SynthesisMetrics]:
+    """Run candidate-only synthesis without persisting raw reports or reference data."""
+
+    environment = _profile_environment(profile)
+    with (
+        tempfile.TemporaryDirectory(prefix="verigym-agent-ppa-source-") as temporary,
+        tempfile.TemporaryDirectory(prefix="verigym-agent-ppa-artifacts-") as artifacts,
+    ):
+        candidate_staging = Path(temporary)
+        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths)
+        plugin.stage_profile_assets(profile, resolved, candidate_staging)
+        return _execute_one(
+            runtime=runtime,
+            plugin=plugin,
+            source_staging=candidate_staging,
+            artifact_dir=Path(artifacts),
+            request=plugin.build_synthesis_request(
+                profile,
+                resolved,
+                run_label="candidate",
+            ),
+            environment=environment,
+            role="candidate",
+            max_output_bytes=task.budget.max_output_bytes_per_tool,
+        )
+
+
+__all__ = [
+    "SynthesisEvaluation",
+    "execute_candidate_synthesis_feedback",
+    "execute_synthesis_quality",
+]

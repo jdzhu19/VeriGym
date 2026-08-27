@@ -33,7 +33,11 @@ verigym_rtllm = [
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
-markers = ["commercial: requires site-installed licensed commercial tools"]
+markers = [
+  "commercial: requires site-installed licensed commercial tools",
+  "external_benchmark: requires an explicitly supplied external benchmark checkout",
+  "docker_integration: requires an explicitly supplied local Docker image",
+]
 
 [tool.ruff]
 line-length = 100

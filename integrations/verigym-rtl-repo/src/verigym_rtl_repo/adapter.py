@@ -10,6 +10,7 @@ from pathlib import Path
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
+    AgentEvalWorkspace,
     AssetRef,
     BudgetSpec,
     Candidate,
@@ -35,9 +36,11 @@ from verigym.plugin_api import (
     VerifierNode,
     VeriTask,
     WorkspaceSpec,
+    materialize_agent_eval_workspace,
 )
 
 from .dataset import (
+    AGENT_EVAL_VARIANT,
     NATIVE_LAYOUT,
     VARIANT,
     Catalog,
@@ -53,6 +56,7 @@ from .scoring import METRIC_PROFILE
 
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "rtl-repo-official-full-context-compat-1"
+AGENT_EVAL_SUITE_VERSION = "rtl-repo-official-context-projection-agent-eval-v1"
 
 
 class RtlRepoSuite(SuiteAdapter):
@@ -86,11 +90,14 @@ class RtlRepoSuite(SuiteAdapter):
         self._catalog_cache: Catalog | None = None
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._workspace_root = Path(__file__).parent / "assets" / "workspace"
+        self._agent_workspaces: list[AgentEvalWorkspace] = []
 
     def with_source(self, config: SuiteSourceConfig) -> RtlRepoSuite:
-        if config.variant not in {None, VARIANT}:
-            raise ConfigurationError(f"suite supports only variant {VARIANT!r}")
-        normalized = config.model_copy(update={"variant": VARIANT}, deep=True)
+        if config.variant not in {None, VARIANT, AGENT_EVAL_VARIANT}:
+            raise ConfigurationError(
+                f"suite supports variants {VARIANT!r} and {AGENT_EVAL_VARIANT!r}"
+            )
+        normalized = config.model_copy(update={"variant": config.variant or VARIANT}, deep=True)
         return RtlRepoSuite(normalized)
 
     def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
@@ -98,7 +105,7 @@ class RtlRepoSuite(SuiteAdapter):
         catalog = adapter._valid_catalog()
         return [
             TaskRef(
-                id=f"{self.descriptor.name}/{VARIANT}/{row.native_id}",
+                id=f"{self.descriptor.name}/{adapter._variant()}/{row.native_id}",
                 suite=self.descriptor.name,
                 native_id=row.native_id,
                 source_root=str(catalog.layout.source_root),
@@ -128,8 +135,45 @@ class RtlRepoSuite(SuiteAdapter):
         problem = self._load_problem(self._row(catalog, native_id))
         if task.source.content_hash != problem.content_hash:
             raise ConfigurationError("RTL-Repo task differs from the frozen task snapshot")
+        if self._is_agent_eval():
+            repository_files = {
+                "README.md": (
+                    "# RTL-Repo AgentEval\n\n"
+                    "This is an official-context projection, not a complete repository.\n"
+                ),
+                "completion.txt": "",
+                "target/cropped_target.sv": problem.cropped_code,
+                "context/index.json": json.dumps(
+                    {
+                        "projection": "official-context projection",
+                        "complete_repository": False,
+                        "target_path": problem.ref.file_path,
+                        "items": [
+                            {"file": f"{index:04d}.txt", "path": path}
+                            for index, (path, _snippet) in enumerate(problem.context)
+                        ],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                **{
+                    f"context/{index:04d}.txt": snippet
+                    for index, (_path, snippet) in enumerate(problem.context)
+                },
+            }
+            materialized = materialize_agent_eval_workspace(
+                task_description=task.description,
+                repository_files=repository_files,
+                compile_contract=None,
+                ppa_available=False,
+            )
+            self._agent_workspaces.append(materialized)
+            visible_root = str(materialized.visible_root)
+        else:
+            visible_root = str(self._workspace_root.resolve(strict=True))
         return ResolvedTaskAssets(
-            visible_root=str(self._workspace_root.resolve(strict=True)),
+            visible_root=visible_root,
             hidden_assets=[
                 AssetRef(
                     kind="inline",
@@ -176,7 +220,11 @@ class RtlRepoSuite(SuiteAdapter):
             return None
         problem = self._load_problem(self._row(self._valid_catalog(), native_id))
         return Candidate(
-            files={"completion.txt": problem.target},
+            files={
+                "repository/completion.txt" if self._is_agent_eval() else "completion.txt": (
+                    problem.target
+                )
+            },
             label="hidden-reference-conformance-only",
         )
 
@@ -198,7 +246,13 @@ class RtlRepoSuite(SuiteAdapter):
             ConformanceCase(
                 name=f"{preferred.native_id}-wrong",
                 candidate=Candidate(
-                    files={"completion.txt": "__verigym_known_bad_completion__\n"},
+                    files={
+                        (
+                            "repository/completion.txt"
+                            if self._is_agent_eval()
+                            else "completion.txt"
+                        ): "__verigym_known_bad_completion__\n"
+                    },
                     label="known-bad",
                 ),
                 expected_resolved=False,
@@ -217,7 +271,7 @@ class RtlRepoSuite(SuiteAdapter):
         return self.with_source(
             SuiteSourceConfig(
                 source_root=source_root,
-                variant=VARIANT,
+                variant=self._variant(),
                 strict_compatibility=strict,
             )
         )
@@ -250,15 +304,19 @@ class RtlRepoSuite(SuiteAdapter):
         if self._snapshot_cache is None:
             license_id, license_hash = _license_metadata(catalog.layout.source_root)
             configuration = {
-                "variant": VARIANT,
+                "variant": self._variant(),
                 "strict_compatibility": self._config.strict_compatibility,
                 "dataset_content_hash": catalog.dataset_content_hash,
-                "prompt_context_policy": "official_full_context_without_tokenizer_truncation",
+                "prompt_context_policy": (
+                    "official_context_projection_v1"
+                    if self._is_agent_eval()
+                    else "official_full_context_without_tokenizer_truncation"
+                ),
             }
             self._snapshot_cache = SuiteSourceSnapshot(
                 source_root=str(catalog.layout.source_root),
                 dataset_root=str(catalog.layout.dataset_root),
-                variant=VARIANT,
+                variant=self._variant(),
                 native_layout=NATIVE_LAYOUT,
                 strict_compatibility=self._config.strict_compatibility,
                 configuration_fingerprint=_content_hash(configuration),
@@ -290,18 +348,27 @@ class RtlRepoSuite(SuiteAdapter):
         snapshot: SuiteSourceSnapshot,
     ) -> VeriTask:
         row = problem.ref
-        task_id = f"{self.descriptor.name}/{VARIANT}/{row.native_id}"
+        variant = self._variant()
+        agent_eval = self._is_agent_eval()
+        task_id = f"{self.descriptor.name}/{variant}/{row.native_id}"
+        candidate_path = "repository/completion.txt" if agent_eval else "completion.txt"
         return VeriTask(
             id=task_id,
             suite=self.descriptor.name,
-            suite_version=SUITE_VERSION,
+            suite_version=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
             task_type=TaskType.COMPLETION,
             title=f"RTL-Repo {row.split} completion {row.native_id}",
-            description=problem.prompt,
+            description=(
+                "Complete exactly the next line in repository/completion.txt. Browse the "
+                "read-only cropped target and indexed context. This is an official-context "
+                "projection, not a complete repository."
+                if agent_eval
+                else problem.prompt
+            ),
             source=SourceSpec(
                 kind="synthetic" if snapshot.synthetic_fixture else "benchmark",
-                uri=f"rtl-repo://{VARIANT}/{row.native_id}",
-                revision=SUITE_VERSION,
+                uri=f"rtl-repo://{variant}/{row.native_id}",
+                revision=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
                 license=snapshot.license_id,
                 attribution=(
                     "Synthetic layout-conformance fixture; not an official benchmark task."
@@ -312,10 +379,20 @@ class RtlRepoSuite(SuiteAdapter):
             ),
             workspace=WorkspaceSpec(
                 base=AssetRef(kind="directory", path="workspace"),
-                editable_globs=["completion.txt"],
-                readonly_globs=["README.md"],
+                editable_globs=[candidate_path],
+                readonly_globs=(
+                    [
+                        "TASK.md",
+                        "PUBLIC_TESTS.md",
+                        "repository/README.md",
+                        "repository/context/**",
+                        "repository/target/**",
+                    ]
+                    if agent_eval
+                    else ["README.md"]
+                ),
                 excluded_globs=["verifier", "verifier/**", "hidden", "hidden/**"],
-                entrypoints=["completion.txt"],
+                entrypoints=[candidate_path],
                 hidden_assets=[
                     AssetRef(
                         kind="inline",
@@ -324,12 +401,20 @@ class RtlRepoSuite(SuiteAdapter):
                     )
                 ],
                 max_changed_files=1,
-                max_patch_lines=2,
+                max_patch_lines=20 if agent_eval else 2,
             ),
             interaction=InteractionSpec(
-                supported_modes=[InteractionMode.CHAT, InteractionMode.AGENT],
-                default_mode=InteractionMode.CHAT,
-                allowed_tools=[],
+                supported_modes=(
+                    [InteractionMode.AGENT]
+                    if agent_eval
+                    else [InteractionMode.CHAT, InteractionMode.AGENT]
+                ),
+                default_mode=InteractionMode.AGENT if agent_eval else InteractionMode.CHAT,
+                allowed_tools=(
+                    ["file.list", "file.read", "file.apply_patch", "file.diff"]
+                    if agent_eval
+                    else []
+                ),
                 allow_general_shell=False,
                 network_policy="none",
                 initial_observation=ObservationPolicy(
@@ -339,18 +424,18 @@ class RtlRepoSuite(SuiteAdapter):
                 ),
                 final_submission=SubmissionPolicy(
                     kind="line",
-                    path="completion.txt",
+                    path=candidate_path,
                 ),
             ),
             budget=BudgetSpec(
-                max_turns=1,
-                max_tool_calls=0,
-                max_model_calls=1,
+                max_turns=20 if agent_eval else 1,
+                max_tool_calls=40 if agent_eval else 0,
+                max_model_calls=20 if agent_eval else 1,
                 max_wall_time_s=300,
                 max_tool_time_s=30,
-                max_output_tokens=50,
+                max_output_tokens=16_384 if agent_eval else 50,
                 max_output_bytes_per_tool=64_000,
-                max_workspace_bytes=512_000,
+                max_workspace_bytes=64 * 1024 * 1024 if agent_eval else 512_000,
             ),
             verifier=VerifierGraph(
                 nodes=[
@@ -362,7 +447,7 @@ class RtlRepoSuite(SuiteAdapter):
                         visibility=ToolVisibility.VERIFIER_ONLY,
                         timeout_s=30,
                         request={
-                            "candidate": "completion.txt",
+                            "candidate": candidate_path,
                             "target": "verifier/target.txt",
                             "metric_profile": METRIC_PROFILE,
                             "split": row.split,
@@ -375,7 +460,7 @@ class RtlRepoSuite(SuiteAdapter):
                 ppa_enabled=False,
             ),
             metadata={
-                "benchmark_variant": VARIANT,
+                "benchmark_variant": variant,
                 "native_layout": NATIVE_LAYOUT,
                 "native_task_id": row.native_id,
                 "benchmark_split": row.split,
@@ -388,12 +473,38 @@ class RtlRepoSuite(SuiteAdapter):
                 "task_content_hash": problem.content_hash,
                 "prompt_hash": problem.prompt_hash,
                 "target_hash": problem.target_hash,
-                "prompt_context_policy": "official_full_context_without_tokenizer_truncation",
+                "prompt_context_policy": (
+                    "official_context_projection_v1"
+                    if agent_eval
+                    else "official_full_context_without_tokenizer_truncation"
+                ),
                 "metric_profile": METRIC_PROFILE,
                 "adapter_version": ADAPTER_VERSION,
                 "synthetic_fixture": snapshot.synthetic_fixture,
+                **(
+                    {
+                        "agent_eval": {
+                            "benchmark_variant": variant,
+                            "compile_test_id": None,
+                            "ppa_supported": False,
+                            "public_test_contract_hash": None,
+                        },
+                        "projection_kind": "official-context projection",
+                        "complete_repository": False,
+                    }
+                    if agent_eval
+                    else {}
+                ),
             },
         )
+
+    def _variant(self) -> str:
+        if self._config is not None and self._config.variant:
+            return self._config.variant
+        return VARIANT
+
+    def _is_agent_eval(self) -> bool:
+        return self._variant() == AGENT_EVAL_VARIANT
 
 
 def _content_hash(value: object) -> str:

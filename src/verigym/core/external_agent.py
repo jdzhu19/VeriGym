@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -68,6 +69,8 @@ class RuntimeExternalAgentBridge:
         trace: TraceWriter,
         observation_policy: RepositoryObservationPolicy | None = None,
         audit_callback: RawObservationCallback | None = None,
+        public_test_executor: Callable[[str, RuntimeSession], CompletedCommand] | None = None,
+        agent_feedback_action_callback: Callable[[str, bool, str | None], None] | None = None,
     ) -> None:
         self._session = session
         self._artifact_root = artifact_root
@@ -76,6 +79,8 @@ class RuntimeExternalAgentBridge:
         self._trace = trace
         self._observation_policy = observation_policy
         self._audit_callback = audit_callback
+        self._public_test_executor = public_test_executor
+        self._agent_feedback_action_callback = agent_feedback_action_callback
         self._accounting: ExternalAgentAccounting | None = None
         self._observations: list[ExternalAgentCallIdentity] = []
         artifact_root.mkdir(parents=True, exist_ok=False)
@@ -144,6 +149,13 @@ class RuntimeExternalAgentBridge:
                 audit_callback=self._audit_callback,
             ),
         )
+        if self._agent_feedback_action_callback is not None:
+            action = {
+                "file.apply_patch": "apply_patch",
+                "file.diff": "inspect_diff",
+            }.get(tool_name)
+            if action is not None:
+                self._agent_feedback_action_callback(action, result.success, None)
         return result.model_copy(deep=True)
 
     def execute_command(self, command: CommandSpec) -> CompletedCommand:
@@ -189,7 +201,11 @@ class RuntimeExternalAgentBridge:
         return completed.model_copy(deep=True)
 
     def execute_public_test(self, test_id: str) -> CompletedCommand:
-        completed = self._session.execute_public_test(test_id)
+        completed = (
+            self._public_test_executor(test_id, self._session)
+            if self._public_test_executor is not None
+            else self._session.execute_public_test(test_id)
+        )
         if self._audit_callback is not None:
             request = RepositoryPublicTestRequest(test_id=test_id)
             result = _PUBLIC_TEST_TOOL.parse_result(
@@ -203,6 +219,12 @@ class RuntimeExternalAgentBridge:
             )
             self._audit_callback(
                 audit_record(result, request={"test_id": test_id}, policy=self._observation_policy)
+            )
+        if self._agent_feedback_action_callback is not None:
+            self._agent_feedback_action_callback(
+                "run_public_test",
+                completed.exit_code == 0 and completed.failure_origin != "control_plane",
+                test_id,
             )
         self.validate_workspace()
         return completed.model_copy(deep=True)

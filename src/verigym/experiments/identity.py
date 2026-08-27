@@ -143,6 +143,8 @@ def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
         raw.pop("repository_task_identity", None)
     if raw.get("action_protocol") is None:
         raw.pop("action_protocol", None)
+    if raw.get("agent_feedback_contract") is None:
+        raw.pop("agent_feedback_contract", None)
     return cast(dict[str, Any], raw)
 
 

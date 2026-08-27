@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from verigym.core.agent_feedback import task_with_agent_feedback_contract
 from verigym.core.errors import ArtifactIntegrityError, ReplayError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.integrity import verify_artifact_manifest
@@ -122,6 +123,30 @@ def replay_run(
             if record.turn_index != expected_turn:
                 raise ReplayError("repository action protocol records are not contiguous")
             expected_turn += 1
+    if (manifest.agent_feedback_contract is None) != (
+        manifest.agent_feedback_contract_hash is None
+    ):
+        raise ReplayError("run manifest feedback contract and hash are inconsistent")
+    if (
+        manifest.agent_feedback_contract is not None
+        and content_hash(manifest.agent_feedback_contract) != manifest.agent_feedback_contract_hash
+    ):
+        raise ReplayError("run manifest feedback contract hash is inconsistent")
+    if manifest.agent_feedback_evaluations:
+        if content_hash(manifest.agent_feedback_evaluations) != (
+            manifest.agent_feedback_evaluations_hash
+        ):
+            raise ReplayError("run manifest feedback evaluation hash is inconsistent")
+        if any(
+            evaluation.sequence != index
+            for index, evaluation in enumerate(manifest.agent_feedback_evaluations)
+        ):
+            raise ReplayError("run manifest feedback evaluations are not contiguous")
+    elif manifest.agent_feedback_evaluations_hash not in {
+        None,
+        content_hash([]),
+    }:
+        raise ReplayError("empty feedback evaluation ledger has an invalid hash")
     task = load_model(run_dir / "task_snapshot.json", VeriTask)
     try:
         task_payload = json.loads((run_dir / "task_snapshot.json").read_text(encoding="utf-8"))
@@ -211,7 +236,8 @@ def replay_run(
     if events[-1].event_type != "episode_terminated":
         raise ReplayError("trace does not end with episode_terminated")
     _validate_provider_request_identities(manifest, events)
-    _validate_repository_action_protocol_replay(manifest, events, task)
+    replay_task = task_with_agent_feedback_contract(task, manifest.agent_feedback_contract)
+    _validate_repository_action_protocol_replay(manifest, events, replay_task)
 
     reverified: list[VerifierResult] | None = None
     replay_candidate_synthesis: SynthesisMetrics | None = None
@@ -479,6 +505,7 @@ def _validate_repository_action_protocol_replay(
     patch_applied = False
     public_observed = False
     diff_observed = False
+    compile_passed = False
     records = manifest.action_protocol_records
     for index, record in enumerate(records):
         if record.turn_index != index or record.state_before != state:
@@ -542,6 +569,22 @@ def _validate_repository_action_protocol_replay(
                     public_observed=public_observed,
                     diff_observed=diff_observed,
                     finished=state == "finished",
+                    public_test_id=(
+                        envelope.arguments.get("test_id")
+                        if envelope.action == "run_public_test"
+                        else None
+                    ),
+                    compile_test_id=(
+                        manifest.agent_feedback_contract.compile_test_id
+                        if manifest.agent_feedback_contract is not None
+                        else None
+                    ),
+                    compile_passed=compile_passed,
+                    compile_required_for_finish=(
+                        manifest.agent_feedback_contract.compile_required_for_finish
+                        if manifest.agent_feedback_contract is not None
+                        else False
+                    ),
                 )
             except RepositoryActionProtocolViolation as exc:
                 failure = exc.subcategory
@@ -589,10 +632,27 @@ def _validate_repository_action_protocol_replay(
                 raise ReplayError("repository action tool-result hash cannot be reproduced")
             if result.success and envelope.action == "apply_patch":
                 patch_applied = True
+                if manifest.agent_feedback_contract is not None:
+                    public_observed = False
+                    compile_passed = False
+                    diff_observed = False
                 state = "candidate_modified"
             elif envelope.action == "run_public_test":
                 public_observed = True
-                state = "public_test_observed"
+                test_id = envelope.arguments.get("test_id")
+                if (
+                    manifest.agent_feedback_contract is not None
+                    and test_id == manifest.agent_feedback_contract.compile_test_id
+                ):
+                    compile_passed = result.success
+                    state = "compile_observed"
+                elif (
+                    manifest.agent_feedback_contract is not None
+                    and test_id == manifest.agent_feedback_contract.ppa_test_id
+                ):
+                    state = "ppa_observed"
+                else:
+                    state = "public_test_observed"
             elif envelope.action == "inspect_diff":
                 diff_observed = True
                 state = "diff_observed"

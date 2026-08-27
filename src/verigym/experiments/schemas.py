@@ -12,6 +12,7 @@ from pydantic import Field, field_validator, model_validator
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.schemas.action_protocol import RepositoryActionProtocolDescriptor
 from verigym.schemas.agent import AgentDescriptor
+from verigym.schemas.agent_feedback import AgentFeedbackContract
 from verigym.schemas.base import StrictModel
 from verigym.schemas.common import (
     InteractionMode,
@@ -79,6 +80,8 @@ class ExperimentRunsConfig(StrictModel):
     seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
     samples_per_task: int = Field(default=1, ge=1, le=_MAX_SAMPLES)
     pass_k: list[int] = Field(default_factory=lambda: [1], min_length=1)
+    agent_ppa_feedback: bool = False
+    agent_ppa_max_calls: int = Field(default=3, ge=1, le=8)
 
     @field_validator("seeds")
     @classmethod
@@ -279,6 +282,10 @@ class ExperimentConfig(StrictModel):
         payload = self.model_dump(mode="json")
         payload["systems"] = sorted(payload["systems"], key=lambda item: item["id"])
         payload["output"] = {"root": "."}
+        if payload["runs"].get("agent_ppa_feedback") is False:
+            payload["runs"].pop("agent_ppa_feedback", None)
+        if payload["runs"].get("agent_ppa_max_calls") == 3:
+            payload["runs"].pop("agent_ppa_max_calls", None)
         # The original Milestone 9 hash contract had an implicit 10,000-item
         # bound. Omitting the additive default here preserves those hashes.
         if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
@@ -348,6 +355,7 @@ class PlanItem(StrictModel):
     prompt_policy: PromptPolicyDescriptor | None = None
     prompt_policy_hash: str | None = None
     action_protocol: RepositoryActionProtocolDescriptor | None = None
+    agent_feedback_contract: AgentFeedbackContract | None = None
     tool_policy: ToolPolicySnapshot
     tool_policy_hash: str
     base_seed: int = Field(ge=0, le=_MAX_SEED)

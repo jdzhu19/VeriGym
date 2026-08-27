@@ -78,9 +78,12 @@ verigym run ... \
 Both options are explicit in the run configuration and identity. Do not aggregate this
 instructional ChatEval profile with raw-completion runs as if their prompt harnesses were equal.
 
-AgentEval exposes the same prompt and hidden verifier while allowing a workspace-writing agent to
-edit only `completion.txt`. It does not enable benchmark tools, general shell access, or network
-access. External agent-harness calls and tools remain separately accounted from direct API calls.
+The separate `official-parquet-v1-agent-eval-v1` variant materializes an
+`official-context projection` instead of embedding the full official prompt. The agent browses a
+read-only index, context snippets, and cropped target; only `repository/completion.txt` is
+editable. This projection is not a complete repository. `next_line` remains verifier-only and
+`all_code` is not read during task loading. It exposes no compile or PPA test and is never combined
+with native ChatEval aggregates. See [RTL AgentEval v1](rtl_agent_eval.md).
 
 The harness selects the first nonempty, non-`//` line, matching upstream post-processing.
 Correctness is the upstream whitespace-token Exact Match. The verifier also records upstream

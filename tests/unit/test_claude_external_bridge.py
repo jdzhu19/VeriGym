@@ -12,7 +12,7 @@ from verigym.core.workspace import WorkspacePolicy
 from verigym.runtimes.local import LocalRuntimeSession
 from verigym.schemas.external_agent import ExternalAgentAccounting, ExternalAgentCallIdentity
 from verigym.schemas.runtime import SessionSpec
-from verigym.schemas.tool import CommandSpec
+from verigym.schemas.tool import CommandSpec, CompletedCommand
 
 
 def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
@@ -25,6 +25,7 @@ def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
     session = LocalRuntimeSession(SessionSpec(source_dir=str(source), label="agent"))
     try:
         trace = TraceWriter(tmp_path / "trace.jsonl", "run")
+        feedback_actions: list[tuple[str, bool, str | None]] = []
         bridge = RuntimeExternalAgentBridge(
             session=session,
             artifact_root=tmp_path / "artifacts" / "claude_cli",
@@ -34,6 +35,15 @@ def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
                 readonly_globs=("TASK.md",),
             ),
             trace=trace,
+            public_test_executor=lambda test_id, _session: CompletedCommand(
+                argv=["public", test_id],
+                cwd=".",
+                exit_code=0,
+                duration_s=0,
+            ),
+            agent_feedback_action_callback=lambda action, success, test_id: feedback_actions.append(
+                (action, success, test_id)
+            ),
         )
         result = bridge.invoke_workspace_tool(
             "file.write",
@@ -41,6 +51,20 @@ def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
         )
         assert result.success
         assert bridge.execute_command(CommandSpec(argv=["/bin/true"])).exit_code == 0
+        assert bridge.invoke_workspace_tool(
+            "file.apply_patch",
+            {
+                "patch": "--- a/repository/a.sv\n+++ b/repository/a.sv\n"
+                "@@ -1 +1 @@\n-module fixed; endmodule\n+module final; endmodule\n"
+            },
+        ).success
+        assert bridge.invoke_workspace_tool("file.diff", {}).success
+        assert bridge.execute_public_test("compile").exit_code == 0
+        assert feedback_actions == [
+            ("apply_patch", True, None),
+            ("inspect_diff", True, None),
+            ("run_public_test", True, "compile"),
+        ]
         identity = ExternalAgentCallIdentity(
             adapter_name="claude-cli-agent",
             adapter_version="0.1.0",

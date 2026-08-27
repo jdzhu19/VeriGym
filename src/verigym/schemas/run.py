@@ -14,6 +14,7 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentDescriptor
+from verigym.schemas.agent_feedback import AgentFeedbackContract, AgentFeedbackEvaluation
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     InteractionMode,
@@ -51,6 +52,8 @@ class RunConfig(StrictModel):
     runtime: str = "local"
     docker_config: DockerRuntimeConfig | None = None
     toolchain_profile: str | None = None
+    agent_ppa_feedback: bool = False
+    agent_ppa_max_calls: int = Field(default=3, ge=1, le=8)
     seed: int = 0
     output: Path = Path("runs")
     run_id: str | None = None
@@ -71,6 +74,8 @@ class RunConfig(StrictModel):
     resolved_agent_configuration_hash: str | None = None
     expected_action_protocol: RepositoryActionProtocolDescriptor | None = None
     resolved_action_protocol: RepositoryActionProtocolDescriptor | None = None
+    expected_agent_feedback_contract: AgentFeedbackContract | None = None
+    resolved_agent_feedback_contract: AgentFeedbackContract | None = None
 
     def identity_payload(self) -> dict[str, Any]:
         """Preserve pre-extension hashes while binding every nonempty option."""
@@ -78,6 +83,10 @@ class RunConfig(StrictModel):
         payload = self.model_dump(mode="json")
         if not payload.get("agent_options"):
             payload.pop("agent_options", None)
+        if payload.get("agent_ppa_feedback") is False:
+            payload.pop("agent_ppa_feedback", None)
+        if payload.get("agent_ppa_max_calls") == 3:
+            payload.pop("agent_ppa_max_calls", None)
         prompt_binding_fields = (
             "expected_prompt_policy",
             "expected_prompt_policy_hash",
@@ -87,6 +96,8 @@ class RunConfig(StrictModel):
             "resolved_agent_configuration_hash",
             "expected_action_protocol",
             "resolved_action_protocol",
+            "expected_agent_feedback_contract",
+            "resolved_agent_feedback_contract",
         )
         if all(payload.get(field) is None for field in prompt_binding_fields):
             for field in prompt_binding_fields:
@@ -164,6 +175,11 @@ class RunConfig(StrictModel):
             raise ValueError("a resolved agent configuration requires a frozen expected hash")
         if self.resolved_action_protocol is not None and self.expected_action_protocol is None:
             raise ValueError("resolved repository action protocol requires a frozen expectation")
+        if (
+            self.resolved_agent_feedback_contract is not None
+            and self.expected_agent_feedback_contract is None
+        ):
+            raise ValueError("resolved agent feedback requires a frozen expected contract")
         return self
 
 
@@ -216,6 +232,10 @@ class RunManifest(StrictModel):
     prompt_policy_hash: str | None = None
     action_protocol: RepositoryActionProtocolDescriptor | None = None
     action_protocol_records: list[RepositoryActionTurnRecord] = Field(default_factory=list)
+    agent_feedback_contract: AgentFeedbackContract | None = None
+    agent_feedback_contract_hash: str | None = None
+    agent_feedback_evaluations: list[AgentFeedbackEvaluation] = Field(default_factory=list)
+    agent_feedback_evaluations_hash: str | None = None
     experiment_id: str | None = None
     plan_item_id: str | None = None
     system_id: str | None = None

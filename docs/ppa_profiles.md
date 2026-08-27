@@ -13,6 +13,12 @@ design, frequency, TNS, or signoff quality.
 
 ## Synthesis metrics are not ranked PPA
 
+RTLLM AgentEval may expose candidate-only Yosys/OpenSTA ATP v2 metrics during iteration. Those
+observations are separately quota-bound and cached by candidate/profile hash; they contain no
+reference or ratio and are never promoted into the final score. Final PPA reruns candidate and
+reference after hidden correctness passes. Agent-visible commercial PPA is outside phase one and
+is rejected before model lookup. See [RTL AgentEval v1](rtl_agent_eval.md).
+
 `SynthesisMetrics` records what Yosys produced: structural counts, cell histogram, optional mapped
 area, diagnostics, tool/profile identity, script hash, and artifact references. These raw metrics
 can exist when synthesis is attempted, including on a path that is later ineligible for ranking.

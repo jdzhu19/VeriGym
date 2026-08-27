@@ -18,6 +18,7 @@ from verigym.suites.verilog_eval.schemas import (
 
 _DATASET_BY_VARIANT = {
     VerilogEvalVariant.V2_SPEC_TO_RTL: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1: "dataset_spec-to-rtl",
 }
 _KNOWN_DATASET_DIRECTORIES = {
     "dataset_spec-to-rtl": VerilogEvalVariant.V2_SPEC_TO_RTL,

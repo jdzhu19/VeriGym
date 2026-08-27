@@ -194,6 +194,25 @@ def test_normalized_task_exposes_only_public_assets_and_logical_provenance() -> 
     assert "_test.sv" not in assets.model_dump_json()
 
 
+def test_agent_eval_variant_materializes_public_compile_without_hidden_assets() -> None:
+    suite = adapter(variant="v2-spec-to-rtl-agent-eval-v1")
+    reference = list(suite.discover())[0]
+    task = suite.load_task(reference)
+    assets = suite.resolve_assets(task)
+    visible = Path(assets.visible_root)
+
+    assert "/v2-spec-to-rtl-agent-eval-v1/" in task.id
+    assert task.interaction.supported_modes == ["agent"]
+    assert task.workspace.entrypoints == ["repository/rtl/TopModule.sv"]
+    assert task.metadata["agent_eval"]["ppa_supported"] is False
+    assert [mount.label for mount in assets.read_only_mounts] == ["public_tests"]
+    visible_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in visible.rglob("*") if path.is_file()
+    )
+    assert "module RefModule" not in visible_text
+    assert "module tb" not in visible_text
+
+
 def test_multiple_adapter_roots_coexist_without_global_state(tmp_path: Path) -> None:
     other = copied_fixture(tmp_path)
     prompt = other / "dataset_spec-to-rtl" / "Prob900_fixture_and_prompt.txt"
