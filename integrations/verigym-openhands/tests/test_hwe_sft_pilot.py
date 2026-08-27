@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+    build_bounded_sft_agent_version,
     evaluate_bounded_sft_data_gate,
     load_bounded_sft_pilot_contract,
     validate_bounded_sft_pilot_contract,
@@ -50,6 +52,19 @@ def _eligible(episode_id: str, task_id: str) -> dict[str, Any]:
     }
 
 
+def _locks() -> dict[str, Any]:
+    tasks = (*OPENHANDS_BOUNDED_SFT_TRAINING_TASKS, *OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS)
+    return {
+        task_id: SimpleNamespace(
+            task_id=task_id,
+            lock_hash=f"{index + 1:064x}",
+            derived_agent_image_id=f"sha256:{index + 101:064x}",
+            verifier_base_image_id=f"sha256:{index + 201:064x}",
+        )
+        for index, task_id in enumerate(tasks)
+    }
+
+
 def test_bounded_sft_contract_freezes_16_4_6_without_leakage() -> None:
     contract = load_bounded_sft_pilot_contract(_config_path())
     collection = contract["collection"]
@@ -81,6 +96,22 @@ def test_bounded_sft_contract_rejects_heldout_collection() -> None:
 
     with pytest.raises(ValueError, match="held-out task was collected"):
         evaluate_bounded_sft_data_gate(attempts)
+
+
+def test_bounded_sft_agent_version_binds_all_train_and_validation_images() -> None:
+    version = build_bounded_sft_agent_version(source_commit="a" * 40, image_locks=_locks())
+
+    assert version.agent_version_id == ("openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v1")
+    assert len(version.image_hashes) == 2 * (
+        len(OPENHANDS_BOUNDED_SFT_TRAINING_TASKS) + len(OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS)
+    )
+    assert version.training_dataset_hash is None
+    assert version.model_weights_modified is False
+
+    locks = _locks()
+    locks.pop(OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS[-1])
+    with pytest.raises(ValueError, match="every train/validation image lock"):
+        build_bounded_sft_agent_version(source_commit="a" * 40, image_locks=locks)
 
 
 def test_bounded_sft_gate_requires_eight_distinct_train_and_both_validation_tasks() -> None:
@@ -150,3 +181,18 @@ def test_bounded_sft_source_rejects_file_or_role_drift(tmp_path: Path) -> None:
             task_split_path=split_path,
             qualification_progress_path=qualification_path,
         )
+
+
+def test_bounded_sft_collector_has_no_training_gpu_or_heldout_execution_path() -> None:
+    source = (
+        Path(__file__).parents[3] / "scripts" / "collect_cva6_hwe_openhands_bounded_sft.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"whole_episode_retries": 0' in source
+    assert '"provider_request_retries": 0' in source
+    assert '"optimizer_steps": 0' in source
+    assert '"new_hpc_jobs_submitted": False' in source
+    assert '"heldout_episodes_collected": 0' in source
+    assert "dry_run_decision_record_v4" in source
+    assert "optimizer.step" not in source
+    assert "bsub" not in source

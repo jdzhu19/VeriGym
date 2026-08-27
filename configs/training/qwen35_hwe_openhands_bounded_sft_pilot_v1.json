@@ -32,8 +32,8 @@
   },
   "student": {
     "base_model": "Qwen3.5-9B",
-    "base_model_snapshot_hash": "fce78eef75ac0721e6781f5f2b6b3461246660d583ed2f6f8f55e657f6483f84",
-    "tokenizer_hash": "440110a6a69e7fff2be69005bc6bda0477fb40b53db9b0e9597166cd2abedb24",
+    "base_model_snapshot_hash": "fce78eefb5b60ff95c480d2fb823bb45370a4abc933d6114a84d6a321486b156",
+    "tokenizer_hash": "440110a9c8523a13003af840f2b31ce90709383488fcc7a62cfc19ab8ead6c6e",
     "trust_remote_code": false,
     "transformers_commit": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
     "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
@@ -262,5 +262,5 @@
     "hpc_jobs_submitted": false,
     "new_hpc_jobs_submitted": false
   },
-  "contract_hash": "8c5585ba740c57d81b4ba7df54384d39ed79f0dd42a414c27441ae975a178622"
+  "contract_hash": "882a2bfc9b7d4c0e43bcc9d97724b7dcdd05c6129d63e0ab85461c9d6ab3037d"
 }

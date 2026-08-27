@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -10,11 +11,16 @@ from pathlib import Path
 from typing import Any
 
 from verigym.core.hashing import content_hash, hash_bytes
-from verigym.schemas.evolution import TaskSplitManifest
+from verigym.evolution.memory import build_agent_version, validate_agent_version
+from verigym.hwe.deepseek_harness import deepseek_harness_tool_definitions
+from verigym.schemas.common import InteractionMode
+from verigym.schemas.evolution import AgentVersionManifest, TaskSplitManifest
+
+from .hwe_agent import OpenHandsHweAgentAdapter
 
 OPENHANDS_BOUNDED_SFT_PILOT_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v1"
 OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH = (
-    "8c5585ba740c57d81b4ba7df54384d39ed79f0dd42a414c27441ae975a178622"
+    "882a2bfc9b7d4c0e43bcc9d97724b7dcdd05c6129d63e0ab85461c9d6ab3037d"
 )
 OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT = "0ad17bd8259141e63efdfd7914407ed821993b60"
 OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH = (
@@ -26,6 +32,14 @@ OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256 = (
 OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256 = (
     "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3"
 )
+OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v1"
+OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V1"
+OPENHANDS_BOUNDED_SFT_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
+OPENHANDS_BOUNDED_SFT_API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
+
+_OPENHANDS_SDK_WHEEL_SHA256 = "10af3d6caf1075ecbb8520db1150c0ec0179ee352b19f0395d2273afda6004d2"
+_LITELLM_WHEEL_SHA256 = "ad5f7bf4e10cefa32273f0e8092eaf6c757aeb1c6484c0c3d8908e0342bde759"
+_TIKTOKEN_WHEEL_SHA256 = "d20b5c6af30e621b4aca094ee61777a44118f52d886dbe4f02b70dfe05c15350"
 
 OPENHANDS_BOUNDED_SFT_TRAINING_TASKS = (
     "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032",
@@ -64,6 +78,109 @@ class BoundedSftDataGate:
     eligible_validation_trajectories: int
     distinct_validation_tasks: int
     reason: str | None
+
+
+def build_bounded_sft_agent_version(
+    *, source_commit: str, image_locks: Mapping[str, Any]
+) -> AgentVersionManifest:
+    """Bind every train/validation task image and the exact OpenHands policy."""
+
+    if len(source_commit) != 40 or any(
+        character not in "0123456789abcdef" for character in source_commit
+    ):
+        raise ValueError("bounded SFT agent version requires a full Git SHA")
+    expected_tasks = set(
+        (*OPENHANDS_BOUNDED_SFT_TRAINING_TASKS, *OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS)
+    )
+    if set(image_locks) != expected_tasks:
+        raise ValueError("bounded SFT agent version requires every train/validation image lock")
+
+    lock_receipts: dict[str, str] = {}
+    image_hashes: dict[str, str] = {}
+    for task_id in sorted(expected_tasks):
+        lock = image_locks[task_id]
+        if getattr(lock, "task_id", None) != task_id:
+            raise ValueError("bounded SFT image lock task identity changed")
+        lock_hash = str(getattr(lock, "lock_hash", ""))
+        agent_image = str(getattr(lock, "derived_agent_image_id", ""))
+        verifier_image = str(getattr(lock, "verifier_base_image_id", ""))
+        if (
+            len(lock_hash) != 64
+            or not agent_image.startswith("sha256:")
+            or not verifier_image.startswith("sha256:")
+        ):
+            raise ValueError("bounded SFT image lock is incomplete")
+        lock_receipts[task_id] = lock_hash
+        image_hashes[f"task-agent:{task_id}"] = agent_image.removeprefix("sha256:")
+        image_hashes[f"task-verifier:{task_id}"] = verifier_image.removeprefix("sha256:")
+
+    agent = OpenHandsHweAgentAdapter()
+    spec = agent.prompt_policy_spec
+    assert spec is not None
+    prompt_contract_hash = content_hash(
+        {
+            "resolver_id": "agent_execution_prompt_policy_v1",
+            "prompt_contract_id": spec.prompt_contract_id,
+            "prompt_contract_version": spec.prompt_contract_version,
+            "interaction_mode": InteractionMode.AGENT,
+            "task_context_policy": spec.task_context_policy,
+            "base_instruction_policy": spec.base_instruction_policy,
+            "content_visibility_policy": spec.content_visibility_policy,
+            "max_prompt_bytes": spec.max_prompt_bytes,
+            "max_task_context_bytes": spec.max_task_context_bytes,
+            "agent_descriptor_hash": content_hash(agent.descriptor),
+        }
+    )
+    package_root = Path(__file__).resolve().parent
+    source_hashes = {
+        path.name: hash_bytes(path.read_bytes())
+        for path in sorted(package_root.glob("*.py"))
+        if path.is_file() and not path.is_symlink()
+    }
+    version = build_agent_version(
+        agent_version_id=OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID,
+        parent_version_hash=None,
+        update_type="none",
+        executable_in_m10b=False,
+        base_agent_id=agent.descriptor.name,
+        agent_descriptor_hash=content_hash(agent.descriptor),
+        model_id="openai/deepseek-v4-flash",
+        reasoning_effort="thinking-disabled",
+        auth_semantic_id="deepseek.env-bearer.v1",
+        runtime_identity_hash=content_hash(
+            {
+                "python_executable_sha256": hash_bytes(Path(sys.executable).read_bytes()),
+                "openhands_sdk_version": "1.42.1",
+                "litellm_version": "1.93.0",
+                "tiktoken_version": "0.7.0",
+                "pilot_contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH,
+                "collection_profile_id": "hwe_production_native_shell_v2",
+                "tool_contract_id": "hwe_native_shell_v2",
+                "task_image_lock_hashes": lock_receipts,
+                "agent_runtime_network": "none",
+                "whole_episode_retries": 0,
+                "provider_request_retries": 0,
+            }
+        ),
+        tool_policy_hash=content_hash(deepseek_harness_tool_definitions()),
+        prompt_contract_hash=prompt_contract_hash,
+        source_commit=source_commit,
+        package_hashes={
+            "litellm-1.93.0-wheel": _LITELLM_WHEEL_SHA256,
+            "openhands-sdk-1.42.1-wheel": _OPENHANDS_SDK_WHEEL_SHA256,
+            "tiktoken-0.7.0-wheel": _TIKTOKEN_WHEEL_SHA256,
+            "verigym-openhands-source": content_hash(source_hashes),
+            "verigym-source-commit": content_hash(source_commit),
+        },
+        image_hashes=image_hashes,
+        training_dataset_hash=None,
+        reward_schema_hash=None,
+        reward_profile_hash=None,
+        memory_builder_identity_hash=None,
+        memory_pack_hash=None,
+        model_weights_modified=False,
+    )
+    return validate_agent_version(version)
 
 
 def load_bounded_sft_pilot_contract(path: Path) -> dict[str, Any]:
@@ -392,12 +509,17 @@ def _regular_bytes(path: Path) -> bytes:
 
 
 __all__ = [
+    "OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID",
+    "OPENHANDS_BOUNDED_SFT_API_KEY_ENV",
+    "OPENHANDS_BOUNDED_SFT_BASE_URL_ENV",
     "OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS",
     "OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH",
     "OPENHANDS_BOUNDED_SFT_PILOT_FORMAT",
+    "OPENHANDS_BOUNDED_SFT_OPT_IN_ENV",
     "OPENHANDS_BOUNDED_SFT_TRAINING_TASKS",
     "OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS",
     "BoundedSftDataGate",
+    "build_bounded_sft_agent_version",
     "evaluate_bounded_sft_data_gate",
     "load_bounded_sft_pilot_contract",
     "validate_bounded_sft_pilot_contract",
