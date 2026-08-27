@@ -154,10 +154,23 @@ jobs:
       - name: Type-check the plugin
         env:
           MYPYPATH: integrations/verigym-openhands/src
-        run: >-
-          python -m mypy
-          --config-file integrations/verigym-openhands/pyproject.toml
-          -p verigym_openhands
+        run: |
+          set +e
+          mypy_output=$(
+            python -m mypy \
+              --config-file integrations/verigym-openhands/pyproject.toml \
+              -p verigym_openhands 2>&1
+          )
+          mypy_status=$?
+          set -e
+          printf '%s\n' "$mypy_output"
+          if ((mypy_status != 0)); then
+            annotation=${mypy_output//'%'/'%25'}
+            annotation=${annotation//$'\r'/'%0D'}
+            annotation=${annotation//$'\n'/'%0A'}
+            printf '::error title=OpenHands mypy::%s\n' "$annotation"
+            exit "$mypy_status"
+          fi
       - name: Run zero-model plugin tests
         run: |
           python -m pytest -c integrations/verigym-openhands/pyproject.toml \
