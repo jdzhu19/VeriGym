@@ -44,9 +44,10 @@ it is never shared with the live agent and is removed after required artifacts a
 
 Docker UID mapping may temporarily broaden regular-file permissions inside the private agent
 staging tree. Candidate export removes that runtime-only broadening: existing files recover their
-frozen visible-source modes, newly added files become mode `0644`, and symlink, special-bit, or
-group/world-writable mode references fail closed. Repository contracts continue to forbid mode
-changes, and canonical candidate comparison still checks every file mode.
+visible-source modes frozen before runtime preparation, newly added files become mode `0644`, and
+symlink, special-bit, or group/world-writable mode references fail closed. The export never trusts
+the mutable visible-source staging tree after runtime execution. Repository contracts continue to
+forbid mode changes, and canonical candidate comparison still checks every file mode.
 
 The Docker CLI backend uses argument arrays with `shell=False`, bounded control-plane calls, and
 no tar extraction. It never mounts the repository root, host home, Docker socket, or an external

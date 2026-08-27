@@ -12,7 +12,7 @@ from typing import Any, Literal, cast
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.core.artifact_policy import bound_value
-from verigym.core.artifacts import RunLayout
+from verigym.core.artifacts import RunLayout, snapshot_candidate_file_modes
 from verigym.core.environment import VeriGymEnv
 from verigym.core.episode import EpisodeState, TerminationReason
 from verigym.core.errors import ConfigurationError, PathPolicyError
@@ -166,6 +166,7 @@ class VeriGym:
             and source_snapshot != config.expected_suite_source_snapshot
         ):
             raise ConfigurationError("suite source identity changed after experiment planning")
+        reference_file_modes = snapshot_candidate_file_modes(Path(assets.visible_root))
         if config.mode not in task.interaction.supported_modes:
             raise ConfigurationError(
                 f"task {task.id} does not support interaction mode {config.mode.value}"
@@ -723,7 +724,7 @@ class VeriGym:
                 layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
                 layout.export_candidate(
                     env.session.root,
-                    reference_root=Path(assets.visible_root),
+                    reference_file_modes=reference_file_modes,
                 )
                 repository_candidate = suite.freeze_repository_candidate(
                     task=task,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,7 +59,12 @@ class RunLayout:
             (layout.logs / name).write_text("", encoding="utf-8")
         return layout
 
-    def export_candidate(self, session_root: Path, *, reference_root: Path) -> None:
+    def export_candidate(
+        self,
+        session_root: Path,
+        *,
+        reference_file_modes: Mapping[str, int],
+    ) -> None:
         copy_tree_safely(
             session_root,
             self.candidate,
@@ -66,42 +72,46 @@ class RunLayout:
         )
         _restore_candidate_file_modes(
             candidate_root=self.candidate,
-            reference_root=reference_root,
+            reference_file_modes=reference_file_modes,
         )
 
 
-def _restore_candidate_file_modes(*, candidate_root: Path, reference_root: Path) -> None:
+def snapshot_candidate_file_modes(reference_root: Path) -> dict[str, int]:
+    """Freeze safe visible-source file modes before a runtime can mutate its staging tree."""
+
+    reference = reference_root.resolve(strict=True)
+    modes: dict[str, int] = {}
+    for source in sorted(reference.rglob("*")):
+        relative = source.relative_to(reference).as_posix()
+        if source.is_symlink():
+            raise PathPolicyError(f"candidate mode reference cannot be a symlink: {relative}")
+        metadata = source.stat()
+        if stat.S_ISDIR(metadata.st_mode):
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PathPolicyError(f"candidate mode reference is not a regular file: {relative}")
+        mode = stat.S_IMODE(metadata.st_mode)
+        if mode & 0o7022:
+            raise PathPolicyError(f"candidate mode reference has unsafe permissions: {relative}")
+        modes[relative] = mode
+    return modes
+
+
+def _restore_candidate_file_modes(
+    *,
+    candidate_root: Path,
+    reference_file_modes: Mapping[str, int],
+) -> None:
     """Remove runtime permission broadening from one exported candidate tree."""
 
     candidate = candidate_root.resolve(strict=True)
-    reference = reference_root.resolve(strict=True)
     for target in sorted(candidate.rglob("*")):
         if target.is_symlink():
             raise PathPolicyError("candidate export cannot contain symlinks")
         if not target.is_file():
             continue
-        relative = target.relative_to(candidate)
-        source = reference / relative
-        cursor = reference
-        for part in relative.parts:
-            cursor /= part
-            if cursor.is_symlink():
-                raise PathPolicyError(
-                    f"candidate mode reference cannot be a symlink: {relative.as_posix()}"
-                )
-            if not cursor.exists():
-                break
-        if source.exists():
-            metadata = source.stat()
-            if not stat.S_ISREG(metadata.st_mode):
-                raise PathPolicyError(
-                    f"candidate mode reference is not a regular file: {relative.as_posix()}"
-                )
-            mode = stat.S_IMODE(metadata.st_mode)
-            if mode & 0o7022:
-                raise PathPolicyError(
-                    f"candidate mode reference has unsafe permissions: {relative.as_posix()}"
-                )
-        else:
-            mode = 0o644
+        relative = target.relative_to(candidate).as_posix()
+        mode = reference_file_modes.get(relative, 0o644)
+        if not isinstance(mode, int) or mode < 0 or mode > 0o7777 or mode & 0o7022:
+            raise PathPolicyError(f"candidate mode receipt has unsafe permissions: {relative}")
         target.chmod(mode)
