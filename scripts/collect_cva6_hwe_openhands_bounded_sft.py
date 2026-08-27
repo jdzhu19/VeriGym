@@ -23,6 +23,7 @@ from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_PILOT_FORMAT,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+    build_bounded_sft_agent_options,
     build_bounded_sft_agent_version,
     evaluate_bounded_sft_data_gate,
     load_bounded_sft_pilot_contract,
@@ -47,7 +48,7 @@ from verigym.hwe.qwen_action_tokenizer import (
 )
 from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import InteractionMode
-from verigym.schemas.evolution import TaskSplitEntry, TaskSplitManifest
+from verigym.schemas.evolution import AgentVersionManifest, TaskSplitEntry, TaskSplitManifest
 from verigym.schemas.run import RunConfig
 from verigym.schemas.suite import SuiteSourceConfig
 
@@ -174,6 +175,14 @@ def collect(
         source_commit=source_commit,
         image_locks=locks,
     )
+    training_schedule = list(contract["collection"]["training_schedule"])
+    validation_schedule = list(contract["collection"]["validation_schedule"])
+    for episode in (*training_schedule, *validation_schedule):
+        if not episode.get("predecessor"):
+            build_bounded_sft_agent_options(
+                seed=int(episode["seed"]),
+                agent_version=agent_version,
+            )
     _zero_call_preflight(locks)
 
     root = _new_output(output)
@@ -199,8 +208,6 @@ def collect(
         {**image_receipt, "receipt_hash": content_hash(image_receipt)},
     )
 
-    training_schedule = list(contract["collection"]["training_schedule"])
-    validation_schedule = list(contract["collection"]["validation_schedule"])
     predecessor_episode = next(item for item in training_schedule if item.get("predecessor"))
     predecessor_dry_runs = [
         dry_run_decision_record_v4(record, tokenizer=exact_tokenizer)
@@ -318,12 +325,6 @@ def collect(
 
         registries.agents.register(OpenHandsHweAgentAdapter())
     service = VeriGym(registries)
-    manifest_json = json.dumps(
-        agent_version.model_dump(mode="json"),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
     scheduled = [
         *(dict(item, role="training") for item in training_schedule if not item.get("predecessor")),
         *(dict(item, role="validation") for item in validation_schedule),
@@ -340,8 +341,7 @@ def collect(
             runs=runs,
             records_root=records_root,
             exact_tokenizer=exact_tokenizer,
-            agent_version_manifest_json=manifest_json,
-            agent_version_hash=agent_version.version_hash,
+            agent_version=agent_version,
             source_commit=source_commit,
             root=root,
             base_report=base_report,
@@ -458,8 +458,7 @@ def _run_episode(
     runs: Path,
     records_root: Path,
     exact_tokenizer: QwenDecisionExampleTokenizer,
-    agent_version_manifest_json: str,
-    agent_version_hash: str,
+    agent_version: AgentVersionManifest,
     source_commit: str,
     root: Path,
     base_report: dict[str, Any],
@@ -491,26 +490,10 @@ def _run_episode(
         expected_source_hash=entry.source_hash,
         mode=InteractionMode.AGENT,
         agent="openhands-hwe-agent",
-        agent_options={
-            "model_id": _MODEL,
-            "base_url_env": OPENHANDS_BOUNDED_SFT_BASE_URL_ENV,
-            "api_key_env": OPENHANDS_BOUNDED_SFT_API_KEY_ENV,
-            "max_iterations": _MAX_ITERATIONS,
-            "max_process_time_s": 3_600,
-            "max_output_tokens": _MAX_OUTPUT_TOKENS,
-            "max_context_tokens": _MAX_CONTEXT_TOKENS,
-            "seed": seed,
-            "temperature": 0,
-            "top_p": 1,
-            "whole_episode_retries": 0,
-            "expected_sdk_version": _SDK_VERSION,
-            "campaign_role": "training",
-            "capture_training_transcript": True,
-            "agent_version_id": OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID,
-            "agent_version_hash": agent_version_hash,
-            "agent_version_manifest_json": agent_version_manifest_json,
-            "collection_profile_id": "hwe_production_native_shell_v2",
-        },
+        agent_options=build_bounded_sft_agent_options(
+            seed=seed,
+            agent_version=agent_version,
+        ),
         runtime="docker",
         docker_config=_docker_config(lock),
         seed=seed,

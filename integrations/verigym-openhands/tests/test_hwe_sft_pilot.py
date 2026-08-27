@@ -14,6 +14,7 @@ from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+    build_bounded_sft_agent_options,
     build_bounded_sft_agent_version,
     evaluate_bounded_sft_data_gate,
     load_bounded_sft_pilot_contract,
@@ -102,16 +103,38 @@ def test_bounded_sft_agent_version_binds_all_train_and_validation_images() -> No
     version = build_bounded_sft_agent_version(source_commit="a" * 40, image_locks=_locks())
 
     assert version.agent_version_id == ("openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v1")
-    assert len(version.image_hashes) == 2 * (
-        len(OPENHANDS_BOUNDED_SFT_TRAINING_TASKS) + len(OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS)
-    )
+    assert set(version.image_hashes) == {
+        "bounded_sft_agent_image_set",
+        "bounded_sft_verifier_image_set",
+    }
     assert version.training_dataset_hash is None
     assert version.model_weights_modified is False
+
+    changed_locks = _locks()
+    changed_locks[OPENHANDS_BOUNDED_SFT_TRAINING_TASKS[0]].derived_agent_image_id = (
+        "sha256:" + "f" * 64
+    )
+    changed = build_bounded_sft_agent_version(
+        source_commit="a" * 40,
+        image_locks=changed_locks,
+    )
+    assert changed.version_hash != version.version_hash
 
     locks = _locks()
     locks.pop(OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS[-1])
     with pytest.raises(ValueError, match="every train/validation image lock"):
         build_bounded_sft_agent_version(source_commit="a" * 40, image_locks=locks)
+
+
+def test_bounded_sft_agent_options_fit_core_plugin_bounds() -> None:
+    version = build_bounded_sft_agent_version(source_commit="a" * 40, image_locks=_locks())
+
+    options = build_bounded_sft_agent_options(seed=484, agent_version=version)
+
+    manifest = options["agent_version_manifest_json"]
+    assert isinstance(manifest, str)
+    assert len(manifest.encode("utf-8")) <= 4096
+    assert options["agent_version_hash"] == version.version_hash
 
 
 def test_bounded_sft_gate_requires_eight_distinct_train_and_both_validation_tasks() -> None:

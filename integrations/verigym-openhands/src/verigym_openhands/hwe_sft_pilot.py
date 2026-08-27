@@ -13,8 +13,10 @@ from typing import Any
 from verigym.core.hashing import content_hash, hash_bytes
 from verigym.evolution.memory import build_agent_version, validate_agent_version
 from verigym.hwe.deepseek_harness import deepseek_harness_tool_definitions
+from verigym.plugin_api import JsonValue
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.evolution import AgentVersionManifest, TaskSplitManifest
+from verigym.schemas.options import validate_plugin_options
 
 from .hwe_agent import OpenHandsHweAgentAdapter
 
@@ -96,7 +98,8 @@ def build_bounded_sft_agent_version(
         raise ValueError("bounded SFT agent version requires every train/validation image lock")
 
     lock_receipts: dict[str, str] = {}
-    image_hashes: dict[str, str] = {}
+    agent_image_receipts: dict[str, str] = {}
+    verifier_image_receipts: dict[str, str] = {}
     for task_id in sorted(expected_tasks):
         lock = image_locks[task_id]
         if getattr(lock, "task_id", None) != task_id:
@@ -111,8 +114,16 @@ def build_bounded_sft_agent_version(
         ):
             raise ValueError("bounded SFT image lock is incomplete")
         lock_receipts[task_id] = lock_hash
-        image_hashes[f"task-agent:{task_id}"] = agent_image.removeprefix("sha256:")
-        image_hashes[f"task-verifier:{task_id}"] = verifier_image.removeprefix("sha256:")
+        agent_image_receipts[task_id] = agent_image.removeprefix("sha256:")
+        verifier_image_receipts[task_id] = verifier_image.removeprefix("sha256:")
+
+    # AgentVersionManifest is transported through bounded plugin options. Bind the
+    # complete task-to-image maps by content hash so the manifest remains below the
+    # generic 4096-byte per-string boundary without weakening image identity.
+    image_hashes = {
+        "bounded_sft_agent_image_set": content_hash(agent_image_receipts),
+        "bounded_sft_verifier_image_set": content_hash(verifier_image_receipts),
+    }
 
     agent = OpenHandsHweAgentAdapter()
     spec = agent.prompt_policy_spec
@@ -181,6 +192,46 @@ def build_bounded_sft_agent_version(
         model_weights_modified=False,
     )
     return validate_agent_version(version)
+
+
+def build_bounded_sft_agent_options(
+    *, seed: int, agent_version: AgentVersionManifest
+) -> dict[str, JsonValue]:
+    """Build and prevalidate the exact per-episode OpenHands plugin options."""
+
+    version = validate_agent_version(agent_version)
+    if (
+        version.agent_version_id != OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID
+        or version.base_agent_id != "openhands-hwe-agent"
+        or version.model_id != "openai/deepseek-v4-flash"
+    ):
+        raise ValueError("bounded SFT agent options require the frozen agent version")
+    manifest_json = json.dumps(
+        version.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    options: dict[str, JsonValue] = {
+        "model_id": "openai/deepseek-v4-flash",
+        "base_url_env": OPENHANDS_BOUNDED_SFT_BASE_URL_ENV,
+        "api_key_env": OPENHANDS_BOUNDED_SFT_API_KEY_ENV,
+        "max_iterations": 200,
+        "max_process_time_s": 3_600,
+        "max_output_tokens": 2_048,
+        "max_context_tokens": 65_536,
+        "seed": seed,
+        "temperature": 0,
+        "top_p": 1,
+        "whole_episode_retries": 0,
+        "expected_sdk_version": "1.42.1",
+        "campaign_role": "training",
+        "capture_training_transcript": True,
+        "agent_version_id": version.agent_version_id,
+        "agent_version_hash": version.version_hash,
+        "agent_version_manifest_json": manifest_json,
+        "collection_profile_id": "hwe_production_native_shell_v2",
+    }
+    return validate_plugin_options(options)
 
 
 def load_bounded_sft_pilot_contract(path: Path) -> dict[str, Any]:
@@ -519,6 +570,7 @@ __all__ = [
     "OPENHANDS_BOUNDED_SFT_TRAINING_TASKS",
     "OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS",
     "BoundedSftDataGate",
+    "build_bounded_sft_agent_options",
     "build_bounded_sft_agent_version",
     "evaluate_bounded_sft_data_gate",
     "load_bounded_sft_pilot_contract",
