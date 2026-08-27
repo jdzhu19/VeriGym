@@ -137,6 +137,16 @@ the typed call; the adapter does not synthesize an action or infer completion fr
 assistant text. Earlier message-shape-bound v4/v5, unvalidated state-bound v6, and outer-exception-
 only v7 profiles remain separately versioned historical diagnostics.
 
+The separately versioned v9 profile keeps every ordinary action on the historical Chat
+Completions route. Only the private-receipt-bound recovery request uses the provider's Responses
+API, with the same complete message history and exact six-tool contract. Because OpenHands SDK
+1.42.1 normalizes Responses tool choice back to `auto`, the local subclass rebinds only its own
+named `finish` choice after the SDK serializer returns; it does not modify the installed SDK,
+remove tools, synthesize a call, or expose recovery state. The response must still contain exactly
+one provider-emitted `finish` call before broker dispatch. Responses thinking is explicitly
+disabled, storage is disabled, raw request and response bodies are not persisted, and all existing
+receipt, counter, exception-chain, interruption, verifier, and trajectory gates remain in force.
+
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2
 collector additionally permits one frozen same-session format recovery: when OpenHands attempts

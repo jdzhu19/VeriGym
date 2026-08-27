@@ -250,11 +250,23 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
 
                     llm_type = ValidatedRecoveryStateForcedFinishLLM
                     recovery_violation_type = RecoveryToolChoiceViolation
+                elif (
+                    settings.tool_choice_policy
+                    == "validated_responses_recovery_state_forced_finish_v9"
+                ):
+                    from .hwe_tool_choice import (
+                        RecoveryToolChoiceViolation,
+                        ValidatedResponsesRecoveryStateForcedFinishLLM,
+                    )
+
+                    llm_type = ValidatedResponsesRecoveryStateForcedFinishLLM
+                    recovery_violation_type = RecoveryToolChoiceViolation
                 llm_options: dict[str, Any] = {}
                 if settings.tool_choice_policy in {
                     "recovery_state_forced_finish_v6",
                     "validated_recovery_state_forced_finish_v7",
                     "validated_recovery_state_forced_finish_v8",
+                    "validated_responses_recovery_state_forced_finish_v9",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -768,6 +780,7 @@ def _identity(
         "recovery_state_forced_finish_v6": "v6",
         "validated_recovery_state_forced_finish_v7": "v7",
         "validated_recovery_state_forced_finish_v8": "v8",
+        "validated_responses_recovery_state_forced_finish_v9": "v9",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -805,6 +818,8 @@ def _identity(
             else "repository_action_state_machine_validated_recovery_finish_v7"
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
             else "repository_action_state_machine_validated_recovery_finish_v8"
+            if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v8"
+            else "repository_action_state_machine_validated_responses_recovery_finish_v9"
         ),
         tool_event_count=tool_calls,
         side_effecting_tool_event_count=0,

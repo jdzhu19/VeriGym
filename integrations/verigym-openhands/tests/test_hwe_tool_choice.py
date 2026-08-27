@@ -22,6 +22,7 @@ from verigym_openhands.hwe_tool_choice import (
     RecoveryToolChoiceViolation,
     RequiredToolChoiceLLM,
     ValidatedRecoveryStateForcedFinishLLM,
+    ValidatedResponsesRecoveryStateForcedFinishLLM,
 )
 
 
@@ -75,6 +76,21 @@ def _validated_recovery_state_llm(path: Path) -> ValidatedRecoveryStateForcedFin
         api_mode="chat",
         native_tool_calling=True,
         capability_overrides={"supports_responses_api": False},
+        recovery_state_path=path,
+    )
+
+
+def _validated_responses_recovery_state_llm(
+    path: Path,
+) -> ValidatedResponsesRecoveryStateForcedFinishLLM:
+    return ValidatedResponsesRecoveryStateForcedFinishLLM(
+        model="openai/test-model",
+        api_key="test-only",
+        base_url="https://example.invalid/v1",
+        api_mode="chat",
+        native_tool_calling=True,
+        capability_overrides={"supports_responses_api": False},
+        litellm_extra_body={"thinking": {"type": "disabled"}},
         recovery_state_path=path,
     )
 
@@ -366,3 +382,109 @@ def test_validated_recovery_policy_rejects_non_finish_response(
 
     assert llm.recovery_forced_request_count == 1
     assert llm.recovery_validated_finish_count == 0
+
+
+def test_responses_recovery_policy_keeps_normal_turn_on_chat(tmp_path: Path) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    with patch(
+        "openhands.sdk.llm.llm.LLM.completion",
+        autospec=True,
+        return_value=_response("shell"),
+    ) as completion:
+        llm.completion(messages=_messages(), tools=_tools())
+
+    assert "tool_choice" not in completion.call_args.kwargs
+    assert llm.recovery_forced_request_count == 0
+
+
+def test_responses_recovery_policy_uses_named_finish_and_validates(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _validated_responses_recovery_state_llm(state)
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        return_value=_response("finish"),
+    ) as responses:
+        llm.completion(messages=_messages(), tools=_tools())
+
+    assert responses.call_args.kwargs["tool_choice"] == {
+        "type": "function",
+        "name": "finish",
+    }
+    assert [tool.name for tool in responses.call_args.kwargs["tools"]] == ["finish"]
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_finish_count == 1
+
+
+def test_responses_recovery_policy_uses_async_responses_path(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _validated_responses_recovery_state_llm(state)
+    responses = AsyncMock(return_value=_response("finish"))
+    with patch("openhands.sdk.llm.llm.LLM.aresponses", responses):
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+
+    assert responses.call_args.kwargs["tool_choice"] == {
+        "type": "function",
+        "name": "finish",
+    }
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_finish_count == 1
+
+
+@pytest.mark.parametrize("tool_name", [None, "shell"])
+def test_responses_recovery_policy_rejects_non_finish_response(
+    tmp_path: Path,
+    tool_name: str | None,
+) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _validated_responses_recovery_state_llm(state)
+    with (
+        patch(
+            "openhands.sdk.llm.llm.LLM.responses",
+            autospec=True,
+            return_value=_response(tool_name),
+        ),
+        pytest.raises(RecoveryToolChoiceViolation, match="exactly one finish"),
+    ):
+        llm.completion(messages=_messages(), tools=_tools())
+
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_finish_count == 0
+
+
+def test_responses_recovery_rebinds_sdk_auto_choice_and_disables_thinking(
+    tmp_path: Path,
+) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    base_result = (
+        None,
+        [],
+        [],
+        {"tool_choice": "auto", "extra_body": {"thinking": {"type": "disabled"}}},
+        {},
+    )
+    with patch(
+        "openhands.sdk.llm.llm.LLM._finalize_responses_params",
+        autospec=True,
+        return_value=base_result,
+    ):
+        result = llm._finalize_responses_params(
+            None,
+            [],
+            _tools(),
+            None,
+            False,
+            False,
+            {"tool_choice": {"type": "function", "name": "finish"}},
+        )
+
+    call_kwargs = result[3]
+    assert call_kwargs["tool_choice"] == {"type": "function", "name": "finish"}
+    assert call_kwargs["reasoning"] == {"effort": "none"}
+    assert call_kwargs["store"] is False
+    assert "extra_body" not in call_kwargs

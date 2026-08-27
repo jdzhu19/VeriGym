@@ -105,6 +105,15 @@ continuation and misclassification defects, but it does not establish successful
 termination for this model. Production collection remains blocked until the provider/model returns
 the requested typed `finish` under the actual agent history.
 
+`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` freezes a distinct v9
+diagnostic. Ordinary actions still use Chat Completions with the full six-tool contract. Only
+after the trusted recovery receipt exists, v9 converts the same complete history and all six
+tools through OpenHands' public Responses serializer and sends a Responses API named `finish`
+choice. OpenHands SDK 1.42.1 currently resets Responses `tool_choice` to `auto`; the v9 subclass
+rebinds the adapter-owned named choice after serialization without changing the installed SDK.
+The provider must return exactly one typed `finish` before broker dispatch. The diagnostic binds
+the sealed v8 rejection, permits no provider or episode retry, and remains dataset-ineligible.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

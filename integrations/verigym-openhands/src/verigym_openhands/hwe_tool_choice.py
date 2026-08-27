@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from openhands.sdk.llm import (  # type: ignore[import-not-found]
     LLM,
@@ -27,6 +27,11 @@ OPENHANDS_HWE_TOOL_CHOICE_REQUIRED = "required"
 OPENHANDS_HWE_RECOVERY_FORCED_FINISH = "recovery_forced_finish"
 OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH = "recovery_state_forced_finish_v6"
 OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH = "validated_recovery_state_forced_finish_v7"
+OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH = (
+    "validated_responses_recovery_state_forced_finish_v9"
+)
+
+_RESPONSES_FINISH_TOOL_CHOICE = {"type": "function", "name": "finish"}
 
 
 class RecoveryToolChoiceViolation(RuntimeError):
@@ -306,14 +311,168 @@ class ValidatedRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         return response
 
 
+class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+    """Use DeepSeek's Responses API only for the receipt-bound finish turn.
+
+    Ordinary OpenHands turns retain the frozen Chat Completions path.  After the
+    trusted Stop hook writes its private recovery receipt, the same full message
+    history and exact tool contract are converted by the SDK's public Responses
+    serializer and sent with a named ``finish`` choice.  The provider must still
+    emit the typed call; this class never synthesizes a finish action.
+    """
+
+    recovery_state_path: Path
+    _recovery_forced_request_count: int = PrivateAttr(default=0)
+    _recovery_validated_finish_count: int = PrivateAttr(default=0)
+
+    @property
+    def recovery_forced_request_count(self) -> int:
+        return self._recovery_forced_request_count
+
+    @property
+    def recovery_validated_finish_count(self) -> int:
+        return self._recovery_validated_finish_count
+
+    def _finalize_responses_params(
+        self,
+        instructions: str | None,
+        input_items: list[dict[str, Any]],
+        tools: Sequence[ToolDefinition] | None,
+        include: list[str] | None,
+        store: bool | None,
+        add_security_risk_prediction: bool,
+        kwargs: dict[str, Any],
+        call_context: LLMCallContext | None = None,
+    ) -> tuple[
+        str | None,
+        list[dict[str, Any]],
+        list[Any] | None,
+        dict[str, Any],
+        dict[str, Any],
+    ]:
+        requested = kwargs.get("tool_choice")
+        result = cast(
+            tuple[
+                str | None,
+                list[dict[str, Any]],
+                list[Any] | None,
+                dict[str, Any],
+                dict[str, Any],
+            ],
+            super()._finalize_responses_params(
+                instructions,
+                input_items,
+                tools,
+                include,
+                store,
+                add_security_risk_prediction,
+                kwargs,
+                call_context=call_context,
+            ),
+        )
+        if requested != _RESPONSES_FINISH_TOOL_CHOICE:
+            return result
+
+        resolved_instructions, resolved_input, resolved_tools, call_kwargs, telemetry = result
+        # OpenHands SDK 1.42.1 currently overwrites Responses tool_choice with
+        # ``auto``. Rebind the adapter-owned named choice after the public SDK
+        # serializer has completed, without modifying the installed package.
+        rebound = dict(call_kwargs)
+        rebound["tool_choice"] = dict(_RESPONSES_FINISH_TOOL_CHOICE)
+        rebound.pop("extra_body", None)
+        rebound["reasoning"] = {"effort": "none"}
+        rebound["store"] = False
+        return (
+            resolved_instructions,
+            resolved_input,
+            resolved_tools,
+            rebound,
+            telemetry,
+        )
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        request_kwargs, forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
+        if not forced:
+            return super().completion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **request_kwargs,
+            )
+        self._recovery_forced_request_count += 1
+        request_kwargs.pop("tool_choice")
+        response = super().responses(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            tool_choice=dict(_RESPONSES_FINISH_TOOL_CHOICE),
+            **request_kwargs,
+        )
+        _validate_recovery_finish_response(response)
+        self._recovery_validated_finish_count += 1
+        return response
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        request_kwargs, forced = _recovery_state_finish_kwargs(
+            self.recovery_state_path, tools, kwargs
+        )
+        if not forced:
+            return await super().acompletion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **request_kwargs,
+            )
+        self._recovery_forced_request_count += 1
+        request_kwargs.pop("tool_choice")
+        response = await super().aresponses(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            tool_choice=dict(_RESPONSES_FINISH_TOOL_CHOICE),
+            **request_kwargs,
+        )
+        _validate_recovery_finish_response(response)
+        self._recovery_validated_finish_count += 1
+        return response
+
+
 __all__ = [
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
     "OPENHANDS_HWE_RECOVERY_FORCED_FINISH",
     "OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH",
+    "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH",
     "RecoveryForcedFinishLLM",
     "RecoveryStateForcedFinishLLM",
     "RecoveryToolChoiceViolation",
     "RequiredToolChoiceLLM",
     "ValidatedRecoveryStateForcedFinishLLM",
+    "ValidatedResponsesRecoveryStateForcedFinishLLM",
 ]
