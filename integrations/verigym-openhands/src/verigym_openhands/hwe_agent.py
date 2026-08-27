@@ -202,6 +202,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         format_recovery_count = 0
         recovery_forced_request_count = 0
         recovery_validated_finish_count = 0
+        recovery_validated_tool_count = 0
         recovery_coalesced_output_count = 0
         recovery_response_shape: dict[str, Any] = {}
         broker: Any = None
@@ -263,12 +264,24 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
 
                     llm_type = ValidatedResponsesRecoveryStateForcedFinishLLM
                     recovery_violation_type = RecoveryToolChoiceViolation
+                elif (
+                    settings.tool_choice_policy
+                    == "validated_responses_recovery_state_required_tool_v11"
+                ):
+                    from .hwe_tool_choice import (
+                        RecoveryToolChoiceViolation,
+                        ValidatedResponsesRecoveryStateRequiredToolLLM,
+                    )
+
+                    llm_type = ValidatedResponsesRecoveryStateRequiredToolLLM
+                    recovery_violation_type = RecoveryToolChoiceViolation
                 llm_options: dict[str, Any] = {}
                 if settings.tool_choice_policy in {
                     "recovery_state_forced_finish_v6",
                     "validated_recovery_state_forced_finish_v7",
                     "validated_recovery_state_forced_finish_v8",
                     "validated_responses_recovery_state_forced_finish_v9",
+                    "validated_responses_recovery_state_required_tool_v11",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -392,6 +405,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     recovery_validated_finish_count = choice_counts[
                         "recovery_validated_finish_count"
                     ]
+                    recovery_validated_tool_count = choice_counts["recovery_validated_tool_count"]
                     recovery_coalesced_output_count = choice_counts[
                         "recovery_coalesced_output_count"
                     ]
@@ -499,6 +513,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 format_recovery_count=format_recovery_count,
                 recovery_forced_request_count=recovery_forced_request_count,
                 recovery_validated_finish_count=recovery_validated_finish_count,
+                recovery_validated_tool_count=recovery_validated_tool_count,
                 recovery_coalesced_output_count=recovery_coalesced_output_count,
                 recovery_response_shape=recovery_response_shape,
                 trajectory_captured=trajectory_captured,
@@ -539,7 +554,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             )
             raise _termination(
                 "openhands_hwe_recovery_tool_choice_violation",
-                "OpenHands HWE provider violated the named finish recovery contract",
+                "OpenHands HWE provider violated the validated recovery tool contract",
                 infrastructure=False,
             )
         if not stats.finished:
@@ -798,6 +813,7 @@ def _identity(
         "validated_recovery_state_forced_finish_v7": "v7",
         "validated_recovery_state_forced_finish_v8": "v8",
         "validated_responses_recovery_state_forced_finish_v9": "v10",
+        "validated_responses_recovery_state_required_tool_v11": "v11",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -836,6 +852,8 @@ def _identity(
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
             else "repository_action_state_machine_validated_recovery_finish_v8"
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v8"
+            else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
+            if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v11"
             else (
                 "repository_action_state_machine_validated_responses_recovery_"
                 "masked_invalid_arguments_v10"
@@ -870,6 +888,7 @@ def _write_evidence(
     format_recovery_count: int,
     recovery_forced_request_count: int,
     recovery_validated_finish_count: int,
+    recovery_validated_tool_count: int,
     recovery_coalesced_output_count: int,
     recovery_response_shape: dict[str, Any],
     trajectory_captured: bool,
@@ -904,6 +923,7 @@ def _write_evidence(
             "format_recovery_count": format_recovery_count,
             "recovery_forced_request_count": recovery_forced_request_count,
             "recovery_validated_finish_count": recovery_validated_finish_count,
+            "recovery_validated_tool_count": recovery_validated_tool_count,
             "recovery_coalesced_output_count": recovery_coalesced_output_count,
             "recovery_response_shape": recovery_response_shape,
             "recoverable_invalid_arguments": (
@@ -928,6 +948,7 @@ def _recovery_choice_counts(llm: Any) -> dict[str, int]:
     for name in (
         "recovery_forced_request_count",
         "recovery_validated_finish_count",
+        "recovery_validated_tool_count",
         "recovery_coalesced_output_count",
     ):
         value = getattr(llm, name, 0)

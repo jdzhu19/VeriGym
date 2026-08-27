@@ -31,8 +31,12 @@ OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH = "validated_recovery_state
 OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH = (
     "validated_responses_recovery_state_forced_finish_v9"
 )
+OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_REQUIRED_TOOL = (
+    "validated_responses_recovery_state_required_tool_v11"
+)
 
 _RESPONSES_FINISH_TOOL_CHOICE = {"type": "function", "name": "finish"}
+_RESPONSES_REQUIRED_TOOL_CHOICE = "required"
 
 
 class RecoveryToolChoiceViolation(RuntimeError):
@@ -244,6 +248,17 @@ def _validate_recovery_finish_response(response: LLMResponse) -> None:
     if len(calls) != 1 or calls[0].name != "finish":
         raise RecoveryToolChoiceViolation(
             "OpenHands HWE recovery response was not exactly one finish tool call"
+        )
+
+
+def _validate_recovery_required_tool_response(
+    response: LLMResponse, *, allowed_tool_names: frozenset[str]
+) -> None:
+    calls = response.message.tool_calls or []
+    text_parts = content_to_str(response.message.content)
+    if len(calls) != 1 or calls[0].name not in allowed_tool_names or bool(text_parts):
+        raise RecoveryToolChoiceViolation(
+            "OpenHands HWE recovery response was not exactly one allowed tool call"
         )
 
 
@@ -480,7 +495,10 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
                 call_context=call_context,
             ),
         )
-        if requested != _RESPONSES_FINISH_TOOL_CHOICE:
+        if (
+            requested != _RESPONSES_REQUIRED_TOOL_CHOICE
+            and requested != _RESPONSES_FINISH_TOOL_CHOICE
+        ):
             return result
 
         resolved_instructions, resolved_input, resolved_tools, call_kwargs, telemetry = result
@@ -491,7 +509,11 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         # ``auto``. Rebind the adapter-owned named choice after the public SDK
         # serializer has completed, without modifying the installed package.
         rebound = dict(call_kwargs)
-        rebound["tool_choice"] = dict(_RESPONSES_FINISH_TOOL_CHOICE)
+        rebound["tool_choice"] = (
+            dict(_RESPONSES_FINISH_TOOL_CHOICE)
+            if requested == _RESPONSES_FINISH_TOOL_CHOICE
+            else _RESPONSES_REQUIRED_TOOL_CHOICE
+        )
         rebound.pop("extra_body", None)
         rebound["reasoning"] = {"effort": "none"}
         rebound["store"] = False
@@ -576,16 +598,119 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         return response
 
 
+class ValidatedResponsesRecoveryStateRequiredToolLLM(
+    ValidatedResponsesRecoveryStateForcedFinishLLM
+):
+    """Require one known tool on the single receipt-bound recovery turn.
+
+    A successful recovery may continue the agent loop with a non-terminal tool.
+    The persistent hook receipt is consumed in-memory exactly once; subsequent
+    turns return to the ordinary Chat Completions path.
+    """
+
+    _recovery_validated_tool_count: int = PrivateAttr(default=0)
+
+    @property
+    def recovery_validated_tool_count(self) -> int:
+        return self._recovery_validated_tool_count
+
+    def _recovery_required(self) -> bool:
+        return (
+            self._recovery_forced_request_count == 0
+            and read_recovery_count(self.recovery_state_path) == 1
+        )
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
+        if not self._recovery_required():
+            return LLM.completion(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        allowed = frozenset(tool.name for tool in tools or [])
+        if not allowed:
+            raise ValueError("OpenHands HWE recovery requires a non-empty tool contract")
+        self._recovery_forced_request_count += 1
+        response = LLM.responses(
+            self,
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+            **kwargs,
+        )
+        _validate_recovery_required_tool_response(response, allowed_tool_names=allowed)
+        self._recovery_validated_tool_count += 1
+        return response
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE recovery tool choice is adapter-owned")
+        if not self._recovery_required():
+            return await LLM.acompletion(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        allowed = frozenset(tool.name for tool in tools or [])
+        if not allowed:
+            raise ValueError("OpenHands HWE recovery requires a non-empty tool contract")
+        self._recovery_forced_request_count += 1
+        response = await LLM.aresponses(
+            self,
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+            **kwargs,
+        )
+        _validate_recovery_required_tool_response(response, allowed_tool_names=allowed)
+        self._recovery_validated_tool_count += 1
+        return response
+
+
 __all__ = [
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
     "OPENHANDS_HWE_RECOVERY_FORCED_FINISH",
     "OPENHANDS_HWE_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH",
+    "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_REQUIRED_TOOL",
     "RecoveryForcedFinishLLM",
     "RecoveryStateForcedFinishLLM",
     "RecoveryToolChoiceViolation",
     "RequiredToolChoiceLLM",
     "ValidatedRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateForcedFinishLLM",
+    "ValidatedResponsesRecoveryStateRequiredToolLLM",
 ]

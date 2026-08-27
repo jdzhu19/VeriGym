@@ -119,9 +119,12 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert '"validated_recovery_state_forced_finish_v8"' in source
     assert '"validated_responses_recovery_state_forced_finish_v9"' in source
     assert "ValidatedResponsesRecoveryStateForcedFinishLLM" in source
+    assert '"validated_responses_recovery_state_required_tool_v11"' in source
+    assert "ValidatedResponsesRecoveryStateRequiredToolLLM" in source
     assert '"openhands_hwe_recovery_tool_choice_violation"' in source
     assert '"recovery_forced_request_count"' in source
     assert '"recovery_validated_finish_count"' in source
+    assert '"recovery_validated_tool_count"' in source
     assert source.index("if recovery_protocol_failure:") < source.index("if not stats.finished:")
     assert "DeepSeekHarnessHweBroker" in source
     assert "HookConfig" in source
@@ -228,6 +231,18 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
         task_wall_time_s=100,
     )
     assert responses.tool_choice_policy == "validated_responses_recovery_state_forced_finish_v9"
+
+    required_recovery = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v11",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        required_recovery.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v11"
+    )
 
     with pytest.raises(ValueError, match="unsupported"):
         module.resolve_hwe_settings(
@@ -363,6 +378,18 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
         responses_identity.tool_use_policy
         == "repository_action_state_machine_validated_responses_recovery_"
         "masked_invalid_arguments_v10"
+    )
+
+    required_recovery_state = settings.__class__(
+        **{
+            **settings.__dict__,
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v11",
+        }
+    )
+    required_recovery_identity = _identity(required_recovery_state, tool_calls=19, patches=1)
+    assert required_recovery_identity.harness_id == ("openhands-sdk-1.42.1-hwe-native-shell-v11")
+    assert required_recovery_identity.tool_use_policy == (
+        "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
     )
 
 
