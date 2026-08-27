@@ -57,6 +57,7 @@ def test_hpc_scripts_execute_stdin_python_inside_the_selected_conda_environment(
     ).read_text(encoding="utf-8")
     assert "opentelemetry-semantic-conventions==0.60b1" in constraints
     assert "pillow==12.1.1" in constraints
+    assert "tiktoken==0.11.0" in constraints
     assert (
         '"$conda_executable" run --no-capture-output -n verigym-openhands-py312 python -' in prepare
     )

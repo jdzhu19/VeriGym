@@ -103,6 +103,71 @@ jobs:
           pytest -c integrations/verigym-training-reference/pyproject.toml \
             integrations/verigym-training-reference/tests
 
+  openhands:
+    name: OpenHands plugin (3.12)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PIP_CONSTRAINT: >-
+        ${{ github.workspace }}/configs/runtime/openhands_sdk_1.42.1_constraints.txt
+      VERIGYM_TIKTOKEN_OVERLAY: ${{ runner.temp }}/verigym-tiktoken-0.7-overlay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the frozen credential-free test closure
+        run: |
+          python -m pip install -e '.[dev,openai-compatible]'
+          python -m pip install -e integrations/verigym-deepseek-harness
+          python -m pip install -e 'integrations/verigym-openhands[hwe]'
+          python -m pip check
+          python - <<'PY'
+          from importlib.metadata import version
+
+          assert version("openhands-sdk") == "1.42.1"
+          assert version("litellm") == "1.93.0"
+          assert version("tiktoken") == "0.11.0"
+          assert version("verigym-deepseek-harness") == "0.2.0"
+          print("frozen OpenHands base dependency closure verified")
+          PY
+          env -u PIP_CONSTRAINT python -m pip install \
+            --no-compile --no-deps --target "$VERIGYM_TIKTOKEN_OVERLAY" \
+            'tiktoken==0.7.0'
+          PYTHONPATH="$VERIGYM_TIKTOKEN_OVERLAY" python - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+
+          import tiktoken
+
+          overlay = Path(tiktoken.__file__).resolve()
+          assert version("tiktoken") == "0.7.0"
+          assert "verigym-tiktoken-0.7-overlay" in overlay.parts
+          print("frozen HWE exact-token overlay verified")
+          PY
+      - name: Lint, type, and run zero-model tests
+        env:
+          PYTHONPATH: ${{ runner.temp }}/verigym-tiktoken-0.7-overlay
+        run: |
+          ruff format --check integrations/verigym-openhands
+          ruff check integrations/verigym-openhands
+          mypy --strict integrations/verigym-openhands/src/verigym_openhands
+          pytest -c integrations/verigym-openhands/pyproject.toml \
+            integrations/verigym-openhands/tests -m "not openhands_real"
+      - name: Build and scan the OpenHands plugin
+        env:
+          SOURCE_DATE_EPOCH: "1784712454"
+        run: |
+          python -m build integrations/verigym-openhands \
+            --outdir "$RUNNER_TEMP/verigym-openhands-dist"
+          python scripts/audit_optional_plugin_distribution.py \
+            --policy openhands \
+            --wheel \
+              "$RUNNER_TEMP/verigym-openhands-dist/verigym_openhands-0.1.0-py3-none-any.whl" \
+            --sdist \
+              "$RUNNER_TEMP/verigym-openhands-dist/verigym_openhands-0.1.0.tar.gz"
+
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

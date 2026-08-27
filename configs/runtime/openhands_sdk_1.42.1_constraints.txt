@@ -11,3 +11,4 @@ opentelemetry-exporter-otlp-proto-grpc==1.39.1
 opentelemetry-instrumentation==0.60b1
 opentelemetry-instrumentation-threading==0.60b1
 opentelemetry-semantic-conventions==0.60b1
+tiktoken==0.11.0

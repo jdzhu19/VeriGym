@@ -228,3 +228,21 @@ def test_package_ci_alone_provisions_icarus_for_full_conformance() -> None:
     assert "vvp -V" in package
     assert "pytest -m requires_iverilog" in package
     assert "scripts/installed_conformance.py" in package
+
+
+def test_openhands_ci_freezes_and_scans_the_python312_plugin() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    openhands = workflow.split("  openhands:\n", maxsplit=1)[1].split("  package:\n", maxsplit=1)[0]
+
+    assert 'python-version: "3.12"' in openhands
+    assert "openhands_sdk_1.42.1_constraints.txt" in openhands
+    assert 'version("openhands-sdk") == "1.42.1"' in openhands
+    assert 'version("litellm") == "1.93.0"' in openhands
+    assert 'version("tiktoken") == "0.11.0"' in openhands
+    assert 'version("tiktoken") == "0.7.0"' in openhands
+    assert 'version("verigym-deepseek-harness") == "0.2.0"' in openhands
+    assert "verigym-tiktoken-0.7-overlay" in openhands
+    assert "env -u PIP_CONSTRAINT" in openhands
+    assert '-m "not openhands_real"' in openhands
+    assert "audit_optional_plugin_distribution.py" in openhands
+    assert "--policy openhands" in openhands

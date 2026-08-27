@@ -32,9 +32,11 @@ def _hwe_config_module() -> ModuleType:
 def test_openhands_pin_and_tool_isolation_are_static() -> None:
     root = Path(__file__).parents[1]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    manifest = (root / "MANIFEST.in").read_text(encoding="utf-8")
     source = (root / "src" / "verigym_openhands" / "agent.py").read_text(encoding="utf-8")
 
     assert "openhands-sdk==1.42.1" in pyproject
+    assert manifest.strip() == "prune tests"
     assert "tools=[]" in source
     assert "include_default_tools=[]" in source
     assert "plugins=[]" in source
@@ -101,6 +103,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     mcp = (root / "src" / "verigym_openhands" / "hwe_mcp_stdio.py").read_text(encoding="utf-8")
 
     assert "openhands-hwe-agent" in pyproject
+    assert 'hwe = ["verigym-deepseek-harness==0.2.0"]' in pyproject
     assert "include_default_tools=[]" in source
     assert "plugins=[]" in source
     assert "client_tools=[]" in source

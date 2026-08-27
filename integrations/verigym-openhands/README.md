@@ -12,6 +12,13 @@ it is not a host shell.
 Real runs are opt in and require Python 3.12, `VERIGYM_OPENHANDS_BROKER_ROOT`, and the configured
 model endpoint environment variables.
 
+The frozen OpenHands base environment retains `tiktoken==0.11.0`, which satisfies
+`litellm==1.93.0`. HWE exact-token collection prepends a separate `tiktoken==0.7.0` target
+overlay at process launch. Do not ask pip to resolve both versions into one environment:
+LiteLLM declares `tiktoken>=0.8.0`, while the HWE tokenizer receipt intentionally remains bound
+to 0.7.0. CI reproduces the same base-plus-overlay layout and checks both identities before any
+credential-free tests run.
+
 The development comparison is intentionally two samples, not a benchmark score. Freeze distinct
 base and adapter policy manifests with `scripts/freeze_openhands_sft_agent_versions.py`, then run
 `scripts/run_openhands_cva6_development_pilot.py` against the two frozen CVA6 validation tasks.
