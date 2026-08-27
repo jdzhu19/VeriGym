@@ -157,7 +157,12 @@ def collect(
     if exact_tokenizer.tokenizer_hash != model_lock["tokenizer_hash"]:
         raise ConfigurationError("bounded SFT exact tokenizer differs from the model lock")
 
-    predecessor_manifest = _predecessor_dataset_manifest(predecessor_dataset, contract)
+    predecessor_directory = predecessor_dataset.resolve(strict=True)
+    predecessor_manifest = _predecessor_dataset_manifest(predecessor_directory, contract)
+    predecessor_records = _predecessor_dataset_records(
+        predecessor_directory,
+        predecessor_manifest,
+    )
     predecessor = load_predecessor_qualification(predecessor_root)
     predecessor_entry = entries[str(predecessor.report["task_id"])]
     if (
@@ -197,26 +202,6 @@ def collect(
     training_schedule = list(contract["collection"]["training_schedule"])
     validation_schedule = list(contract["collection"]["validation_schedule"])
     predecessor_episode = next(item for item in training_schedule if item.get("predecessor"))
-    predecessor_records = materialize_openhands_decisions(
-        predecessor.trajectory,
-        binding={
-            "sample_id": content_hash(
-                {
-                    "predecessor_report_hash": predecessor.report_hash,
-                    "task_id": predecessor_entry.task_id,
-                }
-            ),
-            "task_hash": predecessor_entry.task_hash,
-            "source_hash": predecessor_entry.source_hash,
-            "candidate_hash": str(predecessor.report["candidate_hash"]),
-            "verifier_hash": str(predecessor.report["verifier_hash"]),
-        },
-        tokenizer=exact_tokenizer,
-    )
-    if [item["record_hash"] for item in predecessor_records] != predecessor_manifest[
-        "record_hashes"
-    ]:
-        raise ConfigurationError("bounded SFT predecessor rematerialization changed")
     predecessor_dry_runs = [
         dry_run_decision_record_v4(record, tokenizer=exact_tokenizer)
         for record in predecessor_records
@@ -787,6 +772,35 @@ def _predecessor_dataset_manifest(root: Path, contract: dict[str, Any]) -> dict[
     ):
         raise ConfigurationError("bounded SFT predecessor dataset changed")
     return cast(dict[str, Any], manifest)
+
+
+def _predecessor_dataset_records(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    path = root / "train.jsonl"
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 64 * 1024 * 1024:
+        raise ConfigurationError("bounded SFT predecessor records file is unsafe")
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(
+                f"bounded SFT predecessor row {line_number} is invalid JSON"
+            ) from exc
+        if not isinstance(value, dict):
+            raise ConfigurationError(f"bounded SFT predecessor row {line_number} is not an object")
+        records.append(value)
+    if (
+        len(records) != manifest["record_count"]
+        or [record.get("record_hash") for record in records] != manifest["record_hashes"]
+        or {record.get("transcript_hash") for record in records}
+        != set(manifest["trajectory_hashes"])
+        or any(record.get("eligible") is not True for record in records)
+    ):
+        raise ConfigurationError("bounded SFT predecessor record bindings changed")
+    return records
 
 
 def _zero_call_preflight(locks: dict[str, Any]) -> None:
