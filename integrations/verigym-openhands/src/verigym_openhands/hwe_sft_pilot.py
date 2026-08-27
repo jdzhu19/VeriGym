@@ -1,0 +1,405 @@
+"""Strict contract checks for the bounded OpenHands HWE development SFT pilot."""
+
+from __future__ import annotations
+
+import json
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from verigym.core.hashing import content_hash, hash_bytes
+from verigym.schemas.evolution import TaskSplitManifest
+
+OPENHANDS_BOUNDED_SFT_PILOT_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v1"
+OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH = (
+    "8c5585ba740c57d81b4ba7df54384d39ed79f0dd42a414c27441ae975a178622"
+)
+OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT = "0ad17bd8259141e63efdfd7914407ed821993b60"
+OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH = (
+    "68c76482f81ac4bbbb64a54d0886fda4b1a0b7c38e489916b919f768ec3146e6"
+)
+OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256 = (
+    "844bf3f65d648f1e8542b80e55d16d6612b614df5283b350123b33c79b2c13bc"
+)
+OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256 = (
+    "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3"
+)
+
+OPENHANDS_BOUNDED_SFT_TRAINING_TASKS = (
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2282",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2468",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2469",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2916",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3168",
+)
+OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS = (
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+)
+OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS = (
+    "hwe-bench/repo-repair-v1/chipsalliance__rocket-chip__pr-3065",
+    "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-222",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2374",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2945",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3107",
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3171",
+)
+
+
+@dataclass(frozen=True)
+class BoundedSftDataGate:
+    """Result of applying the frozen training/validation admission gate."""
+
+    satisfied: bool
+    eligible_training_trajectories: int
+    distinct_training_tasks: int
+    eligible_validation_trajectories: int
+    distinct_validation_tasks: int
+    reason: str | None
+
+
+def load_bounded_sft_pilot_contract(path: Path) -> dict[str, Any]:
+    """Read and validate the exact bounded pilot contract."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 1024 * 1024:
+        raise ValueError("bounded SFT pilot contract must be a small regular file")
+    parsed = json.loads(path.read_bytes())
+    if not isinstance(parsed, dict):
+        raise ValueError("bounded SFT pilot contract must be a JSON object")
+    return validate_bounded_sft_pilot_contract(parsed)
+
+
+def validate_bounded_sft_pilot_contract(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Reject contract, schedule, split, model, or leakage drift."""
+
+    contract = dict(value)
+    supplied_hash = contract.get("contract_hash")
+    base = {key: item for key, item in contract.items() if key != "contract_hash"}
+    computed_hash = content_hash(base)
+    if supplied_hash != computed_hash or computed_hash != OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH:
+        raise ValueError("bounded SFT pilot contract identity changed")
+    if contract.get("format_id") != OPENHANDS_BOUNDED_SFT_PILOT_FORMAT:
+        raise ValueError("bounded SFT pilot format changed")
+
+    source = _mapping(contract, "source")
+    _require_equal(source, "baseline_commit", OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT)
+    _require_equal(source, "task_split_manifest_hash", OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH)
+    _require_equal(source, "task_split_file_sha256", OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256)
+    _require_equal(
+        source,
+        "qualification_progress_file_sha256",
+        OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256,
+    )
+    _require_equal(source, "qualification_status", "completed")
+
+    teacher = _mapping(contract, "teacher")
+    frozen_teacher = {
+        "scaffold": "openhands-sdk-1.42.1-verigym-broker-v1",
+        "model_transport_id": "openai/deepseek-v4-flash",
+        "model_identity": "deepseek-v4-flash",
+        "reasoning": "thinking-disabled",
+        "openhands_sdk_version": "1.42.1",
+        "litellm_version": "1.93.0",
+        "tiktoken_version": "0.7.0",
+        "tool_contract": "hwe_native_shell_v2",
+        "tool_schema_count": 6,
+        "temperature": 0,
+        "top_p": 1,
+        "max_context_tokens": 65_536,
+        "max_output_tokens": 2_048,
+        "max_iterations": 200,
+        "whole_episode_retries": 0,
+        "provider_request_retries": 0,
+        "capture_training_transcript": True,
+        "sandbox_network": "none",
+    }
+    if teacher != frozen_teacher:
+        raise ValueError("bounded SFT teacher or tool policy changed")
+
+    student = _mapping(contract, "student")
+    if (
+        student.get("base_model") != "Qwen3.5-9B"
+        or student.get("trust_remote_code") is not False
+        or student.get("rllm_commit") != "1d1109a655e291b3001d8526d7c9ecc5b9328226"
+        or student.get("verl_version") != "0.8.0"
+    ):
+        raise ValueError("bounded SFT student software identity changed")
+
+    collection = _mapping(contract, "collection")
+    training = _schedule(collection, "training_schedule", expected_count=16)
+    validation = _schedule(collection, "validation_schedule", expected_count=4)
+    heldout = _string_sequence(collection, "heldout_task_ids")
+    if tuple(heldout) != OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS:
+        raise ValueError("bounded SFT held-out order or membership changed")
+    _validate_schedule(training, role="training", allowed=OPENHANDS_BOUNDED_SFT_TRAINING_TASKS)
+    _validate_schedule(
+        validation,
+        role="validation",
+        allowed=OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+    )
+    if sum(bool(item.get("predecessor")) for item in training) != 1:
+        raise ValueError("bounded SFT schedule requires exactly one predecessor")
+    predecessor = next(item for item in training if item.get("predecessor"))
+    predecessor_contract = _mapping(collection, "predecessor")
+    if predecessor.get("episode_id") != predecessor_contract.get("episode_id"):
+        raise ValueError("bounded SFT predecessor schedule binding changed")
+    _require_equal(
+        predecessor_contract,
+        "dataset_hash",
+        "e1331ed287cedc76141d9f882992c4a159b76c759371170d259aa6d15492f511",
+    )
+    _require_equal(
+        predecessor_contract,
+        "trajectory_hash",
+        "7ed148bf5e206d214d7abfdd5612275283e1e2e0643c8b8df3d5dcd5107c7416",
+    )
+    for key, expected in (
+        ("scheduled_training_episodes", 16),
+        ("scheduled_validation_episodes", 4),
+        ("scheduled_heldout_tasks", 6),
+        ("new_provider_episode_limit", 19),
+    ):
+        _require_equal(collection, key, expected)
+
+    bindings = _mapping(contract, "task_bindings")
+    expected_tasks = set(
+        (
+            *OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
+            *OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+            *OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS,
+        )
+    )
+    if set(bindings) != expected_tasks:
+        raise ValueError("bounded SFT task bindings changed")
+    for task_id, expected_role in (
+        *((task_id, "training") for task_id in OPENHANDS_BOUNDED_SFT_TRAINING_TASKS),
+        *((task_id, "validation") for task_id in OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS),
+        *((task_id, "heldout") for task_id in OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS),
+    ):
+        binding = _mapping(bindings, task_id)
+        _require_equal(binding, "role", expected_role)
+        for field in ("task_hash", "source_hash"):
+            digest = binding.get(field)
+            if not isinstance(digest, str) or len(digest) != 64:
+                raise ValueError(f"bounded SFT {field} is invalid for {task_id}")
+
+    gate = _mapping(contract, "data_gate")
+    frozen_gate = {
+        "admission": "ordinary_verifier_passed_and_exact_64k_only",
+        "target_training_trajectories": 16,
+        "minimum_training_trajectories": 8,
+        "minimum_distinct_training_tasks": 8,
+        "minimum_validation_trajectories": 2,
+        "minimum_distinct_validation_tasks": 2,
+        "overlength_allowed": False,
+        "truncation": "error",
+        "heldout_trajectory_collection_before_training_allowed": False,
+        "production_benchmark_claim_allowed": False,
+    }
+    if gate != frozen_gate:
+        raise ValueError("bounded SFT data gate changed")
+    training_profile = _mapping(contract, "training")
+    if (
+        training_profile.get("maximum_optimizer_steps") != 48
+        or training_profile.get("epochs_over_eligible_trajectories") != 3
+        or training_profile.get("optimizer_step_allowed") is not True
+        or training_profile.get("production_checkpoint_allowed") is not False
+    ):
+        raise ValueError("bounded SFT development training boundary changed")
+    scheduler = _mapping(contract, "scheduler")
+    if (
+        scheduler.get("policy") != "ephemeral_noninteractive_lsf_payload_v1"
+        or scheduler.get("persistent_bash_allocation_allowed") is not False
+        or scheduler.get("retain_gpu_allocation_after_payload") is not False
+    ):
+        raise ValueError("bounded SFT scheduler policy changed")
+    acceptance = _mapping(contract, "acceptance")
+    if acceptance != {
+        "production_training_ready": False,
+        "training_started": False,
+        "optimizer_steps": 0,
+        "checkpoint_written": False,
+        "adapter_written": False,
+        "hpc_jobs_submitted": False,
+        "new_hpc_jobs_submitted": False,
+    }:
+        raise ValueError("bounded SFT preregistration acceptance state changed")
+    return contract
+
+
+def validate_bounded_sft_source(
+    contract: Mapping[str, Any],
+    *,
+    split: TaskSplitManifest,
+    task_split_path: Path,
+    qualification_progress_path: Path,
+) -> None:
+    """Bind the contract to the exact completed qualification split and files."""
+
+    validate_bounded_sft_pilot_contract(contract)
+    if split.manifest_hash != OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH:
+        raise ValueError("bounded SFT task split manifest changed")
+    if hash_bytes(_regular_bytes(task_split_path)) != OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256:
+        raise ValueError("bounded SFT task split file changed")
+    qualification_payload = _regular_bytes(qualification_progress_path)
+    if hash_bytes(qualification_payload) != OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256:
+        raise ValueError("bounded SFT qualification progress changed")
+    qualification = json.loads(qualification_payload)
+    if not isinstance(qualification, dict) or qualification.get("status") != "completed":
+        raise ValueError("bounded SFT qualification is not complete")
+    if qualification.get("task_split_hash") != split.manifest_hash:
+        raise ValueError("bounded SFT qualification references another split")
+
+    bindings = _mapping(contract, "task_bindings")
+    for role, entries in (
+        ("training", split.training),
+        ("validation", split.validation),
+        ("heldout", split.heldout),
+    ):
+        expected = {
+            task_id
+            for task_id, raw in bindings.items()
+            if _mapping(bindings, task_id).get("role") == role
+        }
+        actual = {entry.task_id for entry in entries}
+        if actual != expected:
+            raise ValueError(f"bounded SFT {role} task membership changed")
+        for entry in entries:
+            binding = _mapping(bindings, entry.task_id)
+            if binding.get("task_hash") != entry.task_hash:
+                raise ValueError(f"bounded SFT task hash changed for {entry.task_id}")
+            if binding.get("source_hash") != entry.source_hash:
+                raise ValueError(f"bounded SFT source hash changed for {entry.task_id}")
+
+
+def evaluate_bounded_sft_data_gate(attempts: Sequence[Mapping[str, Any]]) -> BoundedSftDataGate:
+    """Evaluate verifier-passed exact-data yield without admitting held-out attempts."""
+
+    training_ids = set(OPENHANDS_BOUNDED_SFT_TRAINING_TASKS)
+    validation_ids = set(OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS)
+    heldout_ids = set(OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS)
+    eligible_training: list[str] = []
+    eligible_validation: list[str] = []
+    episode_ids: set[str] = set()
+    for attempt in attempts:
+        episode_id = attempt.get("episode_id")
+        task_id = attempt.get("task_id")
+        if not isinstance(episode_id, str) or not episode_id or episode_id in episode_ids:
+            raise ValueError("bounded SFT attempt episode ID is missing or duplicated")
+        episode_ids.add(episode_id)
+        if task_id in heldout_ids:
+            raise ValueError("bounded SFT held-out task was collected before training")
+        if task_id not in training_ids | validation_ids:
+            raise ValueError("bounded SFT attempt uses an unscheduled task")
+        eligible = (
+            attempt.get("infrastructure_valid") is True
+            and attempt.get("ordinary_verifier_resolved") is True
+            and attempt.get("exact_64k_eligible") is True
+            and attempt.get("truncation_applied") is False
+        )
+        if eligible and task_id in training_ids:
+            eligible_training.append(str(task_id))
+        if eligible and task_id in validation_ids:
+            eligible_validation.append(str(task_id))
+
+    train_count = len(eligible_training)
+    train_tasks = len(set(eligible_training))
+    validation_count = len(eligible_validation)
+    validation_tasks = len(set(eligible_validation))
+    reason: str | None = None
+    if train_count < 8:
+        reason = "minimum_training_trajectories_not_met"
+    elif train_tasks < 8:
+        reason = "minimum_distinct_training_tasks_not_met"
+    elif validation_count < 2:
+        reason = "minimum_validation_trajectories_not_met"
+    elif validation_tasks < 2:
+        reason = "minimum_distinct_validation_tasks_not_met"
+    return BoundedSftDataGate(
+        satisfied=reason is None,
+        eligible_training_trajectories=train_count,
+        distinct_training_tasks=train_tasks,
+        eligible_validation_trajectories=validation_count,
+        distinct_validation_tasks=validation_tasks,
+        reason=reason,
+    )
+
+
+def _validate_schedule(
+    schedule: Sequence[Mapping[str, Any]], *, role: str, allowed: Sequence[str]
+) -> None:
+    episode_ids = [item.get("episode_id") for item in schedule]
+    if any(not isinstance(item, str) or not item for item in episode_ids):
+        raise ValueError(f"bounded SFT {role} episode ID is invalid")
+    if len(set(episode_ids)) != len(episode_ids):
+        raise ValueError(f"bounded SFT {role} episode ID is duplicated")
+    for item in schedule:
+        task_id = item.get("task_id")
+        sample_index = item.get("sample_index")
+        seed = item.get("seed")
+        if task_id not in allowed or sample_index not in (0, 1) or seed != 484 + sample_index:
+            raise ValueError(f"bounded SFT {role} schedule changed")
+    counts = Counter(str(item["task_id"]) for item in schedule)
+    if role == "training":
+        if set(counts) != set(allowed) or set(counts.values()) - {1, 2}:
+            raise ValueError("bounded SFT training coverage changed")
+        if sum(count == 2 for count in counts.values()) != 5:
+            raise ValueError("bounded SFT training repeat count changed")
+    elif any(count != 2 for count in counts.values()) or set(counts) != set(allowed):
+        raise ValueError("bounded SFT validation coverage changed")
+
+
+def _schedule(value: Mapping[str, Any], key: str, *, expected_count: int) -> list[dict[str, Any]]:
+    raw = value.get(key)
+    if not isinstance(raw, list) or len(raw) != expected_count:
+        raise ValueError(f"bounded SFT {key} must contain {expected_count} episodes")
+    if any(not isinstance(item, dict) for item in raw):
+        raise ValueError(f"bounded SFT {key} contains a non-object")
+    return [dict(item) for item in raw]
+
+
+def _string_sequence(value: Mapping[str, Any], key: str) -> list[str]:
+    raw = value.get(key)
+    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+        raise ValueError(f"bounded SFT {key} must be a string list")
+    return list(raw)
+
+
+def _mapping(value: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    raw = value.get(key)
+    if not isinstance(raw, dict):
+        raise ValueError(f"bounded SFT {key} must be an object")
+    return raw
+
+
+def _require_equal(value: Mapping[str, Any], key: str, expected: object) -> None:
+    if value.get(key) != expected:
+        raise ValueError(f"bounded SFT {key} changed")
+
+
+def _regular_bytes(path: Path) -> bytes:
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 64 * 1024 * 1024:
+        raise ValueError(f"unsafe bounded SFT source file: {path.name}")
+    return path.read_bytes()
+
+
+__all__ = [
+    "OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS",
+    "OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH",
+    "OPENHANDS_BOUNDED_SFT_PILOT_FORMAT",
+    "OPENHANDS_BOUNDED_SFT_TRAINING_TASKS",
+    "OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS",
+    "BoundedSftDataGate",
+    "evaluate_bounded_sft_data_gate",
+    "load_bounded_sft_pilot_contract",
+    "validate_bounded_sft_pilot_contract",
+    "validate_bounded_sft_source",
+]

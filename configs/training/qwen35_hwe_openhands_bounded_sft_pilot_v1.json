@@ -1,0 +1,266 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v1",
+  "scope": "bounded_development_sft_preregistration",
+  "source": {
+    "repository": "jdzhu19/VeriGym",
+    "baseline_commit": "0ad17bd8259141e63efdfd7914407ed821993b60",
+    "task_split_manifest_hash": "68c76482f81ac4bbbb64a54d0886fda4b1a0b7c38e489916b919f768ec3146e6",
+    "task_split_file_sha256": "844bf3f65d648f1e8542b80e55d16d6612b614df5283b350123b33c79b2c13bc",
+    "qualification_progress_file_sha256": "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3",
+    "qualification_status": "completed"
+  },
+  "teacher": {
+    "scaffold": "openhands-sdk-1.42.1-verigym-broker-v1",
+    "model_transport_id": "openai/deepseek-v4-flash",
+    "model_identity": "deepseek-v4-flash",
+    "reasoning": "thinking-disabled",
+    "openhands_sdk_version": "1.42.1",
+    "litellm_version": "1.93.0",
+    "tiktoken_version": "0.7.0",
+    "tool_contract": "hwe_native_shell_v2",
+    "tool_schema_count": 6,
+    "temperature": 0,
+    "top_p": 1,
+    "max_context_tokens": 65536,
+    "max_output_tokens": 2048,
+    "max_iterations": 200,
+    "whole_episode_retries": 0,
+    "provider_request_retries": 0,
+    "capture_training_transcript": true,
+    "sandbox_network": "none"
+  },
+  "student": {
+    "base_model": "Qwen3.5-9B",
+    "base_model_snapshot_hash": "fce78eef75ac0721e6781f5f2b6b3461246660d583ed2f6f8f55e657f6483f84",
+    "tokenizer_hash": "440110a6a69e7fff2be69005bc6bda0477fb40b53db9b0e9597166cd2abedb24",
+    "trust_remote_code": false,
+    "transformers_commit": "e8ea728a3eeeb903e77c7d1bd29267c80a1be71f",
+    "rllm_commit": "1d1109a655e291b3001d8526d7c9ecc5b9328226",
+    "verl_version": "0.8.0"
+  },
+  "task_bindings": {
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032": {
+      "role": "training",
+      "task_hash": "b28544e30225034efb92a35c84a3fa7f30faa0cdf08849df5389a744f600ca71",
+      "source_hash": "2db1658df59bd255ed99905f918074f303a70f5cccc84c018527d576927bf95e"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248": {
+      "role": "training",
+      "task_hash": "164f4bf0ce995f99910369894329e7ff068d4c2a4de431e477a288a8785fee36",
+      "source_hash": "8c416582b8d0b7e33ff00d343c7e35ea7a20b9a82a86dc0964f0ffa184e40296"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2282": {
+      "role": "training",
+      "task_hash": "d046e56c1e9a3220ee539293a749700c0a1c027278fbdf9c7d3e99903c07a19c",
+      "source_hash": "64ea8e0015201d69f0041b0b1e158a2caf95bd4c3e81f91d056e292258762d02"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2468": {
+      "role": "training",
+      "task_hash": "3f53ef8b7dcc7ffe1b6d219a69ada3feb7042c6bbd0808bbc4c5eca88bdcba45",
+      "source_hash": "061abb1550c2889b819e78995d1a937921b7c111d0fc1cc00788a46ec7953260"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2469": {
+      "role": "training",
+      "task_hash": "2c90d93d3516bc8308b045de42cc177ec6820e98953f4a28e502a96bbc97f56e",
+      "source_hash": "faf37d7a51fc87cf706afe6609e6bfd21cc63a90128be154b08a51c380784f00"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549": {
+      "role": "training",
+      "task_hash": "d594eaa3d87441dd5ad034682486f0c410c923f75372ef4d2caa654e2ab212f9",
+      "source_hash": "50a08b2358ddb7b939fa77ac7d726e1baf0735fa863d891c4325a3d204c5eaa0"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589": {
+      "role": "training",
+      "task_hash": "91c26c78f842736087f506f0bb9dbd56e731b0dc480e011901086c9747a6a77c",
+      "source_hash": "9f0ba1df91d237c38eb7e43302e5af540e1a22770671de5e7a1eeab0d312516b"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802": {
+      "role": "training",
+      "task_hash": "e9bfb9718e9fe66ef83494aac697baabda2ad4aad62d4c61735fdd33f3a62e30",
+      "source_hash": "51d5b7c6cdb5cb064cee20f9bfea993594b7744ffaf679ca53505ec059129757"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2916": {
+      "role": "training",
+      "task_hash": "cf633dddaea257f8932e60323275e272a1988e27284309326f21894ece5b029f",
+      "source_hash": "b3728d76776306d83e530fa90f6e70cfa4f15a5089ec76d0369c069e47bacbe2"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944": {
+      "role": "training",
+      "task_hash": "ec7f79b3bb830aa0390b3be14635808455cef1c5786f93a676d2d0c5b9ae5277",
+      "source_hash": "86228bcc27147400105b29069ee34a2b428cf897be700d77e3ed019760dd1e4f"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3168": {
+      "role": "training",
+      "task_hash": "8a383a76e03dbd993b4693338593964173c0e62e8166e870e0762bb2b0a8180b",
+      "source_hash": "5d8f91eeb92d0e5b84156f4de6b2edbc7706f07ca1faab80e2f7d4bbda3eb638"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191": {
+      "role": "validation",
+      "task_hash": "ac576e92711851e49a69039c5270f52f23cfad559bc48f431070e2a7e0d58159",
+      "source_hash": "c8533c84cb6aaa6641e42127971b5524c17a579cd1a614aee47074c2d389c3b8"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204": {
+      "role": "validation",
+      "task_hash": "9322fa0b8455126e5c5f2e68ae02c47484935d5ea84bf69b9e6494658e229e86",
+      "source_hash": "15861c5f52071656a4ac8dbe7f96df49c974d24c2e3f53f9e449eba12794f02f"
+    },
+    "hwe-bench/repo-repair-v1/chipsalliance__rocket-chip__pr-3065": {
+      "role": "heldout",
+      "task_hash": "fb27256f09720cae6263058beedb57bb933d792349ac5562a0afe2fe9ab97ee9",
+      "source_hash": "ce1f476d79b7487b3da5573bfa0a5ba3c4b9860264a8ca63466c6724f6d5635f"
+    },
+    "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-222": {
+      "role": "heldout",
+      "task_hash": "7e62a998631bf29c57260dbeefbdb9fb442b6828a9f6f548aa92ea2751a4a682",
+      "source_hash": "196991d6eebeb73106594898bd4e6068d8f5d6ee02417bb7b90eab19386e5c8e"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2374": {
+      "role": "heldout",
+      "task_hash": "f2ddb84db5ef5c7729f543a38b3bd00bc9a22546bae1cd2be4409a9d9a9525c3",
+      "source_hash": "887a0eb226904f5b0cdbd4d686d320235060fd01d0b2b6e8de41f7db454afb1f"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2945": {
+      "role": "heldout",
+      "task_hash": "695613bc5fc14893b058bbd2dcba64cf5848c3a27f2f7d02414b8fea2c9c3489",
+      "source_hash": "8f6ce1497a121030bb1287056f6883592867144b7f87302cc3f5c198c172defe"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3107": {
+      "role": "heldout",
+      "task_hash": "698293447eef9b745f5ca7739d609d6e69105282fecc6a7133aaace628117d37",
+      "source_hash": "6bb8c316d6febc145bcc34f30e6c3872def676b30ae53a83cff27c6ffd37e589"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3171": {
+      "role": "heldout",
+      "task_hash": "523827ae039ed19f82f1f4e53c2cb32bcb40400f7d50b9e8364f205abf5ca63d",
+      "source_hash": "4e2fa29cb5d600171408ba0ff4235050409f88f264bb0646ec808517548527d4"
+    }
+  },
+  "collection": {
+    "training_schedule": [
+      {"episode_id": "train-pr2032-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2248-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2282-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2282", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2468-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2468", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2469-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2469", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2549-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2589-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2802-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2916-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2916", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2944-s484-predecessor", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944", "sample_index": 0, "seed": 484, "predecessor": true},
+      {"episode_id": "train-pr3168-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3168", "sample_index": 0, "seed": 484},
+      {"episode_id": "train-pr2032-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032", "sample_index": 1, "seed": 485},
+      {"episode_id": "train-pr2248-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248", "sample_index": 1, "seed": 485},
+      {"episode_id": "train-pr2282-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2282", "sample_index": 1, "seed": 485},
+      {"episode_id": "train-pr2549-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549", "sample_index": 1, "seed": 485},
+      {"episode_id": "train-pr2944-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944", "sample_index": 1, "seed": 485}
+    ],
+    "validation_schedule": [
+      {"episode_id": "validation-pr3191-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191", "sample_index": 0, "seed": 484},
+      {"episode_id": "validation-pr3204-s484", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204", "sample_index": 0, "seed": 484},
+      {"episode_id": "validation-pr3191-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191", "sample_index": 1, "seed": 485},
+      {"episode_id": "validation-pr3204-s485", "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204", "sample_index": 1, "seed": 485}
+    ],
+    "heldout_task_ids": [
+      "hwe-bench/repo-repair-v1/chipsalliance__rocket-chip__pr-3065",
+      "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-222",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2374",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2945",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3107",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3171"
+    ],
+    "scheduled_training_episodes": 16,
+    "scheduled_validation_episodes": 4,
+    "scheduled_heldout_tasks": 6,
+    "new_provider_episode_limit": 19,
+    "predecessor": {
+      "episode_id": "train-pr2944-s484-predecessor",
+      "dataset_format": "verigym_openhands_decision_sft_dataset_64k_v1",
+      "dataset_hash": "e1331ed287cedc76141d9f882992c4a159b76c759371170d259aa6d15492f511",
+      "trajectory_hash": "7ed148bf5e206d214d7abfdd5612275283e1e2e0643c8b8df3d5dcd5107c7416",
+      "record_count": 20,
+      "tool_action_count": 22,
+      "max_observed_token_count": 13107
+    }
+  },
+  "data_gate": {
+    "admission": "ordinary_verifier_passed_and_exact_64k_only",
+    "target_training_trajectories": 16,
+    "minimum_training_trajectories": 8,
+    "minimum_distinct_training_tasks": 8,
+    "minimum_validation_trajectories": 2,
+    "minimum_distinct_validation_tasks": 2,
+    "overlength_allowed": false,
+    "truncation": "error",
+    "heldout_trajectory_collection_before_training_allowed": false,
+    "production_benchmark_claim_allowed": false
+  },
+  "dataset": {
+    "format_id": "verigym_openhands_decision_sft_dataset_64k_v1",
+    "max_length": 65536,
+    "messages_key": "messages",
+    "tools_key": "tools",
+    "exact_receipt_key": "exact_token_receipt",
+    "objective_id": "trajectory_balanced_decision_target_token_mean_batch1_v1",
+    "dataset_class": "VeriGymTrajectoryBalancedDecisionSft64kDataset",
+    "complete_assistant_decision_only": true,
+    "all_rows_exact_dry_run_required": true
+  },
+  "training": {
+    "profile_id": "qwen35_9b_openhands_bounded_lora_sft_v1",
+    "dtype": "bfloat16",
+    "distributed_backend": "fsdp2",
+    "sequence_parallelism": "ulysses_sp4",
+    "world_size": 4,
+    "global_batch_size": 1,
+    "micro_batch_size_per_gpu": 1,
+    "lora_rank": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "gradient_checkpointing": true,
+    "remove_padding": true,
+    "bounded_fused_vocabulary_head": true,
+    "max_token_len_per_gpu": 16384,
+    "epochs_over_eligible_trajectories": 3,
+    "maximum_optimizer_steps": 48,
+    "optimizer_step_allowed": true,
+    "development_checkpoint_allowed": true,
+    "development_adapter_allowed": true,
+    "production_checkpoint_allowed": false,
+    "torch_compile": false
+  },
+  "evaluation": {
+    "design": "blind_same_condition_base_adapter_ab_v1",
+    "arms": ["base", "sft_adapter"],
+    "heldout_task_count": 6,
+    "same_openhands_tools": true,
+    "same_task_sources": true,
+    "same_inference_parameters": true,
+    "primary_metric": "ordinary_verifier_pass_at_1",
+    "secondary_metrics": [
+      "tool_call_schema_valid_rate",
+      "recovery_success_rate",
+      "model_tokens",
+      "wall_time_s",
+      "failure_type"
+    ],
+    "benchmark_score_claimed": false
+  },
+  "scheduler": {
+    "policy": "ephemeral_noninteractive_lsf_payload_v1",
+    "persistent_bash_allocation_allowed": false,
+    "submit_only_when_gpu_work_is_ready": true,
+    "auto_exit_on_payload_completion": true,
+    "retain_gpu_allocation_after_payload": false
+  },
+  "acceptance": {
+    "production_training_ready": false,
+    "training_started": false,
+    "optimizer_steps": 0,
+    "checkpoint_written": false,
+    "adapter_written": false,
+    "hpc_jobs_submitted": false,
+    "new_hpc_jobs_submitted": false
+  },
+  "contract_hash": "8c5585ba740c57d81b4ba7df54384d39ed79f0dd42a414c27441ae975a178622"
+}
