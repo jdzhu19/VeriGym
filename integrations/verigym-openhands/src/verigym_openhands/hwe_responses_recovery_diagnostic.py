@@ -20,20 +20,20 @@ from ._recovery import (
 from .hwe_agent import OpenHandsHweAgentAdapter
 
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_FORMAT = (
-    "verigym_openhands_hwe_finish_trajectory_qualification_v13"
+    "verigym_openhands_hwe_finish_trajectory_qualification_v14"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_finish_trajectory_qualification_report_v13"
+    "verigym_openhands_hwe_finish_trajectory_qualification_report_v14"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = (
-    "openhands-hwe-finish-trajectory-qualification-v13"
+    "openhands-hwe-finish-trajectory-qualification-v14"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-finish-trajectory-qualification-v13"
+    "openhands-deepseek-v4-flash-hwe-finish-trajectory-qualification-v14"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_OPT_IN_ENV = (
-    "VERIGYM_RUN_OPENHANDS_HWE_FINISH_TRAJECTORY_QUALIFICATION_V13"
+    "VERIGYM_RUN_OPENHANDS_HWE_FINISH_TRAJECTORY_QUALIFICATION_V14"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY = "deepseek-v4-flash"
@@ -46,7 +46,7 @@ OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_SEED = 484
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MAX_ITERATIONS = 200
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MAX_OUTPUT_TOKENS = 2_048
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MAX_CONTEXT_TOKENS = 65_536
-OPENHANDS_RESPONSES_RECOVERY_POLICY = "validated_responses_recovery_state_forced_finish_v9"
+OPENHANDS_RESPONSES_RECOVERY_POLICY = "validated_responses_recovery_state_required_tool_v11"
 
 _OPENHANDS_SDK_WHEEL_SHA256 = "10af3d6caf1075ecbb8520db1150c0ec0179ee352b19f0395d2273afda6004d2"
 _LITELLM_WHEEL_SHA256 = "ad5f7bf4e10cefa32273f0e8092eaf6c757aeb1c6484c0c3d8908e0342bde759"
@@ -158,6 +158,7 @@ def classify_responses_recovery_diagnostic(
     recovery_count: int,
     forced_request_count: int,
     validated_finish_count: int,
+    validated_tool_count: int,
     coalesced_output_count: int,
     failure_category: str | None,
     ordinary_verifier_resolved: bool,
@@ -169,10 +170,14 @@ def classify_responses_recovery_diagnostic(
         raise ValueError(
             "OpenHands Responses-recovery diagnostic count is outside the frozen budget"
         )
-    if forced_request_count not in {0, 1} or validated_finish_count not in {0, 1}:
-        raise ValueError("OpenHands validated finish counters are outside the frozen budget")
-    if validated_finish_count > forced_request_count:
-        raise ValueError("OpenHands validated finish count exceeds its forced request count")
+    if (
+        forced_request_count not in {0, 1}
+        or validated_finish_count not in {0, 1}
+        or validated_tool_count not in {0, 1}
+    ):
+        raise ValueError("OpenHands validated recovery counters are outside the frozen budget")
+    if validated_finish_count + validated_tool_count > forced_request_count:
+        raise ValueError("OpenHands validated recovery count exceeds its forced request count")
     if isinstance(coalesced_output_count, bool) or coalesced_output_count < 0:
         raise ValueError("OpenHands coalesced output count is invalid")
     if not infrastructure_valid:
@@ -181,18 +186,24 @@ def classify_responses_recovery_diagnostic(
         if (
             recovery_count == 1
             and forced_request_count == 1
-            and validated_finish_count == 1
+            and validated_finish_count == 0
+            and validated_tool_count == 1
             and coalesced_output_count > 0
         ):
-            return "responses_recovery_verifier_passed_trajectory_exported", True
-        if recovery_count == 0 and forced_request_count == 0 and validated_finish_count == 0:
+            return "responses_required_tool_verifier_passed_trajectory_exported", True
+        if (
+            recovery_count == 0
+            and forced_request_count == 0
+            and validated_finish_count == 0
+            and validated_tool_count == 0
+        ):
             return "direct_finish_verifier_passed_trajectory_exported", True
         return "finish_trajectory_export_accounting_mismatch", False
     if (
         typed_finish_observed
         and recovery_count == 1
         and forced_request_count == 1
-        and validated_finish_count == 1
+        and validated_finish_count + validated_tool_count == 1
         and coalesced_output_count > 0
     ):
         return "responses_recovery_finish_without_eligible_trajectory", False
