@@ -25,7 +25,16 @@ Both agent backends accept `campaign_role=training` with
 roles. The collector reconciles every OpenHands `ActionEvent` and `ObservationEvent` with the
 broker-owned canonical arguments and compact-observation hash. It preserves the exact effective
 OpenHands tool schemas, including SDK-added tool metadata, while excluding reasoning blocks,
-skills, dynamic context, foreign events, rejected calls, incomplete episodes, and secrets.
+skills, dynamic context, foreign events, unsupported rejected calls, incomplete episodes, and
+secrets.
+
+The v3 exact trajectory format makes one narrow exception to whole-episode rejection: broker
+rejections whose only code is `invalid_arguments` remain in the exact model-visible context, but
+their complete assistant decisions are marked `supervised_target=false` and never become target
+rows. Later accepted decisions retain those failed calls and error observations in their masked
+input prefix. Unknown tools, other rejection codes, missing error flags, causal drift, and
+verifier-failed episodes remain ineligible. This matches the existing DeepSeek Harness v3
+decision-only masking rule without weakening broker execution policy.
 
 The agent holds message content in memory until the ordinary verifier finishes. It writes
 `training-trajectory.json` only when the candidate resolves and the infrastructure remains valid.
@@ -122,19 +131,38 @@ the converted response was not exactly one typed `finish`. It was sealed as the
 infrastructure-valid model failure `openhands_hwe_recovery_tool_choice_violation`, before any later
 broker dispatch, with no workspace mutation, finish, trajectory, or dataset row.
 
-`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v12
-attempt and hash-binds the v9, v10, and v11 outcomes. Ordinary actions still use Chat Completions with
-the full six-tool contract. Only after the trusted recovery receipt exists, the adapter converts
-the same complete history and all six tools through OpenHands' public Responses serializer and
-sends a Responses API named `finish` choice. OpenHands SDK 1.42.1 currently resets Responses
+The v12 attempt hash-bound the v9, v10, and v11 outcomes. Ordinary actions still used Chat
+Completions with the full six-tool contract. Only after the trusted recovery receipt existed, the
+adapter converted the same complete history and all six tools through OpenHands' public Responses
+serializer and sent a Responses API named `finish` choice. OpenHands SDK 1.42.1 currently resets Responses
 `tool_choice` to `auto`; the v9 policy subclass rebinds the adapter-owned named choice after
 serialization without changing the installed SDK. The adapter also joins adjacent text outputs
 belonging to one tool message into exactly one output for that call ID. It rejects non-text outputs
 and non-adjacent call-ID reuse, and records the number of joins; v11 acceptance requires that the
 repair was exercised. The provider must return exactly one typed `finish` before broker dispatch.
-The v12 adapter also records a content-free response-shape receipt containing only bounded output
+The v12 adapter also recorded a content-free response-shape receipt containing only bounded output
 types, allowed tool names, and raw/converted counts. Unexpected names are hashed, and model text is
-never retained. The runner permits no provider or episode retry and remains dataset-ineligible.
+never retained. Its real run reached typed `finish`, made four patches, and passed both hidden
+verifier tests. Two earlier shell decisions had been rejected as `invalid_arguments`, however, so
+the then-current all-or-nothing action policy withheld the trajectory. The v12 report also
+incorrectly labeled the otherwise complete direct-finish evidence as infrastructure-invalid
+because it required a recovery response-shape receipt even though no recovery request occurred.
+Both defects are fixed in later source: the response-shape receipt is conditional on a forced
+request, and exact v3 trajectories retain those failed decisions only as unsupervised context.
+
+The v13 qualification bound the complete v12 report and trace, but its real recovery response was
+one structurally valid `read_file`, not the requested `finish`. The guard rejected it before broker
+dispatch. The v14 policy therefore follows the Stop-hook's actual instruction: its single
+receipt-bound Responses request uses `tool_choice="required"`, accepts exactly one known six-tool
+call with no prose, dispatches that call through the same broker, and returns subsequent turns to
+ordinary Chat Completions. Missing, unknown, multiple, or text-mixed calls still fail closed.
+
+The real v14 run validated and executed one recovered `read_file`, proving that continued recovery
+path. The model later attempted another content-only stop after the one recovery allowance was
+spent, made no workspace mutation, and never called typed `finish`; it therefore failed as
+`openhands_hwe_missing_finish`, with no eligible trajectory or dataset row. This is now a model
+completion outcome rather than an OpenHands/Responses transport defect. The runner permits no
+provider or episode retry and never admits a diagnostic result to a dataset automatically.
 
 ## Five-task HWE collection pilot
 
