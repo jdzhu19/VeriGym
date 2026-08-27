@@ -146,6 +146,13 @@ def _run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess
     )
 
 
+def _write_bind_file(path: Path, content: str) -> None:
+    """Write a Docker bind source with a mode independent of the caller's umask."""
+
+    path.write_text(content, encoding="utf-8", newline="")
+    path.chmod(0o644)
+
+
 def _remove_container(name: str) -> None:
     try:
         _run(["docker", "rm", "--force", name], timeout_s=30)
@@ -331,15 +338,11 @@ class DockerHweVerifier:
             script_path = staging / "tb-script.sh"
             runner_path = staging / "runner.sh"
             seed_path = staging / "cache-seed.sh"
-            patch_path.write_text(patch, encoding="utf-8", newline="")
-            script_path.write_text(instance.tb_script, encoding="utf-8", newline="")
-            runner_path.write_text(
-                _render_runner(entry),
-                encoding="utf-8",
-                newline="",
-            )
+            _write_bind_file(patch_path, patch)
+            _write_bind_file(script_path, instance.tb_script)
+            _write_bind_file(runner_path, _render_runner(entry))
             if dependencies:
-                seed_path.write_text(_render_cache_seed(dependencies), encoding="utf-8", newline="")
+                _write_bind_file(seed_path, _render_cache_seed(dependencies))
             container = f"verigym-hwe-{uuid.uuid4().hex[:20]}"
             cache_volume: str | None = None
             cache_mounts: list[str] = []
@@ -474,6 +477,23 @@ class DockerHweVerifier:
         stdout = executed.stdout or b""
         stderr = executed.stderr or b""
         combined_output = (stdout + b"\n" + stderr).decode("utf-8", errors="replace")
+        execution_metadata: dict[str, object] = {
+            "image_id": entry.image_id,
+            "manifest_digest": entry.manifest_digest,
+            "manifest_digest_observed": manifest_digest_observed,
+            "network_mode": "none",
+            "capabilities_dropped": "all",
+            "no_new_privileges": True,
+            "image_environment_required": image_environment_required,
+            "seccomp_profile": "builtin",
+            "seccomp_unconfined": False,
+            "container_user": "root",
+            "dependency_count": len(dependencies),
+            "dependency_inventory_hash": content_hash(dependencies),
+            "ephemeral_cache_volume": bool(dependencies),
+            "cache_volume_removed": cache_volume_removed,
+            "output_persisted": False,
+        }
         if dependencies and _CACHE_READY not in combined_output:
             return self._result(
                 node=node,
@@ -510,24 +530,20 @@ class DockerHweVerifier:
                 stdout=stdout,
                 stderr=stderr,
                 exit_code=executed.returncode,
-                metadata={
-                    "failure_stage": setup_failure_stage,
-                    "image_id": entry.image_id,
-                    "manifest_digest": entry.manifest_digest,
-                    "manifest_digest_observed": manifest_digest_observed,
-                    "network_mode": "none",
-                    "capabilities_dropped": "all",
-                    "no_new_privileges": True,
-                    "image_environment_required": image_environment_required,
-                    "seccomp_profile": "builtin",
-                    "seccomp_unconfined": False,
-                    "container_user": "root",
-                    "dependency_count": len(dependencies),
-                    "dependency_inventory_hash": content_hash(dependencies),
-                    "ephemeral_cache_volume": bool(dependencies),
-                    "cache_volume_removed": cache_volume_removed,
-                    "output_persisted": False,
-                },
+                metadata={**execution_metadata, "failure_stage": setup_failure_stage},
+            )
+        if executed.returncode != 0 and _TESTBENCH_STARTED not in combined_output:
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.SANDBOX_ERROR,
+                message="HWE-Bench verifier container failed before testbench startup",
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=executed.returncode,
+                metadata={**execution_metadata, "failure_stage": "container_start"},
             )
         tests = _parse_markers(combined_output)
         expected_tests = set(instance.expected_test_ids)
@@ -553,23 +569,7 @@ class DockerHweVerifier:
             exit_code=executed.returncode,
             tests_passed=passed,
             tests_total=len(expected_tests),
-            metadata={
-                "image_id": entry.image_id,
-                "manifest_digest": entry.manifest_digest,
-                "manifest_digest_observed": manifest_digest_observed,
-                "network_mode": "none",
-                "capabilities_dropped": "all",
-                "no_new_privileges": True,
-                "image_environment_required": image_environment_required,
-                "seccomp_profile": "builtin",
-                "seccomp_unconfined": False,
-                "container_user": "root",
-                "dependency_count": len(dependencies),
-                "dependency_inventory_hash": content_hash(dependencies),
-                "ephemeral_cache_volume": bool(dependencies),
-                "cache_volume_removed": cache_volume_removed,
-                "output_persisted": False,
-            },
+            metadata=execution_metadata,
         )
 
     @staticmethod

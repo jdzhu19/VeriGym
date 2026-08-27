@@ -64,6 +64,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     tmp_path: Path,
     airgapped: bool,
 ) -> None:
+    bind_source_modes: dict[str, int] = {}
     base = tmp_path / "base"
     candidate = tmp_path / "candidate"
     base.mkdir()
@@ -107,6 +108,16 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
             payload = {"Id": image_id, "RepoDigests": [] if airgapped else [f"name@{digest}"]}
             return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
         if argv[:2] == ["docker", "create"]:
+            for index, argument in enumerate(argv):
+                if argument != "--mount":
+                    continue
+                mount = argv[index + 1]
+                if not mount.startswith("type=bind,src="):
+                    continue
+                source, destination = mount.removeprefix("type=bind,src=").split(",dst=", 1)
+                bind_source_modes[destination.split(",", 1)[0]] = (
+                    Path(source).stat().st_mode & 0o777
+                )
             return subprocess.CompletedProcess(argv, 0, b"container-id\n", b"")
         if argv[:3] == ["docker", "start", "--attach"]:
             output = (
@@ -126,14 +137,18 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
         request={"identity": "frozen"},
         timeout_s=10,
     )
-    result = DockerHweVerifier().evaluate(
-        instance=instance,
-        entry=entry,
-        node=node,
-        base_repository=base,
-        candidate_repository=candidate,
-        artifact_root=tmp_path / "artifacts",
-    )
+    previous_umask = os.umask(0o077)
+    try:
+        result = DockerHweVerifier().evaluate(
+            instance=instance,
+            entry=entry,
+            node=node,
+            base_repository=base,
+            candidate_repository=candidate,
+            artifact_root=tmp_path / "artifacts",
+        )
+    finally:
+        os.umask(previous_umask)
     persisted = (tmp_path / "artifacts" / node.id / "result.json").read_text()
     assert result.status == VerifierStatus.PASSED
     assert result.tests_passed == result.tests_total == 1
@@ -141,6 +156,11 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     assert result.metadata["image_environment_required"] is False
     assert result.metadata["seccomp_profile"] == "builtin"
     assert result.metadata["seccomp_unconfined"] is False
+    assert bind_source_modes == {
+        "/home/verigym-candidate.patch": 0o644,
+        "/home/verigym-hwe-run.sh": 0o644,
+        "/home/verigym-tb-script.sh": 0o644,
+    }
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
     assert "SECRET_RUNTIME_OUTPUT" not in persisted
 
@@ -215,6 +235,12 @@ def test_v2_runner_uses_explicit_non_derived_rocket_marker() -> None:
         (
             b"VERIGYM_HWE_SETUP_FAILURE:repository_reset\n",
             128,
+            VerifierStatus.ERROR,
+            ErrorCategory.SANDBOX_ERROR,
+        ),
+        (
+            b"",
+            126,
             VerifierStatus.ERROR,
             ErrorCategory.SANDBOX_ERROR,
         ),
@@ -308,7 +334,7 @@ def test_verifier_distinguishes_setup_failure_from_candidate_test_failure(
     assert result.status == expected_status
     assert result.error_category == expected_category
     if expected_status == VerifierStatus.ERROR:
-        assert result.metadata["failure_stage"] == "repository_reset"
+        assert result.metadata["failure_stage"] in {"repository_reset", "container_start"}
         assert result.tests_passed is None
     else:
         assert "failure_stage" not in result.metadata
