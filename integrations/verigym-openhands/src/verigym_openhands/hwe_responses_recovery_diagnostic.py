@@ -20,20 +20,20 @@ from ._recovery import (
 from .hwe_agent import OpenHandsHweAgentAdapter
 
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_v10"
+    "verigym_openhands_hwe_responses_recovery_diagnostic_v11"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_report_v10"
+    "verigym_openhands_hwe_responses_recovery_diagnostic_report_v11"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = (
-    "openhands-hwe-responses-recovery-finish-diagnostic-v10"
+    "openhands-hwe-responses-recovery-finish-diagnostic-v11"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v10"
+    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v11"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_OPT_IN_ENV = (
-    "VERIGYM_RUN_OPENHANDS_HWE_RESPONSES_RECOVERY_DIAGNOSTIC_V10"
+    "VERIGYM_RUN_OPENHANDS_HWE_RESPONSES_RECOVERY_DIAGNOSTIC_V11"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY = "deepseek-v4-flash"
@@ -158,6 +158,7 @@ def classify_responses_recovery_diagnostic(
     recovery_count: int,
     forced_request_count: int,
     validated_finish_count: int,
+    coalesced_output_count: int,
     failure_category: str | None,
 ) -> tuple[str, bool]:
     """Require the trusted recovery turn to produce broker-authoritative typed finish."""
@@ -170,6 +171,8 @@ def classify_responses_recovery_diagnostic(
         raise ValueError("OpenHands validated finish counters are outside the frozen budget")
     if validated_finish_count > forced_request_count:
         raise ValueError("OpenHands validated finish count exceeds its forced request count")
+    if isinstance(coalesced_output_count, bool) or coalesced_output_count < 0:
+        raise ValueError("OpenHands coalesced output count is invalid")
     if not infrastructure_valid:
         return "infrastructure_invalid", False
     if (
@@ -177,9 +180,12 @@ def classify_responses_recovery_diagnostic(
         and recovery_count == 1
         and forced_request_count == 1
         and validated_finish_count == 1
+        and coalesced_output_count > 0
     ):
         return "responses_recovery_finish_regression_passed", True
     if typed_finish_observed:
+        if recovery_count == 1 and coalesced_output_count == 0:
+            return "responses_recovery_output_coalescing_not_exercised", False
         return "direct_finish_passed_recovery_not_exercised", False
     if failure_category == "openhands_hwe_recovery_tool_choice_violation":
         return "responses_recovery_finish_response_rejected", False

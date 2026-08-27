@@ -40,11 +40,21 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
 
 
 @pytest.mark.parametrize(
-    ("infrastructure", "finished", "recoveries", "forced", "validated", "failure", "expected"),
+    (
+        "infrastructure",
+        "finished",
+        "recoveries",
+        "forced",
+        "validated",
+        "coalesced",
+        "failure",
+        "expected",
+    ),
     [
         (
             True,
             True,
+            1,
             1,
             1,
             1,
@@ -57,12 +67,24 @@ def test_responses_recovery_agent_version_is_frozen_and_repeatable() -> None:
             1,
             1,
             0,
+            1,
             "openhands_hwe_recovery_tool_choice_violation",
             ("responses_recovery_finish_response_rejected", False),
         ),
         (
+            True,
+            True,
+            1,
+            1,
+            1,
+            0,
+            None,
+            ("responses_recovery_output_coalescing_not_exercised", False),
+        ),
+        (
             False,
             False,
+            0,
             0,
             0,
             0,
@@ -77,6 +99,7 @@ def test_responses_recovery_requires_broker_typed_finish(
     recoveries: int,
     forced: int,
     validated: int,
+    coalesced: int,
     failure: str | None,
     expected: tuple[str, bool],
 ) -> None:
@@ -87,6 +110,7 @@ def test_responses_recovery_requires_broker_typed_finish(
             recovery_count=recoveries,
             forced_request_count=forced,
             validated_finish_count=validated,
+            coalesced_output_count=coalesced,
             failure_category=failure,
         )
         == expected

@@ -109,15 +109,25 @@ The first Responses-recovery v9 attempt stopped before model initialization beca
 environment omitted the `verigym-deepseek-harness` integration source. It was sealed as
 `hwe_broker_unavailable` with zero model calls, zero tools, zero workspace changes, and no recovery.
 
-`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v10
-attempt and hash-binds that v9 zero-call failure. Ordinary actions still use Chat Completions with
+The v10 attempt crossed model initialization and completed 21 ordinary OpenHands actions and
+observations, but its receipt-bound Responses request ended in an HTTP 400 before a typed finish.
+The sealed report contains no raw provider content, patch, or trajectory. A bounded provider probe
+reproduced the relevant protocol rejection: OpenHands SDK 1.42.1 serializes each text block in one
+tool message as a separate `function_call_output`, while the provider permits only one output for
+each `call_id`.
+
+`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v11
+attempt and hash-binds both the v9 zero-call failure and the v10 full-history 400. Ordinary actions
+still use Chat Completions with
 the full six-tool contract. Only after the trusted recovery receipt exists, the adapter converts
 the same complete history and all six tools through OpenHands' public Responses serializer and
 sends a Responses API named `finish` choice. OpenHands SDK 1.42.1 currently resets Responses
 `tool_choice` to `auto`; the v9 policy subclass rebinds the adapter-owned named choice after
-serialization without changing the installed SDK. The provider must return exactly one typed
-`finish` before broker dispatch. The runner permits no provider or episode retry and remains
-dataset-ineligible.
+serialization without changing the installed SDK. The adapter also joins adjacent text outputs
+belonging to one tool message into exactly one output for that call ID. It rejects non-text outputs
+and non-adjacent call-ID reuse, and records the number of joins; v11 acceptance requires that the
+repair was exercised. The provider must return exactly one typed `finish` before broker dispatch.
+The runner permits no provider or episode retry and remains dataset-ineligible.
 
 ## Five-task HWE collection pilot
 

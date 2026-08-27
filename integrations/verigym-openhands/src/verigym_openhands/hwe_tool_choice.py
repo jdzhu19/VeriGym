@@ -38,6 +38,59 @@ class RecoveryToolChoiceViolation(RuntimeError):
     """The provider violated the recovery turn's named-finish response contract."""
 
 
+def _coalesce_responses_function_outputs(
+    input_items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Emit one text output per Responses function call without losing content.
+
+    OpenHands SDK 1.42.1 emits one ``function_call_output`` item for every
+    ``TextContent`` in a tool message.  A tool error, for example, contains a
+    header block followed by its detail block.  The Responses protocol accepts
+    only one output for a given ``call_id``, so adjacent blocks from the same
+    OpenHands message must be joined before the recovery request is sent.
+
+    Only adjacent string outputs are coalesced.  Reusing a call ID later in the
+    history or encountering a non-text output remains a fail-closed error for
+    this text-only HWE contract.
+    """
+
+    normalized: list[dict[str, Any]] = []
+    closed_call_ids: set[str] = set()
+    active_call_id: str | None = None
+    coalesced = 0
+    for original in input_items:
+        item = dict(original)
+        if item.get("type") != "function_call_output":
+            if active_call_id is not None:
+                closed_call_ids.add(active_call_id)
+                active_call_id = None
+            normalized.append(item)
+            continue
+
+        call_id = item.get("call_id")
+        output = item.get("output")
+        if not isinstance(call_id, str) or not call_id:
+            raise ValueError("OpenHands Responses tool output lacks a call ID")
+        if not isinstance(output, str):
+            raise ValueError("OpenHands HWE Responses recovery requires text tool outputs")
+        if active_call_id == call_id:
+            previous = normalized[-1]
+            previous_output = previous.get("output")
+            if not isinstance(previous_output, str):
+                raise ValueError("OpenHands Responses tool output merge state is invalid")
+            previous["output"] = previous_output + output
+            coalesced += 1
+            continue
+        if call_id in closed_call_ids:
+            raise ValueError("OpenHands Responses history reused a closed tool call ID")
+        if active_call_id is not None:
+            closed_call_ids.add(active_call_id)
+        active_call_id = call_id
+        normalized.append(item)
+
+    return normalized, coalesced
+
+
 def _required_tool_choice_kwargs(
     tools: Sequence[ToolDefinition] | None,
     kwargs: dict[str, Any],
@@ -324,6 +377,7 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
     recovery_state_path: Path
     _recovery_forced_request_count: int = PrivateAttr(default=0)
     _recovery_validated_finish_count: int = PrivateAttr(default=0)
+    _recovery_coalesced_output_count: int = PrivateAttr(default=0)
 
     @property
     def recovery_forced_request_count(self) -> int:
@@ -332,6 +386,10 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
     @property
     def recovery_validated_finish_count(self) -> int:
         return self._recovery_validated_finish_count
+
+    @property
+    def recovery_coalesced_output_count(self) -> int:
+        return self._recovery_coalesced_output_count
 
     def _finalize_responses_params(
         self,
@@ -374,6 +432,8 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
             return result
 
         resolved_instructions, resolved_input, resolved_tools, call_kwargs, telemetry = result
+        normalized_input, coalesced = _coalesce_responses_function_outputs(resolved_input)
+        self._recovery_coalesced_output_count = coalesced
         # OpenHands SDK 1.42.1 currently overwrites Responses tool_choice with
         # ``auto``. Rebind the adapter-owned named choice after the public SDK
         # serializer has completed, without modifying the installed package.
@@ -384,7 +444,7 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         rebound["store"] = False
         return (
             resolved_instructions,
-            resolved_input,
+            normalized_input,
             resolved_tools,
             rebound,
             telemetry,

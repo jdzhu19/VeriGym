@@ -146,6 +146,11 @@ remove tools, synthesize a call, or expose recovery state. The response must sti
 one provider-emitted `finish` call before broker dispatch. Responses thinking is explicitly
 disabled, storage is disabled, raw request and response bodies are not persisted, and all existing
 receipt, counter, exception-chain, interruption, verifier, and trajectory gates remain in force.
+For the text-only HWE contract, the adapter additionally normalizes the SDK's multiple adjacent
+`function_call_output` items for one tool message into one output with byte-preserving text
+concatenation. It rejects non-text output, missing call IDs, and reuse of a closed call ID. The
+diagnostic records the normalization count and requires a nonzero count before claiming the
+full-history regression passed.
 
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2

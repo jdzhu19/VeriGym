@@ -488,3 +488,79 @@ def test_responses_recovery_rebinds_sdk_auto_choice_and_disables_thinking(
     assert call_kwargs["reasoning"] == {"effort": "none"}
     assert call_kwargs["store"] is False
     assert "extra_body" not in call_kwargs
+
+
+def test_responses_recovery_coalesces_adjacent_text_outputs(tmp_path: Path) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    input_items = [
+        {
+            "type": "function_call",
+            "id": "fc_call-1",
+            "call_id": "call-1",
+            "name": "shell",
+            "arguments": "{}",
+        },
+        {"type": "function_call_output", "call_id": "call-1", "output": "header\n"},
+        {"type": "function_call_output", "call_id": "call-1", "output": "detail"},
+        {"type": "message", "role": "user", "content": []},
+    ]
+    base_result = (None, input_items, [], {"tool_choice": "auto"}, {})
+    with patch(
+        "openhands.sdk.llm.llm.LLM._finalize_responses_params",
+        autospec=True,
+        return_value=base_result,
+    ):
+        result = llm._finalize_responses_params(
+            None,
+            input_items,
+            _tools(),
+            None,
+            False,
+            False,
+            {"tool_choice": {"type": "function", "name": "finish"}},
+        )
+
+    assert result[1] == [
+        input_items[0],
+        {"type": "function_call_output", "call_id": "call-1", "output": "header\ndetail"},
+        input_items[3],
+    ]
+    assert llm.recovery_coalesced_output_count == 1
+
+
+@pytest.mark.parametrize(
+    "input_items",
+    [
+        [
+            {"type": "function_call_output", "call_id": "call-1", "output": ["image"]},
+        ],
+        [
+            {"type": "function_call_output", "call_id": "call-1", "output": "first"},
+            {"type": "message", "role": "user", "content": []},
+            {"type": "function_call_output", "call_id": "call-1", "output": "second"},
+        ],
+    ],
+)
+def test_responses_recovery_rejects_unsafe_output_coalescing(
+    tmp_path: Path,
+    input_items: list[dict[str, object]],
+) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    base_result = (None, input_items, [], {"tool_choice": "auto"}, {})
+    with (
+        patch(
+            "openhands.sdk.llm.llm.LLM._finalize_responses_params",
+            autospec=True,
+            return_value=base_result,
+        ),
+        pytest.raises(ValueError),
+    ):
+        llm._finalize_responses_params(
+            None,
+            input_items,
+            _tools(),
+            None,
+            False,
+            False,
+            {"tool_choice": {"type": "function", "name": "finish"}},
+        )

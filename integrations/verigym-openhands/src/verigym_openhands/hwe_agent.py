@@ -202,6 +202,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         format_recovery_count = 0
         recovery_forced_request_count = 0
         recovery_validated_finish_count = 0
+        recovery_coalesced_output_count = 0
         broker: Any = None
         llm: Any = None
         recovery_violation_type: type[Exception] | None = None
@@ -389,6 +390,9 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     recovery_validated_finish_count = choice_counts[
                         "recovery_validated_finish_count"
                     ]
+                    recovery_coalesced_output_count = choice_counts[
+                        "recovery_coalesced_output_count"
+                    ]
                     format_recovery_count = read_recovery_count(recovery_state)
                     if format_recovery_count:
                         bridge.emit_event(
@@ -492,6 +496,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 format_recovery_count=format_recovery_count,
                 recovery_forced_request_count=recovery_forced_request_count,
                 recovery_validated_finish_count=recovery_validated_finish_count,
+                recovery_coalesced_output_count=recovery_coalesced_output_count,
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -850,6 +855,7 @@ def _write_evidence(
     format_recovery_count: int,
     recovery_forced_request_count: int,
     recovery_validated_finish_count: int,
+    recovery_coalesced_output_count: int,
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -882,6 +888,7 @@ def _write_evidence(
             "format_recovery_count": format_recovery_count,
             "recovery_forced_request_count": recovery_forced_request_count,
             "recovery_validated_finish_count": recovery_validated_finish_count,
+            "recovery_coalesced_output_count": recovery_coalesced_output_count,
             "same_session_recovery": True,
             "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
@@ -892,7 +899,11 @@ def _write_evidence(
 
 def _recovery_choice_counts(llm: Any) -> dict[str, int]:
     result: dict[str, int] = {}
-    for name in ("recovery_forced_request_count", "recovery_validated_finish_count"):
+    for name in (
+        "recovery_forced_request_count",
+        "recovery_validated_finish_count",
+        "recovery_coalesced_output_count",
+    ):
         value = getattr(llm, name, 0)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise OpenHandsTrajectoryInfrastructureError(
