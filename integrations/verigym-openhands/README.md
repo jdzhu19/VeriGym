@@ -105,14 +105,19 @@ continuation and misclassification defects, but it does not establish successful
 termination for this model. Production collection remains blocked until the provider/model returns
 the requested typed `finish` under the actual agent history.
 
-`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` freezes a distinct v9
-diagnostic. Ordinary actions still use Chat Completions with the full six-tool contract. Only
-after the trusted recovery receipt exists, v9 converts the same complete history and all six
-tools through OpenHands' public Responses serializer and sends a Responses API named `finish`
-choice. OpenHands SDK 1.42.1 currently resets Responses `tool_choice` to `auto`; the v9 subclass
-rebinds the adapter-owned named choice after serialization without changing the installed SDK.
-The provider must return exactly one typed `finish` before broker dispatch. The diagnostic binds
-the sealed v8 rejection, permits no provider or episode retry, and remains dataset-ineligible.
+The first Responses-recovery v9 attempt stopped before model initialization because its launch
+environment omitted the `verigym-deepseek-harness` integration source. It was sealed as
+`hwe_broker_unavailable` with zero model calls, zero tools, zero workspace changes, and no recovery.
+
+`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v10
+attempt and hash-binds that v9 zero-call failure. Ordinary actions still use Chat Completions with
+the full six-tool contract. Only after the trusted recovery receipt exists, the adapter converts
+the same complete history and all six tools through OpenHands' public Responses serializer and
+sends a Responses API named `finish` choice. OpenHands SDK 1.42.1 currently resets Responses
+`tool_choice` to `auto`; the v9 policy subclass rebinds the adapter-owned named choice after
+serialization without changing the installed SDK. The provider must return exactly one typed
+`finish` before broker dispatch. The runner permits no provider or episode retry and remains
+dataset-ineligible.
 
 ## Five-task HWE collection pilot
 

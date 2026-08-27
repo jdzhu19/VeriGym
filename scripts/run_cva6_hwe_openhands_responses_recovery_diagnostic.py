@@ -66,15 +66,15 @@ _optional_json = _recovery_runner._optional_json
 _qualified_sources = _recovery_runner._qualified_sources
 _validated_split = _recovery_runner._validated_split
 
-_PRIOR_V8_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-validated-recovery-finish-diagnostic-v8"
+_PRIOR_V9_AGENT_VERSION_ID = (
+    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v9"
 )
-_PRIOR_V8_STATUS = "recovery_finish_response_rejected"
-_PRIOR_V8_FAILURE_CATEGORY = "openhands_hwe_recovery_tool_choice_violation"
+_PRIOR_V9_STATUS = "infrastructure_invalid"
+_PRIOR_V9_FAILURE_CATEGORY = "hwe_broker_unavailable"
 
 
 @dataclass(frozen=True)
-class _PriorV8ImageLock:
+class _PriorV9ImageLock:
     task_id: str
     task_hash: str
     source_hash: str
@@ -88,7 +88,7 @@ class _PriorV8ImageLock:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qualification-root", type=Path, required=True)
-    parser.add_argument("--prior-v8-report", type=Path, required=True)
+    parser.add_argument("--prior-v9-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
@@ -134,9 +134,9 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     if not source_root.is_relative_to(qualification):
         raise ConfigurationError("OpenHands tool-choice source escaped qualification root")
 
-    prior = _prior_v8_failure(arguments.prior_v8_report)
+    prior = _prior_v9_failure(arguments.prior_v9_report)
     entry = training[OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK]
-    lock = _prior_v8_image_lock(prior)
+    lock = _prior_v9_image_lock(prior)
     if lock.task_hash != entry.task_hash or lock.source_hash != entry.source_hash:
         raise ConfigurationError("OpenHands tool-choice task/source/image identity changed")
     from verigym_openhands.hwe_agent import (
@@ -150,7 +150,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     runtime_config = _docker_config(lock)
     runtime = DockerRuntime(runtime_config)
     try:
-        runtime.prepare("openhands-responses-recovery-v9-pr2032")
+        runtime.prepare("openhands-responses-recovery-v10-pr2032")
     finally:
         runtime.close()
 
@@ -197,10 +197,10 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "source_hash": entry.source_hash,
         "source_commit": source_commit,
         "image_lock_hash": lock.lock_hash,
-        "prior_v8_report_hash": prior["report_hash"],
-        "prior_v8_agent_version_hash": prior["agent_version_hash"],
-        "prior_v8_trace_sha256": prior["trace_sha256"],
-        "prior_v8_failure_category": _PRIOR_V8_FAILURE_CATEGORY,
+        "prior_v9_report_hash": prior["report_hash"],
+        "prior_v9_agent_version_hash": prior["agent_version_hash"],
+        "prior_v9_trace_sha256": prior["trace_sha256"],
+        "prior_v9_failure_category": _PRIOR_V9_FAILURE_CATEGORY,
         "model_transport_id": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL,
         "model_identity": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY,
         "agent_version_id": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID,
@@ -280,7 +280,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 run_id=run_id,
                 experiment_id=arguments.campaign_id,
                 plan_item_id=run_id,
-                system_id="openhands-deepseek-v4-flash-hwe-responses-recovery-v9",
+                system_id="openhands-deepseek-v4-flash-hwe-responses-recovery-v10",
                 base_seed=OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_SEED,
             )
         )
@@ -437,7 +437,7 @@ def _validate_package_versions() -> None:
             raise ConfigurationError(f"{package} differs from the frozen tool-choice diagnostic")
 
 
-def _prior_v8_failure(path: Path) -> dict[str, str]:
+def _prior_v9_failure(path: Path) -> dict[str, str]:
     report_path = path.resolve(strict=True)
     report = _json(report_path)
     observed = report.get("report_hash")
@@ -446,27 +446,27 @@ def _prior_v8_failure(path: Path) -> dict[str, str]:
     if (
         not isinstance(observed, str)
         or content_hash(base) != observed
-        or report.get("agent_version_id") != _PRIOR_V8_AGENT_VERSION_ID
-        or report.get("status") != _PRIOR_V8_STATUS
-        or report.get("scorecard_failure_category") != _PRIOR_V8_FAILURE_CATEGORY
-        or report.get("infrastructure_valid") is not True
-        or report.get("evidence_complete") is not True
-        or report.get("tool_choice_bound") is not True
+        or report.get("agent_version_id") != _PRIOR_V9_AGENT_VERSION_ID
+        or report.get("status") != _PRIOR_V9_STATUS
+        or report.get("scorecard_failure_category") != _PRIOR_V9_FAILURE_CATEGORY
+        or report.get("infrastructure_valid") is not False
+        or report.get("evidence_complete") is not False
+        or report.get("tool_choice_bound") is not False
         or report.get("typed_finish_observed") is not False
-        or report.get("format_recovery_count") != 1
-        or report.get("recovery_forced_request_count") != 1
+        or report.get("format_recovery_count") != 0
+        or report.get("recovery_forced_request_count") != 0
         or report.get("recovery_validated_finish_count") != 0
-        or report.get("model_call_count") != 12
-        or report.get("tool_call_count") != 12
-        or report.get("patch_call_count") != 0
-        or report.get("interrupt_free") is not True
+        or report.get("model_call_count") is not None
+        or report.get("tool_call_count") is not None
+        or report.get("patch_call_count") is not None
+        or report.get("interrupt_free") is not False
         or not isinstance(trajectory, dict)
         or trajectory.get("exported") is not False
     ):
-        raise ConfigurationError("prior OpenHands v8 recovery rejection changed")
+        raise ConfigurationError("prior OpenHands v9 zero-call failure changed")
     version_hash = report.get("agent_version_hash")
     if not isinstance(version_hash, str) or len(version_hash) != 64:
-        raise ConfigurationError("prior OpenHands v8 agent version hash is absent")
+        raise ConfigurationError("prior OpenHands v9 agent version hash is absent")
     version = _json(report_path.parent / "agent-version.json")
     image_hashes = version.get("image_hashes")
     task_agent_hash = image_hashes.get("task-agent") if isinstance(image_hashes, dict) else None
@@ -474,7 +474,7 @@ def _prior_v8_failure(path: Path) -> dict[str, str]:
         image_hashes.get("task-verifier") if isinstance(image_hashes, dict) else None
     )
     if (
-        version.get("agent_version_id") != _PRIOR_V8_AGENT_VERSION_ID
+        version.get("agent_version_id") != _PRIOR_V9_AGENT_VERSION_ID
         or version.get("version_hash") != version_hash
         or version.get("source_commit") != report.get("source_commit")
         or not isinstance(task_agent_hash, str)
@@ -482,26 +482,28 @@ def _prior_v8_failure(path: Path) -> dict[str, str]:
         or not isinstance(task_verifier_hash, str)
         or len(task_verifier_hash) != 64
     ):
-        raise ConfigurationError("prior OpenHands v8 agent-version identity changed")
+        raise ConfigurationError("prior OpenHands v9 agent-version identity changed")
     runs = sorted((report_path.parent / "runs").iterdir())
     if len(runs) != 1:
-        raise ConfigurationError("prior OpenHands v8 run inventory changed")
+        raise ConfigurationError("prior OpenHands v9 run inventory changed")
     trace_path = (runs[0] / "trace.jsonl").resolve(strict=True)
-    failures = [
+    terminations = [
+        event for event in _json_lines(trace_path) if event.get("event_type") == "agent_terminated"
+    ]
+    prompt_bindings = [
         event
         for event in _json_lines(trace_path)
-        if event.get("event_type") == "openhands_sdk_hwe_episode_failed"
+        if event.get("event_type") == "openhands_sdk_hwe_prompt_policy_bound"
     ]
     if (
-        len(failures) != 1
-        or failures[0].get("payload", {}).get("exception_chain")
-        != ["ConversationRunError", "RecoveryToolChoiceViolation"]
-        or failures[0].get("payload", {}).get("root_exception_type")
-        != "RecoveryToolChoiceViolation"
-        or failures[0].get("payload", {}).get("recovery_forced_request_count") != 1
-        or failures[0].get("payload", {}).get("recovery_validated_finish_count") != 0
+        len(terminations) != 1
+        or terminations[0].get("payload", {}).get("failure", {}).get("category")
+        != _PRIOR_V9_FAILURE_CATEGORY
+        or terminations[0].get("payload", {}).get("failure", {}).get("infrastructure") is not True
+        or len(prompt_bindings) != 1
+        or prompt_bindings[0].get("payload", {}).get("model_call_count") != 0
     ):
-        raise ConfigurationError("prior OpenHands v8 causal failure evidence changed")
+        raise ConfigurationError("prior OpenHands v9 zero-call trace evidence changed")
     return {
         "report_hash": observed,
         "agent_version_hash": version_hash,
@@ -515,7 +517,7 @@ def _prior_v8_failure(path: Path) -> dict[str, str]:
     }
 
 
-def _prior_v8_image_lock(prior: dict[str, str]) -> _PriorV8ImageLock:
+def _prior_v9_image_lock(prior: dict[str, str]) -> _PriorV9ImageLock:
     agent_image = "sha256:" + prior["task_agent_hash"]
     verifier_image = "sha256:" + prior["task_verifier_hash"]
     inspection = subprocess.run(
@@ -527,7 +529,7 @@ def _prior_v8_image_lock(prior: dict[str, str]) -> _PriorV8ImageLock:
     )
     values = json.loads(inspection.stdout)
     if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
-        raise ConfigurationError("prior OpenHands v8 agent image inspection is malformed")
+        raise ConfigurationError("prior OpenHands v9 agent image inspection is malformed")
     config = values[0].get("Config")
     labels = config.get("Labels") if isinstance(config, dict) else None
     codex_hash = labels.get("org.verigym.codex.binary.sha256") if isinstance(labels, dict) else None
@@ -547,8 +549,8 @@ def _prior_v8_image_lock(prior: dict[str, str]) -> _PriorV8ImageLock:
         or len(rg_hash) != 64
         or len(prior["image_lock_hash"]) != 64
     ):
-        raise ConfigurationError("prior OpenHands v8 agent image identity changed")
-    return _PriorV8ImageLock(
+        raise ConfigurationError("prior OpenHands v9 agent image identity changed")
+    return _PriorV9ImageLock(
         task_id=prior["task_id"],
         task_hash=prior["task_hash"],
         source_hash=prior["source_hash"],
