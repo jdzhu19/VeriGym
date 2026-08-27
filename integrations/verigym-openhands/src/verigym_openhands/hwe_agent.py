@@ -156,16 +156,16 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         self._launched = True
         context, bridge, settings, system_prompt, task_prompt = self._configured()
         try:
-            import openhands.sdk as openhands  # type: ignore[import-not-found]
-            from openhands.sdk.conversation import (  # type: ignore[import-not-found]
+            import openhands.sdk as openhands
+            from openhands.sdk.conversation import (
                 get_agent_final_response,
             )
-            from openhands.sdk.hooks import (  # type: ignore[import-not-found]
+            from openhands.sdk.hooks import (
                 HookConfig,
                 HookDefinition,
                 HookMatcher,
             )
-            from openhands.sdk.mcp import MCPServer  # type: ignore[import-not-found]
+            from openhands.sdk.mcp import MCPServer
         except ImportError as exc:
             raise _termination(
                 "openhands_sdk_unavailable",
@@ -226,7 +226,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     private_audit_root=private_root,
                 )
                 failure_stage = "llm_initialization"
-                llm_type = openhands.LLM
+                llm_type: Any = openhands.LLM
                 if settings.tool_choice_policy == "required":
                     from .hwe_tool_choice import RequiredToolChoiceLLM
 
@@ -358,7 +358,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     ]
                 )
                 failure_stage = "conversation_initialization"
-                conversation = openhands.Conversation(
+                conversation: Any = openhands.Conversation(
                     agent=agent,
                     workspace=workspace,
                     persistence_dir=persistence,

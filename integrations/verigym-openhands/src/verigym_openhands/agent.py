@@ -128,11 +128,11 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
         self._launched = True
         context, bridge, settings, prompt = self._configured()
         try:
-            import openhands.sdk as openhands  # type: ignore[import-not-found]
-            from openhands.sdk.conversation import (  # type: ignore[import-not-found]
+            import openhands.sdk as openhands
+            from openhands.sdk.conversation import (
                 get_agent_final_response,
             )
-            from openhands.sdk.mcp import MCPServer  # type: ignore[import-not-found]
+            from openhands.sdk.mcp import MCPServer
         except ImportError as exc:
             raise _termination("sdk_unavailable", "OpenHands SDK 1.42.1 is unavailable") from exc
         if openhands.__version__ != "1.42.1":
@@ -187,7 +187,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                     filter_tools_regex="^(?:" + "|".join(map(re.escape, allowed)) + ")$",
                     system_prompt=_system_prompt(),
                 )
-                conversation = openhands.Conversation(
+                conversation: Any = openhands.Conversation(
                     agent=agent,
                     workspace=workspace,
                     persistence_dir=persistence,

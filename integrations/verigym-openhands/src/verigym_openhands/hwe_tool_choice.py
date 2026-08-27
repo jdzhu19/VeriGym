@@ -5,24 +5,26 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from openhands.sdk.llm import (  # type: ignore[import-not-found]
+from openhands.sdk.llm import (
     LLM,
     LLMResponse,
     Message,
     content_to_str,
 )
-from openhands.sdk.llm.llm import LLMCallContext  # type: ignore[import-not-found]
-from openhands.sdk.llm.streaming import (  # type: ignore[import-not-found]
+from openhands.sdk.llm.llm import LLMCallContext
+from openhands.sdk.llm.streaming import (
     AnyTokenCallbackType,
     TokenCallbackType,
 )
-from openhands.sdk.tool import ToolDefinition  # type: ignore[import-not-found]
+from openhands.sdk.tool import ToolDefinition as GenericToolDefinition
 from pydantic import PrivateAttr
 
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
 from .hwe_stop_hook import read_recovery_count
+
+type ToolDefinition = GenericToolDefinition[Any, Any]
 
 OPENHANDS_HWE_TOOL_CHOICE_REQUIRED = "required"
 OPENHANDS_HWE_RECOVERY_FORCED_FINISH = "recovery_forced_finish"
@@ -110,7 +112,7 @@ def _required_tool_choice_kwargs(
     return {**kwargs, "tool_choice": OPENHANDS_HWE_TOOL_CHOICE_REQUIRED}
 
 
-class RequiredToolChoiceLLM(LLM):  # type: ignore[misc]
+class RequiredToolChoiceLLM(LLM):
     """Use the public LLM completion interface while forcing native tool selection."""
 
     def completion(
@@ -180,7 +182,7 @@ def _recovery_finish_kwargs(
     }
 
 
-class RecoveryForcedFinishLLM(LLM):  # type: ignore[misc]
+class RecoveryForcedFinishLLM(LLM):
     """Keep normal tool choice until the trusted Stop hook confirms completion intent."""
 
     def completion(
@@ -262,7 +264,7 @@ def _validate_recovery_required_tool_response(
         )
 
 
-class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+class RecoveryStateForcedFinishLLM(LLM):
     """Bind recovery tool choice to the Stop hook's validated private state receipt."""
 
     recovery_state_path: Path
@@ -310,7 +312,7 @@ class RecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         )
 
 
-class ValidatedRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+class ValidatedRecoveryStateForcedFinishLLM(LLM):
     """Require the provider to honor the recovery turn's named finish choice."""
 
     recovery_state_path: Path
@@ -380,7 +382,7 @@ class ValidatedRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         return response
 
 
-class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
+class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):
     """Use DeepSeek's Responses API only for the receipt-bound finish turn.
 
     Ordinary OpenHands turns retain the frozen Chat Completions path.  After the
@@ -476,24 +478,15 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
         dict[str, Any],
     ]:
         requested = kwargs.get("tool_choice")
-        result = cast(
-            tuple[
-                str | None,
-                list[dict[str, Any]],
-                list[Any] | None,
-                dict[str, Any],
-                dict[str, Any],
-            ],
-            super()._finalize_responses_params(
-                instructions,
-                input_items,
-                tools,
-                include,
-                store,
-                add_security_risk_prediction,
-                kwargs,
-                call_context=call_context,
-            ),
+        result = super()._finalize_responses_params(
+            instructions,
+            input_items,
+            tools,
+            include,
+            store,
+            add_security_risk_prediction,
+            kwargs,
+            call_context=call_context,
         )
         if (
             requested != _RESPONSES_REQUIRED_TOOL_CHOICE
