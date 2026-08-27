@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -97,9 +98,17 @@ class WorkspacePolicy:
 
 
 def copy_tree_safely(
-    source: Path, destination: Path, *, excluded_names: set[str] | None = None
+    source: Path,
+    destination: Path,
+    *,
+    excluded_names: set[str] | None = None,
+    preserve_safe_file_modes: bool = False,
 ) -> None:
-    """Copy a tree without accepting symlinks or traversal-prone special files."""
+    """Copy a tree without accepting symlinks or traversal-prone special files.
+
+    Trusted canonical sources may opt in to exact regular-file mode preservation. Unsafe
+    special-bit or group/world-writable source modes fail closed instead of being propagated.
+    """
 
     source = source.resolve(strict=True)
     excluded = excluded_names or set()
@@ -114,8 +123,15 @@ def copy_tree_safely(
         if path.is_dir():
             target.mkdir(parents=True, exist_ok=True)
         elif path.is_file():
+            mode = stat.S_IMODE(path.stat().st_mode)
+            if preserve_safe_file_modes and mode & 0o7022:
+                raise PathPolicyError(
+                    f"refusing to preserve unsafe file permissions: {relative.as_posix()}"
+                )
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
+            if preserve_safe_file_modes:
+                target.chmod(mode)
         else:
             raise PathPolicyError(f"refusing to copy special file: {relative.as_posix()}")
 

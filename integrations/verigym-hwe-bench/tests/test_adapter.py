@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -126,6 +127,35 @@ def test_adapter_keeps_hidden_verifier_and_reference_out_of_task_and_workspace(
         files={"repository/rtl/demo.sv": "assign y = a;\n"},
         label="official-reference-conformance-only",
     )
+
+
+def test_adapter_preserves_canonical_modes_under_restrictive_umask(tmp_path: Path) -> None:
+    root, _instance = _source(tmp_path)
+    suite = HweBenchSuite().with_source(SuiteSourceConfig(source_root=root, variant=VARIANT))
+    task = suite.load_task(list(suite.discover())[0])
+
+    previous_umask = os.umask(0o077)
+    try:
+        assets = suite.resolve_assets(task)
+        run_root = tmp_path / "run"
+        artifact_root = run_root / "artifacts"
+        artifact_root.mkdir(parents=True)
+        record = suite.freeze_repository_candidate(
+            task=task,
+            candidate_dir=Path(assets.visible_root),
+            run_root=run_root,
+            artifact_root=artifact_root,
+        )
+    finally:
+        os.umask(previous_umask)
+
+    visible = Path(assets.visible_root)
+    assert visible.joinpath("repository", "LICENSE").stat().st_mode & 0o7777 == 0o644
+    assert visible.joinpath("repository", "rtl", "demo.sv").stat().st_mode & 0o7777 == 0o644
+    assert record is not None
+    assert record.patch.changed_files == []
+    assert record.patch.mode_changed_files == []
+    assert record.patch.reapply_exact
 
 
 def test_v1_prepared_source_remains_loadable_with_compatible_task_id(tmp_path: Path) -> None:
