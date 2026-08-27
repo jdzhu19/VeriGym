@@ -721,7 +721,10 @@ class VeriGym:
             else:
                 diff = env.session.snapshot_diff()
                 layout.workspace_diff.write_text(diff.patch, encoding="utf-8")
-                layout.export_candidate(env.session.root)
+                layout.export_candidate(
+                    env.session.root,
+                    reference_root=Path(assets.visible_root),
+                )
                 repository_candidate = suite.freeze_repository_candidate(
                     task=task,
                     candidate_dir=layout.candidate,

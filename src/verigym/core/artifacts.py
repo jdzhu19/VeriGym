@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from verigym.core.errors import PathPolicyError
 from verigym.core.workspace import copy_tree_safely
 
 
@@ -56,9 +58,50 @@ class RunLayout:
             (layout.logs / name).write_text("", encoding="utf-8")
         return layout
 
-    def export_candidate(self, session_root: Path) -> None:
+    def export_candidate(self, session_root: Path, *, reference_root: Path) -> None:
         copy_tree_safely(
             session_root,
             self.candidate,
             excluded_names={".verigym_internal"},
         )
+        _restore_candidate_file_modes(
+            candidate_root=self.candidate,
+            reference_root=reference_root,
+        )
+
+
+def _restore_candidate_file_modes(*, candidate_root: Path, reference_root: Path) -> None:
+    """Remove runtime permission broadening from one exported candidate tree."""
+
+    candidate = candidate_root.resolve(strict=True)
+    reference = reference_root.resolve(strict=True)
+    for target in sorted(candidate.rglob("*")):
+        if target.is_symlink():
+            raise PathPolicyError("candidate export cannot contain symlinks")
+        if not target.is_file():
+            continue
+        relative = target.relative_to(candidate)
+        source = reference / relative
+        cursor = reference
+        for part in relative.parts:
+            cursor /= part
+            if cursor.is_symlink():
+                raise PathPolicyError(
+                    f"candidate mode reference cannot be a symlink: {relative.as_posix()}"
+                )
+            if not cursor.exists():
+                break
+        if source.exists():
+            metadata = source.stat()
+            if not stat.S_ISREG(metadata.st_mode):
+                raise PathPolicyError(
+                    f"candidate mode reference is not a regular file: {relative.as_posix()}"
+                )
+            mode = stat.S_IMODE(metadata.st_mode)
+            if mode & 0o7022:
+                raise PathPolicyError(
+                    f"candidate mode reference has unsafe permissions: {relative.as_posix()}"
+                )
+        else:
+            mode = 0o644
+        target.chmod(mode)
