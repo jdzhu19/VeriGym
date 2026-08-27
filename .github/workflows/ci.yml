@@ -147,12 +147,17 @@ jobs:
           print("frozen HWE exact-token overlay verified")
           PY
           printf 'PYTHONPATH=%s\n' "$tiktoken_overlay" >> "$GITHUB_ENV"
-      - name: Lint, type, and run zero-model tests
+      - name: Lint and format the plugin
         run: |
-          ruff format --check integrations/verigym-openhands
-          ruff check integrations/verigym-openhands
-          mypy --strict integrations/verigym-openhands/src/verigym_openhands
-          pytest -c integrations/verigym-openhands/pyproject.toml \
+          python -m ruff format --check integrations/verigym-openhands
+          python -m ruff check integrations/verigym-openhands
+      - name: Type-check the plugin
+        run: >-
+          python -m mypy --strict --explicit-package-bases
+          integrations/verigym-openhands/src/verigym_openhands
+      - name: Run zero-model plugin tests
+        run: |
+          python -m pytest -c integrations/verigym-openhands/pyproject.toml \
             integrations/verigym-openhands/tests -m "not openhands_real"
       - name: Build and scan the OpenHands plugin
         env:
