@@ -20,20 +20,20 @@ from ._recovery import (
 from .hwe_agent import OpenHandsHweAgentAdapter
 
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_v11"
+    "verigym_openhands_hwe_responses_recovery_diagnostic_v12"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_REPORT_FORMAT = (
-    "verigym_openhands_hwe_responses_recovery_diagnostic_report_v11"
+    "verigym_openhands_hwe_responses_recovery_diagnostic_report_v12"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_CAMPAIGN_ID = (
-    "openhands-hwe-responses-recovery-finish-diagnostic-v11"
+    "openhands-hwe-responses-recovery-finish-diagnostic-v12"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID = (
-    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v11"
+    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v12"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_OPT_IN_ENV = (
-    "VERIGYM_RUN_OPENHANDS_HWE_RESPONSES_RECOVERY_DIAGNOSTIC_V11"
+    "VERIGYM_RUN_OPENHANDS_HWE_RESPONSES_RECOVERY_DIAGNOSTIC_V12"
 )
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL = "openai/deepseek-v4-flash"
 OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY = "deepseek-v4-flash"

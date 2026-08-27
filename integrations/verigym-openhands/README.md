@@ -116,9 +116,14 @@ reproduced the relevant protocol rejection: OpenHands SDK 1.42.1 serializes each
 tool message as a separate `function_call_output`, while the provider permits only one output for
 each `call_id`.
 
-`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v11
-attempt and hash-binds both the v9 zero-call failure and the v10 full-history 400. Ordinary actions
-still use Chat Completions with
+The v11 attempt made 14 ordinary model/tool actions, exercised the one recovery, and coalesced 14
+duplicate output blocks. The Responses request therefore crossed the v10 HTTP 400 boundary, but
+the converted response was not exactly one typed `finish`. It was sealed as the
+infrastructure-valid model failure `openhands_hwe_recovery_tool_choice_violation`, before any later
+broker dispatch, with no workspace mutation, finish, trajectory, or dataset row.
+
+`scripts/run_cva6_hwe_openhands_responses_recovery_diagnostic.py` now freezes the distinct v12
+attempt and hash-binds the v9, v10, and v11 outcomes. Ordinary actions still use Chat Completions with
 the full six-tool contract. Only after the trusted recovery receipt exists, the adapter converts
 the same complete history and all six tools through OpenHands' public Responses serializer and
 sends a Responses API named `finish` choice. OpenHands SDK 1.42.1 currently resets Responses
@@ -127,7 +132,9 @@ serialization without changing the installed SDK. The adapter also joins adjacen
 belonging to one tool message into exactly one output for that call ID. It rejects non-text outputs
 and non-adjacent call-ID reuse, and records the number of joins; v11 acceptance requires that the
 repair was exercised. The provider must return exactly one typed `finish` before broker dispatch.
-The runner permits no provider or episode retry and remains dataset-ineligible.
+The v12 adapter also records a content-free response-shape receipt containing only bounded output
+types, allowed tool names, and raw/converted counts. Unexpected names are hashed, and model text is
+never retained. The runner permits no provider or episode retry and remains dataset-ineligible.
 
 ## Five-task HWE collection pilot
 

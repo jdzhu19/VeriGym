@@ -151,6 +151,10 @@ For the text-only HWE contract, the adapter additionally normalizes the SDK's mu
 concatenation. It rejects non-text output, missing call IDs, and reuse of a closed call ID. The
 diagnostic records the normalization count and requires a nonzero count before claiming the
 full-history regression passed.
+The subsequent response-shape diagnostic stores only bounded raw output types, exact names from
+the already-public six-tool contract, raw/converted item counts, and text-part counts. Unexpected
+names are replaced by their SHA-256 digest. It never stores response text, arguments, reasoning,
+provider response IDs, raw bodies, or credentials.
 
 Training transcript capture is explicit and training-role-only. The v1 collector accepts exactly
 one linear system/user/action/observation trajectory ending in typed `finish`. The HWE v2

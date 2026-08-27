@@ -76,6 +76,11 @@ _PRIOR_V10_AGENT_VERSION_ID = (
 )
 _PRIOR_V10_STATUS = "infrastructure_invalid"
 _PRIOR_V10_FAILURE_CATEGORY = "openhands_hwe_sdk_episode"
+_PRIOR_V11_AGENT_VERSION_ID = (
+    "openhands-deepseek-v4-flash-hwe-responses-recovery-finish-diagnostic-v11"
+)
+_PRIOR_V11_STATUS = "responses_recovery_finish_response_rejected"
+_PRIOR_V11_FAILURE_CATEGORY = "openhands_hwe_recovery_tool_choice_violation"
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--qualification-root", type=Path, required=True)
     parser.add_argument("--prior-v9-report", type=Path, required=True)
     parser.add_argument("--prior-v10-report", type=Path, required=True)
+    parser.add_argument("--prior-v11-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--campaign-id",
@@ -142,6 +148,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
 
     prior = _prior_v9_failure(arguments.prior_v9_report)
     prior_v10 = _prior_v10_failure(arguments.prior_v10_report)
+    prior_v11 = _prior_v11_failure(arguments.prior_v11_report)
     entry = training[OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_TASK]
     lock = _prior_v9_image_lock(prior)
     if lock.task_hash != entry.task_hash or lock.source_hash != entry.source_hash:
@@ -157,7 +164,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
     runtime_config = _docker_config(lock)
     runtime = DockerRuntime(runtime_config)
     try:
-        runtime.prepare("openhands-responses-recovery-v11-pr2032")
+        runtime.prepare("openhands-responses-recovery-v12-pr2032")
     finally:
         runtime.close()
 
@@ -212,6 +219,10 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "prior_v10_agent_version_hash": prior_v10["agent_version_hash"],
         "prior_v10_trace_sha256": prior_v10["trace_sha256"],
         "prior_v10_failure_category": _PRIOR_V10_FAILURE_CATEGORY,
+        "prior_v11_report_hash": prior_v11["report_hash"],
+        "prior_v11_agent_version_hash": prior_v11["agent_version_hash"],
+        "prior_v11_trace_sha256": prior_v11["trace_sha256"],
+        "prior_v11_failure_category": _PRIOR_V11_FAILURE_CATEGORY,
         "model_transport_id": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL,
         "model_identity": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_MODEL_IDENTITY,
         "agent_version_id": OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_AGENT_VERSION_ID,
@@ -291,7 +302,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 run_id=run_id,
                 experiment_id=arguments.campaign_id,
                 plan_item_id=run_id,
-                system_id="openhands-deepseek-v4-flash-hwe-responses-recovery-v11",
+                system_id="openhands-deepseek-v4-flash-hwe-responses-recovery-v12",
                 base_seed=OPENHANDS_RESPONSES_RECOVERY_DIAGNOSTIC_SEED,
             )
         )
@@ -344,6 +355,8 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         and 0 <= raw_coalesced_count <= 512
     )
     coalesced_count = raw_coalesced_count if coalesced_count_valid else 0
+    response_shape = summary.get("recovery_response_shape") if summary else None
+    response_shape_valid = _valid_response_shape(response_shape)
     event_type_counts = summary.get("event_type_counts") if summary else None
     interrupt_free = (
         isinstance(event_type_counts, dict) and event_type_counts.get("InterruptEvent", 0) == 0
@@ -360,6 +373,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         and forced_count_valid
         and validated_count_valid
         and coalesced_count_valid
+        and response_shape_valid
         and validated_count <= forced_count
         and interrupt_free
         and tool_choice_bound
@@ -434,6 +448,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             "recovery_forced_request_count": forced_count,
             "recovery_validated_finish_count": validated_count,
             "recovery_coalesced_output_count": coalesced_count,
+            "recovery_response_shape": response_shape if response_shape_valid else None,
             "interrupt_free": interrupt_free,
             "model_call_count": accounting.get("model_call_count") if accounting else None,
             "tool_call_count": broker.get("tool_calls") if broker else None,
@@ -651,6 +666,101 @@ def _prior_v10_failure(path: Path) -> dict[str, str]:
     }
 
 
+def _prior_v11_failure(path: Path) -> dict[str, str]:
+    """Bind the infrastructure-valid non-finish response after v11 coalescing."""
+
+    report_path = path.resolve(strict=True)
+    report = _json(report_path)
+    observed = report.get("report_hash")
+    base = {key: value for key, value in report.items() if key != "report_hash"}
+    trajectory = report.get("trajectory")
+    if (
+        not isinstance(observed, str)
+        or content_hash(base) != observed
+        or report.get("agent_version_id") != _PRIOR_V11_AGENT_VERSION_ID
+        or report.get("status") != _PRIOR_V11_STATUS
+        or report.get("scorecard_failure_category") != _PRIOR_V11_FAILURE_CATEGORY
+        or report.get("scorecard_failure_kind") != "model"
+        or report.get("infrastructure_valid") is not True
+        or report.get("evidence_complete") is not True
+        or report.get("tool_choice_bound") is not True
+        or report.get("typed_finish_observed") is not False
+        or report.get("format_recovery_count") != 1
+        or report.get("recovery_forced_request_count") != 1
+        or report.get("recovery_validated_finish_count") != 0
+        or report.get("recovery_coalesced_output_count") != 14
+        or report.get("model_call_count") != 14
+        or report.get("tool_call_count") != 14
+        or report.get("patch_call_count") != 0
+        or not isinstance(trajectory, dict)
+        or trajectory.get("exported") is not False
+    ):
+        raise ConfigurationError("prior OpenHands v11 response rejection changed")
+    version_hash = report.get("agent_version_hash")
+    if not isinstance(version_hash, str) or len(version_hash) != 64:
+        raise ConfigurationError("prior OpenHands v11 agent version hash is absent")
+    version = _json(report_path.parent / "agent-version.json")
+    if (
+        version.get("agent_version_id") != _PRIOR_V11_AGENT_VERSION_ID
+        or version.get("version_hash") != version_hash
+        or version.get("source_commit") != report.get("source_commit")
+    ):
+        raise ConfigurationError("prior OpenHands v11 agent-version identity changed")
+    runs = sorted((report_path.parent / "runs").iterdir())
+    if len(runs) != 1:
+        raise ConfigurationError("prior OpenHands v11 run inventory changed")
+    trace_path = (runs[0] / "trace.jsonl").resolve(strict=True)
+    failures = [
+        event
+        for event in _json_lines(trace_path)
+        if event.get("event_type") == "openhands_sdk_hwe_episode_failed"
+    ]
+    failure_payload = failures[0].get("payload", {}) if len(failures) == 1 else {}
+    if (
+        failure_payload.get("root_exception_type") != "RecoveryToolChoiceViolation"
+        or failure_payload.get("recovery_forced_request_count") != 1
+        or failure_payload.get("recovery_validated_finish_count") != 0
+        or failure_payload.get("recovery_coalesced_output_count") != 14
+        or failure_payload.get("raw_exception_message_persisted") is not False
+        or failure_payload.get("raw_model_content_persisted") is not False
+    ):
+        raise ConfigurationError("prior OpenHands v11 response trace evidence changed")
+    return {
+        "report_hash": observed,
+        "agent_version_hash": version_hash,
+        "trace_sha256": hash_bytes(trace_path.read_bytes()),
+    }
+
+
+def _valid_response_shape(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+        "raw_output_count",
+        "raw_output_types",
+        "raw_function_names",
+        "converted_tool_call_count",
+        "converted_tool_names",
+        "converted_text_part_count",
+    }:
+        return False
+    for name in (
+        "raw_output_count",
+        "converted_tool_call_count",
+        "converted_text_part_count",
+    ):
+        item = value.get(name)
+        if isinstance(item, bool) or not isinstance(item, int) or not 0 <= item <= 64:
+            return False
+    for name in ("raw_output_types", "raw_function_names", "converted_tool_names"):
+        items = value.get(name)
+        if (
+            not isinstance(items, list)
+            or len(items) > 16
+            or any(not isinstance(item, str) or len(item) > 96 for item in items)
+        ):
+            return False
+    return True
+
+
 def _json_lines(path: Path) -> list[dict[str, Any]]:
     values: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -672,6 +782,7 @@ def main() -> int:
                 "typed_finish_observed": report["typed_finish_observed"],
                 "format_recovery_count": report["format_recovery_count"],
                 "recovery_coalesced_output_count": report["recovery_coalesced_output_count"],
+                "recovery_response_shape": report["recovery_response_shape"],
                 "ordinary_verifier_resolved": report["ordinary_verifier_resolved"],
                 "trajectory_exported": report["trajectory"]["exported"],
                 "report_hash": report["report_hash"],

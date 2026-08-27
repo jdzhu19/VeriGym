@@ -203,6 +203,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         recovery_forced_request_count = 0
         recovery_validated_finish_count = 0
         recovery_coalesced_output_count = 0
+        recovery_response_shape: dict[str, Any] = {}
         broker: Any = None
         llm: Any = None
         recovery_violation_type: type[Exception] | None = None
@@ -373,6 +374,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     except Exception as exc:
                         receipt = _sdk_failure_receipt(exc, conversation.state.events)
                         receipt.update(_recovery_choice_counts(llm))
+                        receipt["recovery_response_shape"] = _recovery_response_shape(llm)
                         receipt["failure_stage"] = failure_stage
                         bridge.emit_event(
                             "openhands_sdk_hwe_episode_failed",
@@ -393,6 +395,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     recovery_coalesced_output_count = choice_counts[
                         "recovery_coalesced_output_count"
                     ]
+                    recovery_response_shape = _recovery_response_shape(llm)
                     format_recovery_count = read_recovery_count(recovery_state)
                     if format_recovery_count:
                         bridge.emit_event(
@@ -497,6 +500,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 recovery_forced_request_count=recovery_forced_request_count,
                 recovery_validated_finish_count=recovery_validated_finish_count,
                 recovery_coalesced_output_count=recovery_coalesced_output_count,
+                recovery_response_shape=recovery_response_shape,
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -856,6 +860,7 @@ def _write_evidence(
     recovery_forced_request_count: int,
     recovery_validated_finish_count: int,
     recovery_coalesced_output_count: int,
+    recovery_response_shape: dict[str, Any],
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -889,6 +894,7 @@ def _write_evidence(
             "recovery_forced_request_count": recovery_forced_request_count,
             "recovery_validated_finish_count": recovery_validated_finish_count,
             "recovery_coalesced_output_count": recovery_coalesced_output_count,
+            "recovery_response_shape": recovery_response_shape,
             "same_session_recovery": True,
             "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
@@ -911,6 +917,27 @@ def _recovery_choice_counts(llm: Any) -> dict[str, int]:
             )
         result[name] = value
     return result
+
+
+def _recovery_response_shape(llm: Any) -> dict[str, Any]:
+    value = getattr(llm, "recovery_response_shape", {})
+    if not isinstance(value, dict):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands recovery response shape receipt is invalid"
+        )
+    allowed_keys = {
+        "raw_output_count",
+        "raw_output_types",
+        "raw_function_names",
+        "converted_tool_call_count",
+        "converted_tool_names",
+        "converted_text_part_count",
+    }
+    if set(value) - allowed_keys:
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands recovery response shape receipt has unknown fields"
+        )
+    return dict(value)
 
 
 def _exception_chain_contains(exc: BaseException, expected: type[BaseException]) -> bool:

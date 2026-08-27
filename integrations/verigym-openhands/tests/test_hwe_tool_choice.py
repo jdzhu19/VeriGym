@@ -564,3 +564,47 @@ def test_responses_recovery_rejects_unsafe_output_coalescing(
             False,
             {"tool_choice": {"type": "function", "name": "finish"}},
         )
+
+
+def test_responses_recovery_records_content_free_response_shape(tmp_path: Path) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    llm._recovery_allowed_tool_names = ("finish",)
+    raw = SimpleNamespace(
+        output=[
+            SimpleNamespace(type="reasoning"),
+            SimpleNamespace(type="function_call", name="finish"),
+        ]
+    )
+    converted = _response("finish")
+    with patch(
+        "openhands.sdk.llm.llm.LLM._build_responses_result",
+        autospec=True,
+        return_value=converted,
+    ):
+        assert llm._build_responses_result(raw) is converted
+
+    assert llm.recovery_response_shape == {
+        "raw_output_count": 2,
+        "raw_output_types": ["reasoning", "function_call"],
+        "raw_function_names": ["finish"],
+        "converted_tool_call_count": 1,
+        "converted_tool_names": ["finish"],
+        "converted_text_part_count": 0,
+    }
+
+
+def test_responses_recovery_hashes_unexpected_response_names(tmp_path: Path) -> None:
+    llm = _validated_responses_recovery_state_llm(tmp_path / "recovery.json")
+    llm._recovery_allowed_tool_names = ("finish",)
+    raw = SimpleNamespace(output=[SimpleNamespace(type="function_call", name="untrusted-name")])
+    converted = _response(None)
+    with patch(
+        "openhands.sdk.llm.llm.LLM._build_responses_result",
+        autospec=True,
+        return_value=converted,
+    ):
+        llm._build_responses_result(raw)
+
+    receipt = llm.recovery_response_shape
+    assert receipt["raw_function_names"] != ["untrusted-name"]
+    assert receipt["raw_function_names"][0].startswith("unexpected_sha256:")

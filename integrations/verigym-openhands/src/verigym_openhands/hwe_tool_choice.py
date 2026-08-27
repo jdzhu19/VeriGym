@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -378,6 +379,8 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
     _recovery_forced_request_count: int = PrivateAttr(default=0)
     _recovery_validated_finish_count: int = PrivateAttr(default=0)
     _recovery_coalesced_output_count: int = PrivateAttr(default=0)
+    _recovery_allowed_tool_names: tuple[str, ...] = PrivateAttr(default=())
+    _recovery_response_shape: dict[str, Any] = PrivateAttr(default_factory=dict)
 
     @property
     def recovery_forced_request_count(self) -> int:
@@ -390,6 +393,55 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
     @property
     def recovery_coalesced_output_count(self) -> int:
         return self._recovery_coalesced_output_count
+
+    @property
+    def recovery_response_shape(self) -> dict[str, Any]:
+        return dict(self._recovery_response_shape)
+
+    def _safe_response_name(self, value: Any) -> str:
+        if isinstance(value, str) and value in self._recovery_allowed_tool_names:
+            return value
+        if isinstance(value, str):
+            return "unexpected_sha256:" + hashlib.sha256(value.encode()).hexdigest()
+        return "missing"
+
+    def _build_responses_result(self, resp: Any) -> LLMResponse:
+        """Capture content-free raw and converted response structure."""
+
+        output = getattr(resp, "output", None) or []
+        raw_types: list[str] = []
+        raw_function_names: list[str] = []
+        for item in list(output)[:16]:
+            item_type = getattr(item, "type", None)
+            if not isinstance(item_type, str) and isinstance(item, dict):
+                item_type = item.get("type")
+            if item_type in {"function_call", "message", "reasoning"}:
+                raw_types.append(item_type)
+            elif isinstance(item_type, str):
+                raw_types.append(
+                    "unexpected_sha256:" + hashlib.sha256(item_type.encode()).hexdigest()
+                )
+            else:
+                raw_types.append("missing")
+            if item_type == "function_call":
+                name = getattr(item, "name", None)
+                if name is None and isinstance(item, dict):
+                    name = item.get("name")
+                raw_function_names.append(self._safe_response_name(name))
+
+        result = super()._build_responses_result(resp)
+        converted_calls = result.message.tool_calls or []
+        self._recovery_response_shape = {
+            "raw_output_count": len(output),
+            "raw_output_types": raw_types,
+            "raw_function_names": raw_function_names,
+            "converted_tool_call_count": len(converted_calls),
+            "converted_tool_names": [
+                self._safe_response_name(call.name) for call in converted_calls[:16]
+            ],
+            "converted_text_part_count": len(content_to_str(result.message.content)),
+        }
+        return result
 
     def _finalize_responses_params(
         self,
@@ -432,6 +484,7 @@ class ValidatedResponsesRecoveryStateForcedFinishLLM(LLM):  # type: ignore[misc]
             return result
 
         resolved_instructions, resolved_input, resolved_tools, call_kwargs, telemetry = result
+        self._recovery_allowed_tool_names = tuple(sorted(tool.name for tool in tools or []))
         normalized_input, coalesced = _coalesce_responses_function_outputs(resolved_input)
         self._recovery_coalesced_output_count = coalesced
         # OpenHands SDK 1.42.1 currently overwrites Responses tool_choice with
