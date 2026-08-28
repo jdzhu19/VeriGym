@@ -139,7 +139,7 @@ class HweBenchSuite(SuiteAdapter):
         source = self._catalog().root / "workspaces" / entry.slug
         temporary = tempfile.TemporaryDirectory(prefix="verigym-hwe-visible-")
         visible = Path(temporary.name).resolve()
-        copy_tree_safely(source, visible)
+        copy_tree_safely(source, visible, preserve_safe_file_modes=True)
         self._visible_temporaries.append(temporary)
         if task.source.content_hash != entry.repository_hash:
             raise ConfigurationError("HWE-Bench task source identity changed")

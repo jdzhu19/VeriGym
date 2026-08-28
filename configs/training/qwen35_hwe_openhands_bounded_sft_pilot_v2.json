@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v2",
+  "parent": {
+    "file": "qwen35_hwe_openhands_bounded_sft_pilot_v1.json",
+    "file_sha256": "b75992052e85998a0f7550902302ce9c58f95b423bc821054865ef2ee0c663e8",
+    "contract_hash": "882a2bfc9b7d4c0e43bcc9d97724b7dcdd05c6129d63e0ab85461c9d6ab3037d"
+  },
+  "teacher_delta": {
+    "scaffold": "openhands-sdk-1.42.1-verigym-broker-v2-v5",
+    "tool_choice_policy": "validated_responses_recovery_state_required_tool_v12",
+    "format_recovery_policy_id": "openhands_broker_stop_hook_recovery_v1",
+    "format_recovery_budget": 1,
+    "sdk_stop_continuation_policy_id": "openhands_sdk_blocked_stop_continuation_v1",
+    "sdk_stop_continuation_budget": 1,
+    "raw_host_path_policy": "broker_preexecution_reject_training_ineligible_v1"
+  },
+  "verifier_replay": {
+    "policy_id": "frozen_candidate_external_artifact_verifier_replay_v1",
+    "budget_per_episode": 1,
+    "model_calls": 0,
+    "source_run_mutated": false,
+    "continue_only_after_infrastructure_valid_result": true
+  },
+  "dataset_delta": {
+    "format_family_id": "verigym_openhands_decision_sft_dataset_64k_v1_through_v5",
+    "allowed_output_formats": [
+      "verigym_openhands_decision_sft_dataset_64k_v1",
+      "verigym_openhands_decision_sft_dataset_64k_v2",
+      "verigym_openhands_decision_sft_dataset_64k_v3",
+      "verigym_openhands_decision_sft_dataset_64k_v4",
+      "verigym_openhands_decision_sft_dataset_64k_v5"
+    ],
+    "allowed_row_formats": [
+      "verigym_openhands_decision_sft_64k_v1",
+      "verigym_openhands_decision_sft_64k_v2",
+      "verigym_openhands_decision_sft_64k_v3",
+      "verigym_openhands_decision_sft_64k_v4",
+      "verigym_openhands_decision_sft_64k_v5"
+    ]
+  },
+  "contract_hash": "4567af055f34b58472e0b915b32efcbb6f26dc6bb40aa48c392b1de0538749c6"
+}

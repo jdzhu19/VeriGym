@@ -15,11 +15,16 @@ from verigym.hwe.trajectory import HweNormalizedEvent
 from verigym.protocols.repository_action import repository_tool_definitions
 
 from verigym_openhands._recovery import (
+    OPENHANDS_FORMAT_RECOVERY_EXHAUSTED_REASON_SHA256,
     OPENHANDS_FORMAT_RECOVERY_MESSAGE,
     OPENHANDS_FORMAT_RECOVERY_POLICY,
     OPENHANDS_FORMAT_RECOVERY_REASON_SHA256,
+    OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE,
 )
 from verigym_openhands.trajectory import (
+    OPENHANDS_CONTINUATION_DATASET_FORMAT,
+    OPENHANDS_CONTINUATION_DECISION_FORMAT,
+    OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
     OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT,
     OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
     OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
@@ -28,6 +33,7 @@ from verigym_openhands.trajectory import (
     OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
+    _validate_public_text,
     build_openhands_training_trajectory,
     hwe_broker_receipts,
     materialize_openhands_decisions,
@@ -80,6 +86,32 @@ def _tools() -> list[dict[str, Any]]:
             "type": ["string", "null"],
         }
     return tools
+
+
+def test_container_tmp_tool_argument_is_not_misclassified_as_a_host_path() -> None:
+    _validate_public_text(
+        '{"command":"mkdir -p /tmp/verigym-build"}',
+        allow_host_paths=False,
+    )
+
+
+@pytest.mark.parametrize("value", ['{"path":"docs/data/example.txt"}', "cd ./data && ls"])
+def test_workspace_relative_data_segments_are_not_host_paths(value: str) -> None:
+    _validate_public_text(value, allow_host_paths=False)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"path":"/home/user/private"}',
+        '{"path":"/data/private"}',
+        '{"path":"/hpc/private"}',
+        '{"path":"C:\\\\private"}',
+    ],
+)
+def test_actual_host_path_prefixes_remain_ineligible(value: str) -> None:
+    with pytest.raises(OpenHandsTrajectoryError, match="raw host path"):
+        _validate_public_text(value, allow_host_paths=False)
 
 
 def _message(role: str, content: str) -> dict[str, Any]:
@@ -180,6 +212,13 @@ def _stop_hook(*, blocked: bool) -> dict[str, Any]:
         "additional_context_present": False,
         "error_present": False,
     }
+
+
+def _exhausted_stop_hook() -> dict[str, Any]:
+    event = _stop_hook(blocked=False)
+    event["event_id"] = "hook-recovery-exhausted"
+    event["reason_sha256"] = OPENHANDS_FORMAT_RECOVERY_EXHAUSTED_REASON_SHA256
+    return event
 
 
 def _episode(
@@ -431,6 +470,112 @@ def test_same_session_recovery_is_hash_bound_and_loss_masked(tmp_path: Path) -> 
     changed["transcript_hash"] = content_hash(changed_base)
     with pytest.raises(OpenHandsTrajectoryError, match="recovery"):
         validate_openhands_training_trajectory(changed)
+
+
+def test_sdk_blocked_stop_continuation_is_exact_and_hash_bound(tmp_path: Path) -> None:
+    list_observation = '{"entries":["TASK.md"]}'
+    finish_observation = '{"accepted":true,"terminal":true}'
+    snapshots = [
+        {
+            "event_type": "SystemPromptEvent",
+            "event_id": "system",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("system", "Bounded repository repair system."),
+            "dynamic_context_present": False,
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "user",
+            "parent_id": "system",
+            "source": "user",
+            "message": _message("user", "Repair the visible task."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action("call-list", "list_files", {"path": ".", "summary": "inspect files"}),
+        _observation("call-list", "list_files", list_observation),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "premature-content",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("assistant", "I will now submit the completed repair."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _stop_hook(blocked=True),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "recovery-feedback",
+            "parent_id": None,
+            "source": "environment",
+            "message": _message("user", OPENHANDS_FORMAT_RECOVERY_MESSAGE),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _exhausted_stop_hook(),
+        {
+            "event_type": "MessageEvent",
+            "event_id": "adapter-continuation",
+            "parent_id": None,
+            "source": "user",
+            "message": _message("user", OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action("call-finish", "finish", {"message": "done"}),
+        _observation("call-finish", "finish", finish_observation),
+        _stop_hook(blocked=False),
+    ]
+    turns = (
+        RepositoryToolBrokerTurn(
+            tool_name="list_files",
+            arguments_json='{"path":".","recursive":true}',
+            observation_json=list_observation,
+        ),
+        RepositoryToolBrokerTurn(
+            tool_name="finish",
+            arguments_json='{"message":"done"}',
+            observation_json=finish_observation,
+        ),
+    )
+    trajectory = build_openhands_training_trajectory(
+        task_id="suite/repository/sdk-continuation",
+        provider="openai-compatible",
+        model_id="local/Qwen3.5-9B",
+        configuration_fingerprint=content_hash({"configuration": "sdk-continuation"}),
+        event_snapshots=snapshots,
+        tools=_tools(),
+        broker_turns=repository_broker_receipts(turns),
+        tool_contract="repository_action.v2",
+        recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+        sdk_stop_continuation_count=1,
+    )
+
+    assert trajectory["format_id"] == OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT
+    assert trajectory["sdk_stop_continuation_count"] == 1
+    assert trajectory["messages"][6] == {
+        "role": "user",
+        "content": OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE,
+    }
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=tokenizer,
+    )
+    assert all(record["format_id"] == OPENHANDS_CONTINUATION_DECISION_FORMAT for record in records)
+    assert records[-1]["sdk_stop_continuation_count"] == 1
+    output = tmp_path / "continuation-dataset"
+    manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    assert manifest["format_id"] == OPENHANDS_CONTINUATION_DATASET_FORMAT
+    assert manifest["sdk_stop_continuation_count"] == 1
 
 
 def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> None:

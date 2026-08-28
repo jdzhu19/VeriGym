@@ -35,6 +35,18 @@ OpenHands tool schemas, including SDK-added tool metadata, while excluding reaso
 skills, dynamic context, foreign events, unsupported rejected calls, incomplete episodes, and
 secrets.
 
+The HWE adapter counts provider attempts at the LLM transport boundary. That counter is independent
+of broker decision steps because one provider response may contain sibling tool calls. The frozen
+request budget is enforced before dispatch, while broker action counts remain a separate receipt.
+Aggregate input/output token usage is persisted without model content.
+
+OpenHands command hooks inherit the parent locale through SDK 1.42.1. The adapter temporarily
+freezes the agent-loop subprocess locale to portable POSIX `C`, preventing an unavailable host
+`C.UTF-8` locale from adding non-protocol stderr to an otherwise valid Stop-hook receipt. The prior
+stderr-empty fail-closed trajectory rule remains unchanged. Exact HWE v2 arguments may retain
+container-local `/tmp`, the profile's frozen ephemeral scope; `/home`, `/data`, `/hpc`, and Windows
+absolute host paths remain ineligible.
+
 The v3 exact trajectory format makes one narrow exception to whole-episode rejection: broker
 rejections whose only code is `invalid_arguments` remain in the exact model-visible context, but
 their complete assistant decisions are marked `supervised_target=false` and never become target

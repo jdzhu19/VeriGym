@@ -42,6 +42,14 @@ with `.verigym_internal/` as its writable build area. Hidden inputs are hashed b
 verification. This combined verifier-only tree is a deliberate compatibility tradeoff for Icarus;
 it is never shared with the live agent and is removed after required artifacts are persisted.
 
+Docker UID mapping may temporarily broaden regular-file permissions inside the private agent
+staging tree. Candidate export removes that runtime-only broadening: existing files recover their
+canonical visible-source modes frozen before runtime preparation, independently of the controller
+umask; newly added files become mode `0644`, and
+symlink, special-bit, or group/world-writable mode references fail closed. The export never trusts
+the mutable visible-source staging tree after runtime execution. Repository contracts continue to
+forbid mode changes, and canonical candidate comparison still checks every file mode.
+
 The Docker CLI backend uses argument arrays with `shell=False`, bounded control-plane calls, and
 no tar extraction. It never mounts the repository root, host home, Docker socket, or an external
 benchmark checkout. Artifact acceptance rejects absolute paths, parent traversal, symlinked path

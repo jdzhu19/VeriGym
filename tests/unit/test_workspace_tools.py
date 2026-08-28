@@ -134,6 +134,39 @@ def test_safe_copy_refuses_source_symlinks(tmp_path) -> None:
         copy_tree_safely(source, destination)
 
 
+def test_safe_copy_can_preserve_canonical_modes_under_restrictive_umask(tmp_path) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    regular = source / "design.sv"
+    executable = source / "check.sh"
+    regular.write_text("module design; endmodule\n", encoding="utf-8")
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    regular.chmod(0o644)
+    executable.chmod(0o755)
+
+    previous_umask = os.umask(0o077)
+    try:
+        copy_tree_safely(source, destination, preserve_safe_file_modes=True)
+    finally:
+        os.umask(previous_umask)
+
+    assert destination.joinpath("design.sv").stat().st_mode & 0o7777 == 0o644
+    assert destination.joinpath("check.sh").stat().st_mode & 0o7777 == 0o755
+
+
+def test_safe_copy_rejects_unsafe_modes_when_preservation_is_requested(tmp_path) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    unsafe = source / "design.sv"
+    unsafe.write_text("module design; endmodule\n", encoding="utf-8")
+    unsafe.chmod(0o666)
+
+    with pytest.raises(PathPolicyError, match="unsafe file permissions"):
+        copy_tree_safely(source, destination, preserve_safe_file_modes=True)
+
+
 def test_local_runtime_bounds_output_and_times_out(local_session) -> None:
     output = local_session.execute(
         CommandSpec(

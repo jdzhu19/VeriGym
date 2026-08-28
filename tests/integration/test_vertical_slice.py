@@ -81,6 +81,22 @@ def test_good_agent_writes_complete_isolated_run_and_replays(tmp_path) -> None:
     replay = replay_run(result.run_dir, service=service())
     assert replay.scorecard.resolved
     assert replay.reverified_results is None
+    external_replay_root = tmp_path / "external-verifier-replay"
+    external_replay = replay_run(
+        result.run_dir,
+        verify=True,
+        service=service(),
+        verification_artifact_root=external_replay_root,
+    )
+    assert external_replay.reverified_resolved is True
+    assert (external_replay_root / "replay_evidence.json").is_file()
+    assert not (result.run_dir / "artifacts" / "replay-verification").exists()
+    with pytest.raises(ReplayError, match="requires verify=True"):
+        replay_run(
+            result.run_dir,
+            service=service(),
+            verification_artifact_root=tmp_path / "invalid-external-replay",
+        )
     verified_replay = replay_run(result.run_dir, verify=True, service=service())
     assert verified_replay.reverified_resolved is True
     candidate = result.run_dir / "candidate" / "rtl" / "counter.v"

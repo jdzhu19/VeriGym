@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -174,6 +175,9 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert settings.safe_dict()["format_recovery_budget"] == 1
     assert settings.safe_dict()["whole_episode_retries"] == 0
     assert settings.safe_dict()["termination_authority"] == "broker_typed_finish"
+    assert settings.safe_dict()["max_provider_calls"] == 200
+    assert settings.safe_dict()["provider_call_accounting"] == "adapter_attempt_counter_v1"
+    assert settings.safe_dict()["hook_subprocess_locale"] == "C"
     assert "127.0.0.1" not in str(settings.safe_dict())
     assert "test-only-key" not in str(settings.safe_dict())
 
@@ -270,6 +274,48 @@ def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_p
     monkeypatch.setenv("VERIGYM_OPENHANDS_MCP_PYTHONPATH", "relative")
     with pytest.raises(ValueError, match="absolute"):
         _configured_mcp_pythonpath()
+
+
+def test_openhands_hwe_hook_locale_is_portable_and_restored(monkeypatch) -> None:
+    from verigym_openhands.hwe_agent import _frozen_hook_locale
+
+    for name in ("LANG", "LC_ALL", "LC_CTYPE"):
+        monkeypatch.setenv(name, "C.UTF-8")
+    with _frozen_hook_locale():
+        assert {os.environ[name] for name in ("LANG", "LC_ALL", "LC_CTYPE")} == {"C"}
+        result = subprocess.run(
+            ["/bin/sh", "-c", "true"],
+            check=False,
+            capture_output=True,
+            env=dict(os.environ),
+        )
+        assert result.returncode == 0
+        assert result.stderr == b""
+    assert {os.environ[name] for name in ("LANG", "LC_ALL", "LC_CTYPE")} == {"C.UTF-8"}
+
+
+def test_openhands_hwe_provider_accounting_is_not_tool_decision_accounting() -> None:
+    from verigym_openhands.hwe_agent import _provider_accounting_receipt
+
+    llm = SimpleNamespace(
+        provider_call_count=2,
+        metrics=SimpleNamespace(
+            response_latencies=[object(), object()],
+            token_usages=[object(), object()],
+            accumulated_token_usage=SimpleNamespace(
+                prompt_tokens=120,
+                completion_tokens=30,
+            ),
+        ),
+    )
+
+    assert _provider_accounting_receipt(llm, max_provider_calls=200) == {
+        "provider_call_count": 2,
+        "successful_provider_response_count": 2,
+        "provider_usage_record_count": 2,
+        "input_tokens": 120,
+        "output_tokens": 30,
+    }
 
 
 def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:

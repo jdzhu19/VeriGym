@@ -95,3 +95,60 @@ def test_broker_rejects_foreign_tools_and_escaping_paths_without_execution(
         assert broker.stats().rejection_codes == ("invalid_request", "invalid_arguments")
     finally:
         broker.stop()
+
+
+def test_broker_rejects_raw_host_paths_before_any_side_effect(tmp_path: Path) -> None:
+    broker, bridge = _broker(tmp_path)
+    try:
+        read = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-1",
+                "name": "read_file",
+                "arguments": {"path": "/data/private/repository/a.sv"},
+            }
+        )
+        shell = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-2",
+                "name": "shell",
+                "arguments": {"command": "sed -n '1,2p' /home/user/a.sv"},
+            }
+        )
+        bare_root = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-bare-root",
+                "name": "shell",
+                "arguments": {"command": "ls /hpc"},
+            }
+        )
+        relative_data = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-relative-data",
+                "name": "read_file",
+                "arguments": {"path": "docs/data/example.txt"},
+            }
+        )
+        ephemeral = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-3",
+                "name": "shell",
+                "arguments": {"command": "mkdir -p /tmp/verigym-test"},
+            }
+        )
+        assert read == {
+            "ok": False,
+            "error": "raw_host_path",
+            "text": "tool arguments must use workspace-relative paths",
+        }
+        assert shell == read
+        assert bare_root == read
+        assert relative_data["ok"] is True
+        assert ephemeral["ok"] is True
+        assert [name for name, _request in bridge.calls] == ["file.read", "shell"]
+        assert broker.stats().rejection_codes == (
+            "raw_host_path",
+            "raw_host_path",
+            "raw_host_path",
+        )
+    finally:
+        broker.stop()

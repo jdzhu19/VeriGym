@@ -129,7 +129,7 @@ def freeze_repository_candidate(
         )
     with tempfile.TemporaryDirectory(prefix="verigym-repository-patch-reapply-") as temporary:
         staging = Path(temporary) / "repository"
-        copy_tree_safely(base_repository, staging)
+        copy_tree_safely(base_repository, staging, preserve_safe_file_modes=True)
         apply_repository_patch(staging, patch)
         reapplied = _read_tree(staging, contract)
     if reapplied.snapshot.repository_hash != candidate.snapshot.repository_hash:
@@ -187,7 +187,7 @@ def verify_frozen_repository_candidate(
     _validate_frozen_record(base, candidate, patch_bytes, record)
     with tempfile.TemporaryDirectory(prefix="verigym-repository-replay-") as temporary:
         staging = Path(temporary) / "repository"
-        copy_tree_safely(base_repository, staging)
+        copy_tree_safely(base_repository, staging, preserve_safe_file_modes=True)
         apply_repository_patch(staging, patch_bytes.decode("utf-8"))
         replayed = _read_tree(staging, contract)
     if replayed.snapshot.repository_hash != record.candidate.repository_hash:
@@ -211,12 +211,12 @@ def verify_frozen_repository_candidate_offline(
         raise ValueError("repository replay patch is not UTF-8 text") from exc
     with tempfile.TemporaryDirectory(prefix="verigym-repository-offline-replay-") as temporary:
         base_staging = Path(temporary) / "base"
-        copy_tree_safely(candidate_repository, base_staging)
+        copy_tree_safely(candidate_repository, base_staging, preserve_safe_file_modes=True)
         apply_repository_patch(base_staging, _reverse_repository_patch(patch))
         base = _read_tree(base_staging, contract)
         _validate_frozen_record(base, candidate, patch_bytes, record)
         reapplied_staging = Path(temporary) / "reapplied"
-        copy_tree_safely(base_staging, reapplied_staging)
+        copy_tree_safely(base_staging, reapplied_staging, preserve_safe_file_modes=True)
         apply_repository_patch(reapplied_staging, patch)
         reapplied = _read_tree(reapplied_staging, contract)
     if reapplied.snapshot != candidate.snapshot:
