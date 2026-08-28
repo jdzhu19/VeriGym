@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v17_formal_collection_v1",
+  "scope": "exact_64k_development_sft_formal_collection",
+  "parent_canary_contract_file": "qwen35_hwe_openhands_v17_canary_v4.json",
+  "parent_canary_contract_file_sha256": "70f1dbf3b773a26bf03a79efbe614066c509c84491ff03a08806aa00fe3f3fdc",
+  "parent_canary_contract_hash": "18ba9369eb59b96b468f42e2338600d0c029ad3c9f0a64763125af9b4360fb83",
+  "formal_contract_hash": "886aefb295c822554eba6fa8efb9e83a8d4da8d6812930843592048a4f2260e4",
+  "overlay_hash": "d196fd26b4a777ee3853948bae6f8b2154fbf1d8f4ce37cc41f234520f601159"
+}
