@@ -70,7 +70,11 @@ class OpenHandsHweSettings:
             "max_provider_calls": self.max_iterations,
             "provider_call_accounting": (
                 "conversation_agent_attempt_counter_v2"
-                if self.tool_choice_policy == "validated_responses_recovery_state_required_tool_v17"
+                if self.tool_choice_policy
+                in {
+                    "validated_responses_recovery_state_required_tool_v17",
+                    "validated_responses_recovery_state_required_tool_v18",
+                }
                 else "adapter_attempt_counter_v1"
             ),
             "process_timeout_s": self.process_timeout_s,
@@ -161,6 +165,7 @@ def resolve_hwe_settings(
         "validated_responses_recovery_state_required_tool_v15",
         "validated_responses_recovery_state_required_tool_v16",
         "validated_responses_recovery_state_required_tool_v17",
+        "validated_responses_recovery_state_required_tool_v18",
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
@@ -188,7 +193,11 @@ def resolve_hwe_settings(
         "max_provider_calls": max_iterations,
         "provider_call_accounting": (
             "conversation_agent_attempt_counter_v2"
-            if tool_choice_policy == "validated_responses_recovery_state_required_tool_v17"
+            if tool_choice_policy
+            in {
+                "validated_responses_recovery_state_required_tool_v17",
+                "validated_responses_recovery_state_required_tool_v18",
+            }
             else "adapter_attempt_counter_v1"
         ),
         "process_timeout_s": process_timeout_s,

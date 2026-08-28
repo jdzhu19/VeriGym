@@ -19,6 +19,8 @@ from verigym_openhands._recovery import (
     OPENHANDS_FORMAT_RECOVERY_MESSAGE,
     OPENHANDS_FORMAT_RECOVERY_POLICY,
     OPENHANDS_FORMAT_RECOVERY_REASON_SHA256,
+    OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE,
+    OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
     OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE,
 )
 from verigym_openhands.trajectory import (
@@ -28,6 +30,9 @@ from verigym_openhands.trajectory import (
     OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT,
     OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
     OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
+    OPENHANDS_PATH_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+    OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT,
     OPENHANDS_RECOVERY_DATASET_FORMAT,
     OPENHANDS_RECOVERY_DECISION_FORMAT,
     OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
@@ -352,6 +357,30 @@ def test_stop_hook_snapshot_exports_only_content_free_receipt() -> None:
     assert "reason" not in snapshot
 
 
+def test_conversation_error_snapshot_drops_raw_detail() -> None:
+    error_type = type(
+        "ConversationErrorEvent",
+        (),
+        {
+            "id": "error-1",
+            "parent_id": None,
+            "source": "environment",
+            "code": "ProviderToolArgumentsPolicyError",
+            "detail": "rejected /data/private/controller/path",
+        },
+    )
+
+    snapshot = snapshot_openhands_events([error_type()])[0]
+
+    assert snapshot == {
+        "event_type": "ConversationErrorEvent",
+        "event_id": "error-1",
+        "parent_id": None,
+        "source": "environment",
+    }
+    assert "/data/" not in json.dumps(snapshot, sort_keys=True)
+
+
 def test_same_session_recovery_is_hash_bound_and_loss_masked(tmp_path: Path) -> None:
     list_observation = '{"entries":["TASK.md"]}'
     finish_observation = '{"accepted":true,"terminal":true}'
@@ -576,6 +605,82 @@ def test_sdk_blocked_stop_continuation_is_exact_and_hash_bound(tmp_path: Path) -
     manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
     assert manifest["format_id"] == OPENHANDS_CONTINUATION_DATASET_FORMAT
     assert manifest["sdk_stop_continuation_count"] == 1
+
+
+def test_path_policy_recovery_is_exact_hash_bound_and_sft_materializable(
+    tmp_path: Path,
+) -> None:
+    snapshots, turns = _episode()
+    snapshots[4:4] = [
+        {
+            "event_type": "ConversationErrorEvent",
+            "event_id": "path-policy-error",
+            "parent_id": None,
+            "source": "environment",
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "path-policy-feedback",
+            "parent_id": "path-policy-error",
+            "source": "user",
+            "message": _message("user", OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+    ]
+    runtime_receipt = {
+        "policy_id": OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
+        "recovery_budget": 1,
+        "recovery_index": 0,
+        "trigger_stage": "agent_loop",
+        "root_message_sha256": content_hash({"rejected": "raw-host-path"}),
+        "tool_name": "list_files",
+        "argument_field": "path",
+        "violation_kind": "raw_host_path",
+        "raw_provider_arguments_persisted": False,
+        "same_session": True,
+        "whole_episode_retries": 0,
+    }
+    trajectory = build_openhands_training_trajectory(
+        task_id="suite/repository/path-policy-recovery",
+        provider="openai-compatible",
+        model_id="local/Qwen3.5-9B",
+        configuration_fingerprint=content_hash({"configuration": "path-policy-recovery"}),
+        event_snapshots=snapshots,
+        tools=_tools(),
+        broker_turns=repository_broker_receipts(turns),
+        tool_contract="repository_action.v2",
+        recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+        path_policy_recovery_receipts=[runtime_receipt],
+    )
+
+    assert trajectory["format_id"] == OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
+    assert trajectory["path_policy_recovery_count"] == 1
+    assert trajectory["messages"][4]["content"] == OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE
+    assert "/data/" not in json.dumps(trajectory, sort_keys=True)
+
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=tokenizer,
+    )
+    assert all(record["format_id"] == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT for record in records)
+    assert records[0]["path_policy_recovery_count"] == 0
+    assert records[1]["path_policy_recovery_count"] == 1
+    output = tmp_path / "path-policy-dataset"
+    manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    assert manifest["format_id"] == OPENHANDS_PATH_RECOVERY_DATASET_FORMAT
+    assert manifest["path_policy_recovery_count"] == 1
+
+    changed = copy.deepcopy(trajectory)
+    changed["path_policy_recoveries"][0]["argument_field"] = "changed"
+    changed_base = {key: item for key, item in changed.items() if key != "transcript_hash"}
+    changed["transcript_hash"] = content_hash(changed_base)
+    with pytest.raises(OpenHandsTrajectoryError, match="path-policy"):
+        validate_openhands_training_trajectory(changed)
 
 
 def test_sibling_tool_calls_are_one_exact_assistant_decision(tmp_path: Path) -> None:

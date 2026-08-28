@@ -43,6 +43,9 @@ from verigym.plugin_api import (
 from ._recovery import (
     OPENHANDS_FORMAT_RECOVERY_BUDGET,
     OPENHANDS_FORMAT_RECOVERY_POLICY,
+    OPENHANDS_PATH_POLICY_RECOVERY_BUDGET,
+    OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE,
+    OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
     OPENHANDS_SDK_STOP_CONTINUATION_BUDGET,
     OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE,
     OPENHANDS_SDK_STOP_CONTINUATION_POLICY,
@@ -138,10 +141,22 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             "validated_responses_recovery_state_required_tool_v15",
             "validated_responses_recovery_state_required_tool_v16",
             "validated_responses_recovery_state_required_tool_v17",
+            "validated_responses_recovery_state_required_tool_v18",
         }
-        system_prompt = _system_prompt(workspace_relative=workspace_relative)
+        path_policy_recovery = (
+            settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v18"
+        )
+        system_prompt = _system_prompt(
+            workspace_relative=workspace_relative,
+            path_policy_recovery=path_policy_recovery,
+        )
         task_prompt = validate_prompt_text(
-            _task_prompt(context, bridge, workspace_relative=workspace_relative),
+            _task_prompt(
+                context,
+                bridge,
+                workspace_relative=workspace_relative,
+                path_policy_recovery=path_policy_recovery,
+            ),
             policy,
         )
         self._context = context
@@ -224,6 +239,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         sdk_continuation_forced_request_count = 0
         sdk_continuation_validated_tool_count = 0
         sdk_continuation_response_shape: dict[str, Any] = {}
+        path_policy_recovery_count = 0
+        path_policy_recovery_forced_request_count = 0
+        path_policy_recovery_validated_tool_count = 0
+        path_policy_recovery_response_shape: dict[str, Any] = {}
+        path_policy_recovery_receipts: list[dict[str, Any]] = []
         broker: Any = None
         llm: Any = None
         provider_accounting_llm: Any = None
@@ -300,6 +320,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v15",
                     "validated_responses_recovery_state_required_tool_v16",
                     "validated_responses_recovery_state_required_tool_v17",
+                    "validated_responses_recovery_state_required_tool_v18",
                 }:
                     from .hwe_tool_choice import RecoveryToolChoiceViolation
 
@@ -309,6 +330,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "validated_responses_recovery_state_required_tool_v15",
                         "validated_responses_recovery_state_required_tool_v16",
                         "validated_responses_recovery_state_required_tool_v17",
+                        "validated_responses_recovery_state_required_tool_v18",
                     }:
                         from .hwe_tool_choice import (
                             MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM,
@@ -321,14 +343,25 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             "validated_responses_recovery_state_required_tool_v15",
                             "validated_responses_recovery_state_required_tool_v16",
                             "validated_responses_recovery_state_required_tool_v17",
+                            "validated_responses_recovery_state_required_tool_v18",
                         }:
-                            if (
-                                settings.tool_choice_policy
-                                == "validated_responses_recovery_state_required_tool_v17"
-                            ):
-                                from .hwe_tool_choice import SdkContinuationRequiredToolLLM
+                            if settings.tool_choice_policy in {
+                                "validated_responses_recovery_state_required_tool_v17",
+                                "validated_responses_recovery_state_required_tool_v18",
+                            }:
+                                if (
+                                    settings.tool_choice_policy
+                                    == "validated_responses_recovery_state_required_tool_v18"
+                                ):
+                                    from .hwe_tool_choice import (
+                                        PathPolicyRecoveryRequiredToolLLM,
+                                    )
 
-                                llm_type = SdkContinuationRequiredToolLLM
+                                    llm_type = PathPolicyRecoveryRequiredToolLLM
+                                else:
+                                    from .hwe_tool_choice import SdkContinuationRequiredToolLLM
+
+                                    llm_type = SdkContinuationRequiredToolLLM
                             else:
                                 from .hwe_tool_choice import WorkspaceRelativeRequiredToolLLM
 
@@ -355,6 +388,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v15",
                     "validated_responses_recovery_state_required_tool_v16",
                     "validated_responses_recovery_state_required_tool_v17",
+                    "validated_responses_recovery_state_required_tool_v18",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -448,21 +482,108 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 failure_stage = "broker_start"
                 broker.start()
                 try:
+
+                    def active_policy_llm() -> Any:
+                        if settings.tool_choice_policy in {
+                            "validated_responses_recovery_state_required_tool_v17",
+                            "validated_responses_recovery_state_required_tool_v18",
+                        }:
+                            return conversation.agent.llm
+                        return llm
+
+                    def run_conversation(stage: str, timeout_s: float) -> Exception | None:
+                        nonlocal failure_stage
+                        failure_stage = stage
+                        try:
+                            with _frozen_hook_locale():
+                                asyncio.run(
+                                    asyncio.wait_for(
+                                        conversation.arun(),
+                                        timeout=timeout_s,
+                                    )
+                                )
+                        except Exception as exc:
+                            return exc
+                        return None
+
+                    def run_with_path_policy_recovery(
+                        stage: str, timeout_s: float
+                    ) -> Exception | None:
+                        nonlocal path_policy_recovery_count
+                        exc = run_conversation(stage, timeout_s)
+                        if exc is None:
+                            return None
+                        if (
+                            settings.tool_choice_policy
+                            != "validated_responses_recovery_state_required_tool_v18"
+                            or path_policy_recovery_count != 0
+                            or provider_tool_policy_type is None
+                            or not _exception_chain_contains(exc, provider_tool_policy_type)
+                        ):
+                            return exc
+                        receipt = _sdk_failure_receipt(exc, conversation.state.events)
+                        violation = receipt.get("provider_tool_arguments_violation")
+                        if (
+                            not isinstance(violation, dict)
+                            or violation.get("violation_kind") != "raw_host_path"
+                        ):
+                            return exc
+                        arm_recovery = getattr(
+                            active_policy_llm(),
+                            "arm_path_policy_recovery",
+                            None,
+                        )
+                        if not callable(arm_recovery):
+                            raise OpenHandsTrajectoryInfrastructureError(
+                                "OpenHands HWE path-policy recovery is unavailable"
+                            )
+                        arm_recovery()
+                        path_policy_recovery_count = 1
+                        safe_receipt = {
+                            "policy_id": OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
+                            "recovery_budget": OPENHANDS_PATH_POLICY_RECOVERY_BUDGET,
+                            "recovery_index": 0,
+                            "trigger_stage": stage,
+                            "root_message_sha256": receipt["root_message_sha256"],
+                            "tool_name": violation["tool_name"],
+                            "argument_field": violation["argument_field"],
+                            "violation_kind": violation["violation_kind"],
+                            "raw_provider_arguments_persisted": False,
+                            "same_session": True,
+                            "whole_episode_retries": 0,
+                        }
+                        path_policy_recovery_receipts.append(safe_receipt)
+                        bridge.emit_event(
+                            "openhands_sdk_hwe_path_policy_recovery_started",
+                            safe_receipt,
+                        )
+                        conversation.send_message(
+                            OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE,
+                            sender="verigym_adapter",
+                        )
+                        remaining_s = settings.process_timeout_s - (time.monotonic() - started)
+                        if remaining_s <= 0:
+                            raise TimeoutError(
+                                "OpenHands HWE path-policy recovery exhausted wall time"
+                            )
+                        return run_conversation("path_policy_recovery", remaining_s)
+
                     failure_stage = "send_message"
                     conversation.send_message(task_prompt)
-                    try:
-                        failure_stage = "agent_loop"
-                        with _frozen_hook_locale():
-                            asyncio.run(
-                                asyncio.wait_for(
-                                    conversation.arun(),
-                                    timeout=settings.process_timeout_s,
-                                )
-                            )
-                    except Exception as exc:
-                        receipt = _sdk_failure_receipt(exc, conversation.state.events)
-                        receipt.update(_recovery_choice_counts(llm))
-                        receipt["recovery_response_shape"] = _recovery_response_shape(llm)
+                    initial_failure = run_with_path_policy_recovery(
+                        "agent_loop", settings.process_timeout_s
+                    )
+                    if initial_failure is not None:
+                        failure_exc = initial_failure
+                        receipt = _sdk_failure_receipt(failure_exc, conversation.state.events)
+                        receipt.update(_recovery_choice_counts(active_policy_llm()))
+                        receipt.update(_path_policy_recovery_choice_counts(active_policy_llm()))
+                        receipt["recovery_response_shape"] = _recovery_response_shape(
+                            active_policy_llm()
+                        )
+                        receipt["path_policy_recovery_response_shape"] = (
+                            _path_policy_recovery_response_shape(active_policy_llm())
+                        )
                         receipt["failure_stage"] = failure_stage
                         bridge.emit_event(
                             "openhands_sdk_hwe_episode_failed",
@@ -470,24 +591,19 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         )
                         failure_receipt_emitted = True
                         if recovery_violation_type is not None and _exception_chain_contains(
-                            exc, recovery_violation_type
+                            failure_exc, recovery_violation_type
                         ):
                             recovery_protocol_failure = True
-                        elif _exception_chain_contains(exc, ProviderCallBudgetExceeded):
+                        elif _exception_chain_contains(failure_exc, ProviderCallBudgetExceeded):
                             provider_budget_failure = True
                         elif provider_tool_policy_type is not None and _exception_chain_contains(
-                            exc, provider_tool_policy_type
+                            failure_exc, provider_tool_policy_type
                         ):
                             provider_tool_policy_failure = True
                         else:
-                            raise
+                            raise failure_exc
                     initial_recovery_count = read_recovery_count(recovery_state)
-                    active_llm = (
-                        conversation.agent.llm
-                        if settings.tool_choice_policy
-                        == "validated_responses_recovery_state_required_tool_v17"
-                        else llm
-                    )
+                    active_llm = active_policy_llm()
                     provider_accounting_llm = active_llm
                     initial_choice_counts = _recovery_choice_counts(active_llm)
                     initial_stats = broker.stats()
@@ -499,6 +615,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         )
                         and not provider_budget_failure
                         and not recovery_protocol_failure
+                        and (
+                            settings.tool_choice_policy
+                            != "validated_responses_recovery_state_required_tool_v18"
+                            or not provider_tool_policy_failure
+                        )
                         and not initial_stats.finished
                         and initial_stats.policy_failure is None
                         and initial_stats.infrastructure_failure is None
@@ -507,10 +628,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         if remaining_s <= 0:
                             raise TimeoutError("OpenHands HWE continuation exhausted wall time")
                         failure_stage = "sdk_stop_continuation"
-                        if (
-                            settings.tool_choice_policy
-                            == "validated_responses_recovery_state_required_tool_v17"
-                        ):
+                        if settings.tool_choice_policy in {
+                            "validated_responses_recovery_state_required_tool_v17",
+                            "validated_responses_recovery_state_required_tool_v18",
+                        }:
                             arm_continuation = getattr(
                                 active_llm,
                                 "arm_sdk_stop_continuation",
@@ -526,23 +647,23 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             sender="verigym_adapter",
                         )
                         sdk_stop_continuation_count = 1
-                        try:
-                            with _frozen_hook_locale():
-                                asyncio.run(
-                                    asyncio.wait_for(
-                                        conversation.arun(),
-                                        timeout=remaining_s,
-                                    )
-                                )
-                        except Exception as exc:
-                            receipt = _sdk_failure_receipt(exc, conversation.state.events)
+                        continuation_failure = run_with_path_policy_recovery(
+                            "sdk_stop_continuation", remaining_s
+                        )
+                        if continuation_failure is not None:
+                            failure_exc = continuation_failure
+                            receipt = _sdk_failure_receipt(failure_exc, conversation.state.events)
                             receipt.update(_recovery_choice_counts(active_llm))
                             receipt.update(_sdk_continuation_choice_counts(active_llm))
+                            receipt.update(_path_policy_recovery_choice_counts(active_llm))
                             receipt["recovery_response_shape"] = _recovery_response_shape(
                                 active_llm
                             )
                             receipt["sdk_continuation_response_shape"] = (
                                 _sdk_continuation_response_shape(active_llm)
+                            )
+                            receipt["path_policy_recovery_response_shape"] = (
+                                _path_policy_recovery_response_shape(active_llm)
                             )
                             receipt["failure_stage"] = failure_stage
                             bridge.emit_event(
@@ -551,18 +672,20 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             )
                             failure_receipt_emitted = True
                             if recovery_violation_type is not None and _exception_chain_contains(
-                                exc, recovery_violation_type
+                                failure_exc, recovery_violation_type
                             ):
                                 recovery_protocol_failure = True
-                            elif _exception_chain_contains(exc, ProviderCallBudgetExceeded):
+                            elif _exception_chain_contains(failure_exc, ProviderCallBudgetExceeded):
                                 provider_budget_failure = True
                             elif (
                                 provider_tool_policy_type is not None
-                                and _exception_chain_contains(exc, provider_tool_policy_type)
+                                and _exception_chain_contains(
+                                    failure_exc, provider_tool_policy_type
+                                )
                             ):
                                 provider_tool_policy_failure = True
                             else:
-                                raise
+                                raise failure_exc
                     choice_counts = _recovery_choice_counts(active_llm)
                     recovery_forced_request_count = choice_counts["recovery_forced_request_count"]
                     recovery_validated_finish_count = choice_counts[
@@ -581,6 +704,16 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         "sdk_continuation_validated_tool_count"
                     ]
                     sdk_continuation_response_shape = _sdk_continuation_response_shape(active_llm)
+                    path_choice_counts = _path_policy_recovery_choice_counts(active_llm)
+                    path_policy_recovery_forced_request_count = path_choice_counts[
+                        "path_policy_recovery_forced_request_count"
+                    ]
+                    path_policy_recovery_validated_tool_count = path_choice_counts[
+                        "path_policy_recovery_validated_tool_count"
+                    ]
+                    path_policy_recovery_response_shape = _path_policy_recovery_response_shape(
+                        active_llm
+                    )
                     format_recovery_count = read_recovery_count(recovery_state)
                     if format_recovery_count:
                         bridge.emit_event(
@@ -620,6 +753,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                         "validated_responses_recovery_state_required_tool_v15",
                                         "validated_responses_recovery_state_required_tool_v16",
                                         "validated_responses_recovery_state_required_tool_v17",
+                                        "validated_responses_recovery_state_required_tool_v18",
                                     }
                                 ),
                                 workspace_relative_constraints=(
@@ -629,6 +763,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                         "validated_responses_recovery_state_required_tool_v15",
                                         "validated_responses_recovery_state_required_tool_v16",
                                         "validated_responses_recovery_state_required_tool_v17",
+                                        "validated_responses_recovery_state_required_tool_v18",
                                     }
                                 ),
                             )
@@ -724,6 +859,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 sdk_continuation_forced_request_count=(sdk_continuation_forced_request_count),
                 sdk_continuation_validated_tool_count=(sdk_continuation_validated_tool_count),
                 sdk_continuation_response_shape=sdk_continuation_response_shape,
+                path_policy_recovery_count=path_policy_recovery_count,
+                path_policy_recovery_forced_request_count=(
+                    path_policy_recovery_forced_request_count
+                ),
+                path_policy_recovery_validated_tool_count=(
+                    path_policy_recovery_validated_tool_count
+                ),
+                path_policy_recovery_response_shape=(path_policy_recovery_response_shape),
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -809,6 +952,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
                     retain_recoverable_invalid_arguments=recoverable_invalid_arguments,
                     sdk_stop_continuation_count=sdk_stop_continuation_count,
+                    path_policy_recovery_receipts=path_policy_recovery_receipts,
                 )
             except OpenHandsTrajectoryInfrastructureError as exc:
                 persist_evidence(
@@ -912,7 +1056,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         return values  # type: ignore[return-value]
 
 
-def _system_prompt(*, workspace_relative: bool = False) -> str:
+def _system_prompt(*, workspace_relative: bool = False, path_policy_recovery: bool = False) -> str:
     prompt = (
         "You are a hardware repository repair agent using the frozen OpenHands HWE native-shell "
         "v2 contract. Every assistant decision must contain exactly one typed tool call. One "
@@ -925,12 +1069,21 @@ def _system_prompt(*, workspace_relative: bool = False) -> str:
     )
     if not workspace_relative:
         return prompt
-    return (
+    constrained = (
         prompt
         + " Every path and cwd argument must be '.' or a workspace-relative POSIX path with no "
         "leading slash or drive prefix. In command, patch, and summary arguments, refer to "
         "repository files only by workspace-relative path and never copy a controller or host "
         "filesystem path."
+    )
+    if not path_policy_recovery:
+        return constrained
+    return (
+        constrained
+        + " For shell, keep cwd as '.' unless a workspace-relative subdirectory is necessary, "
+        "and write commands such as 'grep -n pattern repository/file.sv'. Never use cd with an "
+        "absolute path. If adapter path-policy feedback appears, discard the rejected path and "
+        "emit one corrected typed tool call using only the visible relative file tree."
     )
 
 
@@ -939,6 +1092,7 @@ def _task_prompt(
     bridge: ExternalAgentBridge,
     *,
     workspace_relative: bool = False,
+    path_policy_recovery: bool = False,
 ) -> str:
     workspace = bridge.workspace_root.resolve(strict=True)
     instructions = [
@@ -953,6 +1107,12 @@ def _task_prompt(
             "Use '.' or paths like 'core/id_stage.sv' for path and cwd arguments; never use a "
             "leading slash or drive-letter prefix, and never copy a host path into any tool "
             "argument."
+        )
+    if path_policy_recovery:
+        instructions.append(
+            "For shell calls, prefer cwd='.' and commands such as 'grep -n pattern "
+            "repository/file.sv'; do not use absolute cd targets. One adapter-owned path-policy "
+            "correction may request a replacement typed call without exposing the rejected path."
         )
     payload = {
         "schema_version": "1.0",
@@ -1127,6 +1287,7 @@ def _identity(
         "validated_responses_recovery_state_required_tool_v15": "v15",
         "validated_responses_recovery_state_required_tool_v16": "v16",
         "validated_responses_recovery_state_required_tool_v17": "v17",
+        "validated_responses_recovery_state_required_tool_v18": "v18",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -1175,6 +1336,8 @@ def _identity(
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v16"
             else "repository_action_state_machine_typed_sdk_continuation_v17"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v17"
+            else "repository_action_state_machine_bounded_path_policy_recovery_v18"
+            if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v18"
             else "repository_action_state_machine_validated_responses_sdk_continuation_v12"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v12"
             else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
@@ -1221,6 +1384,10 @@ def _write_evidence(
     sdk_continuation_forced_request_count: int,
     sdk_continuation_validated_tool_count: int,
     sdk_continuation_response_shape: dict[str, Any],
+    path_policy_recovery_count: int,
+    path_policy_recovery_forced_request_count: int,
+    path_policy_recovery_validated_tool_count: int,
+    path_policy_recovery_response_shape: dict[str, Any],
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -1280,12 +1447,32 @@ def _write_evidence(
             "sdk_continuation_tool_choice_policy": (
                 "responses_required_validated_v1"
                 if settings.tool_choice_policy
-                == "validated_responses_recovery_state_required_tool_v17"
+                in {
+                    "validated_responses_recovery_state_required_tool_v17",
+                    "validated_responses_recovery_state_required_tool_v18",
+                }
                 else "none"
             ),
             "sdk_continuation_forced_request_count": (sdk_continuation_forced_request_count),
             "sdk_continuation_validated_tool_count": (sdk_continuation_validated_tool_count),
             "sdk_continuation_response_shape": sdk_continuation_response_shape,
+            "path_policy_recovery_policy_id": OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
+            "path_policy_recovery_budget": OPENHANDS_PATH_POLICY_RECOVERY_BUDGET,
+            "path_policy_recovery_count": path_policy_recovery_count,
+            "path_policy_recovery_tool_choice_policy": (
+                "responses_required_validated_v1"
+                if settings.tool_choice_policy
+                == "validated_responses_recovery_state_required_tool_v18"
+                else "none"
+            ),
+            "path_policy_recovery_forced_request_count": (
+                path_policy_recovery_forced_request_count
+            ),
+            "path_policy_recovery_validated_tool_count": (
+                path_policy_recovery_validated_tool_count
+            ),
+            "path_policy_recovery_response_shape": path_policy_recovery_response_shape,
+            "raw_rejected_provider_arguments_persisted": False,
             "sdk_upstream_source_modified": False,
             "termination_authority": "broker_typed_finish",
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
@@ -1333,6 +1520,28 @@ def _sdk_continuation_choice_counts(llm: Any) -> dict[str, int]:
     return result
 
 
+def _path_policy_recovery_choice_counts(llm: Any) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for name in (
+        "path_policy_recovery_forced_request_count",
+        "path_policy_recovery_validated_tool_count",
+    ):
+        value = getattr(llm, name, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value not in {0, 1}:
+            raise OpenHandsTrajectoryInfrastructureError(
+                "OpenHands path-policy recovery counter is invalid"
+            )
+        result[name] = value
+    if (
+        result["path_policy_recovery_validated_tool_count"]
+        > result["path_policy_recovery_forced_request_count"]
+    ):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands path-policy recovery validation count exceeds requests"
+        )
+    return result
+
+
 def _requires_sdk_stop_continuation(
     *,
     tool_choice_policy: str,
@@ -1352,6 +1561,7 @@ def _requires_sdk_stop_continuation(
         "validated_responses_recovery_state_required_tool_v15",
         "validated_responses_recovery_state_required_tool_v16",
         "validated_responses_recovery_state_required_tool_v17",
+        "validated_responses_recovery_state_required_tool_v18",
     }:
         return forced == 1 and validated_finish == 0 and validated_tool == 1
     return False
@@ -1441,6 +1651,27 @@ def _sdk_continuation_response_shape(llm: Any) -> dict[str, Any]:
     if set(value) - allowed_keys:
         raise OpenHandsTrajectoryInfrastructureError(
             "OpenHands SDK continuation response shape receipt has unknown fields"
+        )
+    return dict(value)
+
+
+def _path_policy_recovery_response_shape(llm: Any) -> dict[str, Any]:
+    value = getattr(llm, "path_policy_recovery_response_shape", {})
+    if not isinstance(value, dict):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands path-policy recovery response shape receipt is invalid"
+        )
+    allowed_keys = {
+        "raw_output_count",
+        "raw_output_types",
+        "raw_function_names",
+        "converted_tool_call_count",
+        "converted_tool_names",
+        "converted_text_part_count",
+    }
+    if set(value) - allowed_keys:
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands path-policy recovery response shape receipt has unknown fields"
         )
     return dict(value)
 

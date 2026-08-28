@@ -175,6 +175,21 @@ No workspace reset or whole-episode retry occurs. The v2 trajectory hash binds t
 assistant text, canonical feedback, hook receipt, and recovery count; downstream SFT masks that
 history as input and supervises only complete later assistant tool decisions.
 
+The separately versioned v18 HWE collection profile permits one additional same-session recovery
+only when the local provider-response validator identifies the safe structured category
+`raw_host_path` before OpenHands or the broker dispatches the action. The rejected arguments and
+response body are neither inserted into model history nor persisted; the SDK error event is
+snapshotted as content-free causal metadata. The adapter records only the canonical tool name,
+argument-field name, violation category, and hashes of generic local error and feedback text, then
+adds one fixed user feedback message and requires exactly one provider-emitted canonical tool call
+through the bounded Responses path. A second path violation, another violation category, an
+ambiguous parent recovery, a missing or malformed required tool, counter drift, or any raw argument
+retention fails closed. When the rejected response belonged to the one SDK continuation, the
+validated replacement closes both continuation and path-recovery accounting; no action is
+synthesized. Exact v6 trajectories hash-bind the sanitized receipt and model-visible feedback,
+keep decisions before the feedback unaware of it, and remain ineligible unless the ordinary hidden
+verifier resolves the episode.
+
 Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
 events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
 event and broker-owned canonical arguments or compact-observation hash. The exact effective

@@ -19,6 +19,7 @@ from verigym_openhands._recovery import (
 )
 from verigym_openhands.hwe_tool_choice import (
     BoundedProviderCallLLM,
+    PathPolicyRecoveryRequiredToolLLM,
     ProviderCallBudgetExceeded,
     ProviderToolArgumentsPolicyError,
     RecoveryForcedFinishLLM,
@@ -130,6 +131,19 @@ def _validated_responses_required_tool_llm(
 
 def _sdk_continuation_llm(path: Path) -> SdkContinuationRequiredToolLLM:
     return SdkContinuationRequiredToolLLM(
+        model="openai/test-model",
+        api_key="test-only",
+        base_url="https://example.invalid/v1",
+        api_mode="chat",
+        native_tool_calling=True,
+        capability_overrides={"supports_responses_api": False},
+        litellm_extra_body={"thinking": {"type": "disabled"}},
+        recovery_state_path=path,
+    )
+
+
+def _path_policy_recovery_llm(path: Path) -> PathPolicyRecoveryRequiredToolLLM:
+    return PathPolicyRecoveryRequiredToolLLM(
         model="openai/test-model",
         api_key="test-only",
         base_url="https://example.invalid/v1",
@@ -913,3 +927,129 @@ def test_sdk_continuation_rejects_raw_host_path_before_dispatch(tmp_path: Path) 
 
     assert llm.sdk_continuation_forced_request_count == 1
     assert llm.sdk_continuation_validated_tool_count == 0
+
+
+def test_path_policy_recovery_requires_one_provider_emitted_valid_tool(tmp_path: Path) -> None:
+    llm = _path_policy_recovery_llm(tmp_path / "recovery.json")
+    llm.arm_path_policy_recovery()
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        return_value=_response("read_file"),
+    ) as responses:
+        response = llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert response.message.tool_calls[0].name == "read_file"
+    assert responses.call_args.kwargs["tool_choice"] == "required"
+    assert llm.path_policy_recovery_forced_request_count == 1
+    assert llm.path_policy_recovery_validated_tool_count == 1
+    assert llm.provider_call_count == 1
+
+
+def test_path_policy_recovery_completes_a_rejected_sdk_continuation(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _path_policy_recovery_llm(state)
+    unsafe = SimpleNamespace(
+        message=Message(
+            role="assistant",
+            tool_calls=[
+                MessageToolCall(
+                    id="call-unsafe-continuation",
+                    name="read_file",
+                    arguments='{"path":"/data/private"}',
+                    origin="completion",
+                )
+            ],
+        )
+    )
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        side_effect=[_response("read_file"), unsafe, _response("read_file")],
+    ):
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+        llm.arm_sdk_stop_continuation()
+        with pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path"):
+            llm.completion(messages=_messages(), tools=_read_file_tool())
+        llm.arm_path_policy_recovery()
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_tool_count == 1
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 1
+    assert llm.path_policy_recovery_forced_request_count == 1
+    assert llm.path_policy_recovery_validated_tool_count == 1
+    assert llm.sdk_continuation_response_shape == llm.path_policy_recovery_response_shape
+    assert llm.provider_call_count == 3
+
+
+def test_path_policy_recovery_completes_async_sdk_continuation(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _path_policy_recovery_llm(state)
+    unsafe = SimpleNamespace(
+        message=Message(
+            role="assistant",
+            tool_calls=[
+                MessageToolCall(
+                    id="call-unsafe-async-continuation",
+                    name="read_file",
+                    arguments='{"path":"/data/private"}',
+                    origin="completion",
+                )
+            ],
+        )
+    )
+    responses = AsyncMock(side_effect=[_response("read_file"), unsafe, _response("read_file")])
+    with patch("openhands.sdk.llm.llm.LLM.aresponses", responses):
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_read_file_tool()))
+        llm.arm_sdk_stop_continuation()
+        with pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path"):
+            asyncio.run(llm.acompletion(messages=_messages(), tools=_read_file_tool()))
+        llm.arm_path_policy_recovery()
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_read_file_tool()))
+
+    assert responses.call_count == 3
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 1
+    assert llm.path_policy_recovery_forced_request_count == 1
+    assert llm.path_policy_recovery_validated_tool_count == 1
+    assert llm.sdk_continuation_response_shape == llm.path_policy_recovery_response_shape
+
+
+def test_path_policy_recovery_is_single_use_and_rejects_unsafe_correction(
+    tmp_path: Path,
+) -> None:
+    llm = _path_policy_recovery_llm(tmp_path / "recovery.json")
+    llm.arm_path_policy_recovery()
+    with pytest.raises(ValueError, match="recovery state"):
+        llm.arm_path_policy_recovery()
+    unsafe = SimpleNamespace(
+        message=Message(
+            role="assistant",
+            tool_calls=[
+                MessageToolCall(
+                    id="call-unsafe",
+                    name="read_file",
+                    arguments='{"path":"/data/private"}',
+                    origin="completion",
+                )
+            ],
+        )
+    )
+    with (
+        patch(
+            "openhands.sdk.llm.llm.LLM.responses",
+            autospec=True,
+            return_value=unsafe,
+        ),
+        pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path"),
+    ):
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert llm.path_policy_recovery_forced_request_count == 1
+    assert llm.path_policy_recovery_validated_tool_count == 0
+    with pytest.raises(ValueError, match="recovery state"):
+        llm.arm_path_policy_recovery()

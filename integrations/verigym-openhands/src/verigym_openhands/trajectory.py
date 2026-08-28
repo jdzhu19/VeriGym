@@ -35,6 +35,10 @@ from ._recovery import (
     OPENHANDS_FORMAT_RECOVERY_MESSAGE_SHA256,
     OPENHANDS_FORMAT_RECOVERY_POLICY,
     OPENHANDS_FORMAT_RECOVERY_REASON_SHA256,
+    OPENHANDS_PATH_POLICY_RECOVERY_BUDGET,
+    OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE,
+    OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE_SHA256,
+    OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
     OPENHANDS_SDK_STOP_CONTINUATION_BUDGET,
     OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE,
     OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE_SHA256,
@@ -46,16 +50,19 @@ OPENHANDS_RECOVERY_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_
 OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v3"
 OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v4"
 OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v5"
+OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v6"
 OPENHANDS_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v1"
 OPENHANDS_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v2"
 OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v3"
 OPENHANDS_CONTINUATION_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v4"
 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v5"
+OPENHANDS_PATH_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v6"
 OPENHANDS_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v1"
 OPENHANDS_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v2"
 OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v3"
 OPENHANDS_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v4"
 OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v5"
+OPENHANDS_PATH_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v6"
 OPENHANDS_SDK_VERSION = "1.42.1"
 OPENHANDS_MAX_LENGTH = 65_536
 
@@ -297,6 +304,7 @@ def build_openhands_training_trajectory(
     recovery_policy_id: str | None = None,
     retain_recoverable_invalid_arguments: bool = False,
     sdk_stop_continuation_count: int = 0,
+    path_policy_recovery_receipts: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Reconcile the OpenHands event stream with one broker-owned successful episode."""
 
@@ -314,14 +322,20 @@ def build_openhands_training_trajectory(
         raise OpenHandsTrajectoryError(
             "OpenHands recoverable invalid arguments require the HWE recovery contract"
         )
-    messages, decisions, recoveries, terminal_hook_allow_count, observed_continuations = (
-        _normalize_events(
-            event_snapshots,
-            broker_turns=broker_turns,
-            tool_contract=tool_contract,
-            recovery_policy_id=recovery_policy_id,
-            retain_recoverable_invalid_arguments=retain_recoverable_invalid_arguments,
-        )
+    (
+        messages,
+        decisions,
+        recoveries,
+        terminal_hook_allow_count,
+        observed_continuations,
+        path_recoveries,
+    ) = _normalize_events(
+        event_snapshots,
+        broker_turns=broker_turns,
+        tool_contract=tool_contract,
+        recovery_policy_id=recovery_policy_id,
+        retain_recoverable_invalid_arguments=retain_recoverable_invalid_arguments,
+        path_policy_recovery_receipts=path_policy_recovery_receipts,
     )
     if (
         isinstance(sdk_stop_continuation_count, bool)
@@ -332,11 +346,18 @@ def build_openhands_training_trajectory(
     recovery_enabled = recovery_policy_id is not None
     masked_recovery = retain_recoverable_invalid_arguments
     sdk_continuation = sdk_stop_continuation_count == 1
+    path_recovery = bool(path_recoveries)
+    if path_recovery and masked_recovery:
+        raise OpenHandsTrajectoryError(
+            "OpenHands path-policy recovery cannot combine with broker argument rejection"
+        )
     masked_decisions = sum(item.get("supervised_target") is False for item in decisions)
     supervised_decisions = len(decisions) - masked_decisions
     base = {
         "schema_version": (
-            "5.0"
+            "6.0"
+            if path_recovery
+            else "5.0"
             if masked_recovery and sdk_continuation
             else "4.0"
             if sdk_continuation
@@ -347,7 +368,9 @@ def build_openhands_training_trajectory(
             else "1.0"
         ),
         "format_id": (
-            OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT
+            OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
+            if path_recovery
+            else OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT
             if masked_recovery and sdk_continuation
             else OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT
             if sdk_continuation
@@ -365,7 +388,9 @@ def build_openhands_training_trajectory(
         "client_name": "openhands-sdk",
         "client_version": OPENHANDS_SDK_VERSION,
         "harness_id": (
-            "openhands-sdk-1.42.1-verigym-broker-v5"
+            "openhands-sdk-1.42.1-verigym-broker-v6"
+            if path_recovery
+            else "openhands-sdk-1.42.1-verigym-broker-v5"
             if masked_recovery and sdk_continuation
             else "openhands-sdk-1.42.1-verigym-broker-v4"
             if sdk_continuation
@@ -443,6 +468,17 @@ def build_openhands_training_trajectory(
                 "sdk_upstream_source_modified": False,
             }
         )
+    if path_recovery:
+        base.update(
+            {
+                "path_policy_recovery_policy_id": OPENHANDS_PATH_POLICY_RECOVERY_POLICY,
+                "path_policy_recovery_budget": OPENHANDS_PATH_POLICY_RECOVERY_BUDGET,
+                "path_policy_recovery_count": len(path_recoveries),
+                "path_policy_recoveries": path_recoveries,
+                "raw_rejected_provider_arguments_persisted": False,
+                "path_policy_recovery_tool_choice_policy": ("responses_required_validated_v1"),
+            }
+        )
     result = {**base, "transcript_hash": content_hash(base)}
     validate_openhands_training_trajectory(result)
     return result
@@ -478,12 +514,16 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         recoveries: list[Any] = []
         masked_recovery = False
         sdk_continuation = False
+        path_recovery = False
+        path_recoveries: list[Any] = []
     elif format_id in {
         OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
+        OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT,
     }:
+        path_recovery = format_id == OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
         masked_recovery = format_id in {
             OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
@@ -491,10 +531,12 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         sdk_continuation = format_id in {
             OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
-        }
+        } or (path_recovery and value.get("sdk_stop_continuation_count") == 1)
         versioned_required = {
             "schema_version": (
-                "5.0"
+                "6.0"
+                if path_recovery
+                else "5.0"
                 if masked_recovery and sdk_continuation
                 else "4.0"
                 if sdk_continuation
@@ -503,7 +545,9 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
                 else "2.0"
             ),
             "harness_id": (
-                "openhands-sdk-1.42.1-verigym-broker-v5"
+                "openhands-sdk-1.42.1-verigym-broker-v6"
+                if path_recovery
+                else "openhands-sdk-1.42.1-verigym-broker-v5"
                 if masked_recovery and sdk_continuation
                 else "openhands-sdk-1.42.1-verigym-broker-v4"
                 if sdk_continuation
@@ -522,6 +566,10 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         if not isinstance(raw_recoveries, list):
             raise OpenHandsTrajectoryError("OpenHands format recovery receipts are malformed")
         recoveries = raw_recoveries
+        raw_path_recoveries = value.get("path_policy_recoveries", [])
+        if not isinstance(raw_path_recoveries, list):
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery receipts are malformed")
+        path_recoveries = raw_path_recoveries
         continuation_receipt_count = sum(
             isinstance(item, dict) and "adapter_continuation_message_index" in item
             for item in recoveries
@@ -556,6 +604,21 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
                     ),
                     "sdk_upstream_source_modified": False,
                 }
+            )
+        if path_recovery:
+            if (
+                value.get("path_policy_recovery_policy_id") != OPENHANDS_PATH_POLICY_RECOVERY_POLICY
+                or value.get("path_policy_recovery_budget") != OPENHANDS_PATH_POLICY_RECOVERY_BUDGET
+                or value.get("path_policy_recovery_count") != len(path_recoveries)
+                or len(path_recoveries) != 1
+                or value.get("raw_rejected_provider_arguments_persisted") is not False
+                or value.get("path_policy_recovery_tool_choice_policy")
+                != "responses_required_validated_v1"
+            ):
+                raise OpenHandsTrajectoryError("OpenHands path-policy recovery accounting changed")
+        elif path_recoveries:
+            raise OpenHandsTrajectoryError(
+                "OpenHands undeclared path-policy recovery receipt is present"
             )
     else:
         raise OpenHandsTrajectoryError("OpenHands trajectory format changed")
@@ -606,6 +669,7 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         decisions,
         tool_contract=tool_contract,
         recovery_receipts=recoveries,
+        path_policy_recovery_receipts=path_recoveries,
         retain_recoverable_invalid_arguments=masked_recovery,
     )
     broker_turn_count = sum(
@@ -665,15 +729,17 @@ def materialize_openhands_decisions(
         OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
     }
+    path_recovery = validated["format_id"] == OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
     sdk_continuation = validated["format_id"] in {
         OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
-    }
+    } or (path_recovery and validated.get("sdk_stop_continuation_count") == 1)
     recovery_enabled = validated["format_id"] in {
         OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
+        OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT,
     }
     records: list[dict[str, Any]] = []
     for decision_index, decision in enumerate(decisions):
@@ -701,9 +767,20 @@ def materialize_openhands_decisions(
             if recovery_enabled
             else []
         )
+        visible_path_recoveries = (
+            [
+                copy.deepcopy(item)
+                for item in validated.get("path_policy_recoveries", [])
+                if int(item["feedback_message_index"]) < message_index
+            ]
+            if path_recovery
+            else []
+        )
         base = {
             "schema_version": (
-                "5.0"
+                "6.0"
+                if path_recovery
+                else "5.0"
                 if masked_recovery and sdk_continuation
                 else "4.0"
                 if sdk_continuation
@@ -714,7 +791,9 @@ def materialize_openhands_decisions(
                 else "1.0"
             ),
             "format_id": (
-                OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT
+                OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+                if path_recovery
+                else OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT
                 if masked_recovery and sdk_continuation
                 else OPENHANDS_CONTINUATION_DECISION_FORMAT
                 if sdk_continuation
@@ -799,6 +878,19 @@ def materialize_openhands_decisions(
                     "sdk_upstream_source_modified": False,
                 }
             )
+        if path_recovery:
+            base.update(
+                {
+                    "path_policy_recovery_policy_id": (OPENHANDS_PATH_POLICY_RECOVERY_POLICY),
+                    "trajectory_path_policy_recovery_count": validated[
+                        "path_policy_recovery_count"
+                    ],
+                    "path_policy_recovery_count": len(visible_path_recoveries),
+                    "path_policy_recoveries": visible_path_recoveries,
+                    "raw_rejected_provider_arguments_persisted": False,
+                    "path_policy_recovery_tool_choice_policy": ("responses_required_validated_v1"),
+                }
+            )
         record = {**base, "record_hash": content_hash(base)}
         validate_openhands_decision_record(record, tokenizer=tokenizer)
         records.append(record)
@@ -821,6 +913,7 @@ def validate_openhands_decision_record(
         OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
+        OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
     }:
         raise OpenHandsTrajectoryError("OpenHands decision format changed")
     tools = value.get("tools")
@@ -858,6 +951,7 @@ def validate_openhands_decision_record(
         OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
+        OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
     }:
         recoveries = value.get("format_recoveries")
         trajectory_recovery_count = value.get("trajectory_format_recovery_count")
@@ -865,6 +959,8 @@ def validate_openhands_decision_record(
             "source_trajectory_format": (
                 OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT
                 if format_id == OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT
+                else OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
+                if format_id == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
                 else OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT
                 if format_id == OPENHANDS_CONTINUATION_DECISION_FORMAT
                 else OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT
@@ -904,7 +1000,10 @@ def validate_openhands_decision_record(
     if format_id in {
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
-    }:
+    } or (
+        format_id == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+        and "trajectory_sdk_stop_continuation_count" in value
+    ):
         trajectory_count = value.get("trajectory_sdk_stop_continuation_count")
         visible_count = value.get("sdk_stop_continuation_count")
         if (
@@ -918,6 +1017,22 @@ def validate_openhands_decision_record(
             or value.get("sdk_upstream_source_modified") is not False
         ):
             raise OpenHandsTrajectoryError("OpenHands SDK continuation decision changed")
+    if format_id == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT:
+        path_recoveries = value.get("path_policy_recoveries")
+        trajectory_count = value.get("trajectory_path_policy_recovery_count")
+        if (
+            value.get("schema_version") != "6.0"
+            or value.get("path_policy_recovery_policy_id") != OPENHANDS_PATH_POLICY_RECOVERY_POLICY
+            or trajectory_count != 1
+            or not isinstance(path_recoveries, list)
+            or value.get("path_policy_recovery_count") != len(path_recoveries)
+            or len(path_recoveries) > trajectory_count
+            or value.get("raw_rejected_provider_arguments_persisted") is not False
+            or value.get("path_policy_recovery_tool_choice_policy")
+            != "responses_required_validated_v1"
+        ):
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery decision changed")
+        _validate_path_policy_recovery_receipts(inputs, path_recoveries)
     if target.get("role") != "assistant" or not target.get("tool_calls"):
         raise OpenHandsTrajectoryError("OpenHands decision target is not a complete tool decision")
     target_calls = target["tool_calls"]
@@ -959,6 +1074,7 @@ def write_openhands_decision_dataset(
         OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
+        OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
     }:
         raise OpenHandsTrajectoryError("OpenHands decision dataset contains an unknown row format")
     masked_recovery_dataset = bool(
@@ -974,7 +1090,12 @@ def write_openhands_decision_dataset(
             OPENHANDS_CONTINUATION_DECISION_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
         }
+    ) or any(
+        row["format_id"] == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+        and row.get("trajectory_sdk_stop_continuation_count") == 1
+        for row in rows
     )
+    path_recovery_dataset = OPENHANDS_PATH_RECOVERY_DECISION_FORMAT in record_formats
     recovery_dataset = bool(
         record_formats
         & {
@@ -982,10 +1103,13 @@ def write_openhands_decision_dataset(
             OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
             OPENHANDS_CONTINUATION_DECISION_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
+            OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
         }
     )
     base = {
-        "schema_version": "5.0"
+        "schema_version": "6.0"
+        if path_recovery_dataset
+        else "5.0"
         if masked_recovery_dataset and sdk_continuation_dataset
         else "4.0"
         if sdk_continuation_dataset
@@ -995,7 +1119,9 @@ def write_openhands_decision_dataset(
         if recovery_dataset
         else "1.0",
         "format_id": (
-            OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT
+            OPENHANDS_PATH_RECOVERY_DATASET_FORMAT
+            if path_recovery_dataset
+            else OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT
             if masked_recovery_dataset and sdk_continuation_dataset
             else OPENHANDS_CONTINUATION_DATASET_FORMAT
             if sdk_continuation_dataset
@@ -1040,6 +1166,7 @@ def write_openhands_decision_dataset(
                 OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT,
                 OPENHANDS_CONTINUATION_DECISION_FORMAT,
                 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
+                OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
             }:
                 continue
             transcript_hash = str(row["transcript_hash"])
@@ -1096,10 +1223,14 @@ def write_openhands_decision_dataset(
     if sdk_continuation_dataset:
         continuation_by_trajectory: dict[str, int] = {}
         for row in rows:
-            if row["format_id"] not in {
+            continuation_row = row["format_id"] in {
                 OPENHANDS_CONTINUATION_DECISION_FORMAT,
                 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
-            }:
+            } or (
+                row["format_id"] == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+                and row.get("trajectory_sdk_stop_continuation_count") == 1
+            )
+            if not continuation_row:
                 continue
             transcript_hash = str(row["transcript_hash"])
             count = row.get("trajectory_sdk_stop_continuation_count")
@@ -1112,6 +1243,25 @@ def write_openhands_decision_dataset(
                 "sdk_stop_continuation_trajectory_count": len(continuation_by_trajectory),
                 "sdk_stop_continuation_count": sum(continuation_by_trajectory.values()),
                 "sdk_upstream_source_modified": False,
+            }
+        )
+    if path_recovery_dataset:
+        path_by_trajectory: dict[str, int] = {}
+        for row in rows:
+            if row["format_id"] != OPENHANDS_PATH_RECOVERY_DECISION_FORMAT:
+                continue
+            transcript_hash = str(row["transcript_hash"])
+            count = row.get("trajectory_path_policy_recovery_count")
+            if count != 1:
+                raise OpenHandsTrajectoryError("OpenHands path-policy dataset accounting changed")
+            path_by_trajectory[transcript_hash] = count
+        base.update(
+            {
+                "path_policy_recovery_policy_id": (OPENHANDS_PATH_POLICY_RECOVERY_POLICY),
+                "path_policy_recovery_trajectory_count": len(path_by_trajectory),
+                "path_policy_recovery_count": sum(path_by_trajectory.values()),
+                "raw_rejected_provider_arguments_persisted": False,
+                "path_policy_recovery_hash_bound": True,
             }
         )
     manifest = {**base, "dataset_hash": content_hash(base)}
@@ -1134,7 +1284,15 @@ def _normalize_events(
     tool_contract: str,
     recovery_policy_id: str | None,
     retain_recoverable_invalid_arguments: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    path_policy_recovery_receipts: Sequence[Mapping[str, Any]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    int,
+    int,
+    list[dict[str, Any]],
+]:
     if not snapshots or not broker_turns:
         raise OpenHandsTrajectoryError("OpenHands training trajectory is empty")
     messages: list[dict[str, Any]] = []
@@ -1152,6 +1310,8 @@ def _normalize_events(
     terminal_hook_allow_count = 0
     recovery_exhausted_hook_index: int | None = None
     sdk_stop_continuation_count = 0
+    pending_path_error_event_index: int | None = None
+    path_recoveries: list[dict[str, Any]] = []
     seen_calls: set[str] = set()
     for event_index, raw in enumerate(snapshots):
         event = dict(raw)
@@ -1178,6 +1338,29 @@ def _normalize_events(
                     if decisions:
                         raise OpenHandsTrajectoryError("OpenHands initial user message moved")
                     saw_user = True
+                elif (
+                    pending_path_error_event_index is not None
+                    and not pending
+                    and not saw_finish
+                    and message.get("content") == OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE
+                    and len(path_recoveries) < OPENHANDS_PATH_POLICY_RECOVERY_BUDGET
+                    and len(path_recoveries) < len(path_policy_recovery_receipts)
+                ):
+                    runtime_receipt = _validate_path_policy_runtime_receipt(
+                        path_policy_recovery_receipts[len(path_recoveries)],
+                        recovery_index=len(path_recoveries),
+                    )
+                    feedback_message_index = len(messages)
+                    path_recoveries.append(
+                        {
+                            **runtime_receipt,
+                            "conversation_error_event_index": pending_path_error_event_index,
+                            "feedback_message_index": feedback_message_index,
+                            "feedback_message_sha256": content_hash(message),
+                            "feedback_text_sha256": (OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE_SHA256),
+                        }
+                    )
+                    pending_path_error_event_index = None
                 elif (
                     recovery_exhausted_hook_index is not None
                     and recoveries
@@ -1541,6 +1724,22 @@ def _normalize_events(
                     raise OpenHandsTrajectoryError("OpenHands terminal Stop hook changed")
             else:
                 raise OpenHandsTrajectoryError("OpenHands Stop hook result is malformed")
+        elif event_type == "ConversationErrorEvent":
+            if (
+                set(event) != {"event_type", "event_id", "parent_id", "source"}
+                or event.get("source") != "environment"
+                or not isinstance(event.get("event_id"), str)
+                or not event.get("event_id")
+                or pending
+                or saw_finish
+                or pending_path_error_event_index is not None
+                or len(path_recoveries) >= len(path_policy_recovery_receipts)
+                or len(path_recoveries) >= OPENHANDS_PATH_POLICY_RECOVERY_BUDGET
+            ):
+                raise OpenHandsTrajectoryError(
+                    "OpenHands path-policy conversation error is out of sequence"
+                )
+            pending_path_error_event_index = event_index
         else:
             raise OpenHandsTrajectoryError(
                 f"OpenHands training stream contains unsupported {event_type!r}"
@@ -1554,7 +1753,9 @@ def _normalize_events(
         or recovery_assistant_index is not None
         or pending_recovery_hook_index is not None
         or recovery_exhausted_hook_index is not None
+        or pending_path_error_event_index is not None
         or receipt_index != len(broker_turns)
+        or len(path_recoveries) != len(path_policy_recovery_receipts)
     ):
         raise OpenHandsTrajectoryInfrastructureError("OpenHands and broker turn counts differ")
     if not saw_system or not saw_user or not saw_finish:
@@ -1565,6 +1766,7 @@ def _normalize_events(
         recoveries,
         terminal_hook_allow_count,
         sdk_stop_continuation_count,
+        path_recoveries,
     )
 
 
@@ -1574,6 +1776,7 @@ def _validate_normalized_messages(
     *,
     tool_contract: str,
     recovery_receipts: list[Any],
+    path_policy_recovery_receipts: list[Any],
     retain_recoverable_invalid_arguments: bool,
 ) -> None:
     if len(messages) < 4 or [item.get("role") for item in messages[:2]] != ["system", "user"]:
@@ -1586,6 +1789,12 @@ def _validate_normalized_messages(
         item["adapter_continuation_message_index"]: item
         for item in validated_recoveries
         if "adapter_continuation_message_index" in item
+    }
+    validated_path_recoveries = _validate_path_policy_recovery_receipts(
+        messages, path_policy_recovery_receipts
+    )
+    path_recovery_by_feedback = {
+        item["feedback_message_index"]: item for item in validated_path_recoveries
     }
     for raw in decisions:
         if not isinstance(raw, dict) or not isinstance(raw.get("message_index"), int):
@@ -1749,6 +1958,18 @@ def _validate_normalized_messages(
                 or int(recovery["feedback_message_index"]) >= index
             ):
                 raise OpenHandsTrajectoryError("OpenHands SDK continuation order changed")
+        elif role == "user" and index in path_recovery_by_feedback:
+            recovery = path_recovery_by_feedback[index]
+            if (
+                pending
+                or saw_finish
+                or awaiting_recovery is not None
+                or message.get("content") != OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE
+                or recovery.get("feedback_message_index") != index
+            ):
+                raise OpenHandsTrajectoryError(
+                    "OpenHands path-policy recovery message order changed"
+                )
         elif (
             role == "assistant"
             and message.get("content")
@@ -1853,6 +2074,85 @@ def _validate_recovery_receipts(
             ) != content_hash(continuation):
                 raise OpenHandsTrajectoryError("OpenHands SDK continuation binding changed")
         result.append(copy.deepcopy(raw))
+    return result
+
+
+def _validate_path_policy_runtime_receipt(
+    value: Mapping[str, Any], *, recovery_index: int
+) -> dict[str, Any]:
+    expected_fields = {
+        "policy_id",
+        "recovery_budget",
+        "recovery_index",
+        "trigger_stage",
+        "root_message_sha256",
+        "tool_name",
+        "argument_field",
+        "violation_kind",
+        "raw_provider_arguments_persisted",
+        "same_session",
+        "whole_episode_retries",
+    }
+    raw = dict(value)
+    if (
+        set(raw) != expected_fields
+        or raw.get("policy_id") != OPENHANDS_PATH_POLICY_RECOVERY_POLICY
+        or raw.get("recovery_budget") != OPENHANDS_PATH_POLICY_RECOVERY_BUDGET
+        or raw.get("recovery_index") != recovery_index
+        or raw.get("trigger_stage") not in {"agent_loop", "sdk_stop_continuation"}
+        or not isinstance(raw.get("root_message_sha256"), str)
+        or not _HASH.fullmatch(str(raw.get("root_message_sha256")))
+        or raw.get("tool_name") not in _CONTRACT_TOOLS["hwe_native_shell_v2"]
+        or raw.get("argument_field")
+        not in {"command", "cwd", "patch", "path", "summary", "unparsed"}
+        or raw.get("violation_kind") != "raw_host_path"
+        or raw.get("raw_provider_arguments_persisted") is not False
+        or raw.get("same_session") is not True
+        or raw.get("whole_episode_retries") != 0
+    ):
+        raise OpenHandsTrajectoryError("OpenHands path-policy runtime recovery receipt changed")
+    return copy.deepcopy(raw)
+
+
+def _validate_path_policy_recovery_receipts(
+    messages: Sequence[Any], receipts: Sequence[Any]
+) -> list[dict[str, Any]]:
+    if len(receipts) > OPENHANDS_PATH_POLICY_RECOVERY_BUDGET:
+        raise OpenHandsTrajectoryError("OpenHands path-policy recovery budget changed")
+    result: list[dict[str, Any]] = []
+    event_fields = {
+        "conversation_error_event_index",
+        "feedback_message_index",
+        "feedback_message_sha256",
+        "feedback_text_sha256",
+    }
+    for recovery_index, value in enumerate(receipts):
+        if not isinstance(value, Mapping) or not event_fields <= set(value):
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery receipt is malformed")
+        runtime = _validate_path_policy_runtime_receipt(
+            {key: item for key, item in value.items() if key not in event_fields},
+            recovery_index=recovery_index,
+        )
+        if set(value) != set(runtime) | event_fields:
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery receipt fields changed")
+        event_index = value.get("conversation_error_event_index")
+        feedback_index = value.get("feedback_message_index")
+        if (
+            not isinstance(event_index, int)
+            or isinstance(event_index, bool)
+            or event_index < 0
+            or not isinstance(feedback_index, int)
+            or isinstance(feedback_index, bool)
+            or not 2 <= feedback_index < len(messages)
+            or value.get("feedback_text_sha256") != OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE_SHA256
+        ):
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery event binding changed")
+        feedback = _normalized_message(messages[feedback_index], expected_role="user")
+        if feedback.get("content") != OPENHANDS_PATH_POLICY_RECOVERY_MESSAGE or value.get(
+            "feedback_message_sha256"
+        ) != content_hash(feedback):
+            raise OpenHandsTrajectoryError("OpenHands path-policy recovery message binding changed")
+        result.append(copy.deepcopy(dict(value)))
     return result
 
 
@@ -2097,6 +2397,9 @@ __all__ = [
     "OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT",
     "OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT",
     "OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT",
+    "OPENHANDS_PATH_RECOVERY_DATASET_FORMAT",
+    "OPENHANDS_PATH_RECOVERY_DECISION_FORMAT",
+    "OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT",
     "OPENHANDS_RECOVERY_DATASET_FORMAT",
     "OPENHANDS_RECOVERY_DECISION_FORMAT",
     "OPENHANDS_RECOVERY_TRAJECTORY_FORMAT",
