@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,7 @@ from openhands.sdk.llm.streaming import (
 from openhands.sdk.tool import ToolDefinition as GenericToolDefinition
 from pydantic import Field, PrivateAttr
 
+from ._hwe_tool_schema import without_openhands_tool_metadata
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
 from .hwe_stop_hook import read_recovery_count
 
@@ -47,6 +50,16 @@ class RecoveryToolChoiceViolation(RuntimeError):
 
 class ProviderCallBudgetExceeded(RuntimeError):
     """The exact provider-request budget was exhausted before a new request."""
+
+
+class ProviderToolArgumentsPolicyError(RuntimeError):
+    """A metadata-free provider response crossed the HWE argument boundary."""
+
+
+_RAW_HOST_PATH = re.compile(
+    r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\",
+    re.IGNORECASE,
+)
 
 
 class BoundedProviderCallLLM(LLM):
@@ -798,6 +811,131 @@ class ValidatedResponsesRecoveryStateRequiredToolLLM(
         return response
 
 
+class MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
+    ValidatedResponsesRecoveryStateRequiredToolLLM
+):
+    """Expose only the canonical six-tool HWE schema to the provider.
+
+    This is a separate collection policy from OpenHands' default metadata-rich
+    schema. It leaves the installed SDK untouched and keeps the semantic
+    ``finish.summary`` field.
+    """
+
+    @staticmethod
+    def _validate_provider_response(response: LLMResponse) -> None:
+        for call in response.message.tool_calls or []:
+            arguments = call.arguments
+            if _RAW_HOST_PATH.search(arguments):
+                raise ProviderToolArgumentsPolicyError(
+                    "OpenHands HWE provider tool arguments contain a raw host path"
+                )
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(parsed, dict):
+                continue
+            if "security_risk" in parsed or (call.name != "finish" and "summary" in parsed):
+                raise ProviderToolArgumentsPolicyError(
+                    "OpenHands HWE provider emitted forbidden SDK tool metadata"
+                )
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        response = super().completion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
+        self._validate_provider_response(response)
+        return response
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        response = await super().acompletion(
+            messages=messages,
+            tools=tools,
+            add_security_risk_prediction=add_security_risk_prediction,
+            on_token=on_token,
+            call_context=call_context,
+            **kwargs,
+        )
+        self._validate_provider_response(response)
+        return response
+
+    def _finalize_completion_params(
+        self,
+        formatted_messages: list[dict[str, Any]],
+        tools: Sequence[ToolDefinition] | None,
+        add_security_risk_prediction: bool,
+        kwargs: dict[str, Any],
+        call_context: LLMCallContext | None = None,
+    ) -> tuple[list[dict[str, Any]], list[Any], bool, dict[str, Any], dict[str, Any]]:
+        result = super()._finalize_completion_params(
+            formatted_messages,
+            tools,
+            add_security_risk_prediction,
+            kwargs,
+            call_context=call_context,
+        )
+        messages, provider_tools, use_mock_tools, call_kwargs, telemetry = result
+        normalized = without_openhands_tool_metadata(provider_tools)
+        rebound = dict(call_kwargs)
+        if rebound.get("tools") is not None:
+            rebound["tools"] = normalized
+        return messages, normalized, use_mock_tools, rebound, telemetry
+
+    def _finalize_responses_params(
+        self,
+        instructions: str | None,
+        input_items: list[dict[str, Any]],
+        tools: Sequence[ToolDefinition] | None,
+        include: list[str] | None,
+        store: bool | None,
+        add_security_risk_prediction: bool,
+        kwargs: dict[str, Any],
+        call_context: LLMCallContext | None = None,
+    ) -> tuple[
+        str | None,
+        list[dict[str, Any]],
+        list[Any] | None,
+        dict[str, Any],
+        dict[str, Any],
+    ]:
+        result = super()._finalize_responses_params(
+            instructions,
+            input_items,
+            tools,
+            include,
+            store,
+            add_security_risk_prediction,
+            kwargs,
+            call_context=call_context,
+        )
+        resolved_instructions, resolved_input, provider_tools, call_kwargs, telemetry = result
+        normalized = (
+            without_openhands_tool_metadata(provider_tools) if provider_tools is not None else None
+        )
+        return resolved_instructions, resolved_input, normalized, call_kwargs, telemetry
+
+
 __all__ = [
     "BoundedProviderCallLLM",
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
@@ -807,6 +945,7 @@ __all__ = [
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_REQUIRED_TOOL",
     "ProviderCallBudgetExceeded",
+    "ProviderToolArgumentsPolicyError",
     "RecoveryForcedFinishLLM",
     "RecoveryStateForcedFinishLLM",
     "RecoveryToolChoiceViolation",
@@ -814,4 +953,5 @@ __all__ = [
     "ValidatedRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateRequiredToolLLM",
+    "MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM",
 ]

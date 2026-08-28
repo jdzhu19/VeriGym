@@ -11,6 +11,7 @@ from verigym.core.hashing import content_hash, hash_bytes
 from verigym.schemas.evolution import TaskSplitManifest
 
 from verigym_openhands.hwe_sft_pilot import (
+    OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID,
     OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
@@ -22,6 +23,10 @@ from verigym_openhands.hwe_sft_pilot import (
     validate_bounded_sft_pilot_contract,
     validate_bounded_sft_source,
     validate_bounded_sft_source_v2,
+)
+from verigym_openhands.hwe_sft_pilot_v3 import (
+    load_bounded_sft_pilot_contract_v3,
+    validate_bounded_sft_source_v3,
 )
 
 
@@ -40,6 +45,10 @@ def _contract() -> dict[str, Any]:
 
 def _config_v2_path() -> Path:
     return _config_path().with_name("qwen35_hwe_openhands_bounded_sft_pilot_v2.json")
+
+
+def _config_v3_path() -> Path:
+    return _config_path().with_name("qwen35_hwe_openhands_bounded_sft_pilot_v3.json")
 
 
 def _reseal(contract: dict[str, Any]) -> None:
@@ -122,6 +131,44 @@ def test_bounded_sft_v2_contract_rejects_parent_or_delta_drift(tmp_path: Path) -
         load_bounded_sft_pilot_contract_v2(overlay_path)
 
 
+def test_bounded_sft_v3_contract_is_fresh_uniform_metadata_free_collection() -> None:
+    contract = load_bounded_sft_pilot_contract_v3(_config_v3_path())
+
+    assert contract["teacher"]["tool_choice_policy"].endswith("_v13")
+    assert contract["teacher"]["provider_tool_schema_policy"] == (
+        "canonical_hwe_without_sdk_metadata_v1"
+    )
+    assert len(contract["collection"]["training_schedule"]) == 11
+    assert len(contract["collection"]["validation_schedule"]) == 3
+    assert all(
+        not episode.get("predecessor")
+        for episode in (
+            *contract["collection"]["training_schedule"],
+            *contract["collection"]["validation_schedule"],
+        )
+    )
+
+
+def test_bounded_sft_v3_contract_rejects_resealed_schedule_drift(tmp_path: Path) -> None:
+    for name in (
+        _config_path().name,
+        _config_v2_path().name,
+        _config_v3_path().name,
+    ):
+        source = _config_path().with_name(name)
+        (tmp_path / name).write_bytes(source.read_bytes())
+    overlay_path = tmp_path / _config_v3_path().name
+    overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
+    overlay["collection_delta"]["training_schedule"][0]["seed"] = 999
+    overlay["contract_hash"] = content_hash(
+        {key: value for key, value in overlay.items() if key != "contract_hash"}
+    )
+    overlay_path.write_text(json.dumps(overlay), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="identity changed"):
+        load_bounded_sft_pilot_contract_v3(overlay_path)
+
+
 def test_bounded_sft_contract_rejects_resealed_policy_drift() -> None:
     contract = copy.deepcopy(_contract())
     contract["teacher"]["whole_episode_retries"] = 1
@@ -175,6 +222,23 @@ def test_bounded_sft_agent_options_fit_core_plugin_bounds() -> None:
     assert len(manifest.encode("utf-8")) <= 4096
     assert options["agent_version_hash"] == version.version_hash
     assert options["tool_choice_policy"] == ("validated_responses_recovery_state_required_tool_v12")
+
+
+def test_bounded_sft_v13_agent_has_distinct_identity_and_policy() -> None:
+    version = build_bounded_sft_agent_version(
+        source_commit="a" * 40,
+        image_locks=_locks(),
+        policy_version="v13",
+    )
+    options = build_bounded_sft_agent_options(
+        seed=486,
+        agent_version=version,
+        policy_version="v13",
+    )
+
+    assert version.agent_version_id == OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
+    assert options["tool_choice_policy"] == ("validated_responses_recovery_state_required_tool_v13")
+    assert options["agent_version_hash"] == version.version_hash
 
 
 def test_bounded_sft_gate_requires_eight_distinct_train_and_both_validation_tasks() -> None:
@@ -238,6 +302,12 @@ def test_bounded_sft_source_rejects_file_or_role_drift(tmp_path: Path) -> None:
     )
     validate_bounded_sft_source_v2(
         load_bounded_sft_pilot_contract_v2(_config_v2_path()),
+        split=split,
+        task_split_path=split_path,
+        qualification_progress_path=qualification_path,
+    )
+    validate_bounded_sft_source_v3(
+        load_bounded_sft_pilot_contract_v3(_config_v3_path()),
         split=split,
         task_split_path=split_path,
         qualification_progress_path=qualification_path,

@@ -215,8 +215,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         broker: Any = None
         llm: Any = None
         recovery_violation_type: type[Exception] | None = None
+        provider_tool_policy_type: type[Exception] | None = None
         recovery_protocol_failure = False
         provider_budget_failure = False
+        provider_tool_policy_failure = False
         failure_stage = "temporary_directory"
         failure_receipt_emitted = False
         try:
@@ -280,13 +282,28 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 elif settings.tool_choice_policy in {
                     "validated_responses_recovery_state_required_tool_v11",
                     "validated_responses_recovery_state_required_tool_v12",
+                    "validated_responses_recovery_state_required_tool_v13",
                 }:
-                    from .hwe_tool_choice import (
-                        RecoveryToolChoiceViolation,
-                        ValidatedResponsesRecoveryStateRequiredToolLLM,
-                    )
+                    from .hwe_tool_choice import RecoveryToolChoiceViolation
 
-                    llm_type = ValidatedResponsesRecoveryStateRequiredToolLLM
+                    if (
+                        settings.tool_choice_policy
+                        == "validated_responses_recovery_state_required_tool_v13"
+                    ):
+                        from .hwe_tool_choice import (
+                            MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM,
+                            ProviderToolArgumentsPolicyError,
+                        )
+
+                        llm_type = MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
+                        provider_tool_policy_type = ProviderToolArgumentsPolicyError
+                    else:
+                        from .hwe_tool_choice import (
+                            ValidatedResponsesRecoveryStateRequiredToolLLM,
+                        )
+
+                        llm_type = ValidatedResponsesRecoveryStateRequiredToolLLM
+                        provider_tool_policy_type = None
                     recovery_violation_type = RecoveryToolChoiceViolation
                 llm_options: dict[str, Any] = {}
                 if settings.tool_choice_policy in {
@@ -296,6 +313,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_forced_finish_v9",
                     "validated_responses_recovery_state_required_tool_v11",
                     "validated_responses_recovery_state_required_tool_v12",
+                    "validated_responses_recovery_state_required_tool_v13",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -416,6 +434,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             recovery_protocol_failure = True
                         elif _exception_chain_contains(exc, ProviderCallBudgetExceeded):
                             provider_budget_failure = True
+                        elif provider_tool_policy_type is not None and _exception_chain_contains(
+                            exc, provider_tool_policy_type
+                        ):
+                            provider_tool_policy_failure = True
                         else:
                             raise
                     initial_recovery_count = read_recovery_count(recovery_state)
@@ -465,6 +487,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                 recovery_protocol_failure = True
                             elif _exception_chain_contains(exc, ProviderCallBudgetExceeded):
                                 provider_budget_failure = True
+                            elif (
+                                provider_tool_policy_type is not None
+                                and _exception_chain_contains(exc, provider_tool_policy_type)
+                            ):
+                                provider_tool_policy_failure = True
                             else:
                                 raise
                     choice_counts = _recovery_choice_counts(llm)
@@ -507,7 +534,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             event_snapshots = snapshot_openhands_events(conversation.state.events)
                             post_stage = "tool_snapshot"
                             effective_tools = snapshot_openhands_tools(
-                                list(conversation.agent.tools_map.values())
+                                list(conversation.agent.tools_map.values()),
+                                without_sdk_metadata=(
+                                    settings.tool_choice_policy
+                                    == "validated_responses_recovery_state_required_tool_v13"
+                                ),
                             )
                     except Exception as exc:
                         receipt = _sdk_failure_receipt(exc, conversation.state.events)
@@ -620,6 +651,16 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             raise _termination(
                 "openhands_hwe_provider_call_budget",
                 "OpenHands HWE exhausted its exact provider-request budget",
+                infrastructure=False,
+            )
+        if provider_tool_policy_failure:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
+            raise _termination(
+                "openhands_hwe_provider_tool_arguments_policy",
+                "OpenHands HWE provider emitted arguments outside the metadata-free policy",
                 infrastructure=False,
             )
         recoverable_invalid_arguments = (
@@ -942,6 +983,7 @@ def _identity(
         "validated_responses_recovery_state_forced_finish_v9": "v10",
         "validated_responses_recovery_state_required_tool_v11": "v11",
         "validated_responses_recovery_state_required_tool_v12": "v12",
+        "validated_responses_recovery_state_required_tool_v13": "v13",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -980,6 +1022,8 @@ def _identity(
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"
             else "repository_action_state_machine_validated_recovery_finish_v8"
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v8"
+            else "repository_action_state_machine_metadata_free_sdk_continuation_v13"
+            if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v13"
             else "repository_action_state_machine_validated_responses_sdk_continuation_v12"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v12"
             else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"

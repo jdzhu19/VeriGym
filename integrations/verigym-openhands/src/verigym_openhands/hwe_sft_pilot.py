@@ -29,6 +29,10 @@ OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sf
 OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH = (
     "4567af055f34b58472e0b915b32efcbb6f26dc6bb40aa48c392b1de0538749c6"
 )
+OPENHANDS_BOUNDED_SFT_PILOT_V3_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v3"
+OPENHANDS_BOUNDED_SFT_PILOT_V3_CONTRACT_HASH = (
+    "eb3acebcbef7a6ae17d3559f231c766b07eb0827080d25f5e8537e4951ff05d3"
+)
 OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE = "qwen35_hwe_openhands_bounded_sft_pilot_v1.json"
 OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE_SHA256 = (
     "b75992052e85998a0f7550902302ce9c58f95b423bc821054865ef2ee0c663e8"
@@ -44,7 +48,9 @@ OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256 = (
     "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3"
 )
 OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v2"
+OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v3"
 OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V2"
+OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V3"
 OPENHANDS_BOUNDED_SFT_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
 OPENHANDS_BOUNDED_SFT_API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 
@@ -92,9 +98,22 @@ class BoundedSftDataGate:
 
 
 def build_bounded_sft_agent_version(
-    *, source_commit: str, image_locks: Mapping[str, Any]
+    *, source_commit: str, image_locks: Mapping[str, Any], policy_version: str = "v12"
 ) -> AgentVersionManifest:
     """Bind every train/validation task image and the exact OpenHands policy."""
+
+    if policy_version == "v12":
+        agent_version_id = OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID
+        pilot_contract_hash = OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v12"
+        provider_tool_schema_policy = "openhands_sdk_metadata_v1"
+    elif policy_version == "v13":
+        agent_version_id = OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
+        pilot_contract_hash = OPENHANDS_BOUNDED_SFT_PILOT_V3_CONTRACT_HASH
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v13"
+        provider_tool_schema_policy = "canonical_hwe_without_sdk_metadata_v1"
+    else:
+        raise ValueError("bounded SFT agent policy version is unsupported")
 
     if len(source_commit) != 40 or any(
         character not in "0123456789abcdef" for character in source_commit
@@ -158,7 +177,7 @@ def build_bounded_sft_agent_version(
         if path.is_file() and not path.is_symlink()
     }
     version = build_agent_version(
-        agent_version_id=OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID,
+        agent_version_id=agent_version_id,
         parent_version_hash=None,
         update_type="none",
         executable_in_m10b=False,
@@ -173,10 +192,11 @@ def build_bounded_sft_agent_version(
                 "openhands_sdk_version": "1.42.1",
                 "litellm_version": "1.93.0",
                 "tiktoken_version": "0.7.0",
-                "pilot_contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH,
+                "pilot_contract_hash": pilot_contract_hash,
                 "collection_profile_id": "hwe_production_native_shell_v2",
                 "tool_contract_id": "hwe_native_shell_v2",
-                "tool_choice_policy": ("validated_responses_recovery_state_required_tool_v12"),
+                "tool_choice_policy": tool_choice_policy,
+                "provider_tool_schema_policy": provider_tool_schema_policy,
                 "sdk_stop_continuation_policy": ("openhands_sdk_blocked_stop_continuation_v1"),
                 "sdk_stop_continuation_budget": 1,
                 "sdk_upstream_source_modified": False,
@@ -208,13 +228,22 @@ def build_bounded_sft_agent_version(
 
 
 def build_bounded_sft_agent_options(
-    *, seed: int, agent_version: AgentVersionManifest
+    *, seed: int, agent_version: AgentVersionManifest, policy_version: str = "v12"
 ) -> dict[str, JsonValue]:
     """Build and prevalidate the exact per-episode OpenHands plugin options."""
 
+    if policy_version == "v12":
+        agent_version_id = OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v12"
+    elif policy_version == "v13":
+        agent_version_id = OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v13"
+    else:
+        raise ValueError("bounded SFT agent policy version is unsupported")
+
     version = validate_agent_version(agent_version)
     if (
-        version.agent_version_id != OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID
+        version.agent_version_id != agent_version_id
         or version.base_agent_id != "openhands-hwe-agent"
         or version.model_id != "openai/deepseek-v4-flash"
     ):
@@ -243,7 +272,7 @@ def build_bounded_sft_agent_options(
         "agent_version_hash": version.version_hash,
         "agent_version_manifest_json": manifest_json,
         "collection_profile_id": "hwe_production_native_shell_v2",
-        "tool_choice_policy": "validated_responses_recovery_state_required_tool_v12",
+        "tool_choice_policy": tool_choice_policy,
     }
     return validate_plugin_options(options)
 
