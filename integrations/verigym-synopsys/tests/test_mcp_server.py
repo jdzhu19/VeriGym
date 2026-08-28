@@ -8,12 +8,20 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from verigym.core.synthesis import execute_synthesis_quality
 from verigym.plugin_api import ConfigurationError, ToolContext, content_hash
 from verigym.profiles.registry import ToolchainProfileRegistry
+from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.runtimes.local import LocalRuntime
+from verigym.schemas.common import (
+    RuntimeDescriptor,
+    RuntimeImageIdentity,
+    RuntimeResourceSummary,
+    RuntimeSecuritySummary,
+)
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.task import Candidate
 
@@ -23,7 +31,12 @@ from verigym_synopsys.agent_worker_protocol import (
     AgentWorkerEnvelope,
     AgentWorkerLaunchRequest,
 )
-from verigym_synopsys.export_mcp_profile import main as export_mcp_profile
+from verigym_synopsys.export_mcp_profile import (
+    bind_mcp_client_profile_to_docker,
+)
+from verigym_synopsys.export_mcp_profile import (
+    main as export_mcp_profile,
+)
 from verigym_synopsys.mcp_client import McpDesignCompilerSynthesisTool, _run_stdio
 from verigym_synopsys.mcp_server import (
     LIST_PROFILES_TOOL,
@@ -452,7 +465,11 @@ def test_mcp_client_backend_runs_candidate_reference_and_exact_replay(tmp_path: 
     finally:
         session.close()
     suite = SimpleNamespace(reference_solution=lambda _task: reference_candidate)
-    task = SimpleNamespace(budget=SimpleNamespace(max_output_bytes_per_tool=1_000_000))
+    task = SimpleNamespace(
+        budget=SimpleNamespace(max_output_bytes_per_tool=1_000_000),
+        metadata={},
+        workspace=SimpleNamespace(entrypoints=["rtl/counter.v"]),
+    )
     evaluation = execute_synthesis_quality(
         suite=suite,
         task=task,
@@ -747,3 +764,133 @@ def test_mcp_client_profile_can_bind_an_off_host_wrapper_hash(tmp_path: Path) ->
     profile = ToolchainProfileRegistry().load_file(output)
     assert profile.metadata["mcp_transport_sha256"] == "c" * 64
     assert profile.environment_allowlist == ["SSH_AUTH_SOCK"]
+
+
+def test_existing_mcp_client_profile_can_be_bound_to_docker(tmp_path: Path) -> None:
+    server_profile_path, _ = _site_profile(tmp_path)
+    output = tmp_path / "client.yaml"
+    assert (
+        export_mcp_profile(
+            [
+                "--server-profile",
+                str(server_profile_path),
+                "--transport-executable",
+                sys.executable,
+                "--transport-sha256",
+                "e" * 64,
+                "--output-profile",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    client = ToolchainProfileRegistry().load_file(output)
+    image_id = "sha256:" + "d" * 64
+    bound = bind_mcp_client_profile_to_docker(
+        client,
+        image="example/rtl-tools:frozen",
+        prepared_image_id=image_id,
+        profile_id="docker-client",
+        profile_version="1.0.0",
+    )
+
+    assert bound.runtime.runtime == "docker"
+    assert bound.container_image == "example/rtl-tools:frozen"
+    assert bound.metadata["prepared_image_id"] == image_id
+    assert bound.metadata["mcp_transport_execution_boundary"] == ("host_verifier_control_plane")
+
+
+def test_docker_mcp_profile_uses_host_control_plane_over_private_staging(
+    tmp_path: Path,
+) -> None:
+    server_profile_path, rtl = _site_profile(tmp_path)
+    wrapper = tmp_path / "docker-dc-mcp-transport"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(sys.executable)} -m verigym_synopsys.mcp_server "
+        f"--profile {shlex.quote(str(server_profile_path))} "
+        f"--work-root {shlex.quote(str(tmp_path / 'docker-remote-work'))}\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    image = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
+    image_id = "sha256:" + "d" * 64
+    profile_path = tmp_path / "docker-client.yaml"
+    assert (
+        export_mcp_profile(
+            [
+                "--server-profile",
+                str(server_profile_path),
+                "--transport-executable",
+                str(wrapper),
+                "--output-profile",
+                str(profile_path),
+                "--runtime",
+                "docker",
+                "--docker-image",
+                image,
+                "--prepared-image-id",
+                image_id,
+            ]
+        )
+        == 0
+    )
+    profile = ToolchainProfileRegistry().load_file(profile_path)
+    descriptor = RuntimeDescriptor(
+        name="docker",
+        version="0.1.0",
+        provider="verigym",
+        isolation_level="docker_standard",
+        image=RuntimeImageIdentity(
+            requested_reference=image,
+            resolved_image_id=image_id,
+            os="linux",
+            architecture="amd64",
+            effective_user="10001:10001",
+        ),
+        security=RuntimeSecuritySummary(
+            network_mode="none",
+            read_only_rootfs=True,
+            configured_user="10001:10001",
+            cap_drop=["ALL"],
+            no_new_privileges=True,
+        ),
+        resources=RuntimeResourceSummary(
+            memory_bytes=512 * 1024 * 1024,
+            memory_swap_bytes=512 * 1024 * 1024,
+            swap_enforced=True,
+            cpus=1.0,
+            pids_limit=128,
+            tmpfs_bytes=64 * 1024 * 1024,
+            max_command_time_s=900,
+        ),
+    )
+    runtime = cast(Runtime, SimpleNamespace(descriptor=descriptor))
+    plugin = McpDesignCompilerSynthesisTool()
+    reference_hash = content_hash(Candidate(files={"rtl/counter.v": rtl.decode()}))
+    resolved = plugin.resolve_profile(
+        profile,
+        runtime,
+        source_paths=["rtl/counter.v"],
+        top_module="counter",
+        reference_candidate_hash=reference_hash,
+    )
+    assert resolved.runtime_identity.resolved_image_id == image_id
+    request = plugin.build_synthesis_request(profile, resolved, run_label="candidate")
+    assert request["transport_execution_boundary"] == "host_verifier_control_plane"
+
+    source = tmp_path / "docker-private-staging"
+    (source / "rtl").mkdir(parents=True)
+    (source / "rtl" / "counter.v").write_bytes(rtl)
+
+    def refuse_runtime_execution(_command: object) -> None:
+        raise AssertionError("the commercial MCP wrapper must not execute inside the RTL image")
+
+    session = cast(
+        RuntimeSession,
+        SimpleNamespace(root=source, execute=refuse_runtime_execution),
+    )
+    result = plugin.execute(request, ToolContext(session=session, artifact_dir=tmp_path / "out"))
+
+    assert result.success, result.message
+    assert result.metadata["synthesis"]["mapped_area_raw"] == 42.5

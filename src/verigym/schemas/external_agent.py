@@ -645,6 +645,7 @@ class ExternalAgentCallIdentity(StrictModel):
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
             "codex_cli_hwe_native_shell",
+            "codex_cli_agenteval_scoring",
             "claude_cli_external_agent",
             "openhands_sdk_agent",
             "deepseek_harness_hwe_native_shell",
@@ -665,6 +666,7 @@ class ExternalAgentCallIdentity(StrictModel):
         Literal[
             "cli_agent_single_turn_readonly",
             "cli_agent_workspace_writing",
+            "cli_agent_mcp_repository_scoring",
             "sdk_agent_broker_tools",
         ]
         | None

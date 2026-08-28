@@ -17,6 +17,7 @@ from verigym.core.errors import VeriGymError
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.evolution.comparison import build_evolving_evaluation
 from verigym.evolution.exporter import (
     TrajectoryExporter,
@@ -381,15 +382,17 @@ def doctor(
                 try:
                     runtime.prepare(f"doctor-profile-{uuid.uuid4().hex[:12]}")
                     reference = suite.reference_solution(task)
+                    source_projection = resolve_synthesis_source_projection(task)
                     resolved = resolve_toolchain_profile(
                         profile,
                         runtime,
-                        source_paths=list(task.workspace.entrypoints),
+                        source_paths=source_projection.profile_sources,
                         top_module=profile.flow.top_module if profile.flow is not None else "",
                         reference_candidate_hash=(
                             content_hash(reference) if reference is not None else None
                         ),
                         backend=_synthesis_backend(registries, profile),
+                        synthesis_source_projection_hash=source_projection.projection_hash,
                     )
                     table.add_row(
                         f"profile-resolution:{toolchain_profile}",
@@ -1047,13 +1050,15 @@ def profiles_resolve(
         runtime = registries.runtimes.get(runtime_name).configure(docker_config)
         runtime.prepare(f"profile-resolve-{uuid.uuid4().hex[:12]}")
         reference = suite.reference_solution(task)
+        source_projection = resolve_synthesis_source_projection(task)
         resolved = resolve_toolchain_profile(
             profile,
             runtime,
-            source_paths=list(task.workspace.entrypoints),
+            source_paths=source_projection.profile_sources,
             top_module=profile.flow.top_module if profile.flow is not None else "",
             reference_candidate_hash=content_hash(reference) if reference is not None else None,
             backend=_synthesis_backend(registries, profile),
+            synthesis_source_projection_hash=source_projection.projection_hash,
         )
         console.print_json(resolved.model_dump_json(indent=2))
     except Exception as exc:

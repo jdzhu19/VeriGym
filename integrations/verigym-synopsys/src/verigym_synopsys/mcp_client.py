@@ -106,6 +106,9 @@ class McpDesignCompilerRequest(StrictModel):
     power_unit: str | None = None
     power_activity_mode: str | None = None
     run_label: Literal["candidate", "reference", "agent_feedback"]
+    transport_execution_boundary: Literal["runtime_session", "host_verifier_control_plane"] = (
+        "runtime_session"
+    )
     agent_worker_contract_hash: str | None = None
     agent_worker_code_identity_hash: str | None = None
     agent_worker_isolation_profile_hash: str | None = None
@@ -287,15 +290,21 @@ def _descriptor() -> ToolDescriptor:
 
 def _runtime_identity(runtime: Runtime) -> ResolvedRuntimeIdentity:
     descriptor = runtime.descriptor
+    image = descriptor.image
+    resources = descriptor.resources
     return ResolvedRuntimeIdentity(
         runtime_slug=descriptor.name,
         isolation_level=descriptor.isolation_level,
         deterministic=descriptor.deterministic,
-        os=platform.system().lower(),
-        architecture=platform.machine(),
+        os=image.os if image is not None else platform.system().lower(),
+        architecture=image.architecture if image is not None else platform.machine(),
+        requested_image_reference=(image.requested_reference if image is not None else None),
+        resolved_image_id=image.resolved_image_id if image is not None else None,
         configuration_fingerprint=descriptor.configuration_fingerprint,
         network_policy=(descriptor.security.network_mode if descriptor.security else None),
-        resource_controls=descriptor.resources is not None,
+        resource_controls=resources is not None,
+        security_hash=(content_hash(descriptor.security) if descriptor.security else None),
+        resource_contract_hash=(content_hash(resources) if resources else None),
     )
 
 
@@ -576,10 +585,29 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         expected_scope = "synthesis_area_timing_power" if power_flow else "synthesis_area_timing"
         if profile.metrics.scope != expected_scope:
             errors.append(f"remote DC flow requires metric scope {expected_scope!r}")
-        if profile.runtime.runtime != "local" or (
-            profile.runtime.allowed_runtimes and profile.runtime.allowed_runtimes != ["local"]
-        ):
-            errors.append("the MCP client backend requires the trusted local control-plane runtime")
+        allowed_runtimes = profile.runtime.allowed_runtimes or [profile.runtime.runtime]
+        if sorted(allowed_runtimes) not in (["docker"], ["local"]):
+            errors.append("the MCP client backend requires exactly local or Docker runtime")
+        if allowed_runtimes == ["docker"]:
+            if (
+                profile.runtime.minimum_isolation_level != "docker_standard"
+                or not profile.runtime.immutable_image_required
+                or profile.runtime.network_policy != "none"
+                or not profile.runtime.resource_controls_required
+            ):
+                errors.append("Docker MCP profiles require all docker_standard controls")
+            prepared_image_id = profile.metadata.get("prepared_image_id")
+            if (
+                not isinstance(prepared_image_id, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", prepared_image_id) is None
+            ):
+                errors.append("Docker MCP profiles require a prepared immutable image ID")
+            if profile.metadata.get("mcp_transport_execution_boundary") != (
+                "host_verifier_control_plane"
+            ):
+                errors.append("Docker MCP transport must use the host verifier control plane")
+        if profile.container_image != profile.runtime.requested_image:
+            errors.append("MCP container image and requested runtime image differ")
         if profile.reproducibility_scope == "public":
             errors.append("remote licensed-tool profiles cannot claim public reproducibility")
         tools = [item for item in profile.tools if item.name == _MCP_TOOL_NAME]
@@ -718,8 +746,24 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         assert profile.flow is not None
         assert profile.metrics is not None
         assert profile.reference is not None
-        if runtime.descriptor.name != "local":
-            raise ConfigurationError("the MCP client backend requires the local runtime")
+        descriptor = runtime.descriptor
+        allowed_runtimes = profile.runtime.allowed_runtimes or [profile.runtime.runtime]
+        if descriptor.name not in allowed_runtimes:
+            raise ConfigurationError("the MCP client backend runtime differs from the profile")
+        if descriptor.name == "docker":
+            image = descriptor.image
+            if (
+                image is None
+                or image.resolved_image_id != profile.metadata.get("prepared_image_id")
+                or image.requested_reference != profile.runtime.requested_image
+                or descriptor.isolation_level != "docker_standard"
+                or descriptor.security is None
+                or descriptor.security.network_mode != "none"
+                or descriptor.resources is None
+            ):
+                raise ConfigurationError(
+                    "Docker MCP runtime differs from the prepared immutable control contract"
+                )
         if source_paths != profile.flow.default_sources or top_module != profile.flow.top_module:
             raise ConfigurationError("task sources/top differ from the remote DC profile")
         if reference_candidate_hash is None or _SHA256.fullmatch(reference_candidate_hash) is None:
@@ -1003,6 +1047,11 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             power_unit=resolved.power_unit,
             power_activity_mode=cast(str | None, resolved.metadata.get("power_activity_mode")),
             run_label=run_label,  # type: ignore[arg-type]
+            transport_execution_boundary=(
+                "host_verifier_control_plane"
+                if resolved.runtime_identity.runtime_slug == "docker"
+                else "runtime_session"
+            ),
             agent_worker_contract_hash=(
                 cast(
                     str | None,
@@ -1087,7 +1136,11 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         return CommandSpec(
             argv=[executable],
             cwd=".",
-            env=_transport_environment(request.transport_environment),
+            env=(
+                _transport_environment(request.transport_environment)
+                if request.transport_execution_boundary == "runtime_session"
+                else {}
+            ),
             timeout_s=request.timeout_s,
             stdin=_mcp_messages(SYNTHESIZE_TOOL, arguments),
         )
@@ -1334,6 +1387,20 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
     def execute(self, raw_request: dict[str, Any], context: ToolContext) -> ToolResult:
         started = time.monotonic()
         try:
+            request = self.validate_request(raw_request)
+            if request.transport_execution_boundary == "host_verifier_control_plane":
+                command = self.build_command(request, context)
+                if command.requires_shell or command.stdin is None:
+                    raise ValueError("MCP control-plane transport command is malformed")
+                if context.dispatch_callback is not None:
+                    context.dispatch_callback()
+                completed = _run_stdio(
+                    command.argv[0],
+                    command.stdin,
+                    environment_names=request.transport_environment,
+                    timeout_s=command.timeout_s,
+                )
+                return self.parse_result(request, completed, context)
             return super().execute(raw_request, context)
         except Exception as exc:
             message = redact(str(exc))

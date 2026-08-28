@@ -22,6 +22,14 @@ from verigym.runtimes.docker.security import (
 from verigym.schemas.runtime import DockerRuntimeConfig
 
 
+def test_controlled_baseline_path_includes_opensta_after_existing_rtl_tools() -> None:
+    assert BASELINE_ENVIRONMENT["PATH"].split(":")[:3] == [
+        "/opt/yosys/bin",
+        "/opt/iverilog/bin",
+        "/opt/opensta/bin",
+    ]
+
+
 def test_environment_is_fixed_allowlisted_and_never_inherits_host_secrets(monkeypatch) -> None:
     monkeypatch.setenv("HOST_API_TOKEN", "must-not-enter")
     config = DockerRuntimeConfig(

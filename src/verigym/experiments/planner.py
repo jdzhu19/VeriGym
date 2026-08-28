@@ -15,6 +15,7 @@ from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
 from verigym.core.repository_candidate import repository_plan_identity
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
     task_with_verifier_profile,
@@ -427,15 +428,17 @@ class ExperimentPlanner:
         resolved: dict[str, ResolvedToolchainProfile] = {}
         for task in tasks:
             reference = suite.reference_solution(task)
+            source_projection = resolve_synthesis_source_projection(task)
             resolved[task.id] = resolve_toolchain_profile(
                 profile,
                 runtime,
-                source_paths=list(task.workspace.entrypoints),
+                source_paths=source_projection.profile_sources,
                 top_module=profile.flow.top_module,
                 reference_candidate_hash=(
                     content_hash(reference) if reference is not None else None
                 ),
                 backend=candidate_backend,
+                synthesis_source_projection_hash=source_projection.projection_hash,
             )
         return resolved
 

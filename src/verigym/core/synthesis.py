@@ -13,6 +13,7 @@ from typing import Any
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash
 from verigym.core.loaders import dump_json
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime, RuntimeSession
@@ -65,26 +66,39 @@ def _stage_candidate(
     staging: Path,
     source_root: Path,
     source_paths: list[str],
+    *,
+    task: VeriTask,
 ) -> None:
+    projection = resolve_synthesis_source_projection(task)
+    if source_paths != projection.profile_sources:
+        raise ConfigurationError("resolved synthesis sources differ from the task projection")
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(_safe_source(source_root, normalized))
+        workspace_source = projection.workspace_source(normalized)
+        destination.write_bytes(_safe_source(source_root, workspace_source))
 
 
 def _stage_reference(
     staging: Path,
     reference: Candidate,
     source_paths: list[str],
+    *,
+    task: VeriTask,
 ) -> None:
+    projection = resolve_synthesis_source_projection(task)
+    if source_paths != projection.profile_sources:
+        raise ConfigurationError("resolved synthesis sources differ from the task projection")
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
+        workspace_source = projection.workspace_source(normalized)
         try:
-            content = reference.files[normalized]
+            content = reference.files[workspace_source]
         except KeyError as exc:
             raise ConfigurationError(
-                f"suite reference does not provide required synthesis source {normalized!r}"
+                "suite reference does not provide required projected synthesis source "
+                f"{workspace_source!r}"
             ) from exc
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -171,12 +185,17 @@ def _execute_one(
 ) -> tuple[VerifierResult, SynthesisMetrics]:
     session: RuntimeSession | None = None
     try:
+        session_environment = (
+            {}
+            if request.get("transport_execution_boundary") == "host_verifier_control_plane"
+            else environment
+        )
         session = runtime.create_session(
             SessionSpec(
                 source_dir=str(source_staging),
                 label="verifier",
                 max_output_bytes=max_output_bytes,
-                environment=environment,
+                environment=session_environment,
             )
         )
         tool_result = plugin.execute(
@@ -284,7 +303,7 @@ def execute_synthesis_quality(
     reference_summary_path = backend_root / "reference_summary.json"
     with tempfile.TemporaryDirectory(prefix="verigym-synthesis-candidate-") as temporary:
         candidate_staging = Path(temporary)
-        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths)
+        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths, task=task)
         plugin.stage_profile_assets(profile, resolved, candidate_staging)
         candidate_result, candidate_metrics = _execute_one(
             runtime=runtime,
@@ -324,7 +343,12 @@ def execute_synthesis_quality(
         tempfile.TemporaryDirectory(prefix="verigym-reference-artifacts-") as artifacts,
     ):
         reference_staging = Path(temporary)
-        _stage_reference(reference_staging, reference_candidate, resolved.source_paths)
+        _stage_reference(
+            reference_staging,
+            reference_candidate,
+            resolved.source_paths,
+            task=task,
+        )
         plugin.stage_profile_assets(profile, resolved, reference_staging)
         reference_result, reference_metrics = _execute_one(
             runtime=runtime,
@@ -409,7 +433,7 @@ def execute_candidate_synthesis_feedback(
             tempfile.TemporaryDirectory(prefix="verigym-agent-ppa-artifacts-") as artifacts,
         ):
             candidate_staging = Path(temporary)
-            _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths)
+            _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths, task=task)
             plugin.stage_profile_assets(profile, resolved, candidate_staging)
             result, metrics = _execute_one(
                 runtime=runtime,

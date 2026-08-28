@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from verigym.core.synthesis_projection import synthesis_source_projection_contract
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -373,6 +374,9 @@ class RTLLMSuite(SuiteAdapter):
                 ),
                 **(
                     {
+                        "synthesis_source_projection": synthesis_source_projection_contract(
+                            {candidate_path: f"rtl/{base_variant}.v"}
+                        ),
                         "agent_eval": {
                             "benchmark_variant": variant,
                             "compile_test_id": "compile",
@@ -384,7 +388,7 @@ class RTLLMSuite(SuiteAdapter):
                                     language="2005",
                                 )
                             ),
-                        }
+                        },
                     }
                     if agent_eval
                     else {}

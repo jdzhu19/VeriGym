@@ -201,11 +201,12 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
                 or request.opensta_executable_sha256 is None
             ):
                 raise ValueError("Yosys/OpenSTA request has no complete execution contract")
-            executable = Path(request.opensta_executable)
-            if executable.is_symlink() or not executable.is_file():
-                raise ValueError("OpenSTA executable is missing or is a symlink")
-            if hash_bytes(executable.read_bytes()) != request.opensta_executable_sha256:
-                raise ValueError("OpenSTA executable hash mismatch")
+            if request.tool_identity.get("runtime_image_id") is None:
+                executable = Path(request.opensta_executable)
+                if executable.is_symlink() or not executable.is_file():
+                    raise ValueError("OpenSTA executable is missing or is a symlink")
+                if hash_bytes(executable.read_bytes()) != request.opensta_executable_sha256:
+                    raise ValueError("OpenSTA executable hash mismatch")
             constraints_path = normalize_relative_path(request.constraints_path)
             constraints = _read_bounded(session.root, constraints_path, _MAX_SOURCE_BYTES)
             if hash_bytes(constraints) != request.constraints_sha256:

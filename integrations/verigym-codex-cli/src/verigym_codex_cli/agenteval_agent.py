@@ -1,0 +1,581 @@
+"""Scoring-only Codex CLI adapter for bounded RTL AgentEval episodes."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, Literal
+
+from verigym.core.repository_tool_broker import (
+    RepositoryToolBroker,
+    RepositoryToolBrokerLimits,
+    RepositoryToolBrokerStats,
+)
+from verigym.plugin_api import (
+    PLUGIN_API_VERSION,
+    SCHEMA_VERSION,
+    AgentAction,
+    AgentAdapter,
+    AgentContext,
+    AgentDescriptor,
+    AgentPromptPolicySpec,
+    AgentTerminationError,
+    EpisodeFailure,
+    EpisodeResult,
+    ExternalAgentAccounting,
+    ExternalAgentBridge,
+    ExternalAgentCallIdentity,
+    FinalSubmissionAction,
+    InteractionMode,
+    Observation,
+    TerminationReason,
+    validate_prompt_text,
+)
+from verigym.schemas.action_protocol import RepositoryActionProtocolSpec
+
+from .agenteval_config import CodexAgentEvalSettings, agenteval_settings
+from .agenteval_invocation import (
+    build_agenteval_arguments,
+    sanitized_agenteval_invocation,
+)
+from .artifacts import update_summary
+from .capabilities import CapabilityReport, runtime_capabilities
+from .events import (
+    EventParseError,
+    ParsedEventStream,
+    parse_event_stream,
+    validate_scoring_mcp_stream,
+)
+from .process import (
+    CodexCliProcessRunner,
+    CodexProcessError,
+    CodexProcessResult,
+    ExecutableIdentity,
+)
+from .util import atomic_json, redact_text
+
+
+class CodexCliAgentEvalAdapter(AgentAdapter):
+    """Run one gpt-5.4/xhigh MCP-only scoring episode without transcript capture."""
+
+    requires_model = False
+    action_protocol_spec = RepositoryActionProtocolSpec()
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id="repository_action_v2_prompt_v3",
+        prompt_contract_version="3.0.0",
+        task_context_policy="revision_bound_agent_feedback_v1",
+        base_instruction_policy="generated_repository_action_registry_v3",
+        content_visibility_policy="visible_assets_and_revision_bound_feedback_v1",
+        max_prompt_bytes=2 * 1024 * 1024,
+        max_task_context_bytes=1024 * 1024,
+        versioned_context_allowed=False,
+    )
+    supported_modes = frozenset({InteractionMode.AGENT})
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="codex-cli-agenteval-agent",
+        version="1.0.0",
+        api_version=PLUGIN_API_VERSION,
+        provider="openai-codex-cli",
+        capabilities=[
+            "agent_eval",
+            "external_coding_agent",
+            "machine_readable_events",
+            "runtime_mcp_tools",
+            "repository_action.v2",
+            "scoring_only",
+            "single_external_episode",
+        ],
+    )
+
+    def __init__(self) -> None:
+        self._context: AgentContext | None = None
+        self._bridge: ExternalAgentBridge | None = None
+        self._executable: ExecutableIdentity | None = None
+        self._capabilities: CapabilityReport | None = None
+        self._settings: CodexAgentEvalSettings | None = None
+        self._prompt: str | None = None
+        self._launched = False
+        self._artifact_root: Path | None = None
+
+    def start(self, context: AgentContext) -> None:
+        bridge = context.external_bridge
+        if bridge is None or bridge.isolation_level != "docker_standard":
+            raise ValueError("Codex AgentEval requires the Docker runtime bridge")
+        if context.agent_feedback_contract is None:
+            raise ValueError("Codex AgentEval requires a resolved feedback contract")
+        if (
+            context.action_protocol is None
+            or context.action_protocol.protocol_id != "repository_action.v2"
+            or context.action_protocol.state_machine_id != "repository_action_state_machine_v3"
+        ):
+            raise ValueError("Codex AgentEval requires the frozen repository action protocol")
+        if (
+            context.prompt_policy is None
+            or context.prompt_policy.id != "repository_action_v2_prompt_v3"
+        ):
+            raise ValueError("Codex AgentEval prompt contract is not frozen")
+        executable, capabilities = runtime_capabilities()
+        settings = agenteval_settings(
+            context.agent_options,
+            capabilities,
+            task_wall_time_s=context.task.budget.max_wall_time_s,
+        )
+        prompt = validate_prompt_text(_agenteval_prompt(context, bridge), context.prompt_policy)
+        self._context = context
+        self._bridge = bridge
+        self._executable = executable
+        self._capabilities = capabilities
+        self._settings = settings
+        self._prompt = prompt
+        self._launched = False
+        self._artifact_root = bridge.artifact_root
+
+    def act(self, observation: Observation) -> AgentAction:
+        del observation
+        if self._launched:
+            raise _termination("multiple_external_episodes", "AgentEval launched more than once")
+        self._launched = True
+        context, bridge, executable, capabilities, settings, prompt = self._configured()
+        feedback_contract = context.agent_feedback_contract
+        if feedback_contract is None:
+            raise RuntimeError("Codex AgentEval feedback contract disappeared after start")
+        broker_root = _configured_broker_root()
+        try:
+            with tempfile.TemporaryDirectory(prefix="codex-agenteval-", dir=broker_root) as raw:
+                control = Path(raw)
+                cwd = control / "cwd"
+                cwd.mkdir(mode=0o700)
+                broker = RepositoryToolBroker(
+                    bridge=bridge,
+                    socket_path=control / "b" / "mcp.sock",
+                    public_test_ids=tuple(feedback_contract.public_test_ids),
+                    agent_feedback_contract=feedback_contract,
+                    limits=RepositoryToolBrokerLimits(
+                        max_tool_calls=settings.max_tool_calls,
+                        max_patch_calls=settings.max_patch_calls,
+                        max_consecutive_rejected_calls=(settings.max_consecutive_rejected_calls),
+                    ),
+                )
+                arguments = build_agenteval_arguments(
+                    capabilities,
+                    settings,
+                    socket_path=broker.socket_path,
+                )
+                invocation = sanitized_agenteval_invocation(arguments, settings, capabilities)
+                runner = CodexCliProcessRunner(
+                    executable,
+                    auth_mode=settings.execution.resolved_auth_mode,
+                    credential_env=settings.execution.credential_env,
+                    max_output_bytes=settings.execution.max_output_bytes,
+                    allow_proxy_environment=settings.execution.allow_proxy_environment,
+                )
+                broker.start()
+                try:
+                    process = runner.run(
+                        arguments,
+                        cwd=cwd,
+                        timeout_s=settings.execution.effective_process_timeout_s,
+                        stdin_bytes=prompt.encode("utf-8"),
+                        cancellation_event=broker.cancellation_event,
+                    )
+                finally:
+                    broker.stop()
+                broker_stats = broker.stats()
+        except CodexProcessError as exc:
+            raise _termination(
+                "codex_process_boundary", redact_text(str(exc)), infrastructure=True
+            ) from exc
+
+        process_failure = _preparse_process_failure(process, broker_stats)
+        if process_failure is not None:
+            accounting = _accounting(process, broker_stats, None)
+            bridge.record_accounting(accounting)
+            _write_scoring_evidence(
+                bridge.artifact_root,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                broker=broker_stats,
+                identity=None,
+                accounting=accounting,
+                parsed=None,
+                failure_category=process_failure.failure.category,
+            )
+            raise process_failure
+
+        parsed: ParsedEventStream | None = None
+        try:
+            parsed = parse_event_stream(process.stdout)
+            completed_tools = validate_scoring_mcp_stream(process.stdout)
+            if (
+                process.exit_code != 0
+                or not parsed.terminal_event_seen
+                or parsed.error_messages
+                or len(completed_tools) != broker_stats.tool_calls
+                or not broker_stats.finished
+                or broker_stats.finish_calls != 1
+                or completed_tools[-1] != "finish"
+            ):
+                raise EventParseError("Codex AgentEval did not finish through canonical MCP")
+            if parsed.input_tokens is None or parsed.output_tokens is None:
+                raise EventParseError("Codex AgentEval terminal event omitted provider usage")
+            if (
+                parsed.observed_model_id is not None
+                and parsed.observed_model_id != settings.execution.model_id
+            ):
+                raise EventParseError("Codex AgentEval observed model identity changed")
+        except (EventParseError, ValueError) as exc:
+            accounting = _accounting(process, broker_stats, parsed)
+            bridge.record_accounting(accounting)
+            _write_scoring_evidence(
+                bridge.artifact_root,
+                capabilities=capabilities,
+                invocation=invocation,
+                process=process,
+                broker=broker_stats,
+                identity=None,
+                accounting=accounting,
+                parsed=parsed,
+                failure_category="scoring_event_ineligible",
+            )
+            raise _termination(
+                "scoring_event_ineligible",
+                str(exc),
+                infrastructure=True,
+                kind="runtime",
+                reason=TerminationReason.RUNTIME_ERROR,
+            ) from exc
+
+        assert parsed is not None
+        identity = _identity(settings, capabilities, parsed, broker_stats)
+        accounting = _accounting(process, broker_stats, parsed)
+        bridge.emit_event("codex_cli_identity_observed", identity.model_dump(mode="json"))
+        bridge.record_accounting(accounting)
+        _write_scoring_evidence(
+            bridge.artifact_root,
+            capabilities=capabilities,
+            invocation=invocation,
+            process=process,
+            broker=broker_stats,
+            identity=identity,
+            accounting=accounting,
+            parsed=parsed,
+        )
+        return FinalSubmissionAction(
+            message="Codex AgentEval finished; submit the broker-owned candidate to VeriGym."
+        )
+
+    def finish(self, result: EpisodeResult) -> None:
+        if self._artifact_root is not None and (self._artifact_root / "summary.json").is_file():
+            update_summary(
+                self._artifact_root,
+                {
+                    "verigym_run_id": result.run_id,
+                    "ordinary_verifier_resolved": result.resolved,
+                    "ordinary_termination_reason": result.termination_reason,
+                },
+            )
+
+    def _configured(
+        self,
+    ) -> tuple[
+        AgentContext,
+        ExternalAgentBridge,
+        ExecutableIdentity,
+        CapabilityReport,
+        CodexAgentEvalSettings,
+        str,
+    ]:
+        values = (
+            self._context,
+            self._bridge,
+            self._executable,
+            self._capabilities,
+            self._settings,
+            self._prompt,
+        )
+        if any(value is None for value in values):
+            raise RuntimeError("Codex AgentEval has not been started")
+        return values  # type: ignore[return-value]
+
+
+def _agenteval_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
+    contract = context.agent_feedback_contract
+    assert contract is not None
+    instructions = [
+        "Use only the VeriGym MCP repository tools.",
+        "Use exactly one MCP tool per turn and no built-in tools.",
+        "Start with a shallow list_files view and use bounded read_file views for large files.",
+        "Read visible task files before editing.",
+        "apply_patch requires --- a/path and +++ b/path headers plus numbered @@ hunks; never "
+        "use *** Update File syntax.",
+        "Every successful patch invalidates prior compile, PPA, and diff evidence.",
+        "After the final patch, inspect the latest diff and call finish exactly once.",
+        "Do not access shell, network, host files, hidden assets, or reference solutions.",
+    ]
+    if contract.compile_test_id is not None:
+        instructions.append(
+            "Run compile for the current revision and require it to pass before finish."
+        )
+    if contract.ppa_enabled:
+        instructions.append(
+            "After compile passes for the current revision, call ppa at least once before finish."
+        )
+    payload: dict[str, Any] = {
+        "schema_version": "1.0",
+        "agent_version_id": settings_version_id(),
+        "task": {
+            "id": context.task.id,
+            "title": context.task.title,
+            "description": context.task.description,
+            "entrypoints": sorted(context.task.workspace.entrypoints),
+        },
+        "workspace_policy": {
+            "editable_globs": sorted(bridge.editable_globs),
+            "readonly_globs": sorted(bridge.readonly_globs),
+            "path_format": "relative_only",
+        },
+        "agent_feedback_contract": contract.model_dump(mode="json"),
+        "instructions": instructions,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def settings_version_id() -> str:
+    from .agenteval_config import AGENTEVAL_AGENT_VERSION_ID
+
+    return AGENTEVAL_AGENT_VERSION_ID
+
+
+def _identity(
+    settings: CodexAgentEvalSettings,
+    capabilities: CapabilityReport,
+    parsed: ParsedEventStream,
+    broker: RepositoryToolBrokerStats,
+) -> ExternalAgentCallIdentity:
+    calls = broker.tool_calls
+    return ExternalAgentCallIdentity(
+        adapter_name="codex-cli-agenteval-agent",
+        adapter_version="1.0.0",
+        harness_name="verigym-codex-agenteval-scoring",
+        requested_model_id="gpt-5.4",
+        observed_model_id=parsed.observed_model_id,
+        requested_reasoning_effort="xhigh",
+        effective_reasoning_effort="xhigh",
+        reasoning_effort_source="verigym_explicit_cli_override",
+        inherited_reasoning_effort_allowed=False,
+        executable_name=capabilities.executable_name,
+        executable_sha256=capabilities.executable_sha256,
+        executable_version=capabilities.version_output,
+        capability_fingerprint=capabilities.capability_fingerprint,
+        configuration_fingerprint=settings.execution.configuration_fingerprint,
+        invocation_count=1,
+        integration_track="codex_cli_agenteval_scoring",
+        execution_surface="codex_cli",
+        interaction_class="cli_agent_mcp_repository_scoring",
+        harness_id=settings.agent_version_id,
+        model_client_kind="cli_agent_mediated",
+        agent_harness_kind="codex_cli",
+        tool_availability_policy="verigym_required_allowlisted_mcp_only_v1",
+        tool_use_policy="repository_action_state_machine_v3",
+        tool_event_count=calls,
+        side_effecting_tool_event_count=0,
+        read_only_tool_event_count=0,
+        external_network_tool_event_count=0,
+        mcp_tool_event_count=calls,
+        workspace_write_count=broker.patches,
+        chat_eval_compatible=False,
+        pure_api_model_eval=False,
+        direct_api_benchmark=False,
+        auth_mode_label=settings.execution.requested_auth_mode,
+        requested_auth_mode=settings.execution.requested_auth_mode,
+        resolved_auth_mode=settings.execution.resolved_auth_mode,
+        auth_semantic_id=settings.execution.auth_semantic_id,
+        auth_alias_used=settings.execution.auth_alias_used,
+        sandbox_policy="read-only_mcp-only",
+        approval_policy="never",
+        identity_confidence=(
+            "observed" if parsed.observed_model_id is not None else "requested_only"
+        ),
+        reproducibility_scope="mutable_remote_observation",
+    )
+
+
+def _accounting(
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+    parsed: ParsedEventStream | None,
+) -> ExternalAgentAccounting:
+    return ExternalAgentAccounting(
+        process_wall_time_s=process.duration_s,
+        cli_event_count=len(parsed.events) if parsed is not None else 0,
+        external_tool_call_count=broker.tool_calls,
+        external_command_count=0,
+        public_test_invocation_count=broker.public_test_calls,
+        external_file_read_count=broker.file_reads,
+        external_file_write_count=0,
+        external_patch_count=broker.patches,
+        input_tokens=parsed.input_tokens if parsed is not None else None,
+        output_tokens=parsed.output_tokens if parsed is not None else None,
+        total_tokens=parsed.total_tokens if parsed is not None else None,
+    )
+
+
+def _write_scoring_evidence(
+    root: Path,
+    *,
+    capabilities: CapabilityReport,
+    invocation: dict[str, object],
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+    identity: ExternalAgentCallIdentity | None,
+    accounting: ExternalAgentAccounting,
+    parsed: ParsedEventStream | None,
+    failure_category: str | None = None,
+) -> None:
+    atomic_json(root / "capabilities.json", capabilities.safe_dict())
+    atomic_json(root / "invocation.json", invocation)
+    atomic_json(
+        root / "process.json",
+        {
+            "exit_code": process.exit_code,
+            "duration_s": process.duration_s,
+            "timed_out": process.timed_out,
+            "broker_cancelled": process.broker_cancelled,
+            "stdout_truncated": process.stdout_truncated,
+            "stderr_truncated": process.stderr_truncated,
+            "process_group_cleaned": process.process_group_cleaned,
+            "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
+            "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest(),
+            "raw_output_persisted": False,
+            "message_content_persisted": False,
+            "reasoning_content_persisted": False,
+        },
+    )
+    atomic_json(root / "broker.json", _safe_broker_stats(broker))
+    atomic_json(root / "accounting.json", accounting.model_dump(mode="json"))
+    atomic_json(
+        root / "provider-usage.json",
+        {
+            "schema_version": "1.0",
+            "usage_complete": (
+                parsed is not None
+                and parsed.input_tokens is not None
+                and parsed.output_tokens is not None
+            ),
+            "input_tokens": parsed.input_tokens if parsed is not None else None,
+            "output_tokens": parsed.output_tokens if parsed is not None else None,
+            "total_tokens": parsed.total_tokens if parsed is not None else None,
+            "cached_input_tokens": parsed.cached_input_tokens if parsed is not None else None,
+            "cost_usd": None,
+            "currency": None,
+        },
+    )
+    if identity is not None:
+        atomic_json(root / "identity.json", identity.model_dump(mode="json"))
+    atomic_json(
+        root / "summary.json",
+        {
+            "schema_version": "1.0",
+            "integration_track": "codex_cli_agenteval_scoring",
+            "agent_version_id": settings_version_id(),
+            "training_mode": False,
+            "training_transcript_captured": False,
+            "raw_event_stream_persisted": False,
+            "private_reasoning_persisted": False,
+            "failure_category": failure_category,
+        },
+    )
+
+
+def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
+    return {
+        "tool_calls": stats.tool_calls,
+        "public_test_calls": stats.public_test_calls,
+        "file_reads": stats.file_reads,
+        "patches": stats.patches,
+        "diff_inspections": stats.diff_inspections,
+        "finish_calls": stats.finish_calls,
+        "rejected_calls": stats.rejected_calls,
+        "finished": stats.finished,
+        "policy_failure": stats.policy_failure is not None,
+        "infrastructure_failure": stats.infrastructure_failure is not None,
+        "limit_failure": stats.limit_failure,
+        "maximum_consecutive_rejected_calls": stats.maximum_consecutive_rejected_calls,
+        "max_tool_calls": stats.max_tool_calls,
+        "max_patch_calls": stats.max_patch_calls,
+        "max_consecutive_rejected_calls": stats.max_consecutive_rejected_calls,
+    }
+
+
+def _configured_broker_root() -> Path:
+    raw = os.environ.get("VERIGYM_CODEX_BROKER_ROOT")
+    if not raw:
+        raise CodexProcessError("VERIGYM_CODEX_BROKER_ROOT is required")
+    path = Path(raw)
+    if path.is_symlink():
+        raise CodexProcessError("Codex broker root cannot be a symlink")
+    resolved = path.resolve(strict=True)
+    if not resolved.is_dir() or len(os.fsencode(resolved)) > 72:
+        raise CodexProcessError("Codex broker root must be a short real directory")
+    return resolved
+
+
+def _preparse_process_failure(
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+) -> AgentTerminationError | None:
+    if broker.limit_failure is not None:
+        return _termination("broker_resource_limit", broker.limit_failure, kind="agent")
+    if broker.policy_failure is not None:
+        return _termination(
+            "workspace_policy",
+            broker.policy_failure,
+            kind="policy",
+            reason=TerminationReason.POLICY_VIOLATION,
+        )
+    if broker.infrastructure_failure is not None:
+        return _termination(
+            "runtime_tool_infrastructure",
+            broker.infrastructure_failure,
+            infrastructure=True,
+            kind="runtime",
+            reason=TerminationReason.RUNTIME_ERROR,
+        )
+    if process.timed_out:
+        return _termination("agent_timeout", "Codex AgentEval exhausted its episode deadline")
+    if process.stdout_truncated or process.stderr_truncated:
+        return _termination(
+            "output_limit",
+            "Codex AgentEval evidence stream exceeded the process byte bound",
+            infrastructure=True,
+            kind="runtime",
+            reason=TerminationReason.RUNTIME_ERROR,
+        )
+    return None
+
+
+def _termination(
+    category: str,
+    message: str,
+    *,
+    infrastructure: bool = False,
+    kind: Literal["agent", "model", "policy", "runtime"] = "model",
+    reason: TerminationReason = TerminationReason.MODEL_ERROR,
+) -> AgentTerminationError:
+    return AgentTerminationError(
+        reason,
+        EpisodeFailure(
+            kind=kind,
+            category=category,
+            message=redact_text(message)[:2000],
+            infrastructure=infrastructure,
+        ),
+    )
+
+
+__all__ = ["CodexCliAgentEvalAdapter"]

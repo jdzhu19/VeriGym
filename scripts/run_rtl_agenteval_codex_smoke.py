@@ -1,0 +1,925 @@
+#!/usr/bin/env python3
+"""Qualify and execute the frozen four-process RTL AgentEval Codex smoke."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import stat
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+from prepare_nangate45_ppa_profile import main as prepare_nangate45_profile
+from verigym_codex_cli.agenteval_agent import CodexCliAgentEvalAdapter
+from verigym_codex_cli.agenteval_config import (
+    AGENTEVAL_AGENT_VERSION_HASH,
+    AGENTEVAL_AGENT_VERSION_ID,
+)
+from verigym_codex_cli.capabilities import discover_capabilities
+from verigym_codex_cli.preflight import run_auth_preflight
+from verigym_codex_cli.process import auth_identity_configuration
+from verigym_rtllm import RTLLMSuite
+from verigym_synopsys.export_mcp_profile import bind_mcp_client_profile_to_docker
+
+from verigym.core.agent_feedback import (
+    resolve_agent_feedback_contract,
+    task_with_agent_feedback_contract,
+)
+from verigym.core.errors import ConfigurationError
+from verigym.core.hashing import content_hash, hash_directory
+from verigym.core.orchestrator import VeriGym
+from verigym.core.replay import replay_run
+from verigym.core.synthesis import execute_synthesis_quality
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+)
+from verigym.core.workspace import copy_tree_safely
+from verigym.experiments.state import atomic_dump_json, atomic_write_text
+from verigym.profiles.registry import ToolchainProfileRegistry
+from verigym.profiles.resolver import resolve_toolchain_profile
+from verigym.profiles.verifier_registry import load_verifier_profile
+from verigym.prompts.policy import agent_configuration_hash, resolve_prompt_policy
+from verigym.protocols.repository_action import resolve_repository_action_protocol
+from verigym.registry.base import PluginOrigin
+from verigym.registry.collections import Registries, build_registries
+from verigym.schemas.common import InteractionMode, ToolchainProfile
+from verigym.schemas.run import RunConfig, RunResult
+from verigym.schemas.runtime import DockerRuntimeConfig
+from verigym.schemas.suite import SuiteSourceConfig
+from verigym.schemas.verifier import VerifierStatus
+from verigym.tools.base import SynthesisBackendPlugin
+
+_IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v2"
+_OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
+_EXPECTED_CLI_VERSION = "codex-cli 0.147.0"
+_EXPECTED_CODEX_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+_TASKS = (
+    "rtllm/counter_12_agent_eval_v1",
+    "rtllm/up_down_counter_agent_eval_v1",
+    "verilog-eval/v2-spec-to-rtl-agent-eval-v1/Prob001_zero",
+    "rtl-repo/official-parquet-v1-agent-eval-v1/test-000000",
+)
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class PreparedProfile:
+    profile: ToolchainProfile
+    resolved: Any
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--output", type=Path, default=_OUTPUT)
+    parser.add_argument("--site-work", type=Path, required=True)
+    parser.add_argument(
+        "--broker-root",
+        type=Path,
+        default=Path("/data/jzhu484/Agent/.verigym-tmp/cb-ae2"),
+    )
+    parser.add_argument("--rtllm-source", type=Path, required=True)
+    parser.add_argument("--verilog-eval-source", type=Path, required=True)
+    parser.add_argument("--rtl-repo-source", type=Path, required=True)
+    parser.add_argument("--pdk-root", type=Path, required=True)
+    parser.add_argument("--dc-counter-profile", type=Path, required=True)
+    parser.add_argument("--dc-up-down-profile", type=Path, required=True)
+    parser.add_argument("--vcs-counter-profile", type=Path, required=True)
+    parser.add_argument("--vcs-up-down-profile", type=Path, required=True)
+    parser.add_argument("--image", default=_IMAGE)
+    parser.add_argument("--codex-binary", default="codex")
+    return parser
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
+    output = _new_path(arguments.output, "experiment output")
+    site_work = _new_path(arguments.site_work, "site-profile work directory")
+    broker_root = _new_path(arguments.broker_root, "Codex broker root")
+    inputs = {
+        "rtllm": _directory(arguments.rtllm_source),
+        "verilog_eval": _directory(arguments.verilog_eval_source),
+        "rtl_repo": _directory(arguments.rtl_repo_source),
+        "pdk": _directory(arguments.pdk_root),
+    }
+    profile_paths = {
+        "dc_counter": _regular_file(arguments.dc_counter_profile),
+        "dc_up_down": _regular_file(arguments.dc_up_down_profile),
+        "vcs_counter": _regular_file(arguments.vcs_counter_profile),
+        "vcs_up_down": _regular_file(arguments.vcs_up_down_profile),
+    }
+    image_id = _docker_image_id(arguments.image)
+    docker_config = _docker_config(arguments.image, image_id)
+    capability_path, capability, auth = _codex_preflight(arguments.codex_binary, site_work)
+    os.environ["VERIGYM_CODEX_CAPABILITY_FILE"] = str(capability_path)
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(_broker_root(broker_root))
+
+    registries = _registries()
+    service = VeriGym(registries)
+    source_configs = _source_configs(inputs)
+    _validate_sources(service, source_configs)
+    prepared = _prepare_profiles(
+        registries,
+        site_work=site_work,
+        image=arguments.image,
+        image_id=image_id,
+        pdk_root=inputs["pdk"],
+        dc_paths=profile_paths,
+    )
+    runtime_descriptor, qualifications = _no_model_qualification(
+        service,
+        source_configs=source_configs,
+        docker_config=docker_config,
+        prepared=prepared,
+        vcs_paths=profile_paths,
+        scratch=site_work / "qualification",
+    )
+    agent_options = _agent_options(capability, auth)
+    run_configs = _frozen_run_configs(
+        service,
+        source_configs=source_configs,
+        docker_config=docker_config,
+        runtime_descriptor=runtime_descriptor,
+        prepared=prepared,
+        agent_options=agent_options,
+        output=output / "runs",
+    )
+    plan = {
+        "schema_version": "1.0",
+        "campaign_id": _CAMPAIGN_ID,
+        "tasks": list(_TASKS),
+        "model": "gpt-5.4",
+        "reasoning_effort": "xhigh",
+        "seed": 0,
+        "samples_per_task": 1,
+        "planned_codex_processes": 4,
+        "automatic_retries": 0,
+        "codex": {
+            "version": capability.version_output,
+            "executable_sha256": capability.executable_sha256,
+            "capability_fingerprint": capability.capability_fingerprint,
+            "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
+            "agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+            "auth": auth.safe_dict(),
+        },
+        "runtime": runtime_descriptor.model_dump(mode="json"),
+        "profiles": {
+            name: {
+                "declared_hash": content_hash(item.profile),
+                "resolved_hash": item.resolved.resolved_profile_hash,
+            }
+            for name, item in prepared.items()
+        },
+        "qualifications": qualifications,
+        "run_config_hashes": [content_hash(item.identity_payload()) for item in run_configs],
+    }
+
+    if not arguments.execute:
+        atomic_dump_json(site_work / "preflight-plan.json", plan)
+        print(json.dumps({"status": "qualified_plan_only", "model_calls": 0}, sort_keys=True))
+        return 0
+    if os.environ.get("VERIGYM_RUN_RTL_AGENT_EVAL_SMOKE") != "1":
+        raise ConfigurationError("execution requires VERIGYM_RUN_RTL_AGENT_EVAL_SMOKE=1")
+
+    output.mkdir(parents=True)
+    (output / "runs").mkdir()
+    (output / "evidence").mkdir()
+    atomic_dump_json(output / "plan.json", plan)
+    results = _execute_exactly_four(service, run_configs, output)
+    replay = _offline_replay(results)
+    scan = _scan_outputs(results, service, source_configs, profile_paths, inputs)
+    summary = _campaign_summary(results, replay, scan)
+    atomic_dump_json(output / "replay.json", replay)
+    atomic_dump_json(output / "security-scan.json", scan)
+    atomic_dump_json(output / "summary.json", summary)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if summary["infrastructure_complete"] else 2
+
+
+def _new_path(path: Path, label: str) -> Path:
+    resolved = path.expanduser().resolve()
+    if resolved.exists() or resolved.is_symlink():
+        raise ConfigurationError(f"{label} must not already exist")
+    return resolved
+
+
+def _directory(path: Path) -> Path:
+    resolved = path.expanduser().resolve(strict=True)
+    if resolved.is_symlink() or not resolved.is_dir():
+        raise ConfigurationError("required source root is not a real directory")
+    return resolved
+
+
+def _regular_file(path: Path) -> Path:
+    if path.is_symlink():
+        raise ConfigurationError("site profile cannot be a symlink")
+    resolved = path.expanduser().resolve(strict=True)
+    metadata = os.lstat(resolved)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024 * 1024:
+        raise ConfigurationError("site profile must be a regular file no larger than 1 MiB")
+    return resolved
+
+
+def _docker_image_id(image: str) -> str:
+    completed = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    image_id = completed.stdout.strip()
+    if completed.returncode != 0 or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+        raise ConfigurationError("the frozen OpenSTA Docker image is unavailable")
+    return image_id
+
+
+def _docker_config(image: str, image_id: str) -> DockerRuntimeConfig:
+    return DockerRuntimeConfig(
+        image=image,
+        expected_image_id=image_id,
+        pull_policy="never",
+        network_mode="none",
+        run_as_user="10001:10001",
+        memory_bytes=2 * 1024**3,
+        cpus=2.0,
+        pids_limit=256,
+        tmpfs_bytes=128 * 1024**2,
+        max_command_time_s=900,
+    )
+
+
+def _codex_preflight(binary: str, site_work: Path) -> tuple[Path, Any, Any]:
+    os.environ["VERIGYM_CODEX_BINARY"] = binary
+    os.environ.setdefault("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
+    executable, capability = discover_capabilities(force=True)
+    if (
+        capability.version_output != _EXPECTED_CLI_VERSION
+        or capability.executable_sha256 != _EXPECTED_CODEX_SHA256
+        or executable.sha256 != _EXPECTED_CODEX_SHA256
+    ):
+        raise ConfigurationError("Codex CLI differs from the frozen scoring identity")
+    auth, _ = auth_identity_configuration()
+    auth_preflight = run_auth_preflight(executable)
+    if (
+        not auth_preflight.external_prerequisite_satisfied
+        or auth_preflight.model_calls != 0
+        or auth_preflight.login_processes != 0
+    ):
+        raise ConfigurationError("the selected existing Codex authentication is unavailable")
+    site_work.mkdir(parents=True)
+    path = site_work / "codex-capabilities.json"
+    atomic_dump_json(path, capability.safe_dict())
+    atomic_dump_json(site_work / "codex-auth-preflight.json", auth_preflight.safe_dict())
+    return path, capability, auth
+
+
+def _broker_root(root: Path) -> Path:
+    root.mkdir(parents=True)
+    if len(str(root)) > 72:
+        raise ConfigurationError("site work path is too long for the Unix broker socket")
+    return root
+
+
+def _registries() -> Registries:
+    registries = build_registries()
+    if "codex-cli-agenteval-agent" not in registries.agents.names():
+        registries.agents.register(
+            CodexCliAgentEvalAdapter(),
+            origin=PluginOrigin(
+                package="verigym-codex-cli",
+                version="0.1.0",
+                entry_point=None,
+                registration="runtime",
+            ),
+        )
+    required = {
+        "rtllm",
+        "rtl-repo",
+        "verilog-eval",
+        "synopsys.dc.mcp",
+        "synopsys.vcs.mcp",
+        "yosys.synth",
+    }
+    available = set(registries.suites.names()) | set(registries.tools.names())
+    if not required.issubset(available):
+        raise ConfigurationError("required RTL AgentEval integrations are unavailable")
+    return registries
+
+
+def _source_configs(inputs: dict[str, Path]) -> dict[str, SuiteSourceConfig]:
+    return {
+        "counter": SuiteSourceConfig(
+            source_root=inputs["rtllm"], variant="counter_12_agent_eval_v1"
+        ),
+        "up_down": SuiteSourceConfig(
+            source_root=inputs["rtllm"], variant="up_down_counter_agent_eval_v1"
+        ),
+        "verilog_eval": SuiteSourceConfig(
+            source_root=inputs["verilog_eval"],
+            variant="v2-spec-to-rtl-agent-eval-v1",
+        ),
+        "rtl_repo": SuiteSourceConfig(
+            source_root=inputs["rtl_repo"],
+            variant="official-parquet-v1-agent-eval-v1",
+        ),
+    }
+
+
+def _validate_sources(service: VeriGym, configs: dict[str, SuiteSourceConfig]) -> None:
+    for task_id, config in zip(_TASKS, configs.values(), strict=True):
+        suite, task, assets = service.load_task(task_id, config)
+        report = suite.validate_source()
+        if not report.valid or not Path(assets.visible_root).is_dir() or task.id != task_id:
+            raise ConfigurationError(f"source qualification failed for {task_id}")
+
+
+def _prepare_profiles(
+    registries: Registries,
+    *,
+    site_work: Path,
+    image: str,
+    image_id: str,
+    pdk_root: Path,
+    dc_paths: dict[str, Path],
+) -> dict[str, PreparedProfile]:
+    profiles_root = site_work / "profiles"
+    profiles_root.mkdir()
+    specifications = {
+        "counter_open": ("counter_12", "clk", "rtl/counter_12.v"),
+        "up_down_open": ("up_down_counter", "clk", "rtl/up_down_counter.v"),
+    }
+    generated: dict[str, ToolchainProfile] = {}
+    for name, (top, clock, source) in specifications.items():
+        sdc = profiles_root / f"{name}.sdc"
+        atomic_write_text(sdc, f"create_clock -name {clock} -period 10 [get_ports {clock}]\n")
+        profile_path = profiles_root / f"{name}.yaml"
+        manifest_path = profiles_root / f"{name}-pdk-manifest.json"
+        result = prepare_nangate45_profile(
+            [
+                "--pdk-root",
+                str(pdk_root),
+                "--sdc",
+                str(sdc),
+                "--runtime",
+                "docker",
+                "--opensta",
+                "sta",
+                "--docker-image",
+                image,
+                "--output-manifest",
+                str(manifest_path),
+                "--output-profile",
+                str(profile_path),
+                "--source",
+                source,
+                "--top",
+                top,
+                "--clock-name",
+                clock,
+                "--clock-period",
+                "10",
+                "--profile-id",
+                f"rtl-agenteval-{name}-opensta-v1",
+                "--profile-version",
+                "1.0.0",
+            ]
+        )
+        if result != 0:
+            raise ConfigurationError("OpenSTA site-profile preparation failed")
+        generated[name] = registries.profiles.load_file(profile_path)
+
+    loader = ToolchainProfileRegistry()
+    for name, source_key in (
+        ("counter_dc", "dc_counter"),
+        ("up_down_dc", "dc_up_down"),
+    ):
+        client = loader.load_file(dc_paths[source_key])
+        generated[name] = bind_mcp_client_profile_to_docker(
+            client,
+            image=image,
+            prepared_image_id=image_id,
+            profile_id=f"rtl-agenteval-{name}-docker-v1",
+            profile_version="1.0.0",
+        )
+        registries.profiles.register(generated[name])
+        path = profiles_root / f"{name}.yaml"
+        atomic_write_text(
+            path,
+            yaml.safe_dump(
+                generated[name].model_dump(mode="json", exclude_none=True),
+                sort_keys=False,
+            ),
+        )
+    return {name: PreparedProfile(profile, None) for name, profile in generated.items()}
+
+
+def _no_model_qualification(
+    service: VeriGym,
+    *,
+    source_configs: dict[str, SuiteSourceConfig],
+    docker_config: DockerRuntimeConfig,
+    prepared: dict[str, PreparedProfile],
+    vcs_paths: dict[str, Path],
+    scratch: Path,
+) -> tuple[Any, dict[str, Any]]:
+    scratch.mkdir()
+    runtime = service.registries.runtimes.get("docker").configure(docker_config)
+    runtime.prepare("rtl-agenteval-smoke-preflight")
+    try:
+        descriptor = runtime.descriptor
+        image = descriptor.image
+        if image is None or image.iverilog_version is None or "12." not in image.iverilog_version:
+            raise ConfigurationError("qualified Docker runtime does not expose Icarus 12")
+        functional: dict[str, Any] = {}
+        for key in ("counter", "up_down"):
+            functional[key] = _qualify_functional(
+                service,
+                source_configs[key],
+                runtime,
+                scratch / f"functional-{key}",
+            )
+        resolved_items: dict[str, PreparedProfile] = {}
+        for name, key in (
+            ("counter_open", "counter"),
+            ("up_down_open", "up_down"),
+            ("up_down_dc", "up_down"),
+        ):
+            item = prepared[name]
+            resolved, record = _qualify_synthesis(
+                service,
+                source_configs[key],
+                runtime,
+                item.profile,
+                scratch / f"synthesis-{name}",
+            )
+            resolved_items[name] = PreparedProfile(item.profile, resolved)
+            functional[f"synthesis_{name}"] = record
+        counter_dc = prepared["counter_dc"]
+        counter_suite, counter_task, _ = service.load_task(_TASKS[0], source_configs["counter"])
+        counter_ref = counter_suite.reference_solution(counter_task)
+        assert counter_ref is not None and counter_dc.profile.flow is not None
+        counter_projection = resolve_synthesis_source_projection(counter_task)
+        counter_backend = service.registries.tools.get(counter_dc.profile.flow.backend_plugin)
+        assert isinstance(counter_backend, SynthesisBackendPlugin)
+        counter_resolved = resolve_toolchain_profile(
+            counter_dc.profile,
+            runtime,
+            source_paths=counter_projection.profile_sources,
+            top_module=counter_dc.profile.flow.top_module,
+            reference_candidate_hash=content_hash(counter_ref),
+            backend=counter_backend,
+            synthesis_source_projection_hash=counter_projection.projection_hash,
+        )
+        resolved_items["counter_dc"] = PreparedProfile(counter_dc.profile, counter_resolved)
+        _qualify_vcs(
+            service,
+            rtllm_source=source_configs["counter"].source_root,
+            profile_paths=(vcs_paths["vcs_counter"], vcs_paths["vcs_up_down"]),
+            scratch=scratch / "vcs",
+        )
+        prepared.update(resolved_items)
+        return descriptor, functional
+    finally:
+        runtime.close()
+
+
+def _qualify_functional(
+    service: VeriGym,
+    source_config: SuiteSourceConfig,
+    runtime: Any,
+    scratch: Path,
+) -> dict[str, Any]:
+    suite = RTLLMSuite().with_source(source_config)
+    task = suite.load_task(next(iter(suite.discover())))
+    assets = suite.resolve_assets(task)
+    outcomes = []
+    for case in suite.conformance_cases():
+        candidate = scratch / case.name
+        copy_tree_safely(Path(assets.visible_root), candidate)
+        for relative, content in case.candidate.files.items():
+            destination = candidate / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(content, encoding="utf-8")
+        results = service._verify_candidate(
+            suite=suite,
+            task=task,
+            assets=assets,
+            runtime=runtime,
+            candidate_dir=candidate,
+            artifact_root=scratch / "artifacts" / case.name,
+        )
+        resolved = all(result.status == VerifierStatus.PASSED for result in results)
+        if resolved is not case.expected_resolved:
+            raise ConfigurationError("RTLLM Icarus reference/known-bad qualification failed")
+        outcomes.append({"case": case.name, "resolved": resolved})
+    return {"passed": True, "cases": outcomes}
+
+
+def _qualify_synthesis(
+    service: VeriGym,
+    source_config: SuiteSourceConfig,
+    runtime: Any,
+    profile: ToolchainProfile,
+    scratch: Path,
+) -> tuple[Any, dict[str, Any]]:
+    task_id = f"rtllm/{source_config.variant}"
+    suite, task, assets = service.load_task(task_id, source_config)
+    reference = suite.reference_solution(task)
+    if reference is None or profile.flow is None:
+        raise ConfigurationError("synthesis qualification lacks reference or flow")
+    projection = resolve_synthesis_source_projection(task)
+    backend = service.registries.tools.get(profile.flow.backend_plugin)
+    if not isinstance(backend, SynthesisBackendPlugin):
+        raise ConfigurationError("synthesis qualification backend is unavailable")
+    resolved = resolve_toolchain_profile(
+        profile,
+        runtime,
+        source_paths=projection.profile_sources,
+        top_module=profile.flow.top_module,
+        reference_candidate_hash=content_hash(reference),
+        backend=backend,
+        synthesis_source_projection_hash=projection.projection_hash,
+    )
+    candidate = scratch / "candidate"
+    copy_tree_safely(Path(assets.visible_root), candidate)
+    for relative, content in reference.files.items():
+        destination = candidate / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="rtl-agenteval-synthesis-") as artifacts:
+        evaluation = execute_synthesis_quality(
+            suite=suite,
+            task=task,
+            candidate_dir=candidate,
+            runtime=runtime,
+            profile=profile,
+            resolved=resolved,
+            artifact_root=Path(artifacts),
+            plugin=backend,
+            correctness_passed=True,
+        )
+    if not all(result.status == VerifierStatus.PASSED for result in evaluation.results):
+        raise ConfigurationError("reference synthesis qualification failed")
+    if not evaluation.candidate.synthesis_ok or not evaluation.reference.synthesis_ok:
+        raise ConfigurationError("reference synthesis returned no eligible metrics")
+    skipped = execute_synthesis_quality(
+        suite=suite,
+        task=task,
+        candidate_dir=candidate,
+        runtime=runtime,
+        profile=profile,
+        resolved=resolved,
+        artifact_root=scratch / "known-bad-gate",
+        plugin=backend,
+        correctness_passed=False,
+    )
+    if any(result.status != VerifierStatus.SKIPPED for result in skipped.results):
+        raise ConfigurationError("known-bad correctness gate did not skip synthesis")
+    return resolved, {
+        "passed": True,
+        "candidate_metrics_valid": evaluation.candidate.synthesis_ok,
+        "reference_metrics_valid": evaluation.reference.synthesis_ok,
+        "known_bad_synthesis_skipped": True,
+    }
+
+
+def _qualify_vcs(
+    service: VeriGym,
+    *,
+    rtllm_source: Path | None,
+    profile_paths: tuple[Path, Path],
+    scratch: Path,
+) -> None:
+    if rtllm_source is None:
+        raise ConfigurationError("RTLLM source is unavailable for VCS qualification")
+    runtime = service.registries.runtimes.get("local").configure(None)
+    runtime.prepare("rtl-agenteval-vcs-preflight")
+    try:
+        for variant, profile_path in zip(
+            ("counter_12", "up_down_counter"), profile_paths, strict=True
+        ):
+            suite = RTLLMSuite().with_source(
+                SuiteSourceConfig(source_root=rtllm_source, variant=variant)
+            )
+            task = suite.load_task(next(iter(suite.discover())))
+            assets = suite.resolve_assets(task)
+            profile = load_verifier_profile(profile_path)
+            resolved = resolve_verifier_profile(
+                task=task, profile=profile, tools=service.registries.tools
+            )
+            effective_task = task_with_verifier_profile(task, profile)
+            for case in suite.conformance_cases():
+                candidate = scratch / variant / case.name
+                copy_tree_safely(Path(assets.visible_root), candidate)
+                for relative, content in case.candidate.files.items():
+                    destination = candidate / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(content, encoding="utf-8")
+                results = service._verify_candidate(
+                    task=effective_task,
+                    assets=assets,
+                    runtime=runtime,
+                    candidate_dir=candidate,
+                    artifact_root=scratch / "artifacts" / variant / case.name,
+                    verifier_profile=profile,
+                    resolved_verifier_profile=resolved,
+                )
+                observed = all(item.status == VerifierStatus.PASSED for item in results)
+                if observed is not case.expected_resolved:
+                    raise ConfigurationError("VCS/MCP reference/known-bad qualification failed")
+    finally:
+        runtime.close()
+
+
+def _agent_options(capability: Any, auth: Any) -> dict[str, Any]:
+    return {
+        "model_id": "gpt-5.4",
+        "reasoning_effort": "xhigh",
+        "max_process_time_s": 900,
+        "max_output_bytes": 8 * 1024 * 1024,
+        "allow_proxy_environment": bool(
+            os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+        ),
+        "expected_cli_version": _EXPECTED_CLI_VERSION,
+        "expected_cli_executable_sha256": _EXPECTED_CODEX_SHA256,
+        "expected_capability_fingerprint": capability.capability_fingerprint,
+        "expected_requested_auth_mode": auth.requested_auth_mode,
+        "expected_resolved_auth_mode": auth.resolved_auth_mode,
+        "expected_auth_semantic_id": auth.auth_semantic_id,
+        "prompt_contract_id": "repository_action_v2_prompt_v3",
+        "scoring_agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
+        "scoring_agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+    }
+
+
+def _frozen_run_configs(
+    service: VeriGym,
+    *,
+    source_configs: dict[str, SuiteSourceConfig],
+    docker_config: DockerRuntimeConfig,
+    runtime_descriptor: Any,
+    prepared: dict[str, PreparedProfile],
+    agent_options: dict[str, Any],
+    output: Path,
+) -> list[RunConfig]:
+    specifications = (
+        (_TASKS[0], source_configs["counter"], "counter_open", True, "01-counter-open"),
+        (_TASKS[1], source_configs["up_down"], "up_down_dc", True, "02-up-down-dc"),
+        (_TASKS[2], source_configs["verilog_eval"], None, False, "03-verilog-eval"),
+        (_TASKS[3], source_configs["rtl_repo"], None, False, "04-rtl-repo"),
+    )
+    result = []
+    for task_id, source, profile_name, ppa, run_id in specifications:
+        profile_id = prepared[profile_name].profile.id if profile_name else None
+        base = RunConfig(
+            task_id=task_id,
+            mode=InteractionMode.AGENT,
+            agent="codex-cli-agenteval-agent",
+            agent_options=agent_options,
+            suite_source=source,
+            runtime="docker",
+            docker_config=docker_config,
+            toolchain_profile=profile_id,
+            agent_ppa_feedback=ppa,
+            agent_ppa_max_calls=3,
+            seed=0,
+            sample_index=0,
+            output=output,
+            run_id=run_id,
+        )
+        result.append(
+            _freeze_run_config(
+                service,
+                base,
+                runtime_descriptor=runtime_descriptor,
+                expected_profile=(prepared[profile_name].resolved if profile_name else None),
+            )
+        )
+    return result
+
+
+def _freeze_run_config(
+    service: VeriGym,
+    config: RunConfig,
+    *,
+    runtime_descriptor: Any,
+    expected_profile: Any,
+) -> RunConfig:
+    suite, task, assets = service.load_task(config.task_id, config.suite_source)
+    profile = (
+        service.registries.profiles.get(config.toolchain_profile)
+        if config.toolchain_profile is not None
+        else None
+    )
+    backend_name = profile.flow.backend_plugin if profile is not None and profile.flow else None
+    feedback = resolve_agent_feedback_contract(
+        task=task,
+        ppa_enabled=config.agent_ppa_feedback,
+        ppa_max_executions=config.agent_ppa_max_calls,
+        resolved_profile=expected_profile,
+        profile_backend=backend_name,
+    )
+    execution_task = task_with_agent_feedback_contract(task, feedback)
+    agent = service.registries.agents.get(config.agent)
+    prompt = resolve_prompt_policy(
+        interaction_mode=config.mode,
+        agent=agent,
+        agent_options=config.agent_options,
+        task=execution_task,
+    )
+    action = resolve_repository_action_protocol(
+        agent_descriptor=agent.descriptor,
+        protocol_spec=agent.action_protocol_spec,
+        agent_options=config.agent_options,
+        task=execution_task,
+    )
+    source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
+    prompt_hash = prompt.configuration_fingerprint if prompt is not None else None
+    configuration_hash = agent_configuration_hash(agent.descriptor, config.agent_options)
+    return config.model_copy(
+        update={
+            "expected_task_hash": content_hash(task),
+            "expected_source_hash": source_hash,
+            "expected_suite_source_snapshot": suite.source_snapshot(),
+            "expected_runtime": runtime_descriptor,
+            "expected_resolved_profile": expected_profile,
+            "expected_prompt_policy": prompt,
+            "expected_prompt_policy_hash": prompt_hash,
+            "resolved_prompt_policy": prompt,
+            "resolved_prompt_policy_hash": prompt_hash,
+            "expected_agent_configuration_hash": configuration_hash,
+            "resolved_agent_configuration_hash": configuration_hash,
+            "expected_action_protocol": action,
+            "resolved_action_protocol": action,
+            "expected_agent_feedback_contract": feedback,
+            "resolved_agent_feedback_contract": feedback,
+        },
+        deep=True,
+    )
+
+
+def _execute_exactly_four(
+    service: VeriGym,
+    configs: list[RunConfig],
+    output: Path,
+) -> list[RunResult]:
+    if len(configs) != 4:
+        raise ConfigurationError("smoke launcher must contain exactly four frozen runs")
+    ledger: list[dict[str, Any]] = []
+    results: list[RunResult] = []
+    for ordinal, config in enumerate(configs, start=1):
+        record = {
+            "ordinal": ordinal,
+            "run_id": config.run_id,
+            "task_id": config.task_id,
+            "authorized_process_count": 1,
+            "retry_count": 0,
+            "status": "authorized",
+        }
+        ledger.append(record)
+        atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
+        try:
+            run = service.run(config)
+        except BaseException:
+            record["status"] = "failed"
+            atomic_dump_json(
+                output / "evidence" / "process-authorizations.json", {"records": ledger}
+            )
+            raise
+        record["status"] = "completed"
+        record["resolved"] = run.scorecard.resolved
+        results.append(run)
+        atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
+    if len(results) != 4:
+        raise ConfigurationError("four-process smoke stopped before all runs completed")
+    return results
+
+
+def _offline_replay(results: list[RunResult]) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    for result in results:
+        replay = replay_run(result.run_dir, verify=False)
+        records.append(
+            {
+                "run_id": result.manifest.run_id,
+                "integrity_valid": replay.integrity.status == "verified",
+                "event_count": len(replay.events),
+                "resolved": replay.scorecard.resolved,
+            }
+        )
+    return {
+        "schema_version": "1.0",
+        "records": records,
+        "all_valid": all(record["integrity_valid"] for record in records),
+    }
+
+
+def _scan_outputs(
+    results: list[RunResult],
+    service: VeriGym,
+    configs: dict[str, SuiteSourceConfig],
+    profile_paths: dict[str, Path],
+    inputs: dict[str, Path],
+) -> dict[str, Any]:
+    sensitive: list[tuple[str, bytes]] = []
+    for task_id, key in ((_TASKS[0], "counter"), (_TASKS[1], "up_down")):
+        suite, task, assets = service.load_task(task_id, configs[key])
+        for asset in assets.hidden_assets:
+            if asset.content:
+                sensitive.append(("hidden_rtl", asset.content.encode()))
+        reference = suite.reference_solution(task)
+        if reference is not None:
+            sensitive.extend(
+                ("reference_rtl", value.encode()) for value in reference.files.values()
+            )
+    path_markers = [
+        *(str(path).encode() for path in profile_paths.values()),
+        *(str(path).encode() for path in inputs.values()),
+    ]
+    findings: list[dict[str, str]] = []
+    for result in results:
+        for file in sorted(result.run_dir.rglob("*")):
+            if file.is_symlink():
+                findings.append({"run_id": result.manifest.run_id, "category": "symlink"})
+                continue
+            if not file.is_file() or file.stat().st_size > 16 * 1024 * 1024:
+                continue
+            relative = file.relative_to(result.run_dir).as_posix()
+            payload = file.read_bytes()
+            model_facing = relative.startswith("artifacts/codex_cli/")
+            if not relative.startswith("candidate/"):
+                for category, marker in sensitive:
+                    scan_reference = category != "reference_rtl" or model_facing
+                    if scan_reference and len(marker) >= 32 and marker in payload:
+                        findings.append({"run_id": result.manifest.run_id, "category": category})
+            for marker in path_markers:
+                if model_facing and marker and marker in payload:
+                    findings.append({"run_id": result.manifest.run_id, "category": "site_path"})
+            if model_facing and re.search(
+                rb"(?i)(license[_ -]?server|lsf|mcp[_ -]?server|\.db\b)", payload
+            ):
+                findings.append(
+                    {"run_id": result.manifest.run_id, "category": "commercial_diagnostic"}
+                )
+    unique = [dict(item) for item in {tuple(sorted(item.items())) for item in findings}]
+    return {"schema_version": "1.0", "passed": not unique, "findings": unique}
+
+
+def _campaign_summary(
+    results: list[RunResult],
+    replay: dict[str, Any],
+    scan: dict[str, Any],
+) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    infrastructure_complete = len(results) == 4 and replay["all_valid"] and scan["passed"]
+    for result in results:
+        observations = result.manifest.external_agent_observations
+        broker_path = result.run_dir / "artifacts" / "codex_cli" / "broker.json"
+        broker = (
+            json.loads(broker_path.read_text(encoding="utf-8")) if broker_path.is_file() else {}
+        )
+        identity_ok = (
+            len(observations) == 1
+            and observations[0].invocation_count == 1
+            and observations[0].requested_model_id == "gpt-5.4"
+            and observations[0].observed_model_id in {None, "gpt-5.4"}
+            and observations[0].effective_reasoning_effort == "xhigh"
+        )
+        finish_ok = broker.get("finished") is True and broker.get("finish_calls") == 1
+        infrastructure_complete = infrastructure_complete and identity_ok and finish_ok
+        records.append(
+            {
+                "run_id": result.manifest.run_id,
+                "task_id": result.manifest.task_id,
+                "resolved": result.scorecard.resolved,
+                "model_identity_valid": identity_ok,
+                "typed_finish": finish_ok,
+                "ppa_feedback_count": len(result.manifest.agent_feedback_evaluations),
+            }
+        )
+    return {
+        "schema_version": "1.0",
+        "campaign_id": _CAMPAIGN_ID,
+        "codex_processes_authorized": 4,
+        "automatic_retries": 0,
+        "runs": records,
+        "all_candidates_resolved": all(record["resolved"] for record in records),
+        "infrastructure_complete": infrastructure_complete,
+        "fully_successful": infrastructure_complete
+        and all(record["resolved"] and record["ppa_feedback_count"] > 0 for record in records[:2]),
+        "benchmark_score_claimed": False,
+    }
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

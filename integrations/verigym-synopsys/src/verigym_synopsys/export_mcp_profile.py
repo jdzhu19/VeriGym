@@ -35,6 +35,54 @@ _TEMPLATE_IDS = {
 }
 
 
+def bind_mcp_client_profile_to_docker(
+    profile: ToolchainProfile,
+    *,
+    image: str,
+    prepared_image_id: str,
+    profile_id: str,
+    profile_version: str,
+) -> ToolchainProfile:
+    """Bind a previously sanitized MCP client profile to one immutable RTL image."""
+
+    if profile.flow is None or profile.flow.backend_plugin != "synopsys.dc.mcp":
+        raise ValueError("Docker binding requires a sanitized synopsys.dc.mcp client profile")
+    if not image or image != image.strip() or any(char.isspace() for char in image):
+        raise ValueError("Docker image reference is invalid")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", prepared_image_id) is None:
+        raise ValueError("prepared Docker image ID must be sha256:<64 lowercase hex>")
+    if not profile_id or not profile_version:
+        raise ValueError("Docker-bound MCP profile ID and version are required")
+    payload = profile.model_dump(mode="json", exclude_none=True)
+    payload.update(
+        {
+            "id": profile_id,
+            "version": profile_version,
+            "runtime": {
+                "runtime": "docker",
+                "allowed_runtimes": ["docker"],
+                "minimum_isolation_level": "docker_standard",
+                "requested_image": image,
+                "immutable_image_required": True,
+                "supported_os": ["linux"],
+                "supported_architectures": ["amd64", "arm64"],
+                "network_policy": "none",
+                "resource_controls_required": True,
+            },
+            "container_image": image,
+        }
+    )
+    metadata = dict(payload.get("metadata", {}))
+    metadata.update(
+        {
+            "mcp_transport_execution_boundary": "host_verifier_control_plane",
+            "prepared_image_id": prepared_image_id,
+        }
+    )
+    payload["metadata"] = metadata
+    return ToolchainProfile.model_validate(payload)
+
+
 def _transport_hash(executable: str, supplied: str | None) -> str:
     safe_executable(executable)
     if supplied is not None:
@@ -111,6 +159,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-profile", type=Path, required=True)
     parser.add_argument("--profile-id")
     parser.add_argument("--profile-version")
+    parser.add_argument("--runtime", choices=["local", "docker"], default="local")
+    parser.add_argument("--docker-image")
+    parser.add_argument(
+        "--prepared-image-id",
+        help="Exact sha256:<64 hex> identity resolved for --docker-image.",
+    )
     parser.add_argument(
         "--transport-environment",
         action="append",
@@ -147,6 +201,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         and _SHA256.fullmatch(args.agent_feedback_worker_contract_hash) is None
     ):
         raise ValueError("agent feedback worker contract must be a lowercase SHA-256")
+    if args.runtime == "docker":
+        if args.docker_image is None or args.prepared_image_id is None:
+            raise ValueError("Docker MCP export requires --docker-image and --prepared-image-id")
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", args.prepared_image_id) is None:
+            raise ValueError("prepared Docker image ID must be sha256:<64 lowercase hex>")
+    elif args.docker_image is not None or args.prepared_image_id is not None:
+        raise ValueError("Docker image options require --runtime docker")
     library = next(
         item for item in server_profile.libraries if item.media_type == "application/x-synopsys-db"
     )
@@ -194,6 +255,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "agent_feedback_worker_isolation_kind": (args.agent_feedback_worker_isolation_kind),
             }
         )
+    if args.runtime == "docker":
+        metadata.update(
+            {
+                "mcp_transport_execution_boundary": "host_verifier_control_plane",
+                "prepared_image_id": args.prepared_image_id,
+            }
+        )
     profile = ToolchainProfile.model_validate(
         {
             "id": args.profile_id or f"{server_profile.id}-mcp",
@@ -220,7 +288,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ],
                 }
             ],
-            "runtime": {"runtime": "local", "allowed_runtimes": ["local"]},
+            "runtime": (
+                {
+                    "runtime": "docker",
+                    "allowed_runtimes": ["docker"],
+                    "minimum_isolation_level": "docker_standard",
+                    "requested_image": args.docker_image,
+                    "immutable_image_required": True,
+                    "supported_os": ["linux"],
+                    "supported_architectures": ["amd64", "arm64"],
+                    "network_policy": "none",
+                    "resource_controls_required": True,
+                }
+                if args.runtime == "docker"
+                else {"runtime": "local", "allowed_runtimes": ["local"]}
+            ),
+            "container_image": args.docker_image if args.runtime == "docker" else None,
             "pdk": (_remote_asset(server_profile.pdk) if server_profile.pdk is not None else None),
             "libraries": [_remote_asset(library)],
             "constraints": [_remote_asset(constraint)],
@@ -254,4 +337,4 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["main"]
+__all__ = ["bind_mcp_client_profile_to_docker", "main"]

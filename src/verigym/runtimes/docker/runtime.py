@@ -369,7 +369,7 @@ class DockerRuntime(Runtime):
             raise RuntimeError("Docker image identity is unavailable")
         if self._run_id is None:
             raise RuntimeError("Docker run identity is unavailable")
-        health_timeout_s = min(60, max(10, self._require_config().max_command_time_s))
+        health_timeout_s = min(120, max(10, self._require_config().max_command_time_s))
         probe_config = self._require_config().model_copy(
             update={"max_command_time_s": health_timeout_s}
         )
@@ -416,7 +416,15 @@ class DockerRuntime(Runtime):
                         raise DockerImageError(
                             f"Docker image health command failed: {name}",
                             subreason="image_health_failed",
-                            details={"command": name, "failure_reason": result.failure_reason},
+                            details={
+                                "command": name,
+                                "failure_reason": result.failure_reason,
+                                "failure_origin": result.failure_origin,
+                                "timed_out": result.timed_out,
+                                "oom_killed": result.oom_killed,
+                                "output_truncated": result.output_truncated,
+                                "exit_code": result.exit_code,
+                            },
                         )
                 try:
                     uid = int(uid_result.stdout.strip())

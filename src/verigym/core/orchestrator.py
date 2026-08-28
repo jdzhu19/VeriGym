@@ -35,6 +35,7 @@ from verigym.core.repository_observation import (
 )
 from verigym.core.scoring import build_scorecard
 from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.trace import TraceWriter
 from verigym.core.verifier_dag import VerifierExecutor, has_infrastructure_error
 from verigym.core.verifier_profiles import (
@@ -226,14 +227,16 @@ class VeriGym:
                 synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
                 reference_hash = content_hash(reference) if reference is not None else None
+                source_projection = resolve_synthesis_source_projection(task)
                 resolved_profile = resolve_toolchain_profile(
                     synthesis_profile,
                     runtime,
-                    source_paths=list(task.workspace.entrypoints),
+                    source_paths=source_projection.profile_sources,
                     top_module=synthesis_profile.flow.top_module,
                     reference_candidate_hash=reference_hash,
                     expected=config.expected_resolved_profile,
                     backend=synthesis_backend,
+                    synthesis_source_projection_hash=source_projection.projection_hash,
                 )
             agent_feedback_contract = resolve_agent_feedback_contract(
                 task=task,

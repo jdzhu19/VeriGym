@@ -19,6 +19,7 @@ from verigym.core.repository_candidate import (
     verify_frozen_repository_candidate_offline,
 )
 from verigym.core.synthesis import execute_synthesis_quality
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.trace import read_trace
 from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.core.workspace import normalize_relative_path
@@ -324,16 +325,18 @@ def replay_run(
                     raise ReplayError("stored profile backend is not a synthesis backend")
                 synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
+                source_projection = resolve_synthesis_source_projection(task)
                 replay_resolved_profile = resolve_toolchain_profile(
                     stored_profile,
                     runtime,
-                    source_paths=list(task.workspace.entrypoints),
+                    source_paths=source_projection.profile_sources,
                     top_module=stored_resolved_profile.top_module,
                     reference_candidate_hash=(
                         content_hash(reference) if reference is not None else None
                     ),
                     expected=stored_resolved_profile,
                     backend=synthesis_backend,
+                    synthesis_source_projection_hash=source_projection.projection_hash,
                 )
             replay_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
             if stored_resolved_verifier_profile is not None:

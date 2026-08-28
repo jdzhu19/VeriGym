@@ -78,9 +78,22 @@ def validate_yosys_profile(profile: ToolchainProfile) -> ProfileValidationResult
     if profile.container_image != profile.runtime.requested_image:
         errors.append("container_image and runtime requested_image must match")
     if opensta_flow:
-        if allowed_runtimes != ["local"]:
-            errors.append("the initial site-specific Yosys/OpenSTA flow requires local runtime")
-        if profile.reproducibility_scope == "public":
+        if sorted(allowed_runtimes) not in (["docker"], ["local"]):
+            errors.append("Yosys/OpenSTA profiles must select exactly local or Docker runtime")
+        if allowed_runtimes == ["docker"]:
+            if not profile.runtime.immutable_image_required:
+                errors.append("Docker Yosys/OpenSTA profiles require an immutable image")
+            if profile.runtime.minimum_isolation_level != "docker_standard":
+                errors.append("Docker Yosys/OpenSTA profiles require docker_standard isolation")
+            if not profile.runtime.resource_controls_required:
+                errors.append("Docker Yosys/OpenSTA profiles require resource controls")
+            prepared_image_id = profile.metadata.get("prepared_image_id")
+            if (
+                not isinstance(prepared_image_id, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", prepared_image_id) is None
+            ):
+                errors.append("Docker Yosys/OpenSTA metadata has no prepared immutable image ID")
+        if allowed_runtimes == ["local"] and profile.reproducibility_scope == "public":
             errors.append("host-local Yosys/OpenSTA profiles cannot claim public reproducibility")
     if profile.metrics.area.enabled:
         liberty_assets = [

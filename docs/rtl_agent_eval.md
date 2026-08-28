@@ -37,6 +37,20 @@ profile hash. It never contains a reference metric, ratio, netlist, critical pat
 Final scoring independently synthesizes candidate and reference only after hidden correctness
 passes. Open and commercial profiles have distinct resolved identities and comparison partitions.
 
+AgentEval workspaces use `repository/rtl/<task>.v`, while existing synthesis profiles and the
+qualified commercial server contract retain `rtl/<task>.v`. The hash-bound
+`synthesis_source_projection.v1` maps those names once and is shared by profile resolution,
+candidate feedback, final/reference synthesis, and replay. A missing, extra, reordered, or changed
+mapping fails before model lookup.
+
+The pinned open profile may run entirely in the immutable
+`verigym/open-rtl-tools:iverilog12-yosys067-opensta310` image. That independent image freezes
+Icarus 12, Yosys 0.67 and its ABC source identity, and OpenSTA 3.1.0 without replacing the older
+qualified image tag. Docker profile preparation resolves and hashes `sta` inside the image; it
+does not attempt to read a container executable through a host path. Build networking is confined
+to the explicitly selected site bridge, while benchmark, feedback, synthesis, and verifier
+sessions remain `network=none`.
+
 The isolated commercial contract additionally declares that area, delay, and power are minimized
 while WNS is maximized. It reports separate PPA tool-call and dispatched-execution counters, keeps
 the last valid candidate-only metric vector after a later failed run, and counts a timeout or crash
@@ -92,6 +106,14 @@ Manifest and replay bind the resolved `agent_feedback_contract`, its hash, and a
 of feedback evaluations: test ID, candidate/profile hashes, cache status, synthesis-execution
 status, duration, category, and candidate metrics. AgentEval requires Docker for model-bearing
 agents. Real Docker, external benchmarks, Open PPA, and commercial tools remain explicit opt-ins.
+
+The guarded four-run Codex smoke is implemented by
+`scripts/run_rtl_agenteval_codex_smoke.py`. It completes every dataset, Codex, Docker, OpenSTA,
+DC-worker, VCS/MCP, reference, and known-bad check before creating the experiment directory. The
+launcher then authorizes exactly four ordered Codex processes, persists its authorization ledger
+atomically, never retries, performs structural offline replay, and scans scoring artifacts for
+hidden/reference content and site/commercial path leakage. This smoke and its successor bounded
+pilot are qualifications, not benchmark scores.
 
 ## Design choices informed by POSTEDA-Bench
 

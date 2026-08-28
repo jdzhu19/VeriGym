@@ -1840,6 +1840,18 @@
           "title": "Source Paths",
           "type": "array"
         },
+        "synthesis_source_projection_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Synthesis Source Projection Hash"
+        },
         "timing_unit": {
           "anyOf": [
             {

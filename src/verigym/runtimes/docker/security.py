@@ -11,7 +11,7 @@ from verigym.schemas.runtime import DockerRuntimeConfig
 
 BASELINE_ENVIRONMENT = {
     "PATH": (
-        "/opt/yosys/bin:/opt/iverilog/bin:/usr/local/sbin:/usr/local/bin:"
+        "/opt/yosys/bin:/opt/iverilog/bin:/opt/opensta/bin:/usr/local/sbin:/usr/local/bin:"
         "/usr/sbin:/usr/bin:/sbin:/bin"
     ),
     "HOME": "/workspace/.verigym_internal",

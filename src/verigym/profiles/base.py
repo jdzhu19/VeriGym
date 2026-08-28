@@ -67,6 +67,7 @@ class ResolvedToolchainProfile(StrictModel):
     generated_script_hash: str
     top_module: str
     source_paths: list[str]
+    synthesis_source_projection_hash: str | None = None
     metric_scope: Literal[
         "synthesis_area_only",
         "synthesis_area_timing",
@@ -89,6 +90,8 @@ class ResolvedToolchainProfile(StrictModel):
         # participate when the profile actually declares a power unit.
         if payload.get("power_unit") is None:
             payload.pop("power_unit", None)
+        if payload.get("synthesis_source_projection_hash") is None:
+            payload.pop("synthesis_source_projection_hash", None)
         runtime = payload.get("runtime_identity")
         if isinstance(runtime, dict):
             # Mutable human-facing tags are audit metadata, never resolved identity.

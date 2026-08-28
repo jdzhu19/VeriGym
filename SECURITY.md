@@ -76,6 +76,15 @@ recreate only verifier sessions. The residual trusted computing base includes th
 control-plane binary, reviewed VeriGym/plugin code, Docker daemon, and host kernel; Docker does
 not protect against compromise of those components.
 
+The separate scoring-only RTL AgentEval adapter does not use the app-server/exec-server boundary.
+One exact host `codex exec --ephemeral --json` process runs in an empty control directory under the
+CLI read-only sandbox with user configuration, rules, shell, Web, skills, plugins, apps, and hooks
+disabled. Its only tool server is the reviewed Unix-socket `RepositoryToolBroker`, which exposes
+the six typed `repository_action.v2` actions against the Docker-owned task workspace. The host
+Codex process never receives a workspace path or filesystem-writing tool; the broker owns every
+bounded read, patch, compile/PPA request, diff, and typed finish. Scoring evidence deliberately
+omits prompt/response text, raw CLI output, parsed event text, and training transcripts.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
@@ -305,6 +314,14 @@ one regular, executable, SHA-256-bound wrapper without arguments or a shell. A p
 only `SSH_AUTH_SOCK` or `KRB5CCNAME` by name to that wrapper. SSH deployments must use a dedicated
 principal, host-key verification, a forced command or otherwise fixed server command, and no SSH
 agent forwarding. Transport environment values are never serialized.
+
+For Docker AgentEval, `synopsys.dc.mcp` uses an explicit
+`host_verifier_control_plane` transport boundary. Candidate bytes are first copied into the
+runtime's private, policy-checked verifier staging, but the fixed hash-bound MCP wrapper executes
+on the trusted host control plane rather than inside the open RTL image. The resolved profile still
+binds the exact immutable Docker image, network-none controls, resources, wrapper, server, and
+worker identities. No model-visible MCP tool, Docker network exception, shell fallback, or
+container-to-host executable lookup is introduced.
 
 The stdio MCP server approves its site profiles at startup and accepts only a profile ID plus
 declared hash, a reference-candidate hash, fixed top and ordered source names, candidate/reference

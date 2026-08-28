@@ -165,6 +165,12 @@ Omit `--transport-sha256` when the wrapper is locally available to the exporter.
 name; values never enter the profile. The client profile contains remote DB, SDC, flow, and PDK
 hashes but no remote asset paths, bytes, or license-variable names.
 
+An already sanitized client profile can be rebound to an immutable Docker verifier image with
+`bind_mcp_client_profile_to_docker`. The resulting profile selects the Docker runtime and
+network-none staging contract but marks the fixed MCP transport as
+`host_verifier_control_plane`. The wrapper and commercial service remain trusted verifier-side
+components; they are not copied into the open RTL image or exposed as agent tools.
+
 ## Enable disposable agent feedback
 
 Do not reuse the trusted final-PPA server process to parse live agent candidates. Configure the

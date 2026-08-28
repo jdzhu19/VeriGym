@@ -2,6 +2,7 @@
 
 from ._version import __version__
 from .agent import CodexCliAgentAdapter, CodexCliHweAgentAdapter
+from .agenteval_agent import CodexCliAgentEvalAdapter
 from .auth import (
     AUTH_MODE_ALIASES,
     AUTH_SEMANTIC_IDS,
@@ -24,6 +25,7 @@ __all__ = [
     "AuthPreflightResult",
     "AuthSemanticId",
     "CodexCliAgentAdapter",
+    "CodexCliAgentEvalAdapter",
     "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",
