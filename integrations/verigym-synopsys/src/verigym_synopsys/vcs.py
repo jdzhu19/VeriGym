@@ -126,45 +126,51 @@ def _version_from_output(value: str) -> str | None:
     return max(matches, key=len) if matches else None
 
 
+def probe_vcs(executable_value: str) -> HealthCheckResult:
+    """Probe one explicit VCS installation without compiling candidate RTL."""
+
+    executable = resolve_executable(executable_value, home_variable="VCS_HOME")
+    if shutil.which(executable) is None and not Path(executable).is_file():
+        return HealthCheckResult(
+            healthy=False,
+            message="Synopsys VCS was not found on PATH or under VCS_HOME",
+        )
+    try:
+        completed = subprocess.run(
+            [executable, "-full64", "-ID"],
+            capture_output=True,
+            check=False,
+            env={
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                **vcs_environment(executable),
+            },
+            shell=False,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return HealthCheckResult(
+            healthy=False,
+            message="Synopsys VCS identity probe failed",
+            executable=executable,
+        )
+    output = redact(completed.stdout + "\n" + completed.stderr)
+    version = _version_from_output(output)
+    return HealthCheckResult(
+        healthy=completed.returncode == 0 and version is not None,
+        message=("available" if completed.returncode == 0 else "VCS identity probe failed"),
+        version=version,
+        executable=executable,
+    )
+
+
 class VcsSimulationTool(ToolPlugin):
     descriptor = _descriptor()
 
     def health_check(self, context: ToolContext | None = None) -> HealthCheckResult:
         del context
         requested = os.environ.get("VERIGYM_VCS_EXECUTABLE", "vcs")
-        executable = resolve_executable(requested, home_variable="VCS_HOME")
-        if shutil.which(executable) is None and not Path(executable).is_file():
-            return HealthCheckResult(
-                healthy=False,
-                message="Synopsys VCS was not found on PATH or under VCS_HOME",
-            )
-        try:
-            completed = subprocess.run(
-                [executable, "-full64", "-ID"],
-                capture_output=True,
-                check=False,
-                env={
-                    "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-                    **vcs_environment(executable),
-                },
-                shell=False,
-                text=True,
-                timeout=15,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return HealthCheckResult(
-                healthy=False,
-                message="Synopsys VCS identity probe failed",
-                executable=executable,
-            )
-        output = redact(completed.stdout + "\n" + completed.stderr)
-        version = _version_from_output(output)
-        return HealthCheckResult(
-            healthy=completed.returncode == 0 and version is not None,
-            message=("available" if completed.returncode == 0 else "VCS identity probe failed"),
-            version=version,
-            executable=executable,
-        )
+        return probe_vcs(requested)
 
     def validate_request(self, request: dict[str, Any]) -> VcsSimulationRequest:
         return VcsSimulationRequest.model_validate(request)
@@ -308,4 +314,4 @@ class VcsSimulationTool(ToolPlugin):
             )
 
 
-__all__ = ["VcsSimulationRequest", "VcsSimulationTool"]
+__all__ = ["VcsSimulationRequest", "VcsSimulationTool", "probe_vcs"]

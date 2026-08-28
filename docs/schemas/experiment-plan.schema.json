@@ -875,6 +875,31 @@
           "minItems": 1,
           "title": "Systems",
           "type": "array"
+        },
+        "verifier_profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verifier Profile"
+        },
+        "verifier_profile_file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verifier Profile File"
         }
       },
       "required": [
@@ -1693,6 +1718,17 @@
           "default": null,
           "title": "Resolved Profile Hash"
         },
+        "resolved_verifier_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResolvedVerifierToolProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "runtime_descriptor": {
           "$ref": "#/$defs/RuntimeDescriptor"
         },
@@ -1781,6 +1817,17 @@
         "verifier_hash": {
           "title": "Verifier Hash",
           "type": "string"
+        },
+        "verifier_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerifierToolProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2714,6 +2761,102 @@
       "title": "ResolvedToolchainProfile",
       "type": "object"
     },
+    "ResolvedVerifierToolProfile": {
+      "additionalProperties": false,
+      "description": "Pre-model identity returned by the selected verifier backend.",
+      "properties": {
+        "declared_profile_hash": {
+          "title": "Declared Profile Hash",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "resolved_profile_hash": {
+          "title": "Resolved Profile Hash",
+          "type": "string"
+        },
+        "runtime": {
+          "const": "local",
+          "default": "local",
+          "title": "Runtime",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "server_contract_hash": {
+          "title": "Server Contract Hash",
+          "type": "string"
+        },
+        "server_declared_profile_hash": {
+          "title": "Server Declared Profile Hash",
+          "type": "string"
+        },
+        "server_profile_id": {
+          "title": "Server Profile Id",
+          "type": "string"
+        },
+        "server_resolved_profile_hash": {
+          "title": "Server Resolved Profile Hash",
+          "type": "string"
+        },
+        "server_version": {
+          "title": "Server Version",
+          "type": "string"
+        },
+        "service_protocol": {
+          "title": "Service Protocol",
+          "type": "string"
+        },
+        "source_plugin": {
+          "title": "Source Plugin",
+          "type": "string"
+        },
+        "target_plugin": {
+          "title": "Target Plugin",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "tool_version": {
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "transport_sha256": {
+          "title": "Transport Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "profile_version",
+        "declared_profile_hash",
+        "resolved_profile_hash",
+        "task_id",
+        "source_plugin",
+        "target_plugin",
+        "transport_sha256",
+        "service_protocol",
+        "server_version",
+        "server_profile_id",
+        "server_declared_profile_hash",
+        "server_resolved_profile_hash",
+        "server_contract_hash",
+        "tool_version"
+      ],
+      "title": "ResolvedVerifierToolProfile",
+      "type": "object"
+    },
     "RuntimeBackendInfo": {
       "additionalProperties": false,
       "properties": {
@@ -3637,6 +3780,105 @@
         "content_hash"
       ],
       "title": "ToolchainProfileRef",
+      "type": "object"
+    },
+    "VerifierToolProfile": {
+      "additionalProperties": false,
+      "description": "Sanitized client contract for replacing one verifier-only tool backend.",
+      "properties": {
+        "accepted_tool_version": {
+          "title": "Accepted Tool Version",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "runtime": {
+          "const": "local",
+          "default": "local",
+          "title": "Runtime",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "server_contract_hash": {
+          "title": "Server Contract Hash",
+          "type": "string"
+        },
+        "server_declared_profile_hash": {
+          "title": "Server Declared Profile Hash",
+          "type": "string"
+        },
+        "server_profile_id": {
+          "title": "Server Profile Id",
+          "type": "string"
+        },
+        "server_version": {
+          "title": "Server Version",
+          "type": "string"
+        },
+        "service_protocol": {
+          "title": "Service Protocol",
+          "type": "string"
+        },
+        "source_plugin": {
+          "title": "Source Plugin",
+          "type": "string"
+        },
+        "target_plugin": {
+          "title": "Target Plugin",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "transport_environment": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Transport Environment",
+          "type": "array"
+        },
+        "transport_executable": {
+          "title": "Transport Executable",
+          "type": "string"
+        },
+        "transport_sha256": {
+          "title": "Transport Sha256",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "task_id",
+        "source_plugin",
+        "target_plugin",
+        "transport_executable",
+        "transport_sha256",
+        "service_protocol",
+        "server_version",
+        "server_profile_id",
+        "server_declared_profile_hash",
+        "server_contract_hash",
+        "accepted_tool_version"
+      ],
+      "title": "VerifierToolProfile",
       "type": "object"
     }
   },

@@ -145,6 +145,10 @@ def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
         raw.pop("action_protocol", None)
     if raw.get("agent_feedback_contract") is None:
         raw.pop("agent_feedback_contract", None)
+    if raw.get("verifier_profile") is None:
+        raw.pop("verifier_profile", None)
+    if raw.get("resolved_verifier_profile") is None:
+        raw.pop("resolved_verifier_profile", None)
     return cast(dict[str, Any], raw)
 
 

@@ -34,6 +34,10 @@ from verigym.core.integrity import (
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.sampling import classify_sample_outcome
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+)
 from verigym.experiments.identity import plan_items_hash_payload
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.schemas import (
@@ -819,6 +823,16 @@ class BatchRunner:
 
         service = self.planner.service
         _, task, _ = service.load_task(item.task_id, item.suite_source)
+        if config.verifier_profile is not None:
+            resolved_verifier = resolve_verifier_profile(
+                task=task,
+                profile=config.verifier_profile,
+                tools=service.registries.tools,
+                expected=config.expected_resolved_verifier_profile,
+            )
+            if resolved_verifier != item.resolved_verifier_profile:
+                raise ConfigurationError("verifier profile differs from frozen plan")
+            task = task_with_verifier_profile(task, config.verifier_profile)
         profile = (
             service.registries.profiles.get(config.toolchain_profile)
             if config.toolchain_profile is not None
@@ -1523,6 +1537,10 @@ def _child_config(
         runtime=item.runtime_id,
         docker_config=item.docker_config,
         toolchain_profile=item.requested_profile_id,
+        verifier_profile_id=(
+            item.verifier_profile.id if item.verifier_profile is not None else None
+        ),
+        verifier_profile=item.verifier_profile,
         agent_ppa_feedback=item.agent_feedback_contract.ppa_enabled
         if item.agent_feedback_contract is not None
         else False,
@@ -1541,6 +1559,7 @@ def _child_config(
         expected_suite_source_snapshot=item.suite_source_snapshot,
         expected_runtime=item.runtime_descriptor,
         expected_resolved_profile=item.resolved_profile,
+        expected_resolved_verifier_profile=item.resolved_verifier_profile,
         expected_prompt_policy=item.prompt_policy,
         expected_prompt_policy_hash=item.prompt_policy_hash,
         expected_agent_configuration_hash=item.system.agent_configuration_hash,

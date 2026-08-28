@@ -80,6 +80,8 @@ def license_failure(text: str) -> bool:
     return (
         "license checkout failed" in lowered
         or "unable to checkout" in lowered
+        or "cannot find license file" in lowered
+        or "no valid license" in lowered
         or ("license" in lowered and any(word in lowered for word in ("denied", "unavailable")))
     )
 

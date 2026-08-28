@@ -28,6 +28,7 @@ from verigym.schemas.repository import RepositoryPlanIdentity
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import BudgetSpec
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 
 _SYSTEM_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -255,6 +256,8 @@ class ExperimentConfig(StrictModel):
     runtime: ExperimentRuntimeConfig = Field(default_factory=ExperimentRuntimeConfig)
     profile: str | None = None
     profile_file: Path | None = None
+    verifier_profile: str | None = None
+    verifier_profile_file: Path | None = None
     execution: ExperimentExecutionConfig = Field(default_factory=ExperimentExecutionConfig)
     output: ExperimentOutputConfig
 
@@ -274,6 +277,8 @@ class ExperimentConfig(StrictModel):
             raise ValueError("experiment system IDs must be unique")
         if self.profile_file is not None and self.profile is None:
             raise ValueError("profile_file requires a profile ID")
+        if (self.verifier_profile is None) != (self.verifier_profile_file is None):
+            raise ValueError("verifier_profile and verifier_profile_file are required together")
         return self
 
     def identity_payload(self) -> dict[str, Any]:
@@ -286,6 +291,9 @@ class ExperimentConfig(StrictModel):
             payload["runs"].pop("agent_ppa_feedback", None)
         if payload["runs"].get("agent_ppa_max_calls") == 3:
             payload["runs"].pop("agent_ppa_max_calls", None)
+        if payload.get("verifier_profile") is None:
+            payload.pop("verifier_profile", None)
+            payload.pop("verifier_profile_file", None)
         # The original Milestone 9 hash contract had an implicit 10,000-item
         # bound. Omitting the additive default here preserves those hashes.
         if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
@@ -375,6 +383,8 @@ class PlanItem(StrictModel):
     declared_profile_hash: str | None = None
     resolved_profile_hash: str | None = None
     resolved_profile: ResolvedToolchainProfile | None = None
+    verifier_profile: VerifierToolProfile | None = None
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
     reference_candidate_hash: str | None = None
     repository_task_identity: RepositoryPlanIdentity | None = None
     evaluation_contract_hash: str

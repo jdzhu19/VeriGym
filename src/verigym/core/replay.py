@@ -45,7 +45,8 @@ from verigym.schemas.task import VeriTask
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
-from verigym.tools.base import SynthesisBackendPlugin
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
+from verigym.tools.base import SynthesisBackendPlugin, VerifierBackendPlugin
 
 
 @dataclass(frozen=True)
@@ -230,6 +231,51 @@ def replay_run(
         _validate_stored_synthesis_artifacts(run_dir, manifest, scorecard)
     elif resolved_profile_path.exists():
         raise ReplayError("run has a resolved profile artifact but no manifest identity")
+    verifier_profile_path = run_dir / "artifacts" / "verifier_profile.json"
+    resolved_verifier_profile_path = run_dir / "artifacts" / "resolved_verifier_profile.json"
+    stored_verifier_profile: VerifierToolProfile | None = None
+    stored_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    if manifest.resolved_verifier_profile_hash is not None:
+        if not verifier_profile_path.is_file() or not resolved_verifier_profile_path.is_file():
+            raise ReplayError("verifier-profile run lacks its declared or resolved artifact")
+        stored_verifier_profile = load_model(verifier_profile_path, VerifierToolProfile)
+        stored_resolved_verifier_profile = load_model(
+            resolved_verifier_profile_path,
+            ResolvedVerifierToolProfile,
+        )
+        if (
+            stored_verifier_profile.id != manifest.requested_verifier_profile_id
+            or stored_verifier_profile.version != manifest.requested_verifier_profile_version
+            or content_hash(stored_verifier_profile) != manifest.verifier_declared_profile_hash
+            or stored_resolved_verifier_profile.declared_profile_hash
+            != manifest.verifier_declared_profile_hash
+            or stored_resolved_verifier_profile.resolved_profile_hash
+            != manifest.resolved_verifier_profile_hash
+            or content_hash(stored_resolved_verifier_profile.identity_payload())
+            != stored_resolved_verifier_profile.resolved_profile_hash
+            or manifest.resolved_verifier_profile != stored_resolved_verifier_profile
+        ):
+            raise ReplayError("resolved verifier profile identity does not match the manifest")
+        if scorecard.reproducibility.verifier_profile_ids != [
+            stored_resolved_verifier_profile.profile_id
+        ] or scorecard.reproducibility.resolved_verifier_profile_hashes != [
+            stored_resolved_verifier_profile.resolved_profile_hash
+        ]:
+            raise ReplayError("scorecard verifier profile identity does not match the manifest")
+    elif (
+        verifier_profile_path.exists()
+        or resolved_verifier_profile_path.exists()
+        or manifest.requested_verifier_profile_id is not None
+        or manifest.requested_verifier_profile_version is not None
+        or manifest.verifier_declared_profile_hash is not None
+        or manifest.resolved_verifier_profile is not None
+    ):
+        raise ReplayError("run has an incomplete verifier profile identity")
+    elif (
+        scorecard.reproducibility.verifier_profile_ids
+        or scorecard.reproducibility.resolved_verifier_profile_hashes
+    ):
+        raise ReplayError("scorecard has verifier profile identities without manifest artifacts")
     events = read_trace(run_dir / "trace.jsonl", expected_run_id=manifest.run_id)
     if not events or events[0].event_type != "episode_started":
         raise ReplayError("trace does not begin with episode_started")
@@ -289,6 +335,18 @@ def replay_run(
                     expected=stored_resolved_profile,
                     backend=synthesis_backend,
                 )
+            replay_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+            if stored_resolved_verifier_profile is not None:
+                assert stored_verifier_profile is not None
+                verifier_backend = service.registries.tools.get(
+                    stored_verifier_profile.target_plugin
+                )
+                if not isinstance(verifier_backend, VerifierBackendPlugin):
+                    raise ReplayError("stored verifier profile backend is unsupported")
+                replay_resolved_verifier_profile = verifier_backend.resolve_verifier_profile(
+                    stored_verifier_profile,
+                    expected=stored_resolved_verifier_profile,
+                )
             reverified = service._verify_candidate(
                 suite=suite,
                 task=task,
@@ -296,6 +354,8 @@ def replay_run(
                 runtime=runtime,
                 candidate_dir=run_dir / "candidate",
                 artifact_root=run_dir / "artifacts" / "replay-verification",
+                verifier_profile=stored_verifier_profile,
+                resolved_verifier_profile=replay_resolved_verifier_profile,
             )
             if replay_resolved_profile is not None:
                 assert stored_profile is not None

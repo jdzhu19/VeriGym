@@ -162,6 +162,7 @@ from verigym.schemas.task import VeriTask
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
 from verigym.schemas.verifier import VerifierGraph, VerifierResult
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.verilog_eval.schemas import NativeRegressionResult
 
 SchemaFactory = Callable[[], dict[str, Any]]
@@ -317,6 +318,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "run-agent-version-assignment": _model(RunAgentVersionAssignment),
     "run-agent-version-assignments": _model(RunAgentVersionAssignments),
     "resolved-toolchain-profile": _model(ResolvedToolchainProfile),
+    "resolved-verifier-tool-profile": _model(ResolvedVerifierToolProfile),
     "run-config": _model(RunConfig),
     "run-index-record": _model(RunIndexRecord),
     "run-manifest": _model(RunManifest),
@@ -345,6 +347,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "trajectory-event": _model(TrajectoryEvent),
     "trajectory-index-record": _model(TrajectoryIndexRecord),
     "verifier-graph": _model(VerifierGraph),
+    "verifier-tool-profile": _model(VerifierToolProfile),
     "verifier-result": _model(VerifierResult),
 }
 

@@ -37,6 +37,10 @@ from verigym.core.scoring import build_scorecard
 from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
 from verigym.core.trace import TraceWriter
 from verigym.core.verifier_dag import VerifierExecutor, has_infrastructure_error
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+)
 from verigym.core.workspace import copy_tree_safely, merge_tree_safely, normalize_relative_path
 from verigym.models.base import ModelClient
 from verigym.profiles.base import ResolvedToolchainProfile
@@ -73,6 +77,7 @@ from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
 from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 from verigym.version import __version__
@@ -159,6 +164,19 @@ class VeriGym:
             suite, task, assets = self.load_task(config.task_id)
         else:
             suite, task, assets = self.load_task(config.task_id, config.suite_source)
+        resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+        if config.verifier_profile is not None:
+            if config.runtime != config.verifier_profile.runtime:
+                raise ConfigurationError(
+                    "verifier profile requires the local control-plane runtime"
+                )
+            resolved_verifier_profile = resolve_verifier_profile(
+                task=task,
+                profile=config.verifier_profile,
+                tools=self.registries.tools,
+                expected=config.expected_resolved_verifier_profile,
+            )
+            task = task_with_verifier_profile(task, config.verifier_profile)
         task_hash = content_hash(task)
         source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
         source_snapshot = suite.source_snapshot()
@@ -464,6 +482,23 @@ class VeriGym:
                 resolved_profile.resolved_profile_hash if resolved_profile is not None else None
             ),
             resolved_toolchain_profile=resolved_profile,
+            requested_verifier_profile_id=(
+                config.verifier_profile.id if config.verifier_profile is not None else None
+            ),
+            requested_verifier_profile_version=(
+                config.verifier_profile.version if config.verifier_profile is not None else None
+            ),
+            verifier_declared_profile_hash=(
+                resolved_verifier_profile.declared_profile_hash
+                if resolved_verifier_profile is not None
+                else None
+            ),
+            resolved_verifier_profile_hash=(
+                resolved_verifier_profile.resolved_profile_hash
+                if resolved_verifier_profile is not None
+                else None
+            ),
+            resolved_verifier_profile=resolved_verifier_profile,
             synthesis_flow_script_hash=(
                 resolved_profile.generated_script_hash if resolved_profile is not None else None
             ),
@@ -516,6 +551,13 @@ class VeriGym:
         dump_json(layout.artifacts / "toolchain_profile.json", profile)
         if resolved_profile is not None:
             dump_json(layout.artifacts / "resolved_toolchain_profile.json", resolved_profile)
+        if config.verifier_profile is not None:
+            dump_json(layout.artifacts / "verifier_profile.json", config.verifier_profile)
+        if resolved_verifier_profile is not None:
+            dump_json(
+                layout.artifacts / "resolved_verifier_profile.json",
+                resolved_verifier_profile,
+            )
         append_json_log(
             layout.logs / "runtime.log",
             event="runtime_created",
@@ -836,6 +878,8 @@ class VeriGym:
                     candidate_dir=layout.candidate,
                     artifact_root=layout.artifacts,
                     agent_session=env.session,
+                    verifier_profile=config.verifier_profile,
+                    resolved_verifier_profile=resolved_verifier_profile,
                 )
             if (
                 not external_workspace_rejected
@@ -962,6 +1006,7 @@ class VeriGym:
                 isolation_level=runtime.descriptor.isolation_level,
                 episode_failure=episode_failure,
                 resolved_profile=resolved_profile,
+                resolved_verifier_profile=resolved_verifier_profile,
                 candidate_synthesis=(
                     synthesis_evaluation.candidate if synthesis_evaluation is not None else None
                 ),
@@ -1028,6 +1073,8 @@ class VeriGym:
         candidate_dir: Path,
         artifact_root: Path,
         agent_session: RuntimeSession | None = None,
+        verifier_profile: VerifierToolProfile | None = None,
+        resolved_verifier_profile: ResolvedVerifierToolProfile | None = None,
     ) -> list[VerifierResult]:
         if suite is not None:
             managed = suite.verify_candidate(
@@ -1099,6 +1146,8 @@ class VeriGym:
                 verifier_session,
                 artifact_root,
                 max_output_bytes=task.budget.max_output_bytes_per_tool,
+                verifier_profile=verifier_profile,
+                resolved_verifier_profile=resolved_verifier_profile,
             )
             integrity_ok = all(
                 (verifier_session.root / relative).is_file()

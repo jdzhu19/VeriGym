@@ -132,18 +132,22 @@ def test_vcs_classifies_license_failure(tmp_path: Path) -> None:
                 "testbench": "verifier/tb.v",
             }
         )
-        result = plugin.parse_result(
-            request,
-            CompletedCommand(
-                argv=["vcs"],
-                cwd=".",
-                exit_code=1,
-                stderr="License checkout failed",
-            ),
-            ToolContext(session=session),
-        )
-        assert result.category == ErrorCategory.LICENSE_UNAVAILABLE
-        assert result.metadata["candidate_failure"] is False
+        for diagnostic in (
+            "License checkout failed",
+            "Cannot find license file. Make sure LM_LICENSE_FILE is configured.",
+        ):
+            result = plugin.parse_result(
+                request,
+                CompletedCommand(
+                    argv=["vcs"],
+                    cwd=".",
+                    exit_code=1,
+                    stderr=diagnostic,
+                ),
+                ToolContext(session=session),
+            )
+            assert result.category == ErrorCategory.LICENSE_UNAVAILABLE
+            assert result.metadata["candidate_failure"] is False
     finally:
         session.close()
         runtime.close()

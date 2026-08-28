@@ -51,6 +51,7 @@ from verigym.experiments.state import (
 from verigym.profiles.comparison import compare_area, compare_power, compare_timing
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
+from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import Registries, build_registries
 from verigym.reporting.service import ReportService
@@ -525,6 +526,18 @@ def run_task(
         dir_okay=False,
         help="Load a site-specific synthesis profile from YAML or JSON.",
     ),
+    verifier_profile: str | None = typer.Option(
+        None,
+        "--verifier-profile",
+        help="Opt in to one hash-bound verifier backend/transport profile.",
+    ),
+    verifier_profile_file: Path | None = typer.Option(
+        None,
+        "--verifier-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load a site-specific verifier profile from YAML or JSON.",
+    ),
     agent_ppa_feedback: bool = typer.Option(
         False,
         "--agent-ppa-feedback",
@@ -575,6 +588,20 @@ def run_task(
             if docker_image is not None:
                 raise ValueError("--docker-image requires --runtime docker")
             docker_config = None
+        if (verifier_profile is None) != (verifier_profile_file is None):
+            raise ValueError(
+                "--verifier-profile and --verifier-profile-file must be supplied together"
+            )
+        loaded_verifier_profile = (
+            load_verifier_profile(verifier_profile_file)
+            if verifier_profile_file is not None
+            else None
+        )
+        if loaded_verifier_profile is not None and loaded_verifier_profile.id != verifier_profile:
+            raise ValueError(
+                f"verifier profile file declares {loaded_verifier_profile.id!r}, "
+                f"expected {verifier_profile!r}"
+            )
         config = RunConfig(
             task_id=task_id,
             mode=mode,
@@ -601,6 +628,8 @@ def run_task(
             runtime=runtime,
             docker_config=docker_config,
             toolchain_profile=toolchain_profile,
+            verifier_profile_id=verifier_profile,
+            verifier_profile=loaded_verifier_profile,
             agent_ppa_feedback=agent_ppa_feedback,
             agent_ppa_max_calls=agent_ppa_max_calls,
             seed=seed,
@@ -718,6 +747,10 @@ def batch(
                     effective_config.profile_file,
                     expected_id=effective_config.profile,
                 )
+                if effective_config.verifier_profile_file is not None:
+                    verifier = load_verifier_profile(effective_config.verifier_profile_file)
+                    if verifier.id != effective_config.verifier_profile:
+                        raise ValueError("experiment verifier profile ID differs from its file")
             return VeriGym(registries)
 
         runner = BatchRunner(

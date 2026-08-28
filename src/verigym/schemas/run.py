@@ -36,6 +36,7 @@ from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import BudgetSpec
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 
 
 class RunConfig(StrictModel):
@@ -52,6 +53,9 @@ class RunConfig(StrictModel):
     runtime: str = "local"
     docker_config: DockerRuntimeConfig | None = None
     toolchain_profile: str | None = None
+    verifier_profile_id: str | None = None
+    verifier_profile: VerifierToolProfile | None = None
+    expected_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
     agent_ppa_feedback: bool = False
     agent_ppa_max_calls: int = Field(default=3, ge=1, le=8)
     seed: int = 0
@@ -87,6 +91,17 @@ class RunConfig(StrictModel):
             payload.pop("agent_ppa_feedback", None)
         if payload.get("agent_ppa_max_calls") == 3:
             payload.pop("agent_ppa_max_calls", None)
+        if all(
+            payload.get(field) is None
+            for field in (
+                "verifier_profile_id",
+                "verifier_profile",
+                "expected_resolved_verifier_profile",
+            )
+        ):
+            payload.pop("verifier_profile_id", None)
+            payload.pop("verifier_profile", None)
+            payload.pop("expected_resolved_verifier_profile", None)
         prompt_binding_fields = (
             "expected_prompt_policy",
             "expected_prompt_policy_hash",
@@ -146,6 +161,15 @@ class RunConfig(StrictModel):
             raise ValueError("expected runtime identity does not match runtime selection")
         if self.expected_resolved_profile is not None and self.toolchain_profile is None:
             raise ValueError("an expected resolved profile requires toolchain_profile")
+        if (self.verifier_profile_id is None) != (self.verifier_profile is None):
+            raise ValueError("verifier profile ID and document must be supplied together")
+        if (
+            self.verifier_profile is not None
+            and self.verifier_profile.id != self.verifier_profile_id
+        ):
+            raise ValueError("verifier profile ID differs from the loaded document")
+        if self.expected_resolved_verifier_profile is not None and self.verifier_profile is None:
+            raise ValueError("an expected resolved verifier profile requires a profile")
         experiment_fields = (
             self.experiment_id,
             self.plan_item_id,
@@ -224,6 +248,11 @@ class RunManifest(StrictModel):
     declared_profile_hash: str | None = None
     resolved_profile_hash: str | None = None
     resolved_toolchain_profile: ResolvedToolchainProfile | None = None
+    requested_verifier_profile_id: str | None = None
+    requested_verifier_profile_version: str | None = None
+    verifier_declared_profile_hash: str | None = None
+    resolved_verifier_profile_hash: str | None = None
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
     synthesis_flow_script_hash: str | None = None
     reference_summary_hash: str | None = None
     reference_strategy: str | None = None

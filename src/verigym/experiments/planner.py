@@ -15,6 +15,10 @@ from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
 from verigym.core.repository_candidate import repository_plan_identity
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+)
 from verigym.experiments.identity import (
     correctness_definition_hash,
     derive_child_seed,
@@ -35,6 +39,7 @@ from verigym.experiments.schemas import (
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
+from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.prompts.policy import agent_configuration_hash, resolve_prompt_policy
 from verigym.protocols.repository_action import resolve_repository_action_protocol
 from verigym.provenance import get_build_provenance
@@ -45,6 +50,7 @@ from verigym.schemas.prompt import ToolPolicySnapshot
 from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import TaskRef, VeriTask
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.tools.base import SynthesisBackendPlugin
 from verigym.version import __version__
 
@@ -62,6 +68,10 @@ class ExperimentPlanner:
         evaluation_payload = evaluation_config_payload(config)
         evaluation_config_hash = content_hash(evaluation_payload)
         suite, tasks, source_snapshot = self._resolve_tasks(config)
+        verifier_profile, resolved_verifier_profiles, tasks = self._resolve_verifier_profiles(
+            config,
+            tasks,
+        )
         task_records = [
             {
                 "task_id": task.id,
@@ -103,6 +113,8 @@ class ExperimentPlanner:
                 frozen_docker=frozen_docker,
                 default_profiles=default_profiles,
                 resolved_profiles=resolved_profiles,
+                verifier_profile=verifier_profile,
+                resolved_verifier_profiles=resolved_verifier_profiles,
             )
             items = self._order_items(items, config.execution.plan_order_policy)
             child_seeds = [item.child_seed for item in items]
@@ -110,7 +122,11 @@ class ExperimentPlanner:
                 raise ConfigurationError(
                     "derived child-seed collision; change the experiment sampling identity"
                 )
-            self._verify_task_stability(config, task_records)
+            self._verify_task_stability(
+                config,
+                task_records,
+                resolved_verifier_profiles,
+            )
         finally:
             runtime.close()
 
@@ -137,6 +153,24 @@ class ExperimentPlanner:
         self.verify_plan_integrity(plan)
         config = plan.config
         suite, tasks, source_snapshot = self._resolve_tasks(config, check_tools=False)
+        verifier_profile, current_verifier_profiles, tasks = self._resolve_verifier_profiles(
+            config,
+            tasks,
+        )
+        del verifier_profile
+        planned_verifier_profiles: dict[str, ResolvedVerifierToolProfile] = {}
+        for item in plan.items:
+            if item.resolved_verifier_profile is not None:
+                previous = planned_verifier_profiles.setdefault(
+                    item.task_id,
+                    item.resolved_verifier_profile,
+                )
+                if previous != item.resolved_verifier_profile:
+                    raise ConfigurationError(
+                        "planned verifier profile identity differs across repeated task items"
+                    )
+        if current_verifier_profiles != planned_verifier_profiles:
+            raise ConfigurationError("resolved verifier profile changed after planning")
         task_records = [
             {
                 "task_id": task.id,
@@ -215,6 +249,11 @@ class ExperimentPlanner:
         references = sorted(suite.discover(), key=lambda ref: ref.id)
         selected = self._select_references(config, references)
         tasks = [suite.load_task(reference) for reference in selected]
+        configured_verifier = (
+            load_verifier_profile(config.verifier_profile_file)
+            if config.verifier_profile_file is not None
+            else None
+        )
         for task in tasks:
             if task.id != task.id.strip() or not task.id.startswith(f"{config.suite.id}/"):
                 raise ConfigurationError(f"suite returned an invalid task identity: {task.id!r}")
@@ -224,6 +263,11 @@ class ExperimentPlanner:
                 )
             if check_tools and config.runtime.id == "local":
                 for plugin_name in sorted({node.plugin for node in task.verifier.nodes}):
+                    if (
+                        configured_verifier is not None
+                        and plugin_name == configured_verifier.source_plugin
+                    ):
+                        continue
                     health = self.service.registries.tools.get(plugin_name).health_check()
                     if not health.healthy:
                         raise MissingDependencyError(
@@ -231,6 +275,34 @@ class ExperimentPlanner:
                             f"{health.message}"
                         )
         return suite, tasks, suite.source_snapshot()
+
+    def _resolve_verifier_profiles(
+        self,
+        config: ExperimentConfig,
+        tasks: list[VeriTask],
+    ) -> tuple[
+        VerifierToolProfile | None,
+        dict[str, ResolvedVerifierToolProfile],
+        list[VeriTask],
+    ]:
+        if config.verifier_profile_file is None:
+            return None, {}, tasks
+        if config.runtime.id != "local":
+            raise ConfigurationError("verifier MCP profiles require runtime.id='local'")
+        profile = load_verifier_profile(config.verifier_profile_file)
+        if profile.id != config.verifier_profile:
+            raise ConfigurationError("experiment verifier profile ID differs from its file")
+        resolved: dict[str, ResolvedVerifierToolProfile] = {}
+        transformed: list[VeriTask] = []
+        for task in tasks:
+            item = resolve_verifier_profile(
+                task=task,
+                profile=profile,
+                tools=self.service.registries.tools,
+            )
+            resolved[task.id] = item
+            transformed.append(task_with_verifier_profile(task, profile))
+        return profile, resolved, transformed
 
     @staticmethod
     def _select_references(
@@ -441,6 +513,8 @@ class ExperimentPlanner:
         frozen_docker: DockerRuntimeConfig | None,
         default_profiles: dict[str, ToolchainProfile],
         resolved_profiles: dict[str, ResolvedToolchainProfile],
+        verifier_profile: VerifierToolProfile | None,
+        resolved_verifier_profiles: dict[str, ResolvedVerifierToolProfile],
     ) -> list[PlanItem]:
         runtime_descriptor = normalized_runtime_descriptor(runtime.descriptor)
         runtime_hash = runtime_identity_hash(runtime_descriptor)
@@ -478,6 +552,7 @@ class ExperimentPlanner:
             repository_identity = repository_plan_identity(task)
             tool_policy = self._tool_policy(task, config.runs.mode)
             resolved = resolved_profiles.get(task.id)
+            resolved_verifier = resolved_verifier_profiles.get(task.id)
             feedback_contract = resolve_agent_feedback_contract(
                 task=task,
                 ppa_enabled=config.runs.agent_ppa_feedback,
@@ -584,6 +659,8 @@ class ExperimentPlanner:
                                 resolved.resolved_profile_hash if resolved is not None else None
                             ),
                             "resolved_profile": resolved,
+                            "verifier_profile": verifier_profile,
+                            "resolved_verifier_profile": resolved_verifier,
                             "reference_candidate_hash": (
                                 resolved.reference_candidate_hash if resolved is not None else None
                             ),
@@ -607,6 +684,8 @@ class ExperimentPlanner:
                             "toolchain_profiles": [profile_ref],
                             "declared_profile_hash": raw["declared_profile_hash"],
                             "resolved_profile_hash": raw["resolved_profile_hash"],
+                            "verifier_profile": verifier_profile,
+                            "resolved_verifier_profile": resolved_verifier,
                             "agent_feedback_contract": feedback_contract,
                         }
                         if action_protocol is not None:
@@ -672,8 +751,12 @@ class ExperimentPlanner:
         self,
         config: ExperimentConfig,
         expected: list[dict[str, str]],
+        expected_verifier_profiles: dict[str, ResolvedVerifierToolProfile],
     ) -> None:
         suite, tasks, _snapshot = self._resolve_tasks(config, check_tools=False)
+        _profile, resolved, tasks = self._resolve_verifier_profiles(config, tasks)
+        if resolved != expected_verifier_profiles:
+            raise ConfigurationError("verifier profile changed during plan construction")
         actual = [
             {
                 "task_id": task.id,

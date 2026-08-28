@@ -18,6 +18,7 @@ from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.common import ToolchainProfile, ToolDescriptor
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,8 @@ class ToolContext:
     observation_policy: RepositoryObservationPolicy | None = None
     audit_callback: RawObservationCallback | None = None
     public_test_executor: Callable[[str, RuntimeSession], CompletedCommand] | None = None
+    verifier_profile: VerifierToolProfile | None = None
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
 
 
 class ToolPlugin(ABC):
@@ -108,4 +111,17 @@ class SynthesisBackendPlugin(ToolPlugin):
         """Copy only profile-approved assets into verifier-private staging."""
 
 
-__all__ = ["SynthesisBackendPlugin", "ToolContext", "ToolPlugin"]
+class VerifierBackendPlugin(ToolPlugin):
+    """Verifier-only backend whose external transport must resolve before model lookup."""
+
+    @abstractmethod
+    def resolve_verifier_profile(
+        self,
+        profile: VerifierToolProfile,
+        *,
+        expected: ResolvedVerifierToolProfile | None = None,
+    ) -> ResolvedVerifierToolProfile:
+        """Resolve transport and remote tool identity without evaluating a candidate."""
+
+
+__all__ = ["SynthesisBackendPlugin", "ToolContext", "ToolPlugin", "VerifierBackendPlugin"]

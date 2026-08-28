@@ -869,6 +869,31 @@
       "minItems": 1,
       "title": "Systems",
       "type": "array"
+    },
+    "verifier_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verifier Profile"
+    },
+    "verifier_profile_file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verifier Profile File"
     }
   },
   "required": [

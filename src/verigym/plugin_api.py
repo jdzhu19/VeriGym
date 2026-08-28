@@ -102,8 +102,14 @@ from verigym.schemas.task import (
 )
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.schemas.verifier import VerifierGraph, VerifierNode, VerifierResult, VerifierStatus
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
+from verigym.tools.base import (
+    SynthesisBackendPlugin,
+    ToolContext,
+    ToolPlugin,
+    VerifierBackendPlugin,
+)
 
 __all__ = [
     "AgentAction",
@@ -166,6 +172,7 @@ __all__ = [
     "RuntimeRequirement",
     "ResolvedToolchainProfile",
     "ResolvedToolIdentity",
+    "ResolvedVerifierToolProfile",
     "Runtime",
     "SCHEMA_VERSION",
     "ScoringSpec",
@@ -196,7 +203,9 @@ __all__ = [
     "ValidationReport",
     "VeriTask",
     "VerifierGraph",
+    "VerifierBackendPlugin",
     "VerifierNode",
+    "VerifierToolProfile",
     "VerifierResult",
     "VerifierStatus",
     "WorkspaceSpec",
