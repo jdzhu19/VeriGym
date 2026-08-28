@@ -24,7 +24,10 @@ from verigym.hwe.qwen_action_tokenizer import (
 from verigym.hwe.trajectory import HweNormalizedEvent
 from verigym.protocols.repository_action import canonical_action_json
 
-from ._hwe_tool_schema import without_openhands_tool_metadata
+from ._hwe_tool_schema import (
+    with_workspace_relative_hwe_constraints,
+    without_openhands_tool_metadata,
+)
 from ._recovery import (
     OPENHANDS_FORMAT_RECOVERY_BUDGET,
     OPENHANDS_FORMAT_RECOVERY_EXHAUSTED_REASON_SHA256,
@@ -199,7 +202,10 @@ def snapshot_openhands_events(events: Sequence[object]) -> list[dict[str, Any]]:
 
 
 def snapshot_openhands_tools(
-    tools: Sequence[object], *, without_sdk_metadata: bool = False
+    tools: Sequence[object],
+    *,
+    without_sdk_metadata: bool = False,
+    workspace_relative_constraints: bool = False,
 ) -> list[dict[str, Any]]:
     """Freeze the exact OpenAI tool schemas produced by OpenHands 1.42.1."""
 
@@ -220,7 +226,13 @@ def snapshot_openhands_tools(
             )
         result.append(value)
     if without_sdk_metadata:
-        return without_openhands_tool_metadata(result)
+        result = without_openhands_tool_metadata(result)
+    if workspace_relative_constraints:
+        if not without_sdk_metadata:
+            raise OpenHandsTrajectoryInfrastructureError(
+                "OpenHands workspace constraints require metadata-free tools"
+            )
+        result = with_workspace_relative_hwe_constraints(result)
     return result
 
 

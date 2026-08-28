@@ -15,6 +15,7 @@ from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
+    OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID,
     build_bounded_sft_agent_options,
     build_bounded_sft_agent_version,
     evaluate_bounded_sft_data_gate,
@@ -238,6 +239,23 @@ def test_bounded_sft_v13_agent_has_distinct_identity_and_policy() -> None:
 
     assert version.agent_version_id == OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
     assert options["tool_choice_policy"] == ("validated_responses_recovery_state_required_tool_v13")
+    assert options["agent_version_hash"] == version.version_hash
+
+
+def test_v14_path_diagnostic_has_distinct_identity_and_policy() -> None:
+    version = build_bounded_sft_agent_version(
+        source_commit="a" * 40,
+        image_locks=_locks(),
+        policy_version="v14",
+    )
+    options = build_bounded_sft_agent_options(
+        seed=486,
+        agent_version=version,
+        policy_version="v14",
+    )
+
+    assert version.agent_version_id == OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID
+    assert options["tool_choice_policy"] == ("validated_responses_recovery_state_required_tool_v14")
     assert options["agent_version_hash"] == version.version_hash
 
 

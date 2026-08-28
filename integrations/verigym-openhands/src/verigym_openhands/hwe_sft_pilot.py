@@ -49,6 +49,19 @@ OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256 = (
 )
 OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v2"
 OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v3"
+OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID = (
+    "openhands-deepseek-v4-flash-hwe-path-discipline-v14-diagnostic"
+)
+OPENHANDS_PATH_DISCIPLINE_V14_PROFILE_HASH = content_hash(
+    {
+        "format_id": "verigym_openhands_hwe_path_discipline_diagnostic_v1",
+        "tool_choice_policy": "validated_responses_recovery_state_required_tool_v14",
+        "provider_tool_schema_policy": ("canonical_hwe_without_sdk_metadata_workspace_relative_v2"),
+        "episode_scope": "single_training_task_diagnostic",
+        "provider_request_retries": 0,
+        "whole_episode_retries": 0,
+    }
+)
 OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V2"
 OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V3"
 OPENHANDS_BOUNDED_SFT_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
@@ -112,6 +125,11 @@ def build_bounded_sft_agent_version(
         pilot_contract_hash = OPENHANDS_BOUNDED_SFT_PILOT_V3_CONTRACT_HASH
         tool_choice_policy = "validated_responses_recovery_state_required_tool_v13"
         provider_tool_schema_policy = "canonical_hwe_without_sdk_metadata_v1"
+    elif policy_version == "v14":
+        agent_version_id = OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID
+        pilot_contract_hash = OPENHANDS_PATH_DISCIPLINE_V14_PROFILE_HASH
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v14"
+        provider_tool_schema_policy = "canonical_hwe_without_sdk_metadata_workspace_relative_v2"
     else:
         raise ValueError("bounded SFT agent policy version is unsupported")
 
@@ -238,6 +256,9 @@ def build_bounded_sft_agent_options(
     elif policy_version == "v13":
         agent_version_id = OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
         tool_choice_policy = "validated_responses_recovery_state_required_tool_v13"
+    elif policy_version == "v14":
+        agent_version_id = OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v14"
     else:
         raise ValueError("bounded SFT agent policy version is unsupported")
 
@@ -762,6 +783,7 @@ def _load_small_json_object(path: Path) -> dict[str, Any]:
 
 __all__ = [
     "OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID",
+    "OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID",
     "OPENHANDS_BOUNDED_SFT_API_KEY_ENV",
     "OPENHANDS_BOUNDED_SFT_BASE_URL_ENV",
     "OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS",
@@ -772,6 +794,8 @@ __all__ = [
     "OPENHANDS_BOUNDED_SFT_OPT_IN_ENV",
     "OPENHANDS_BOUNDED_SFT_TRAINING_TASKS",
     "OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS",
+    "OPENHANDS_PATH_DISCIPLINE_V14_AGENT_VERSION_ID",
+    "OPENHANDS_PATH_DISCIPLINE_V14_PROFILE_HASH",
     "BoundedSftDataGate",
     "build_bounded_sft_agent_options",
     "build_bounded_sft_agent_version",

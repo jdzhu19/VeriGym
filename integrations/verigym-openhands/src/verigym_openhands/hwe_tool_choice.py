@@ -23,7 +23,10 @@ from openhands.sdk.llm.streaming import (
 from openhands.sdk.tool import ToolDefinition as GenericToolDefinition
 from pydantic import Field, PrivateAttr
 
-from ._hwe_tool_schema import without_openhands_tool_metadata
+from ._hwe_tool_schema import (
+    with_workspace_relative_hwe_constraints,
+    without_openhands_tool_metadata,
+)
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_MESSAGE
 from .hwe_stop_hook import read_recovery_count
 
@@ -936,6 +939,74 @@ class MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
         return resolved_instructions, resolved_input, normalized, call_kwargs, telemetry
 
 
+class WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
+    MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
+):
+    """Expose the metadata-free six-tool contract with explicit path constraints."""
+
+    def _finalize_completion_params(
+        self,
+        formatted_messages: list[dict[str, Any]],
+        tools: Sequence[ToolDefinition] | None,
+        add_security_risk_prediction: bool,
+        kwargs: dict[str, Any],
+        call_context: LLMCallContext | None = None,
+    ) -> tuple[list[dict[str, Any]], list[Any], bool, dict[str, Any], dict[str, Any]]:
+        result = super()._finalize_completion_params(
+            formatted_messages,
+            tools,
+            add_security_risk_prediction,
+            kwargs,
+            call_context=call_context,
+        )
+        messages, provider_tools, use_mock_tools, call_kwargs, telemetry = result
+        constrained = with_workspace_relative_hwe_constraints(provider_tools)
+        rebound = dict(call_kwargs)
+        if rebound.get("tools") is not None:
+            rebound["tools"] = constrained
+        return messages, constrained, use_mock_tools, rebound, telemetry
+
+    def _finalize_responses_params(
+        self,
+        instructions: str | None,
+        input_items: list[dict[str, Any]],
+        tools: Sequence[ToolDefinition] | None,
+        include: list[str] | None,
+        store: bool | None,
+        add_security_risk_prediction: bool,
+        kwargs: dict[str, Any],
+        call_context: LLMCallContext | None = None,
+    ) -> tuple[
+        str | None,
+        list[dict[str, Any]],
+        list[Any] | None,
+        dict[str, Any],
+        dict[str, Any],
+    ]:
+        result = super()._finalize_responses_params(
+            instructions,
+            input_items,
+            tools,
+            include,
+            store,
+            add_security_risk_prediction,
+            kwargs,
+            call_context=call_context,
+        )
+        resolved_instructions, resolved_input, provider_tools, call_kwargs, telemetry = result
+        constrained = (
+            with_workspace_relative_hwe_constraints(provider_tools)
+            if provider_tools is not None
+            else None
+        )
+        return resolved_instructions, resolved_input, constrained, call_kwargs, telemetry
+
+
+WorkspaceRelativeRequiredToolLLM = (
+    WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
+)
+
+
 __all__ = [
     "BoundedProviderCallLLM",
     "OPENHANDS_HWE_TOOL_CHOICE_REQUIRED",
@@ -954,4 +1025,6 @@ __all__ = [
     "ValidatedResponsesRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateRequiredToolLLM",
     "MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM",
+    "WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM",
+    "WorkspaceRelativeRequiredToolLLM",
 ]

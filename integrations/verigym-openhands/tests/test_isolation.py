@@ -118,6 +118,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "RecoveryForcedFinishLLM" in source
     assert 'settings.tool_choice_policy == "recovery_state_forced_finish_v6"' in source
     assert "RecoveryStateForcedFinishLLM" in source
+    assert "WorkspaceRelativeRequiredToolLLM" in source
     assert 'settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"' in source
     assert "ValidatedRecoveryStateForcedFinishLLM" in source
     assert '"validated_recovery_state_forced_finish_v8"' in source
@@ -251,6 +252,18 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
         == "validated_responses_recovery_state_required_tool_v11"
     )
 
+    workspace_relative = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v14",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        workspace_relative.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v14"
+    )
+
     with pytest.raises(ValueError, match="unsupported"):
         module.resolve_hwe_settings(
             {
@@ -259,6 +272,18 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
             },
             task_wall_time_s=100,
         )
+
+
+def test_v14_path_prompt_is_distinct_without_changing_the_historical_prompt() -> None:
+    from verigym_openhands.hwe_agent import _system_prompt
+
+    historical = _system_prompt()
+    constrained = _system_prompt(workspace_relative=True)
+
+    assert historical == _system_prompt(workspace_relative=False)
+    assert constrained.startswith(historical)
+    assert "Every path and cwd argument" not in historical
+    assert "Every path and cwd argument" in constrained
 
 
 def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_path: Path) -> None:

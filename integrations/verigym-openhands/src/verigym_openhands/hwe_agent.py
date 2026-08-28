@@ -133,8 +133,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             or policy.memory_pack_hash is not None
         ):
             raise ValueError("OpenHands HWE version differs from its prompt binding")
-        system_prompt = _system_prompt()
-        task_prompt = validate_prompt_text(_task_prompt(context, bridge), policy)
+        workspace_relative = (
+            settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v14"
+        )
+        system_prompt = _system_prompt(workspace_relative=workspace_relative)
+        task_prompt = validate_prompt_text(
+            _task_prompt(context, bridge, workspace_relative=workspace_relative),
+            policy,
+        )
         self._context = context
         self._bridge = bridge
         self._settings = settings
@@ -283,19 +289,24 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v11",
                     "validated_responses_recovery_state_required_tool_v12",
                     "validated_responses_recovery_state_required_tool_v13",
+                    "validated_responses_recovery_state_required_tool_v14",
                 }:
                     from .hwe_tool_choice import RecoveryToolChoiceViolation
 
-                    if (
-                        settings.tool_choice_policy
-                        == "validated_responses_recovery_state_required_tool_v13"
-                    ):
+                    if settings.tool_choice_policy in {
+                        "validated_responses_recovery_state_required_tool_v13",
+                        "validated_responses_recovery_state_required_tool_v14",
+                    }:
                         from .hwe_tool_choice import (
                             MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM,
                             ProviderToolArgumentsPolicyError,
                         )
 
                         llm_type = MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
+                        if settings.tool_choice_policy.endswith("_v14"):
+                            from .hwe_tool_choice import WorkspaceRelativeRequiredToolLLM
+
+                            llm_type = WorkspaceRelativeRequiredToolLLM
                         provider_tool_policy_type = ProviderToolArgumentsPolicyError
                     else:
                         from .hwe_tool_choice import (
@@ -314,6 +325,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v11",
                     "validated_responses_recovery_state_required_tool_v12",
                     "validated_responses_recovery_state_required_tool_v13",
+                    "validated_responses_recovery_state_required_tool_v14",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -537,7 +549,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                 list(conversation.agent.tools_map.values()),
                                 without_sdk_metadata=(
                                     settings.tool_choice_policy
-                                    == "validated_responses_recovery_state_required_tool_v13"
+                                    in {
+                                        "validated_responses_recovery_state_required_tool_v13",
+                                        "validated_responses_recovery_state_required_tool_v14",
+                                    }
+                                ),
+                                workspace_relative_constraints=(
+                                    settings.tool_choice_policy
+                                    == "validated_responses_recovery_state_required_tool_v14"
                                 ),
                             )
                     except Exception as exc:
@@ -817,8 +836,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         return values  # type: ignore[return-value]
 
 
-def _system_prompt() -> str:
-    return (
+def _system_prompt(*, workspace_relative: bool = False) -> str:
+    prompt = (
         "You are a hardware repository repair agent using the frozen OpenHands HWE native-shell "
         "v2 contract. Every assistant decision must contain exactly one typed tool call. One "
         "same-session format recovery may be supplied if a response omits its tool call. Use only "
@@ -828,10 +847,37 @@ def _system_prompt() -> str:
         "use network access, hidden verifier assets, reference solutions, credentials, private "
         "reasoning blocks, host paths, other agents, or undeclared tools."
     )
+    if not workspace_relative:
+        return prompt
+    return (
+        prompt
+        + " Every path and cwd argument must be '.' or a workspace-relative POSIX path with no "
+        "leading slash or drive prefix. In command, patch, and summary arguments, refer to "
+        "repository files only by workspace-relative path and never copy a controller or host "
+        "filesystem path."
+    )
 
 
-def _task_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
+def _task_prompt(
+    context: AgentContext,
+    bridge: ExternalAgentBridge,
+    *,
+    workspace_relative: bool = False,
+) -> str:
     workspace = bridge.workspace_root.resolve(strict=True)
+    instructions = [
+        "Read TASK.md and relevant source before editing.",
+        "Use bounded reads and shell diagnostics.",
+        "Use apply_patch for persistent edits.",
+        "Inspect the final candidate diff before calling finish exactly once.",
+        "Do not ask questions or attempt whole-episode retries.",
+    ]
+    if workspace_relative:
+        instructions.append(
+            "Use '.' or paths like 'core/id_stage.sv' for path and cwd arguments; never use a "
+            "leading slash or drive-letter prefix, and never copy a host path into any tool "
+            "argument."
+        )
     payload = {
         "schema_version": "1.0",
         "collection_profile_id": "hwe_production_native_shell_v2",
@@ -852,13 +898,7 @@ def _task_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "max_changed_files": context.task.workspace.max_changed_files,
             "max_patch_lines": context.task.workspace.max_patch_lines,
         },
-        "instructions": [
-            "Read TASK.md and relevant source before editing.",
-            "Use bounded reads and shell diagnostics.",
-            "Use apply_patch for persistent edits.",
-            "Inspect the final candidate diff before calling finish exactly once.",
-            "Do not ask questions or attempt whole-episode retries.",
-        ],
+        "instructions": instructions,
     }
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
 
@@ -984,6 +1024,7 @@ def _identity(
         "validated_responses_recovery_state_required_tool_v11": "v11",
         "validated_responses_recovery_state_required_tool_v12": "v12",
         "validated_responses_recovery_state_required_tool_v13": "v13",
+        "validated_responses_recovery_state_required_tool_v14": "v14",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -1024,6 +1065,8 @@ def _identity(
             if settings.tool_choice_policy == "validated_recovery_state_forced_finish_v8"
             else "repository_action_state_machine_metadata_free_sdk_continuation_v13"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v13"
+            else "repository_action_state_machine_workspace_relative_sdk_continuation_v14"
+            if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v14"
             else "repository_action_state_machine_validated_responses_sdk_continuation_v12"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v12"
             else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
