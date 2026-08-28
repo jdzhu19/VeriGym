@@ -281,11 +281,24 @@ cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](
 
 ### Verifier-only Synopsys MCP transport
 
-RTL AgentEval phase one keeps this transport verifier-only. A frozen RTLLM candidate may use
-DC/MCP for final PPA, but requesting agent-visible PPA with a commercial backend fails before any
-model call. MCP transport, license configuration, PDK/library paths, raw reports, and reference
-artifacts never enter the agent container. Candidate-visible commercial PPA requires a separate
-isolated worker and threat-model update; it is not covered by the current security claim.
+RTL AgentEval phase one keeps both VCS/MCP and DC/MCP verifier-only. A strict verifier profile may
+replace one functional-verifier DAG node with `synopsys.vcs.mcp`, while a separately resolved
+toolchain profile may select `synopsys.dc.mcp` for final PPA. Both profiles resolve and bind their
+fixed transports and server identities before model lookup. Requesting agent-visible PPA with a
+commercial backend fails before any model call. MCP transport, license configuration, hidden
+testbenches, PDK/library paths, raw reports, and reference artifacts never enter the agent
+container. Candidate-visible commercial PPA requires a separate isolated worker and threat-model
+update; it is not covered by the current security claim.
+
+The VCS stdio service approves task-bound profiles at startup and exposes only list, resolve, and
+simulate operations. The server owns the exact source order, task ID, top, hidden-testbench bytes
+and hash, pass/fail markers, timeout, VCS executable, and accepted tool version. Simulation accepts
+only bounded, hash-checked candidate sources for that contract. It has no command, shell, flag,
+environment, testbench, report, artifact-return, or license field. The client accepts no raw
+stdout, stderr, log, diagnostic, hidden RTL, license value, or server path; it validates the fixed
+wrapper hash, protocol/server versions, declared/resolved server identities, public contract,
+task, candidate, hidden-testbench result identity, and exact VCS version. License failures remain
+infrastructure failures rather than candidate rejections.
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
 verifier host; it is not a model-visible tool or a general remote shell. The control plane launches

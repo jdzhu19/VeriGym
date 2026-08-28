@@ -3,6 +3,10 @@
 Baseline captured on 2026-07-23 before tracked source changes. This document records observed
 behavior; it does not treat skipped or unavailable checks as passing.
 
+Current-host note (2026-08-28): Icarus 12 is now the default interactive tool, with the former
+Icarus 13 installation retained side by side. The entries below deliberately preserve the
+historical 2026-07-23 baseline and must not be read as the current AgentEval qualification.
+
 ## Source and environment
 
 - Package: `verigym 0.1.0`

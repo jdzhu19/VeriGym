@@ -49,6 +49,19 @@ agent-visible PPA combined with a commercial backend before model lookup. The Do
 workspace never receives MCP transport, license, PDK, commercial reports, or control-plane paths.
 Agent-visible DC/MCP requires a future isolated worker and a new security claim.
 
+Commercial single-turn RTLLM runs may replace their native VCS verifier node with a task-bound
+`synopsys.vcs.mcp` profile. This is a verifier transport selection, not an agent tool or a new
+benchmark variant. Manifest, scorecard, experiment plan, and replay bind the client profile,
+wrapper hash, server declared/resolved identities, public contract hash, and exact VCS version.
+See [verifier backend profiles](verifier_profiles.md).
+Bounded reference/known-bad and end-to-end VCS/DC evidence is recorded in the
+[commercial MCP qualification](audits/rtl_commercial_mcp_qualification_v1.md); it is
+infrastructure qualification, not a benchmark score.
+
+Phase-two reminder: after the remaining isolation design is approved, implement agent-visible
+DC/MCP PPA as a separately disposable worker. The current VCS/DC MCP services must remain
+verifier-only and must not be registered in the six-action model-visible surface.
+
 Manifest and replay bind the resolved `agent_feedback_contract`, its hash, and a contiguous ledger
 of feedback evaluations: test ID, candidate/profile hashes, cache status, synthesis-execution
 status, duration, category, and candidate metrics. AgentEval requires Docker for model-bearing

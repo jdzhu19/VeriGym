@@ -85,6 +85,10 @@ editable. This projection is not a complete repository. `next_line` remains veri
 `all_code` is not read during task loading. It exposes no compile or PPA test and is never combined
 with native ChatEval aggregates. See [RTL AgentEval v1](rtl_agent_eval.md).
 
+Neither RTL-Repo variant requires Icarus, VCS, or synthesis. Final correctness remains the native
+next-line Exact Match/Edit Similarity contract, so changing the host Icarus version does not change
+this benchmark's verifier identity.
+
 The harness selects the first nonempty, non-`//` line, matching upstream post-processing.
 Correctness is the upstream whitespace-token Exact Match. The verifier also records upstream
 character Edit Similarity on a 0–100 scale. Reports aggregate these as benchmark-native metrics

@@ -5,6 +5,12 @@ A `ToolchainProfile` is the contract that gives a synthesis number meaning. The 
 `toy_area_unit`. Its values are profile-relative teaching metrics, not silicon estimates or
 signoff results.
 
+A verifier backend profile is orthogonal to this contract. For example,
+`--verifier-profile ...synopsys.vcs.mcp...` may select hidden functional verification while
+`--toolchain-profile ...synopsys.dc.mcp...` selects final PPA. VCS is not a synthesis/PPA backend,
+and changing the verifier transport cannot make open and DC numbers comparable. Both resolved
+identities are retained, but only the complete resolved toolchain profile defines a PPA partition.
+
 Optional backends can implement `synthesis_area_timing` or `synthesis_area_timing_power`. VeriGym
 supports a site-specific Yosys/OpenSTA synthesis profile and a site-specific Synopsys DC profile.
 Both report area, maximum-path delay, worst-negative slack, and estimated power under exact
@@ -18,6 +24,10 @@ observations are separately quota-bound and cached by candidate/profile hash; th
 reference or ratio and are never promoted into the final score. Final PPA reruns candidate and
 reference after hidden correctness passes. Agent-visible commercial PPA is outside phase one and
 is rejected before model lookup. See [RTL AgentEval v1](rtl_agent_eval.md).
+
+Open Yosys/OpenSTA and commercial DC results remain independently partitioned even if they use the
+same task, nominal library family, clock period, or functional verifier. There is no cross-profile
+ranking or silent fallback between them.
 
 `SynthesisMetrics` records what Yosys produced: structural counts, cell histogram, optional mapped
 area, diagnostics, tool/profile identity, script hash, and artifact references. These raw metrics

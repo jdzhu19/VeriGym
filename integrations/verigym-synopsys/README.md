@@ -12,9 +12,12 @@ python -m pip install -e ./integrations/verigym-synopsys
 verigym doctor
 ```
 
-`synopsys.vcs.simulate` is a verifier-only regression tool. It accepts an explicit candidate source
-list and hidden testbench, invokes VCS without a shell, recognizes pass/fail sentinels, and maps
-license failures to `license_unavailable`. `synopsys.dc.synth` is a synthesis backend that reports
+`synopsys.vcs.simulate` is a trusted verifier-only regression tool. It accepts an explicit
+candidate source list and hidden testbench, invokes VCS without a shell, recognizes pass/fail
+sentinels, and maps license failures to `license_unavailable`. New remote or isolated campaigns
+should select `synopsys.vcs.mcp` through a task-bound verifier profile instead. The MCP server owns
+the hidden testbench and returns only a structured verdict. `synopsys.dc.synth` is a synthesis
+backend that reports
 mapped area, maximum-path delay, worst-negative slack, and estimated power from a hash-bound DB and
 SDC pair. The current explicit-power v4 flow runs `compile_ultra`, records mapped cell count, and
 retains `report_area`, `report_timing`, `report_power`, and `report_qor` artifacts. It annotates
@@ -29,6 +32,58 @@ reveal golden-design identifiers.
 
 A bounded two-host run through the MCP client, fixed SSH transport, and real Design Compiler is
 recorded in the [remote Synopsys MCP smoke audit](../../docs/audits/synopsys_mcp_real_dc_smoke.md).
+The combined VCS/MCP and DC/MCP RTLLM qualification is recorded in the
+[RTL commercial MCP qualification](../../docs/audits/rtl_commercial_mcp_qualification_v1.md).
+
+## Task-bound VCS MCP verifier
+
+Prepare one private server profile for each exact benchmark task. The server profile contains the
+hidden testbench path and VCS setup, so it must stay on the verifier host:
+
+```bash
+verigym-synopsys-prepare-vcs-profile \
+  --id rtllm-counter-vcs-v1 --task-id rtllm/counter_12 \
+  --source rtl/counter_12.v --testbench /private/RTLLM/counter_12/testbench.v \
+  --top counter_12_tb --pass-marker '===========Your Design Passed===========' \
+  --fail-marker '===========Failed===========' --vcs /opt/synopsys/vcs/bin/vcs \
+  --output-profile /private/profiles/counter-vcs-server.yaml
+
+verigym-synopsys-vcs-mcp-server \
+  --profile /private/profiles/counter-vcs-server.yaml \
+  --work-root /private/verigym-vcs-work
+```
+
+Carry MCP stdio through a fixed local or SSH wrapper that accepts no arguments. After querying the
+service's sanitized declared-profile and contract hashes, export the client-only profile:
+
+```bash
+verigym-synopsys-export-vcs-mcp-profile \
+  --id rtllm-counter-vcs-client-v1 \
+  --server-profile-id rtllm-counter-vcs-v1 \
+  --server-declared-profile-hash "$SERVER_DECLARED_SHA256" \
+  --server-contract-hash "$SERVER_CONTRACT_SHA256" \
+  --task-id rtllm/counter_12 \
+  --transport-executable /usr/local/bin/verigym-vcs-mcp-transport \
+  --output-profile /private/profiles/counter-vcs-client.yaml
+```
+
+Select that profile independently of the final synthesis profile:
+
+```bash
+verigym run --suite rtllm --task counter_12 --suite-source /datasets/RTLLM \
+  --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
+  --verifier-profile rtllm-counter-vcs-client-v1 \
+  --verifier-profile-file /private/profiles/counter-vcs-client.yaml \
+  --toolchain-profile site-synopsys-dc-mcp \
+  --toolchain-profile-file /private/profiles/counter-dc-mcp-client.yaml \
+  --output runs/
+```
+
+Resolution occurs before model lookup. Manifest, scorecard, experiment plan, and replay bind the
+wrapper, server declared/resolved profile, public task contract, hidden-testbench result identity,
+and exact VCS version. Candidate verdicts expose no stdout, stderr, VCS log, report, hidden RTL,
+license value, or verifier path. See [verifier backend profiles](../../docs/verifier_profiles.md)
+for the full contract and Icarus/VCS benchmark-version boundaries.
 
 ## Prepare a site profile
 
@@ -56,7 +111,7 @@ resolved profile hashes, activity settings, units, and all other profile identit
 Commercial tests are opt-in; the ordinary VeriGym test suite requires no Synopsys installation or
 credentials.
 
-## Verifier-only MCP service
+## Verifier-only DC MCP service
 
 The package also installs `verigym-synopsys-mcp-server`, a bounded standard MCP stdio endpoint for
 running DC on a site-controlled licensed machine. This is an alternative transport around the

@@ -3,10 +3,13 @@
 VeriGym core defines tool, synthesis-backend, profile, artifact, and result contracts; it does not
 ship vendor software. The optional
 [`verigym-synopsys`](../integrations/verigym-synopsys/README.md) package proves the interface with
-site-local tools plus one remote synthesis transport:
+site-local tools plus verifier-only MCP transports:
 
 - `synopsys.vcs.simulate` runs a hash-bound hidden regression and classifies license, candidate,
   timeout, parser, and runtime failures separately.
+- `synopsys.vcs.mcp` replaces that hidden-regression DAG node through a task-bound verifier
+  profile. VCS, its license setup, hidden testbench, raw output, and reports stay behind a fixed
+  local or SSH-connected stdio service.
 - `synopsys.dc.synth` runs a generated DC flow and emits mapped area, mapped cell count,
   maximum-path delay, worst-negative slack, total dynamic plus cell leakage power, and QoR reports
   from an exact `.db`/SDC pair.
@@ -52,8 +55,25 @@ profiles.
 
 Ordinary CI uses fake command results and parsers. Real VCS/DC/Formality tests are explicit,
 site-owned, license-gated checks and must not become dependencies of the ordinary test suite.
+PrimeTime, HSPICE, Genus, Innovus, Xcelium, and Library Compiler installations are not selected by
+the current RTL AgentEval contract. Library Compiler may prepare a DC `.db`; it is not a scored
+backend. Adding any other commercial tool requires a new explicit plugin/profile identity and
+qualification rather than PATH-based discovery.
 
-## Optional MCP deployment
+## Optional MCP deployments
+
+`synopsys.vcs.mcp` is selected by `--verifier-profile` and replaces only the task's hidden
+functional-verifier node. The server approves exact task profiles and exposes list, resolve, and
+simulate. It owns the top, source order, hidden testbench, pass/fail markers, timeout, VCS
+executable, and tool-version contract. Requests contain bounded hash-checked candidate RTL but no
+testbench, command, flags, environment, or artifact policy. Responses contain a sanitized verdict
+but no raw output, log, report, hidden RTL, license value, or server path.
+
+`synopsys.dc.mcp` is selected independently by `--toolchain-profile` and supplies final
+synthesis-only PPA after hidden correctness passes. New commercial RTLLM runs can select both
+profiles; their requested, declared, and resolved identities are frozen separately in manifests,
+experiment plans, scorecards, and replay. VCS identity is not a PPA comparison key, and VCS/MCP
+does not turn an Icarus-based AgentEval partition into the official VCS partition.
 
 `verigym-synopsys-mcp-server` makes the DC evaluator available as a verifier-only MCP stdio
 service. It is useful when the licensed installation lives on a dedicated workstation or HPC
@@ -82,3 +102,8 @@ dedicated account or scheduler job on a controlled verifier host, restrict the S
 fixed command, and never expose the MCP tools to the model/agent session. The in-process local DC
 backend remains supported for sites with a co-located licensed installation; both paths use the
 same generated flow and metric semantics.
+
+Phase one does not make DC/MCP agent-visible. Iterative commercial PPA still requires a separately
+disposable isolated worker, identical 3/8-call accounting, and a new threat-model claim. Until that
+second phase exists, combining `--agent-ppa-feedback` with a commercial profile fails before model
+lookup rather than silently falling back to open PPA.

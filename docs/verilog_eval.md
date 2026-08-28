@@ -122,6 +122,10 @@ The manifest, scorecard, and verifier artifacts record exact detected Icarus ver
 Nonreference tools may be used for development, but their reports do not claim exact upstream
 comparability. PPA and synthesis fields remain `null`.
 
+The host may keep Icarus 13 side by side, but reference-compatible execution must resolve Icarus
+and vvp 12. VerilogEval does not accept VCS/DC verifier or PPA profiles; commercial RTLLM profiles
+are a separate partition. See [verifier backend profiles](verifier_profiles.md).
+
 With `--runtime docker`, tool discovery and compatibility come from the immutable resolved image,
 not host `iverilog` or `vvp`. Native simulation runs beside the compiled artifact in the verifier's
 writable internal build directory so upstream testbenches can emit temporary VCD files without

@@ -19,7 +19,10 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
 prompt, hidden VCS testbench, and normalized reference are loaded from the external checkout after
 hash validation. Both chat and agent modes use the same verifier graph. A separate user-supplied
-Design Compiler profile can enable hash-bound area/timing evaluation after VCS correctness passes.
+Design Compiler profile can enable hash-bound area/timing evaluation after correctness passes. New
+commercial runs should select a task-bound `synopsys.vcs.mcp` verifier profile and an independent
+`synopsys.dc.mcp` toolchain profile; neither commercial tool, license setup, hidden testbench, nor
+PDK enters the model workspace.
 
 `up_down_counter_iverilog_training` is an explicitly separate long-context sampling profile. It
 keeps the 900-second task budget and checks candidates with the pinned Icarus 12 Docker image. Its
@@ -37,3 +40,15 @@ candidates, so an unqualified image is not silently published under the AgentEva
 
 RTLLM is MIT-licensed. Synopsys tools and licenses are neither included nor required by ordinary
 VeriGym CI; commercial execution is site-local and opt-in.
+
+The supported functional-version matrix is intentionally partitioned:
+
+- original commercial RTLLM uses the exact VCS version frozen by its verifier profile;
+- `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1` require `iverilog` and `vvp`
+  major version 12;
+- Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
+
+See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and
+[the qualification record](../../docs/audits/rtl_commercial_mcp_qualification_v1.md) for bounded
+reference/known-bad and VCS/DC evidence. These checks qualify infrastructure; they are not a
+benchmark score.

@@ -16,6 +16,8 @@ AgentEval resolves `repository_action_state_machine_v3` while retaining the same
 six actions, and action-registry hash. A successful patch invalidates compile, PPA, and diff
 evidence. PPA requires a compile pass for the same candidate hash; finish requires a current diff
 and a current compile pass when the task exposes compile. See [RTL AgentEval v1](rtl_agent_eval.md).
+Commercial VCS/DC MCP backends are never added to this six-action registry. A verifier profile is
+resolved in the trusted control plane before model lookup and affects only the final verifier DAG.
 
 Each completion represents exactly one object with `protocol`, `action`, and `arguments` fields.
 The registered actions cover visible file listing and reads, unified-patch application, registered
