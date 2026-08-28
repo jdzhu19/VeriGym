@@ -135,6 +135,13 @@ session-local output limit into the runtime identity. Smoke-v4 removes that dyna
 retaining every stable Docker resource limit, uses a new commercial release and campaign output,
 and does not resume or reinterpret smoke-v3.
 
+Smoke-v4 subsequently passed its full no-model open/DC/VCS qualification and launched all four
+frozen Codex processes with zero retries. None reached typed `finish`: the first three terminated
+on workspace policy and RTL-Repo ended with a broker tool infrastructure failure. Neither RTLLM
+task produced PPA feedback, so the pilot remains unauthorized. The complete bounded result and
+the distinction between formal and diagnostic replay evidence are recorded in the
+[smoke-v4 audit](audits/2026-08-28_rtl-agenteval-codex-gpt54-xhigh-smoke-v4-result.md).
+
 ## Design choices informed by POSTEDA-Bench
 
 [POSTEDA-Bench](https://github.com/pengjas/posteda-bench) and its
