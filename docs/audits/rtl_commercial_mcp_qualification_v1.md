@@ -3,6 +3,10 @@
 Qualification date: 2026-08-28. This is bounded infrastructure evidence for the two pinned RTLLM
 tasks; it is not a model campaign and must not be reported as a benchmark score.
 
+This record remains the phase-one final-verifier qualification. The separately reviewed
+[phase-two disposable-worker qualification](rtl_agent_dc_worker_qualification_v2.md) supersedes
+only its earlier statement that agent-visible commercial feedback was not yet implemented.
+
 ## Scope
 
 - RTLLM source commit: `41b26896e33b536940116a975626455eed3de65e`.
@@ -74,3 +78,6 @@ VCS/MCP and DC/MCP remain verifier-control-plane services. Phase one does not ex
 PPA to the six-action AgentEval surface. Agent-visible DC/MCP needs a disposable isolated worker,
 the same 3/default and 8/hard-limit accounting used by open PPA, and a separate reviewed security
 claim before it can be enabled.
+
+That additional boundary is now implemented and qualified in the phase-two record linked above;
+this paragraph is retained as historical phase-one scope.

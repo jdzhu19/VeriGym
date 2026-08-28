@@ -16,8 +16,16 @@ AgentEval resolves `repository_action_state_machine_v3` while retaining the same
 six actions, and action-registry hash. A successful patch invalidates compile, PPA, and diff
 evidence. PPA requires a compile pass for the same candidate hash; finish requires a current diff
 and a current compile pass when the task exposes compile. See [RTL AgentEval v1](rtl_agent_eval.md).
-Commercial VCS/DC MCP backends are never added to this six-action registry. A verifier profile is
-resolved in the trusted control plane before model lookup and affects only the final verifier DAG.
+Commercial VCS/DC MCP backends are never added to this six-action registry. A verifier/toolchain
+profile is resolved in the trusted control plane before model lookup. Phase-two DC feedback still
+arrives through `run_public_test("ppa")`; the control plane dispatches a disposable worker only
+after the current candidate passes compile.
+
+`agent_feedback_contract.v2` separates repository-action calls from synthesis executions. Cache
+hits remain calls but not executions; a worker dispatch consumes an execution even if the flow
+times out or crashes, while a pre-dispatch rejection does not. The observation declares metric
+direction and retains only the last valid candidate metric vector. It never restores an older
+candidate automatically, so the v3 finish rule continues to bind the latest revision.
 
 Each completion represents exactly one object with `protocol`, `action`, and `arguments` fields.
 The registered actions cover visible file listing and reads, unified-patch application, registered

@@ -14,7 +14,11 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentDescriptor
-from verigym.schemas.agent_feedback import AgentFeedbackContract, AgentFeedbackEvaluation
+from verigym.schemas.agent_feedback import (
+    AgentFeedbackContract,
+    AgentFeedbackEvaluation,
+    AgentFeedbackEvaluationV2,
+)
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     InteractionMode,
@@ -263,7 +267,9 @@ class RunManifest(StrictModel):
     action_protocol_records: list[RepositoryActionTurnRecord] = Field(default_factory=list)
     agent_feedback_contract: AgentFeedbackContract | None = None
     agent_feedback_contract_hash: str | None = None
-    agent_feedback_evaluations: list[AgentFeedbackEvaluation] = Field(default_factory=list)
+    agent_feedback_evaluations: list[AgentFeedbackEvaluation | AgentFeedbackEvaluationV2] = Field(
+        default_factory=list
+    )
     agent_feedback_evaluations_hash: str | None = None
     experiment_id: str | None = None
     plan_item_id: str | None = None

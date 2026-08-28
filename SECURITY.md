@@ -281,14 +281,13 @@ cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](
 
 ### Verifier-only Synopsys MCP transport
 
-RTL AgentEval phase one keeps both VCS/MCP and DC/MCP verifier-only. A strict verifier profile may
-replace one functional-verifier DAG node with `synopsys.vcs.mcp`, while a separately resolved
-toolchain profile may select `synopsys.dc.mcp` for final PPA. Both profiles resolve and bind their
-fixed transports and server identities before model lookup. Requesting agent-visible PPA with a
-commercial backend fails before any model call. MCP transport, license configuration, hidden
-testbenches, PDK/library paths, raw reports, and reference artifacts never enter the agent
-container. Candidate-visible commercial PPA requires a separate isolated worker and threat-model
-update; it is not covered by the current security claim.
+RTL AgentEval keeps VCS/MCP functional-verifier-only and DC/MCP control-plane-only. A strict
+verifier profile may replace one functional-verifier DAG node with `synopsys.vcs.mcp`, while a
+separately resolved toolchain profile may select `synopsys.dc.mcp` for final PPA or phase-two
+candidate-only feedback. Neither MCP service is registered as a model-visible tool. Both profiles
+resolve and bind their fixed transports and server identities before model lookup. MCP transport,
+license configuration, hidden testbenches, PDK/library paths, raw reports, and reference artifacts
+never enter the agent container.
 
 The VCS stdio service approves task-bound profiles at startup and exposes only list, resolve, and
 simulate operations. The server owns the exact source order, task ID, top, hidden-testbench bytes
@@ -309,7 +308,7 @@ agent forwarding. Transport environment values are never serialized.
 
 The stdio MCP server approves its site profiles at startup and accepts only a profile ID plus
 declared hash, a reference-candidate hash, fixed top and ordered source names, candidate/reference
-role, bounded hash-checked RTL, and one bounded artifact-return policy. It does not accept an
+or agent-feedback role, bounded hash-checked RTL, and one bounded artifact-return policy. It does not accept an
 executable, shell command, Tcl, SDC, PDK/library bytes or paths, license configuration, timeout, or
 environment. It regenerates and hash-checks the existing DC flow. Messages, sources, output, and
 artifacts have individual and aggregate bounds. The client validates the server/protocol version,
@@ -318,13 +317,33 @@ metrics, and artifact hashes before importing candidate summary reports. Referen
 content never returns. MCP/SSH payload logging must remain disabled because a reference call
 necessarily transports verifier-private reference RTL to the remote verifier.
 
-This transport separates the ordinary control-plane host from commercial assets, but it is not an
-OS sandbox for hostile RTL. The current server invokes DC through the trusted local backend on the
-licensed host. Sites must use trusted/qualified inputs or add their own dedicated disposable
-account, scheduler job, VM, or equivalent containment around the server. The MCP label alone must
-not be used to claim that adversarial generated RTL is safe to parse on a shared licensed host.
-The residual trusted computing base includes the fixed wrapper, SSH client/server, MCP adapter,
-licensed EDA installation, verifier host, and its site-specific containment.
+The historical candidate/reference service remains transport and policy mediation, not an OS
+sandbox for hostile RTL. It invokes DC through the trusted local backend and is suitable only for
+frozen qualified inputs or a site that supplies its own containment.
+
+Phase-two agent feedback fails closed unless remote resolution returns a sanitized, hash-bound
+worker contract. The contract requires a fixed regular launcher, one candidate per disposable LSF
+job/container/VM, bounded wall time/memory/cores, worker-only commercial credentials, no raw
+artifact return, and cleanup before response. The launcher accepts no model-controlled command,
+argument, environment, queue, profile path, or resource setting. The worker request binds the
+candidate source bundle and server profile. Its isolation identity also hashes the loaded VeriGym
+core and Synopsys-integration Python source trees, interpreter, scheduler executable, site profile,
+queue, and resource settings; that code identity is checked again in the launcher and inner job.
+The receipt binds the request, dispatch, lifecycle, cleanup, launcher, code, and isolation-profile
+hashes. The MCP timeout must leave at least 300 seconds beyond the worker wall bound for scheduler
+termination and cleanup. Scheduler output is not written into the disposable workspace, and a
+receipt is returned only after absence of the exact bounded worker directory stabilizes. The
+client rejects missing or inconsistent receipts and never imports feedback reports, netlists,
+diagnostics, stdout, or stderr.
+
+The qualified LSF deployment uses a scheduler job as the site isolation boundary. It is not a VM
+or kernel-security claim: the job still trusts LSF, the compute host, shared filesystem policy,
+fixed launcher, Python environment, licensed EDA installation, and site license network. The
+worker network is therefore labeled `site_license_controlled`, not `none`. Only the Docker agent
+workspace is networkless. A stronger adversarial site can replace LSF with a separately identified
+container or VM contract; results from different resolved worker/profile hashes remain separate.
+The residual trusted computing base includes the fixed wrappers, SSH client/server, MCP adapter,
+scheduler, licensed EDA installation, verifier/worker hosts, and site-specific containment.
 
 ## Yosys and profile-specific protections
 

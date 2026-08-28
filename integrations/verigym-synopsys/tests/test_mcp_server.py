@@ -17,12 +17,20 @@ from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.task import Candidate
 
+from verigym_synopsys.agent_worker import _launcher_contract, _run_lsf
+from verigym_synopsys.agent_worker_protocol import (
+    AgentWorkerDescribeResponse,
+    AgentWorkerEnvelope,
+    AgentWorkerLaunchRequest,
+)
 from verigym_synopsys.export_mcp_profile import main as export_mcp_profile
 from verigym_synopsys.mcp_client import McpDesignCompilerSynthesisTool, _run_stdio
 from verigym_synopsys.mcp_server import (
     LIST_PROFILES_TOOL,
     SYNTHESIZE_TOOL,
     DesignCompilerMcpService,
+    McpSource,
+    McpSynthesisRequest,
     _handle,
 )
 from verigym_synopsys.prepare import main as prepare_profile
@@ -108,6 +116,65 @@ def _tool_call(request_id: int, name: str, arguments: dict[str, object]) -> dict
         "method": "tools/call",
         "params": {"name": name, "arguments": arguments},
     }
+
+
+def _fake_agent_worker(tmp_path: Path, profile_path: Path) -> Path:
+    worker = tmp_path / "agent-worker"
+    worker.write_text(
+        "#!/usr/bin/env python3\n"
+        "import hashlib, json, sys\n"
+        "from pathlib import Path\n"
+        "from verigym_synopsys.agent_worker_protocol import "
+        "AgentWorkerEnvelope, AgentWorkerLaunchRequest, AgentWorkerReceipt\n"
+        "from verigym_synopsys.mcp_server import "
+        "DesignCompilerMcpService, McpSynthesisRequest\n"
+        "raw = json.load(sys.stdin)\n"
+        "if raw.get('operation') == 'describe':\n"
+        "    print(json.dumps({'protocol': 'verigym.synopsys.dc.agent_worker.v1', "
+        "'contract': {'protocol': 'verigym.synopsys.dc.agent_worker.v1', "
+        "'isolation_kind': 'lsf_job', 'launcher_version': 'test-v1', "
+        "'code_identity_hash': 'f' * 64, "
+        "'isolation_profile_hash': 'e' * 64, 'disposable_worker': True, "
+        "'one_candidate_per_worker': True, 'cleanup_before_response': True, "
+        "'credential_scope': 'worker_only', 'network_policy': 'site_license_controlled', "
+        "'raw_artifacts_returned': False, 'max_wall_seconds': 30, "
+        "'memory_mb': 512, 'cores': 1}}))\n"
+        "    raise SystemExit(0)\n"
+        "request = AgentWorkerLaunchRequest.model_validate(raw)\n"
+        f"service = DesignCompilerMcpService([Path({str(profile_path)!r})], "
+        f"Path({str(tmp_path / 'worker-private')!r}))\n"
+        "synthesis = service._synthesize_local("
+        "McpSynthesisRequest.model_validate(request.synthesis))\n"
+        "dispatch = hashlib.sha256(request.request_hash.encode()).hexdigest()\n"
+        "response = AgentWorkerEnvelope(success=True, synthesis=synthesis, "
+        "receipt=AgentWorkerReceipt(contract_hash=request.contract_hash, "
+        "code_identity_hash=request.code_identity_hash, "
+        "isolation_profile_hash=request.isolation_profile_hash, "
+        "request_hash=request.request_hash, source_bundle_hash=request.source_bundle_hash, "
+        "dispatch_id_hash=dispatch, scheduler_dispatched=True, worker_started=True, "
+        "worker_completed=True, cleanup_complete=True, lifecycle='completed_clean', "
+        "duration_s=0.01))\n"
+        "print(response.model_dump_json())\n",
+        encoding="utf-8",
+    )
+    worker.chmod(0o755)
+    return worker
+
+
+def _fake_bsub(tmp_path: Path) -> Path:
+    executable = tmp_path / "bsub"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, subprocess, sys\n"
+        "environment = dict(os.environ)\n"
+        "environment['LSB_JOBID'] = '12345'\n"
+        "print('Job <12345> is submitted to queue <test>.', flush=True)\n"
+        "completed = subprocess.run(['/bin/sh', sys.argv[-1]], env=environment, check=False)\n"
+        "raise SystemExit(completed.returncode)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
 
 
 def test_mcp_server_exposes_only_fixed_verifier_tools(tmp_path: Path) -> None:
@@ -419,6 +486,242 @@ def test_mcp_control_plane_transport_output_is_bounded(tmp_path: Path) -> None:
     assert completed.exit_code == 0
     assert completed.output_truncated
     assert len(completed.stdout.encode("utf-8")) == 2 * 1024 * 1024
+
+
+def test_agent_feedback_uses_hash_bound_disposable_worker_and_returns_no_reports(
+    tmp_path: Path,
+) -> None:
+    server_profile_path, rtl = _site_profile(tmp_path)
+    worker = _fake_agent_worker(tmp_path, server_profile_path)
+    worker_hash = hashlib.sha256(worker.read_bytes()).hexdigest()
+    with pytest.raises(ConfigurationError, match="reserve 300 seconds"):
+        DesignCompilerMcpService(
+            [server_profile_path],
+            tmp_path / "short-timeout-work",
+            agent_worker_executable=worker,
+            agent_worker_sha256=worker_hash,
+            agent_worker_timeout_s=329,
+        )
+    service = DesignCompilerMcpService(
+        [server_profile_path],
+        tmp_path / "probe-work",
+        agent_worker_executable=worker,
+        agent_worker_sha256=worker_hash,
+        agent_worker_timeout_s=330,
+    )
+    worker_summary = service._agent_worker_summary()
+    assert worker_summary is not None
+    contract_hash = worker_summary["contract_hash"]
+
+    transport = tmp_path / "dc-agent-mcp-transport"
+    transport.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(sys.executable)} -m verigym_synopsys.mcp_server "
+        f"--profile {shlex.quote(str(server_profile_path))} "
+        f"--work-root {shlex.quote(str(tmp_path / 'server-work'))} "
+        f"--agent-worker-executable {shlex.quote(str(worker))} "
+        f"--agent-worker-sha256 {worker_hash} --agent-worker-timeout 330\n",
+        encoding="utf-8",
+    )
+    transport.chmod(0o755)
+    client_profile_path = tmp_path / "agent-client.yaml"
+    assert (
+        export_mcp_profile(
+            [
+                "--server-profile",
+                str(server_profile_path),
+                "--transport-executable",
+                str(transport),
+                "--output-profile",
+                str(client_profile_path),
+                "--agent-feedback-worker-contract-hash",
+                contract_hash,
+                "--agent-feedback-worker-isolation-kind",
+                "lsf_job",
+            ]
+        )
+        == 0
+    )
+    profile = ToolchainProfileRegistry().load_file(client_profile_path)
+    plugin = McpDesignCompilerSynthesisTool()
+    runtime = LocalRuntime()
+    reference_hash = content_hash(Candidate(files={"rtl/counter.v": rtl.decode()}))
+    resolved = plugin.resolve_profile(
+        profile,
+        runtime,
+        source_paths=["rtl/counter.v"],
+        top_module="counter",
+        reference_candidate_hash=reference_hash,
+    )
+    assert resolved.metadata["agent_feedback_worker_contract_hash"] == contract_hash
+    source = tmp_path / "agent-source"
+    (source / "rtl").mkdir(parents=True)
+    (source / "rtl" / "counter.v").write_bytes(rtl)
+    session = runtime.create_session(
+        SessionSpec(source_dir=str(source), label="agent-feedback", max_output_bytes=1_000_000)
+    )
+    artifacts = tmp_path / "agent-artifacts"
+    try:
+        result = plugin.execute(
+            plugin.build_agent_feedback_request(profile, resolved),
+            ToolContext(session=session, artifact_dir=artifacts),
+        )
+    finally:
+        session.close()
+        runtime.close()
+
+    assert result.success, result.message
+    assert result.metadata["synthesis"]["mapped_area_raw"] == 42.5
+    receipt = result.metadata["agent_feedback_execution"]
+    assert receipt["contract_hash"] == contract_hash
+    assert receipt["scheduler_dispatched"] is True
+    assert receipt["cleanup_complete"] is True
+    assert result.artifacts == []
+    assert result.diagnostics == []
+    assert not artifacts.exists()
+    serialized = json.dumps(result.model_dump(mode="json"))
+    assert str(tmp_path) not in serialized
+    lowered = serialized.lower()
+    for forbidden in ('"reference_candidate', '"ratio"', "netlist.v", "dc.log", "license"):
+        assert forbidden not in lowered
+
+
+def test_lsf_launcher_runs_one_job_and_cleans_the_disposable_workspace(tmp_path: Path) -> None:
+    profile_path, rtl = _site_profile(tmp_path)
+    profile = ToolchainProfileRegistry().load_file(profile_path)
+    work_root = tmp_path / "lsf-launches"
+    launcher_argv = [
+        sys.executable,
+        "-m",
+        "verigym_synopsys.agent_worker",
+        "lsf",
+        "--profile",
+        str(profile_path),
+        "--work-root",
+        str(work_root),
+        "--queue",
+        "test",
+        "--python-executable",
+        sys.executable,
+        "--bsub-executable",
+        str(_fake_bsub(tmp_path)),
+        "--max-wall-seconds",
+        "30",
+        "--memory-mb",
+        "512",
+        "--cores",
+        "1",
+    ]
+    described = subprocess.run(
+        launcher_argv,
+        input=json.dumps({"operation": "describe"}),
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=45,
+    )
+    assert described.returncode == 0, described.stderr
+    contract = AgentWorkerDescribeResponse.model_validate_json(described.stdout).contract
+    synthesis = McpSynthesisRequest(
+        profile_id=profile.id,
+        declared_profile_hash=content_hash(profile),
+        reference_candidate_hash="b" * 64,
+        top="counter",
+        sources=[
+            McpSource(
+                path="rtl/counter.v",
+                sha256=hashlib.sha256(rtl).hexdigest(),
+                content_base64=base64.b64encode(rtl).decode("ascii"),
+            )
+        ],
+        run_label="agent_feedback",
+        artifact_content_policy="none",
+    )
+    source_bundle = [{"path": item.path, "sha256": item.sha256} for item in synthesis.sources]
+    launch = AgentWorkerLaunchRequest(
+        contract_hash="c" * 64,
+        code_identity_hash=contract.code_identity_hash,
+        isolation_profile_hash=contract.isolation_profile_hash,
+        request_hash=content_hash(synthesis.model_dump(mode="json")),
+        source_bundle_hash=content_hash({"top": synthesis.top, "sources": source_bundle}),
+        synthesis=synthesis.model_dump(mode="json"),
+    )
+    completed = subprocess.run(
+        launcher_argv,
+        input=launch.model_dump_json(),
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=45,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    envelope = AgentWorkerEnvelope.model_validate_json(completed.stdout)
+    assert envelope.success
+    assert envelope.receipt.scheduler_dispatched
+    assert envelope.receipt.worker_started
+    assert envelope.receipt.worker_completed
+    assert envelope.receipt.cleanup_complete
+    assert envelope.receipt.lifecycle == "completed_clean"
+    assert envelope.synthesis is not None
+    assert envelope.synthesis["artifacts"] == []
+    assert list(work_root.iterdir()) == []
+
+
+def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path, rtl = _site_profile(tmp_path)
+    profile = ToolchainProfileRegistry().load_file(profile_path)
+    work_root = tmp_path / "timed-out-lsf-launches"
+    args = SimpleNamespace(
+        profile=[profile_path],
+        work_root=work_root,
+        queue="test",
+        python_executable=Path(sys.executable),
+        bsub_executable=_fake_bsub(tmp_path),
+        max_wall_seconds=1,
+        memory_mb=512,
+        cores=1,
+    )
+    contract = _launcher_contract(args)
+    synthesis = McpSynthesisRequest(
+        profile_id=profile.id,
+        declared_profile_hash=content_hash(profile),
+        reference_candidate_hash="b" * 64,
+        top="counter",
+        sources=[
+            McpSource(
+                path="rtl/counter.v",
+                sha256=hashlib.sha256(rtl).hexdigest(),
+                content_base64=base64.b64encode(rtl).decode("ascii"),
+            )
+        ],
+        run_label="agent_feedback",
+        artifact_content_policy="none",
+    )
+    source_bundle = [{"path": item.path, "sha256": item.sha256} for item in synthesis.sources]
+    launch = AgentWorkerLaunchRequest(
+        contract_hash="c" * 64,
+        code_identity_hash=contract.code_identity_hash,
+        isolation_profile_hash=contract.isolation_profile_hash,
+        request_hash=content_hash(synthesis.model_dump(mode="json")),
+        source_bundle_hash=content_hash({"top": synthesis.top, "sources": source_bundle}),
+        synthesis=synthesis.model_dump(mode="json"),
+    )
+
+    def time_out(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="bsub", timeout=1)
+
+    monkeypatch.setattr("verigym_synopsys.agent_worker.subprocess.run", time_out)
+    envelope = _run_lsf(launch, args)
+
+    assert envelope.success is False
+    assert envelope.failure_category == "scheduler"
+    assert envelope.receipt.lifecycle == "infrastructure_failed_clean"
+    assert envelope.receipt.cleanup_complete is True
+    assert list(work_root.iterdir()) == []
 
 
 def test_mcp_client_profile_can_bind_an_off_host_wrapper_hash(tmp_path: Path) -> None:

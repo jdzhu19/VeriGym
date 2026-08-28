@@ -16,6 +16,7 @@ from verigym.schemas.agent_feedback import (
     AgentFeedbackCategory,
     AgentFeedbackContract,
     AgentFeedbackEvaluation,
+    AgentFeedbackEvaluationV2,
     AgentFeedbackMetrics,
 )
 from verigym.schemas.common import ToolchainProfile
@@ -27,6 +28,8 @@ from verigym.tools.base import SynthesisBackendPlugin
 _DECLARATION_KEY = "agent_eval"
 _OPEN_PPA_FLOW = "verigym-yosys-opensta-atp-v2"
 _OPEN_PPA_BACKENDS = frozenset({"yosys.synth", "yosys.stat"})
+_COMMERCIAL_PPA_BACKEND = "synopsys.dc.mcp"
+_COMMERCIAL_PPA_FLOW = "synopsys-dc-area-timing-power-explicit-v4"
 
 
 def resolve_agent_feedback_contract(
@@ -74,27 +77,63 @@ def resolve_agent_feedback_contract(
     if ppa_enabled:
         if resolved_profile is None or profile_backend is None:
             raise ConfigurationError(
-                "--agent-ppa-feedback requires one resolved Yosys/OpenSTA toolchain profile"
+                "--agent-ppa-feedback requires one resolved feedback-capable toolchain profile"
             )
-        if profile_backend not in _OPEN_PPA_BACKENDS:
-            raise ConfigurationError(
-                "agent-visible commercial PPA is unavailable in phase one; "
-                "select the Yosys/OpenSTA ATP v2 profile"
+        commercial_worker_hash: str | None = None
+        commercial_isolation_kind: str | None = None
+        if profile_backend in _OPEN_PPA_BACKENDS:
+            if (
+                resolved_profile.flow_template_id != _OPEN_PPA_FLOW
+                or resolved_profile.metric_scope != "synthesis_area_timing_power"
+            ):
+                raise ConfigurationError(
+                    "agent PPA feedback requires verigym-yosys-opensta-atp-v2 area/timing/power"
+                )
+        elif profile_backend == _COMMERCIAL_PPA_BACKEND:
+            commercial_worker_hash = resolved_profile.metadata.get(
+                "agent_feedback_worker_contract_hash"
             )
-        if (
-            resolved_profile.flow_template_id != _OPEN_PPA_FLOW
-            or resolved_profile.metric_scope != "synthesis_area_timing_power"
-        ):
+            commercial_isolation_kind = resolved_profile.metadata.get(
+                "agent_feedback_worker_isolation_kind"
+            )
+            worker_contract = resolved_profile.metadata.get("agent_feedback_worker_contract")
+            if (
+                resolved_profile.flow_template_id != _COMMERCIAL_PPA_FLOW
+                or resolved_profile.metric_scope != "synthesis_area_timing_power"
+                or not isinstance(commercial_worker_hash, str)
+                or len(commercial_worker_hash) != 64
+                or commercial_isolation_kind not in {"lsf_job", "container", "vm"}
+                or not isinstance(worker_contract, dict)
+                or worker_contract.get("disposable_worker") is not True
+                or worker_contract.get("one_candidate_per_worker") is not True
+                or worker_contract.get("cleanup_before_response") is not True
+                or worker_contract.get("raw_artifacts_returned") is not False
+            ):
+                raise ConfigurationError(
+                    "agent-visible DC/MCP requires the explicit-power flow and a resolved "
+                    "disposable worker contract"
+                )
+        else:
             raise ConfigurationError(
-                "agent PPA feedback requires verigym-yosys-opensta-atp-v2 area/timing/power"
+                "agent PPA feedback supports only Yosys/OpenSTA ATP v2 or isolated DC/MCP"
             )
         if resolved_profile.top_module != task.metadata.get("candidate_top"):
             raise ConfigurationError("agent PPA profile top differs from the AgentEval task top")
+    else:
+        commercial_worker_hash = None
+        commercial_isolation_kind = None
     public_ids = [value for value in (compile_test_id, "ppa" if ppa_enabled else None) if value]
+    commercial_feedback = ppa_enabled and profile_backend == _COMMERCIAL_PPA_BACKEND
     payload: dict[str, Any] = {
         "schema_version": "1.0",
-        "contract_id": "agent_feedback_contract.v1",
-        "resolver_id": "agent_feedback_contract_resolver_v1",
+        "contract_id": (
+            "agent_feedback_contract.v2" if commercial_feedback else "agent_feedback_contract.v1"
+        ),
+        "resolver_id": (
+            "agent_feedback_contract_resolver_v2"
+            if commercial_feedback
+            else "agent_feedback_contract_resolver_v1"
+        ),
         "task_id": task.id,
         "benchmark_variant": variant,
         "state_machine_id": "repository_action_state_machine_v3",
@@ -113,6 +152,37 @@ def resolve_agent_feedback_contract(
             resolved_profile.resolved_profile_hash if ppa_enabled and resolved_profile else None
         ),
         "profile_backend": profile_backend if ppa_enabled else None,
+        "ppa_execution_semantics": (
+            "dispatched_synthesis_attempt" if commercial_feedback else "cache_miss"
+        ),
+        "metric_semantics": (
+            [
+                {
+                    "name": "area",
+                    "direction": "minimize",
+                    "unit": resolved_profile.area_unit,
+                },
+                {
+                    "name": "maximum_path_delay",
+                    "direction": "minimize",
+                    "unit": resolved_profile.timing_unit,
+                },
+                {
+                    "name": "worst_negative_slack",
+                    "direction": "maximize",
+                    "unit": resolved_profile.timing_unit,
+                },
+                {
+                    "name": "power",
+                    "direction": "minimize",
+                    "unit": resolved_profile.power_unit,
+                },
+            ]
+            if commercial_feedback and resolved_profile is not None
+            else []
+        ),
+        "agent_worker_contract_hash": (commercial_worker_hash if commercial_feedback else None),
+        "agent_worker_isolation_kind": (commercial_isolation_kind if commercial_feedback else None),
         "public_test_contract_hash": public_contract_hash,
     }
     return AgentFeedbackContract.model_validate(
@@ -170,14 +240,16 @@ class AgentFeedbackController:
         self._backend = backend
         self._compile_passed_hash: str | None = None
         self._ppa_executions = 0
+        self._ppa_tool_calls = 0
         self._cache: dict[
             tuple[str, str], tuple[AgentFeedbackCategory, AgentFeedbackMetrics | None]
         ] = {}
-        self._evaluations: list[AgentFeedbackEvaluation] = []
+        self._evaluations: list[AgentFeedbackEvaluation | AgentFeedbackEvaluationV2] = []
+        self._last_valid: tuple[str, AgentFeedbackMetrics] | None = None
         self._lock = threading.Lock()
 
     @property
-    def evaluations(self) -> list[AgentFeedbackEvaluation]:
+    def evaluations(self) -> list[AgentFeedbackEvaluation | AgentFeedbackEvaluationV2]:
         with self._lock:
             return [item.model_copy(deep=True) for item in self._evaluations]
 
@@ -213,7 +285,7 @@ class AgentFeedbackController:
                 update: dict[str, Any] = {
                     "metadata": {
                         **completed.metadata,
-                        "agent_feedback_protocol": "agent_feedback_contract.v1",
+                        "agent_feedback_protocol": self.contract.contract_id,
                         "candidate_hash": candidate_hash,
                     }
                 }
@@ -234,6 +306,7 @@ class AgentFeedbackController:
                     started=time.monotonic(),
                 )
             started = time.monotonic()
+            self._ppa_tool_calls += 1
             profile_hash = self.contract.resolved_profile_hash
             assert profile_hash is not None
             if self._compile_passed_hash != candidate_hash:
@@ -275,9 +348,8 @@ class AgentFeedbackController:
             assert self._profile is not None
             assert self._resolved_profile is not None
             assert self._backend is not None
-            self._ppa_executions += 1
             try:
-                result, raw_metrics = execute_candidate_synthesis_feedback(
+                result, raw_metrics, dispatched = execute_candidate_synthesis_feedback(
                     task=self._task,
                     candidate_dir=session.root,
                     runtime=self._runtime,
@@ -292,11 +364,14 @@ class AgentFeedbackController:
                     category="infrastructure_error",
                     metrics=None,
                     cache_hit=False,
-                    synthesis_executed=True,
+                    synthesis_executed=False,
                     started=started,
                     profile_hash=profile_hash,
                     infrastructure=True,
+                    execution_dispatched=False,
                 )
+            if dispatched:
+                self._ppa_executions += 1
             if result.status == VerifierStatus.PASSED and raw_metrics.synthesis_ok:
                 metrics = AgentFeedbackMetrics(
                     area=raw_metrics.mapped_area_raw,
@@ -308,6 +383,7 @@ class AgentFeedbackController:
                     power_unit=raw_metrics.power_unit,
                 )
                 category = "passed"
+                self._last_valid = (candidate_hash, metrics)
             elif result.status == VerifierStatus.FAILED:
                 metrics = None
                 category = "synthesis_failed"
@@ -318,10 +394,11 @@ class AgentFeedbackController:
                     category="infrastructure_error",
                     metrics=None,
                     cache_hit=False,
-                    synthesis_executed=True,
+                    synthesis_executed=dispatched,
                     started=started,
                     profile_hash=profile_hash,
                     infrastructure=True,
+                    execution_dispatched=dispatched,
                 )
             self._cache[key] = (category, metrics)
             return self._feedback_command(
@@ -330,7 +407,8 @@ class AgentFeedbackController:
                 category=category,
                 metrics=metrics,
                 cache_hit=False,
-                synthesis_executed=True,
+                synthesis_executed=dispatched,
+                execution_dispatched=dispatched,
                 started=started,
                 profile_hash=profile_hash,
             )
@@ -347,11 +425,14 @@ class AgentFeedbackController:
         started: float,
         profile_hash: str | None = None,
         infrastructure: bool = False,
+        execution_dispatched: bool = False,
     ) -> CompletedCommand:
         duration = time.monotonic() - started
+        is_v2 = self.contract.contract_id == "agent_feedback_contract.v2"
+        last_valid = self._last_valid
         payload: dict[str, Any] = {
             "schema_version": "1.0",
-            "protocol": "verigym_agent_feedback_v1",
+            "protocol": "verigym_agent_feedback_v2" if is_v2 else "verigym_agent_feedback_v1",
             "test_id": test_id,
             "passed": category == "passed",
             "category": category,
@@ -361,6 +442,40 @@ class AgentFeedbackController:
             "duration_s": duration,
             "candidate_metrics": metrics.model_dump(mode="json") if metrics else None,
         }
+        if is_v2:
+            payload.update(
+                {
+                    "metric_semantics": [
+                        item.model_dump(mode="json") for item in self.contract.metric_semantics
+                    ],
+                    "execution_budget": {
+                        "ppa_tool_call_index": self._ppa_tool_calls,
+                        "ppa_execution_index": (
+                            self._ppa_executions if synthesis_executed else None
+                        ),
+                        "ppa_executions_used": self._ppa_executions,
+                        "ppa_executions_max": self.contract.ppa_max_executions,
+                        "ppa_executions_remaining": max(
+                            0,
+                            self.contract.ppa_max_executions - self._ppa_executions,
+                        ),
+                        "execution_dispatched": execution_dispatched,
+                        "cache_hits_do_not_consume_execution_budget": True,
+                    },
+                    "last_valid": (
+                        {
+                            "candidate_hash": last_valid[0],
+                            "candidate_metrics": last_valid[1].model_dump(mode="json"),
+                        }
+                        if last_valid is not None
+                        else None
+                    ),
+                    "worker": {
+                        "contract_hash": self.contract.agent_worker_contract_hash,
+                        "isolation_kind": self.contract.agent_worker_isolation_kind,
+                    },
+                }
+            )
         self._record(
             test_id=test_id,
             candidate_hash=candidate_hash,
@@ -370,6 +485,7 @@ class AgentFeedbackController:
             duration_s=duration,
             category=category,
             metrics=metrics,
+            execution_dispatched=execution_dispatched,
         )
         return CompletedCommand(
             argv=["verigym-agent-feedback", test_id],
@@ -385,8 +501,11 @@ class AgentFeedbackController:
             ),
             runtime_role="agent_feedback",
             metadata={
-                "agent_feedback_protocol": "verigym_agent_feedback_v1",
-                "network_policy": "none",
+                "agent_feedback_protocol": payload["protocol"],
+                "agent_feedback_contract_id": self.contract.contract_id,
+                "network_policy": (
+                    "agent_workspace_none_worker_site_license_controlled" if is_v2 else "none"
+                ),
                 "public_assets_read_only": True,
             },
         )
@@ -402,6 +521,7 @@ class AgentFeedbackController:
         duration_s: float,
         category: AgentFeedbackCategory,
         metrics: AgentFeedbackMetrics | None,
+        execution_dispatched: bool = False,
     ) -> None:
         identity = {
             "test_id": test_id,
@@ -413,8 +533,45 @@ class AgentFeedbackController:
             "passed": category == "passed",
             "metrics": metrics.model_dump(mode="json") if metrics else None,
         }
-        self._evaluations.append(
-            AgentFeedbackEvaluation(
+        if self.contract.contract_id == "agent_feedback_contract.v2":
+            last_valid_hash = self._last_valid[0] if self._last_valid is not None else None
+            worker_hash = self.contract.agent_worker_contract_hash
+            assert worker_hash is not None
+            ppa_tool_call_index = (
+                self._ppa_tool_calls if test_id == self.contract.ppa_test_id else None
+            )
+            ppa_execution_index = self._ppa_executions if synthesis_executed else None
+            v2_identity = {
+                **identity,
+                "evaluation_contract_id": "agent_feedback_evaluation.v2",
+                "ppa_tool_call_index": ppa_tool_call_index,
+                "ppa_execution_index": ppa_execution_index,
+                "execution_dispatched": execution_dispatched,
+                "worker_contract_hash": worker_hash,
+                "last_valid_candidate_hash": last_valid_hash,
+            }
+            evaluation: AgentFeedbackEvaluation | AgentFeedbackEvaluationV2 = (
+                AgentFeedbackEvaluationV2(
+                    sequence=len(self._evaluations),
+                    test_id=test_id,
+                    candidate_hash=candidate_hash,
+                    profile_hash=profile_hash,
+                    cache_hit=cache_hit,
+                    synthesis_executed=synthesis_executed,
+                    duration_s=duration_s,
+                    category=category,
+                    passed=category == "passed",
+                    metrics=metrics,
+                    observation_hash=content_hash(v2_identity),
+                    ppa_tool_call_index=ppa_tool_call_index,
+                    ppa_execution_index=ppa_execution_index,
+                    execution_dispatched=execution_dispatched,
+                    worker_contract_hash=worker_hash,
+                    last_valid_candidate_hash=last_valid_hash,
+                )
+            )
+        else:
+            evaluation = AgentFeedbackEvaluation(
                 sequence=len(self._evaluations),
                 test_id=test_id,
                 candidate_hash=candidate_hash,
@@ -427,7 +584,7 @@ class AgentFeedbackController:
                 metrics=metrics,
                 observation_hash=content_hash(identity),
             )
-        )
+        self._evaluations.append(evaluation)
 
 
 def _compile_infrastructure_failure(completed: CompletedCommand) -> bool:

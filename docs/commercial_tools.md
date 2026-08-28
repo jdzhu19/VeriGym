@@ -81,7 +81,7 @@ login/worker rather than on the VeriGym control-plane machine. Standard input/ou
 forwarded by a fixed SSH wrapper, so no general network listener is required.
 
 The server operator approves profile files at startup. Callers select only an approved profile ID
-and declared hash, a reference-candidate hash, candidate/reference role, fixed top, and the exact
+and declared hash, a reference-candidate hash, candidate/reference/agent-feedback role, fixed top, and the exact
 ordered hash-bound RTL sources. The service does not accept tool paths, license configuration,
 PDK/library bytes, constraints, commands, or Tcl. It returns a sanitized resolved identity and
 structured DC metrics. Candidate reports/netlists are bounded artifact payloads; reference
@@ -97,13 +97,16 @@ contract without copying remote URIs, asset bytes, or license environment names.
 resolved hashes. Candidate summary reports return through the ordinary artifact path; raw logs,
 large netlists, and every reference artifact body stay remote.
 
-This boundary is transport and policy mediation, not a sandbox for hostile RTL. Run it under a
-dedicated account or scheduler job on a controlled verifier host, restrict the SSH principal to a
-fixed command, and never expose the MCP tools to the model/agent session. The in-process local DC
-backend remains supported for sites with a co-located licensed installation; both paths use the
-same generated flow and metric semantics.
+Transport and policy mediation alone are not a sandbox for hostile RTL. Final frozen-candidate PPA
+may retain the historical trusted verifier service. Iterative commercial feedback requires the
+phase-two worker mode: a fixed hash-bound launcher dispatches one candidate to one disposable LSF
+job, container, or VM; the worker returns no artifact bodies or diagnostics and deletes its
+workspace before its receipt is accepted. The client profile freezes the combined launcher and
+isolation-contract hash. Missing or altered worker identity fails before model lookup rather than
+falling back to the trusted service or open PPA.
 
-Phase one does not make DC/MCP agent-visible. Iterative commercial PPA still requires a separately
-disposable isolated worker, identical 3/8-call accounting, and a new threat-model claim. Until that
-second phase exists, combining `--agent-ppa-feedback` with a commercial profile fails before model
-lookup rather than silently falling back to open PPA.
+The model never calls MCP directly. It retains `run_public_test("ppa")` under the existing
+six-action repository contract. Default/max real executions remain 3/8, cache hits consume no
+execution, and a dispatched timeout/crash does. The scheduler or worker may require a site license
+network; that network belongs to trusted commercial infrastructure and is not inherited by the
+networkless agent container.

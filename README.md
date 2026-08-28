@@ -338,6 +338,14 @@ verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
   --output runs/
 ```
 
+RTLLM AgentEval may also expose bounded DC feedback through the existing
+`run_public_test("ppa")` action when the selected `synopsys.dc.mcp` client profile binds a
+hash-checked disposable worker contract. Each uncached attempt is one isolated worker dispatch;
+the agent receives only candidate area, maximum-path delay, WNS, power, units, and sanitized
+budget/identity fields. This path is explicit opt-in and is separately partitioned from open
+Yosys/OpenSTA and from final PPA scoring. See the
+[phase-two worker qualification](docs/audits/rtl_agent_dc_worker_qualification_v2.md).
+
 Both integrations are separate installable packages. No benchmark files, commercial binaries,
 libraries, or license values are present in the core distribution. See the
 [commercial-tool integration policy](docs/commercial_tools.md). The Synopsys package also provides

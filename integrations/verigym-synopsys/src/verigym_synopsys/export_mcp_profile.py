@@ -23,6 +23,8 @@ from .dc import (
 )
 from .mcp_server import SERVER_VERSION, SERVICE_PROTOCOL
 
+_AGENT_WORKER_PROTOCOL = "verigym.synopsys.dc.agent_worker.v1"
+
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _TRANSPORT_ENVIRONMENT = {"SSH_AUTH_SOCK", "KRB5CCNAME"}
 _TEMPLATE_IDS = {
@@ -115,6 +117,14 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         choices=sorted(_TRANSPORT_ENVIRONMENT),
     )
+    parser.add_argument(
+        "--agent-feedback-worker-contract-hash",
+        help="Expected combined launcher/isolation contract hash from the MCP server.",
+    )
+    parser.add_argument(
+        "--agent-feedback-worker-isolation-kind",
+        choices=["lsf_job", "container", "vm"],
+    )
     return parser
 
 
@@ -128,6 +138,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     transport_executable = safe_executable(args.transport_executable)
     transport_sha256 = _transport_hash(transport_executable, args.transport_sha256)
     environment = sorted(set(args.transport_environment))
+    if (args.agent_feedback_worker_contract_hash is None) != (
+        args.agent_feedback_worker_isolation_kind is None
+    ):
+        raise ValueError("agent feedback worker hash and isolation kind are required together")
+    if (
+        args.agent_feedback_worker_contract_hash is not None
+        and _SHA256.fullmatch(args.agent_feedback_worker_contract_hash) is None
+    ):
+        raise ValueError("agent feedback worker contract must be a lowercase SHA-256")
     library = next(
         item for item in server_profile.libraries if item.media_type == "application/x-synopsys-db"
     )
@@ -167,12 +186,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             "remote_design_compiler_version": server_tool.accepted_version,
         }
     )
+    if args.agent_feedback_worker_contract_hash is not None:
+        metadata.update(
+            {
+                "agent_feedback_worker_contract_hash": (args.agent_feedback_worker_contract_hash),
+                "agent_feedback_worker_protocol": _AGENT_WORKER_PROTOCOL,
+                "agent_feedback_worker_isolation_kind": (args.agent_feedback_worker_isolation_kind),
+            }
+        )
     profile = ToolchainProfile.model_validate(
         {
             "id": args.profile_id or f"{server_profile.id}-mcp",
             "version": args.profile_version or server_profile.version,
             "description": (
-                "Sanitized verifier-side profile for a server-owned Synopsys DC MCP service."
+                "Sanitized verifier-side profile for a server-owned Synopsys DC MCP service"
+                + (
+                    " with disposable agent-feedback workers."
+                    if args.agent_feedback_worker_contract_hash is not None
+                    else "."
+                )
             ),
             "tools": [
                 {

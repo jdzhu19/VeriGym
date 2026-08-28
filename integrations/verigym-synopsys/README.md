@@ -34,6 +34,8 @@ A bounded two-host run through the MCP client, fixed SSH transport, and real Des
 recorded in the [remote Synopsys MCP smoke audit](../../docs/audits/synopsys_mcp_real_dc_smoke.md).
 The combined VCS/MCP and DC/MCP RTLLM qualification is recorded in the
 [RTL commercial MCP qualification](../../docs/audits/rtl_commercial_mcp_qualification_v1.md).
+The disposable LSF feedback path is recorded in the
+[phase-two worker qualification](../../docs/audits/rtl_agent_dc_worker_qualification_v2.md).
 
 ## Task-bound VCS MCP verifier
 
@@ -163,6 +165,56 @@ Omit `--transport-sha256` when the wrapper is locally available to the exporter.
 name; values never enter the profile. The client profile contains remote DB, SDC, flow, and PDK
 hashes but no remote asset paths, bytes, or license-variable names.
 
+## Enable disposable agent feedback
+
+Do not reuse the trusted final-PPA server process to parse live agent candidates. Configure the
+MCP server with a fixed no-argument launcher whose hash is checked before the service starts:
+
+```bash
+verigym-synopsys-mcp-server \
+  --profile /private/profiles/dc.yaml \
+  --work-root /private/verigym-mcp-work \
+  --agent-worker-executable /private/bin/dc-agent-worker-launcher \
+  --agent-worker-sha256 "$LAUNCHER_SHA256" \
+  --agent-worker-timeout 1200
+```
+
+The package supplies `verigym-synopsys-lsf-agent-launcher` as a reference site launcher. Put its
+fixed arguments in the no-argument wrapper; do not accept queue, profile, resource, environment,
+or command values from the MCP request:
+
+```bash
+verigym-synopsys-lsf-agent-launcher \
+  --profile /private/profiles/dc.yaml \
+  --work-root /private/verigym-agent-workers \
+  --queue short --bsub-executable /opt/lsf/bin/bsub \
+  --python-executable /private/venv/bin/python \
+  --max-wall-seconds 900 --memory-mb 4096 --cores 1
+```
+
+The launcher description returns only its sanitized isolation contract. Its identity covers the
+loaded VeriGym and Synopsys-integration Python source trees as well as the fixed scheduler,
+interpreter, profile, limits, and queue identities. The MCP timeout must reserve at least 300
+seconds beyond the worker wall bound so the launcher can terminate the scheduler wait and clean
+its workspace before its parent is stopped. Query the MCP resolve operation, take the combined
+launcher/isolation contract hash, and freeze it into a new client profile:
+
+```bash
+verigym-synopsys-export-mcp-profile \
+  --server-profile /private/profiles/dc.yaml \
+  --transport-executable /private/bin/dc-agent-mcp-transport \
+  --transport-sha256 "$TRANSPORT_SHA256" \
+  --agent-feedback-worker-contract-hash "$WORKER_CONTRACT_SHA256" \
+  --agent-feedback-worker-isolation-kind lsf_job \
+  --output-profile /private/profiles/dc-agent-mcp.yaml
+```
+
+Only this second client profile is eligible for `--agent-ppa-feedback`. Each uncached candidate
+dispatch creates one LSF job and one private workspace. Candidate failure, timeout, and completed
+success all require a cleanup receipt. No worker report, netlist, diagnostic, stdout, stderr,
+scheduler job ID, commercial path, or license value is returned. LSF provides site scheduling and
+process/resource isolation; it is not described as a VM or a networkless sandbox.
+
 After installing the integration on the control-plane machine, `verigym run` selects the remote
 backend through the client profile in the ordinary synthesis path:
 
@@ -184,8 +236,7 @@ client profile/transport hash and the independent server resolved-profile hash.
 Use a dedicated SSH principal and a forced command or fixed wrapper in production so the client
 cannot replace the server arguments. Do not enable SSH agent forwarding. Authentication and
 host-key policy belong to SSH; the MCP protocol never transports license values. Keep the process
-on a verifier control plane. Do not
-register it as a candidate-agent/model-visible tool, because candidate RTL and commercial assets
-must remain separated and the current DC execution backend still assumes a trusted,
-site-controlled host. The existing in-process `synopsys.dc.synth` plugin and its `LocalRuntime`
-contract remain available and unchanged.
+on a verifier control plane. Never register the MCP tools as candidate-agent/model-visible tools;
+AgentEval reaches isolated feedback only through its existing `run_public_test("ppa")` action. The
+existing in-process `synopsys.dc.synth` plugin and final candidate/reference MCP mode remain
+trusted, site-controlled backends and are unchanged.

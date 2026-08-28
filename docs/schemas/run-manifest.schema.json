@@ -45,6 +45,35 @@
       "additionalProperties": false,
       "description": "Run-time resolved feedback contract bound before a model is consulted.",
       "properties": {
+        "agent_worker_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Contract Hash"
+        },
+        "agent_worker_isolation_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "lsf_job",
+                "container",
+                "vm"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Isolation Kind"
+        },
         "benchmark_variant": {
           "title": "Benchmark Variant",
           "type": "string"
@@ -70,10 +99,21 @@
           "type": "string"
         },
         "contract_id": {
-          "const": "agent_feedback_contract.v1",
           "default": "agent_feedback_contract.v1",
+          "enum": [
+            "agent_feedback_contract.v1",
+            "agent_feedback_contract.v2"
+          ],
           "title": "Contract Id",
           "type": "string"
+        },
+        "metric_semantics": {
+          "items": {
+            "$ref": "#/$defs/AgentFeedbackMetricSemantics"
+          },
+          "maxItems": 4,
+          "title": "Metric Semantics",
+          "type": "array"
         },
         "patch_invalidates_compile": {
           "const": true,
@@ -96,6 +136,15 @@
         "ppa_enabled": {
           "title": "Ppa Enabled",
           "type": "boolean"
+        },
+        "ppa_execution_semantics": {
+          "default": "cache_miss",
+          "enum": [
+            "cache_miss",
+            "dispatched_synthesis_attempt"
+          ],
+          "title": "Ppa Execution Semantics",
+          "type": "string"
         },
         "ppa_max_executions": {
           "default": 3,
@@ -171,8 +220,11 @@
           "title": "Resolved Profile Hash"
         },
         "resolver_id": {
-          "const": "agent_feedback_contract_resolver_v1",
           "default": "agent_feedback_contract_resolver_v1",
+          "enum": [
+            "agent_feedback_contract_resolver_v1",
+            "agent_feedback_contract_resolver_v2"
+          ],
           "title": "Resolver Id",
           "type": "string"
         },
@@ -295,6 +347,189 @@
         "observation_hash"
       ],
       "title": "AgentFeedbackEvaluation",
+      "type": "object"
+    },
+    "AgentFeedbackEvaluationV2": {
+      "additionalProperties": false,
+      "description": "POSTEDA-inspired execution ledger for isolated commercial feedback.",
+      "properties": {
+        "cache_hit": {
+          "title": "Cache Hit",
+          "type": "boolean"
+        },
+        "candidate_hash": {
+          "title": "Candidate Hash",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "passed",
+            "compile_failed",
+            "compile_required",
+            "ppa_disabled",
+            "ppa_quota_exhausted",
+            "synthesis_failed",
+            "infrastructure_error"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "duration_s": {
+          "minimum": 0,
+          "title": "Duration S",
+          "type": "number"
+        },
+        "evaluation_contract_id": {
+          "const": "agent_feedback_evaluation.v2",
+          "default": "agent_feedback_evaluation.v2",
+          "title": "Evaluation Contract Id",
+          "type": "string"
+        },
+        "execution_dispatched": {
+          "title": "Execution Dispatched",
+          "type": "boolean"
+        },
+        "last_valid_candidate_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Valid Candidate Hash"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentFeedbackMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observation_hash": {
+          "title": "Observation Hash",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "ppa_execution_index": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ppa Execution Index"
+        },
+        "ppa_tool_call_index": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ppa Tool Call Index"
+        },
+        "profile_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile Hash"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "synthesis_executed": {
+          "title": "Synthesis Executed",
+          "type": "boolean"
+        },
+        "test_id": {
+          "title": "Test Id",
+          "type": "string"
+        },
+        "worker_contract_hash": {
+          "title": "Worker Contract Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence",
+        "test_id",
+        "candidate_hash",
+        "cache_hit",
+        "synthesis_executed",
+        "duration_s",
+        "category",
+        "passed",
+        "observation_hash",
+        "execution_dispatched",
+        "worker_contract_hash"
+      ],
+      "title": "AgentFeedbackEvaluationV2",
+      "type": "object"
+    },
+    "AgentFeedbackMetricSemantics": {
+      "additionalProperties": false,
+      "description": "Public direction and unit semantics for one candidate-only metric.",
+      "properties": {
+        "direction": {
+          "enum": [
+            "minimize",
+            "maximize"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "area",
+            "maximum_path_delay",
+            "worst_negative_slack",
+            "power"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "direction",
+        "unit"
+      ],
+      "title": "AgentFeedbackMetricSemantics",
       "type": "object"
     },
     "AgentFeedbackMetrics": {
@@ -4137,7 +4372,14 @@
     },
     "agent_feedback_evaluations": {
       "items": {
-        "$ref": "#/$defs/AgentFeedbackEvaluation"
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AgentFeedbackEvaluation"
+          },
+          {
+            "$ref": "#/$defs/AgentFeedbackEvaluationV2"
+          }
+        ]
       },
       "title": "Agent Feedback Evaluations",
       "type": "array"

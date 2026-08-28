@@ -30,7 +30,11 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentAction, Observation
-from verigym.schemas.agent_feedback import AgentFeedbackContract, AgentFeedbackEvaluation
+from verigym.schemas.agent_feedback import (
+    AgentFeedbackContract,
+    AgentFeedbackEvaluation,
+    AgentFeedbackEvaluationV2,
+)
 from verigym.schemas.audit import AuditManifest, EvidenceEntry
 from verigym.schemas.common import (
     AgentDescriptor,
@@ -177,6 +181,7 @@ _SCHEMAS: dict[str, SchemaFactory] = {
     "agent-descriptor": _model(AgentDescriptor),
     "agent-feedback-contract": _model(AgentFeedbackContract),
     "agent-feedback-evaluation": _model(AgentFeedbackEvaluation),
+    "agent-feedback-evaluation-v2": _model(AgentFeedbackEvaluationV2),
     "canonical-repository-action": _model(CanonicalRepositoryAction),
     "agent-prompt-policy-spec": _model(AgentPromptPolicySpec),
     "agent-lineage": _model(AgentLineage),

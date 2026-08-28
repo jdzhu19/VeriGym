@@ -22,8 +22,15 @@ design, frequency, TNS, or signoff quality.
 RTLLM AgentEval may expose candidate-only Yosys/OpenSTA ATP v2 metrics during iteration. Those
 observations are separately quota-bound and cached by candidate/profile hash; they contain no
 reference or ratio and are never promoted into the final score. Final PPA reruns candidate and
-reference after hidden correctness passes. Agent-visible commercial PPA is outside phase one and
-is rejected before model lookup. See [RTL AgentEval v1](rtl_agent_eval.md).
+reference after hidden correctness passes. A DC/MCP profile may expose the same candidate-only
+metric projection only when its resolved identity includes the phase-two disposable-worker
+contract and cleanup semantics. The final scorer does not reuse iterative results. See
+[RTL AgentEval v1](rtl_agent_eval.md).
+
+Open feedback keeps the historical v1 cache-miss ledger. Isolated commercial feedback uses the v2
+dispatch ledger: one PPA repository action is distinct from one real synthesis execution, a cache
+hit consumes no execution, a dispatched crash/timeout does, and a pre-dispatch failure does not.
+Both retain the default execution budget of three and hard maximum of eight.
 
 Open Yosys/OpenSTA and commercial DC results remain independently partitioned even if they use the
 same task, nominal library family, clock period, or functional verifier. There is no cross-profile

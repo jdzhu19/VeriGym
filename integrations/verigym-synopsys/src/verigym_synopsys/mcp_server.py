@@ -8,9 +8,13 @@ import binascii
 import json
 import os
 import re
+import stat
+import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,6 +34,11 @@ from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.common import ToolchainProfile
 from verigym.schemas.runtime import SessionSpec
 
+from .agent_worker_protocol import (
+    AgentWorkerDescribeResponse,
+    AgentWorkerEnvelope,
+    AgentWorkerLaunchRequest,
+)
 from .common import redact
 from .dc import DesignCompilerSynthesisTool, _safe_relative
 
@@ -41,6 +50,8 @@ _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
 _MAX_EXPORTED_ARTIFACT_BYTES = 16 * 1024 * 1024
 _MAX_EXPORTED_ARTIFACT_TOTAL_BYTES = 32 * 1024 * 1024
+_MAX_AGENT_WORKER_RESPONSE_BYTES = 4 * 1024 * 1024
+_MAX_AGENT_WORKER_EXECUTABLE_BYTES = 16 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _PROFILE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
@@ -115,19 +126,113 @@ class McpSynthesisRequest(ProfileIdentityRequest):
 
     top: str = Field(min_length=1, max_length=256)
     sources: list[McpSource] = Field(min_length=1, max_length=64)
-    run_label: Literal["candidate", "reference"]
-    artifact_content_policy: Literal["all", "reports"] = "all"
+    run_label: Literal["candidate", "reference", "agent_feedback"]
+    artifact_content_policy: Literal["all", "reports", "none"] = "all"
 
     @model_validator(mode="after")
     def validate_unique_sources(self) -> McpSynthesisRequest:
         paths = [item.path for item in self.sources]
         if len(paths) != len(set(paths)):
             raise ValueError("MCP synthesis sources must not contain duplicates")
+        if self.run_label == "agent_feedback" and self.artifact_content_policy != "none":
+            raise ValueError("agent feedback synthesis cannot request artifact content")
         return self
+
+
+@dataclass(frozen=True)
+class AgentWorkerBinding:
+    executable: str
+    executable_sha256: str
+    contract: dict[str, Any]
+    contract_hash: str
+    timeout_s: int
 
 
 class McpRequestError(ValueError):
     """A bounded, caller-safe MCP request failure."""
+
+
+def _agent_worker_executable(path: Path, expected_hash: str) -> tuple[str, str]:
+    if _SHA256.fullmatch(expected_hash) is None:
+        raise ConfigurationError("agent worker executable requires a lowercase SHA-256")
+    try:
+        metadata = os.lstat(path)
+    except OSError as exc:
+        raise ConfigurationError("agent worker executable was not found") from exc
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size > _MAX_AGENT_WORKER_EXECUTABLE_BYTES
+        or not os.access(path, os.X_OK)
+    ):
+        raise ConfigurationError("agent worker must be a bounded executable regular file")
+    actual_hash = hash_bytes(path.read_bytes())
+    if actual_hash != expected_hash:
+        raise ConfigurationError("agent worker executable hash differs from the server setting")
+    return str(path.resolve(strict=True)), actual_hash
+
+
+def _run_agent_worker(executable: str, payload: dict[str, Any], timeout_s: int) -> dict[str, Any]:
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
+    if len(encoded) > _MAX_MESSAGE_BYTES:
+        raise McpRequestError("agent worker request exceeds the service bound")
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            [executable],
+            input=encoded,
+            capture_output=True,
+            check=False,
+            timeout=timeout_s,
+            env={
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            },
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise McpRequestError("agent worker timed out") from exc
+    except OSError as exc:
+        raise McpRequestError("agent worker could not be started") from exc
+    if completed.returncode != 0:
+        raise McpRequestError("agent worker exited unsuccessfully")
+    if len(completed.stdout) > _MAX_AGENT_WORKER_RESPONSE_BYTES:
+        raise McpRequestError("agent worker response exceeds the service bound")
+    try:
+        response = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise McpRequestError("agent worker returned malformed JSON") from exc
+    if not isinstance(response, dict):
+        raise McpRequestError("agent worker returned a non-object response")
+    response.setdefault("_control_plane_duration_s", time.monotonic() - started)
+    return response
+
+
+def _resolve_agent_worker(
+    executable_path: Path,
+    executable_sha256: str,
+    timeout_s: int,
+) -> AgentWorkerBinding:
+    executable, actual_hash = _agent_worker_executable(executable_path, executable_sha256)
+    raw = _run_agent_worker(executable, {"operation": "describe"}, min(timeout_s, 30))
+    raw.pop("_control_plane_duration_s", None)
+    try:
+        described = AgentWorkerDescribeResponse.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigurationError("agent worker description failed schema validation") from exc
+    if timeout_s < described.contract.max_wall_seconds + 300:
+        raise ConfigurationError(
+            "agent worker timeout must reserve 300 seconds beyond the worker wall bound"
+        )
+    contract = described.contract.model_dump(mode="json")
+    contract_hash = content_hash({"launcher_sha256": actual_hash, "isolation_contract": contract})
+    return AgentWorkerBinding(
+        executable=executable,
+        executable_sha256=actual_hash,
+        contract=contract,
+        contract_hash=contract_hash,
+        timeout_s=timeout_s,
+    )
 
 
 def _profile_input_schema(*, synthesis: bool) -> dict[str, Any]:
@@ -163,10 +268,13 @@ def _profile_input_schema(*, synthesis: bool) -> dict[str, Any]:
                         "additionalProperties": False,
                     },
                 },
-                "run_label": {"type": "string", "enum": ["candidate", "reference"]},
+                "run_label": {
+                    "type": "string",
+                    "enum": ["candidate", "reference", "agent_feedback"],
+                },
                 "artifact_content_policy": {
                     "type": "string",
-                    "enum": ["all", "reports"],
+                    "enum": ["all", "reports", "none"],
                     "default": "all",
                 },
             }
@@ -218,12 +326,33 @@ def tool_definitions() -> list[dict[str, Any]]:
 class DesignCompilerMcpService:
     """Site-controlled service facade around the existing local DC backend."""
 
-    def __init__(self, profile_paths: Sequence[Path], work_root: Path) -> None:
+    def __init__(
+        self,
+        profile_paths: Sequence[Path],
+        work_root: Path,
+        *,
+        agent_worker_executable: Path | None = None,
+        agent_worker_sha256: str | None = None,
+        agent_worker_timeout_s: int = 1800,
+    ) -> None:
         if not profile_paths:
             raise ConfigurationError("at least one Design Compiler profile is required")
         self._work_root = _prepare_work_root(work_root)
         self._registry = ToolchainProfileRegistry()
         self._plugin = DesignCompilerSynthesisTool()
+        if (agent_worker_executable is None) != (agent_worker_sha256 is None):
+            raise ConfigurationError(
+                "agent worker executable and SHA-256 must be configured together"
+            )
+        self._agent_worker = (
+            _resolve_agent_worker(
+                agent_worker_executable,
+                agent_worker_sha256,
+                agent_worker_timeout_s,
+            )
+            if agent_worker_executable is not None and agent_worker_sha256 is not None
+            else None
+        )
         for path in profile_paths:
             profile = self._registry.load_file(path)
             validation = self._plugin.validate_profile_contract(profile)
@@ -245,6 +374,7 @@ class DesignCompilerMcpService:
                 "protocol": SERVICE_PROTOCOL,
                 "profile": self._profile_summary(profile),
                 "resolved_profile": _sanitized_resolved_profile(resolved),
+                "agent_feedback_worker": self._agent_worker_summary(),
             }
         if name == SYNTHESIZE_TOOL:
             request = _validate_model(McpSynthesisRequest, arguments)
@@ -268,6 +398,17 @@ class DesignCompilerMcpService:
             "power_unit": profile.metrics.power.unit if profile.metrics.power.enabled else None,
             "accepted_dc_version": requirement.accepted_version,
             "reproducibility_scope": profile.reproducibility_scope,
+            "agent_feedback_worker_enabled": self._agent_worker is not None,
+        }
+
+    def _agent_worker_summary(self) -> dict[str, Any] | None:
+        binding = self._agent_worker
+        if binding is None:
+            return None
+        return {
+            "contract_hash": binding.contract_hash,
+            "launcher_sha256": binding.executable_sha256,
+            "contract": binding.contract,
         }
 
     def _resolve(
@@ -302,6 +443,75 @@ class DesignCompilerMcpService:
         return profile, resolved
 
     def _synthesize(self, request: McpSynthesisRequest) -> dict[str, Any]:
+        if request.run_label == "agent_feedback":
+            return self._synthesize_agent_feedback(request)
+        return self._synthesize_local(request)
+
+    def _synthesize_agent_feedback(self, request: McpSynthesisRequest) -> dict[str, Any]:
+        binding = self._agent_worker
+        if binding is None:
+            raise McpRequestError("agent feedback requires a configured disposable worker")
+        profile, resolved = self._resolve(request)
+        source_bundle = [{"path": item.path, "sha256": item.sha256} for item in request.sources]
+        synthesis = request.model_dump(mode="json")
+        request_hash = content_hash(synthesis)
+        launch = AgentWorkerLaunchRequest(
+            contract_hash=binding.contract_hash,
+            code_identity_hash=str(binding.contract["code_identity_hash"]),
+            isolation_profile_hash=str(binding.contract["isolation_profile_hash"]),
+            request_hash=request_hash,
+            source_bundle_hash=content_hash({"top": request.top, "sources": source_bundle}),
+            synthesis=synthesis,
+        )
+        raw = _run_agent_worker(
+            binding.executable,
+            launch.model_dump(mode="json"),
+            binding.timeout_s,
+        )
+        raw.pop("_control_plane_duration_s", None)
+        try:
+            envelope = AgentWorkerEnvelope.model_validate(raw)
+        except ValidationError as exc:
+            raise McpRequestError("agent worker envelope failed schema validation") from exc
+        receipt = envelope.receipt
+        if (
+            receipt.contract_hash != binding.contract_hash
+            or receipt.code_identity_hash != binding.contract["code_identity_hash"]
+            or receipt.isolation_profile_hash != binding.contract["isolation_profile_hash"]
+            or receipt.request_hash != request_hash
+            or receipt.source_bundle_hash != launch.source_bundle_hash
+            or not receipt.cleanup_complete
+        ):
+            raise McpRequestError("agent worker receipt differs from the dispatched request")
+        if not envelope.success or envelope.synthesis is None:
+            raise McpRequestError("agent worker reported an infrastructure failure")
+        response = envelope.synthesis
+        if response.get("protocol") != SERVICE_PROTOCOL:
+            raise McpRequestError("agent worker returned an invalid synthesis protocol")
+        tool_result = response.get("tool_result")
+        metrics = (
+            tool_result.get("metadata", {}).get("synthesis")
+            if isinstance(tool_result, dict)
+            else None
+        )
+        if (
+            not isinstance(tool_result, dict)
+            or tool_result.get("stdout") not in {None, ""}
+            or tool_result.get("stderr") not in {None, ""}
+            or tool_result.get("diagnostics") not in (None, [])
+            or response.get("artifacts") != []
+            or not isinstance(metrics, dict)
+            or metrics.get("artifacts") not in (None, [])
+        ):
+            raise McpRequestError("agent worker returned forbidden report or diagnostic content")
+        return {
+            **response,
+            "profile": self._profile_summary(profile),
+            "resolved_profile": _sanitized_resolved_profile(resolved),
+            "agent_feedback_execution": receipt.model_dump(mode="json"),
+        }
+
+    def _synthesize_local(self, request: McpSynthesisRequest) -> dict[str, Any]:
         profile, resolved = self._resolve(request)
         assert profile.flow is not None
         if request.top != profile.flow.top_module:
@@ -339,11 +549,14 @@ class DesignCompilerMcpService:
                         environment=_profile_environment(profile),
                     )
                 )
+                local_run_label = (
+                    "candidate" if request.run_label == "agent_feedback" else request.run_label
+                )
                 tool_result = self._plugin.execute(
                     self._plugin.build_synthesis_request(
                         profile,
                         resolved,
-                        run_label=request.run_label,
+                        run_label=local_run_label,
                     ),
                     ToolContext(
                         session=session,
@@ -361,11 +574,19 @@ class DesignCompilerMcpService:
                 if session is not None:
                     session.close()
                 runtime.close()
+        sanitized = _sanitized_tool_result(tool_result, request.run_label)
+        if request.run_label == "agent_feedback":
+            sanitized["artifacts"] = []
+            sanitized["diagnostics"] = []
+            synthesis = sanitized.get("metadata", {}).get("synthesis")
+            if isinstance(synthesis, dict):
+                synthesis["artifacts"] = []
+            exported = []
         return {
             "protocol": SERVICE_PROTOCOL,
             "profile": self._profile_summary(profile),
             "resolved_profile": _sanitized_resolved_profile(resolved),
-            "tool_result": _sanitized_tool_result(tool_result, request.run_label),
+            "tool_result": sanitized,
             "artifacts": exported,
         }
 
@@ -442,7 +663,7 @@ def _export_artifacts(
     artifact_dir: Path,
     *,
     include_content: bool,
-    content_policy: Literal["all", "reports"],
+    content_policy: Literal["all", "reports", "none"],
 ) -> list[dict[str, Any]]:
     raw_refs = result.metadata.get("synthesis", {}).get("artifacts", [])
     if not isinstance(raw_refs, list):
@@ -456,14 +677,19 @@ def _export_artifacts(
             raise McpRequestError("synthesis backend returned invalid artifact metadata") from exc
         record = ref.model_dump(mode="json")
         record["content_base64"] = None
-        content_allowed = content_policy == "all" or ref.path in {
-            "flow.tcl",
-            "metrics.kv",
-            "area.rpt",
-            "timing.rpt",
-            "power.rpt",
-            "qor.rpt",
-        }
+        content_allowed = (
+            content_policy == "all"
+            or content_policy == "reports"
+            and ref.path
+            in {
+                "flow.tcl",
+                "metrics.kv",
+                "area.rpt",
+                "timing.rpt",
+                "power.rpt",
+                "qor.rpt",
+            }
+        )
         if include_content and content_allowed:
             relative = _safe_relative(ref.path)
             path = artifact_dir / relative
@@ -582,12 +808,35 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="Dedicated server-local directory for ephemeral synthesis staging.",
     )
+    parser.add_argument(
+        "--agent-worker-executable",
+        type=Path,
+        help="Fixed no-argument disposable-worker launcher for agent-visible DC feedback.",
+    )
+    parser.add_argument(
+        "--agent-worker-sha256",
+        help="Exact SHA-256 of the fixed disposable-worker launcher.",
+    )
+    parser.add_argument(
+        "--agent-worker-timeout",
+        type=int,
+        default=1800,
+        help="Bound for one disposable synthesis worker (1..7200 seconds).",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
-    service = DesignCompilerMcpService(arguments.profile, arguments.work_root)
+    if not 1 <= arguments.agent_worker_timeout <= 7200:
+        raise ConfigurationError("agent worker timeout must be between 1 and 7200 seconds")
+    service = DesignCompilerMcpService(
+        arguments.profile,
+        arguments.work_root,
+        agent_worker_executable=arguments.agent_worker_executable,
+        agent_worker_sha256=arguments.agent_worker_sha256,
+        agent_worker_timeout_s=arguments.agent_worker_timeout,
+    )
     while True:
         raw = sys.stdin.buffer.readline(_MAX_MESSAGE_BYTES + 1)
         if not raw:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -21,7 +22,11 @@ from verigym.protocols.repository_action import (
     repository_action_state_failure,
     resolve_repository_action_protocol,
 )
-from verigym.schemas.agent_feedback import AgentFeedbackContract
+from verigym.schemas.agent_feedback import (
+    AgentFeedbackContract,
+    AgentFeedbackEvaluation,
+    AgentFeedbackEvaluationV2,
+)
 from verigym.schemas.common import ErrorCategory, InteractionMode
 from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import TaskRef
@@ -105,9 +110,41 @@ def _contract(*, quota: int = 1) -> AgentFeedbackContract:
     )
 
 
+def _v2_contract(*, quota: int = 2) -> AgentFeedbackContract:
+    payload: dict[str, Any] = {
+        "contract_id": "agent_feedback_contract.v2",
+        "resolver_id": "agent_feedback_contract_resolver_v2",
+        "task_id": "fixture/task",
+        "benchmark_variant": "fixture-agent-eval-v1",
+        "compile_test_id": "compile",
+        "ppa_test_id": "ppa",
+        "public_test_ids": ["compile", "ppa"],
+        "compile_required_for_finish": True,
+        "ppa_supported": True,
+        "ppa_enabled": True,
+        "ppa_max_executions": quota,
+        "resolved_profile_hash": "a" * 64,
+        "profile_backend": "synopsys.dc.mcp",
+        "ppa_execution_semantics": "dispatched_synthesis_attempt",
+        "metric_semantics": [
+            {"name": "area", "direction": "minimize", "unit": "um^2"},
+            {"name": "maximum_path_delay", "direction": "minimize", "unit": "ns"},
+            {"name": "worst_negative_slack", "direction": "maximize", "unit": "ns"},
+            {"name": "power", "direction": "minimize", "unit": "uW"},
+        ],
+        "agent_worker_contract_hash": "d" * 64,
+        "agent_worker_isolation_kind": "lsf_job",
+        "public_test_contract_hash": "b" * 64,
+    }
+    return AgentFeedbackContract.model_validate(
+        {**payload, "configuration_fingerprint": content_hash(payload)}
+    )
+
+
 def _declared_task(*, ppa_supported: bool):  # type: ignore[no-untyped-def]
     task = _task()
     metadata = dict(task.metadata)
+    metadata["candidate_top"] = "counter_wrap"
     metadata["agent_eval"] = {
         "benchmark_variant": "fixture-agent-eval-v1",
         "compile_test_id": "compile",
@@ -172,7 +209,61 @@ def test_v3_invalidates_revision_evidence_without_changing_registry() -> None:
     )
 
 
-def test_feedback_resolution_rejects_unsupported_and_commercial_ppa() -> None:
+def test_historical_v1_feedback_evaluation_shape_is_unchanged() -> None:
+    payload = {
+        "schema_version": "1.0",
+        "sequence": 0,
+        "test_id": "ppa",
+        "candidate_hash": "a" * 64,
+        "profile_hash": "b" * 64,
+        "cache_hit": False,
+        "synthesis_executed": True,
+        "duration_s": 0.25,
+        "category": "passed",
+        "passed": True,
+        "metrics": {
+            "area": 12.5,
+            "area_unit": "um^2",
+            "maximum_path_delay": None,
+            "worst_negative_slack": None,
+            "timing_unit": None,
+            "power": None,
+            "power_unit": None,
+        },
+        "observation_hash": "c" * 64,
+    }
+
+    evaluation = AgentFeedbackEvaluation.model_validate(payload)
+
+    assert evaluation.model_dump(mode="json") == payload
+
+
+def _commercial_profile(*, isolated: bool) -> Any:
+    metadata: dict[str, Any] = {}
+    if isolated:
+        metadata = {
+            "agent_feedback_worker_contract_hash": "d" * 64,
+            "agent_feedback_worker_isolation_kind": "lsf_job",
+            "agent_feedback_worker_contract": {
+                "disposable_worker": True,
+                "one_candidate_per_worker": True,
+                "cleanup_before_response": True,
+                "raw_artifacts_returned": False,
+            },
+        }
+    return SimpleNamespace(
+        flow_template_id="synopsys-dc-area-timing-power-explicit-v4",
+        metric_scope="synthesis_area_timing_power",
+        metadata=metadata,
+        top_module="counter_wrap",
+        resolved_profile_hash="a" * 64,
+        area_unit="um^2",
+        timing_unit="ns",
+        power_unit="uW",
+    )
+
+
+def test_feedback_resolution_rejects_unsupported_and_unisolated_commercial_ppa() -> None:
     with pytest.raises(ConfigurationError, match="does not support PPA"):
         resolve_agent_feedback_contract(
             task=_declared_task(ppa_supported=False),
@@ -182,14 +273,35 @@ def test_feedback_resolution_rejects_unsupported_and_commercial_ppa() -> None:
             profile_backend=None,
         )
 
-    with pytest.raises(ConfigurationError, match="commercial PPA is unavailable in phase one"):
+    with pytest.raises(ConfigurationError, match="disposable worker contract"):
         resolve_agent_feedback_contract(
             task=_declared_task(ppa_supported=True),
             ppa_enabled=True,
             ppa_max_executions=3,
-            resolved_profile=cast(Any, object()),
+            resolved_profile=_commercial_profile(isolated=False),
             profile_backend="synopsys.dc.mcp",
         )
+
+
+def test_feedback_resolution_accepts_hash_bound_isolated_dc_mcp() -> None:
+    contract = resolve_agent_feedback_contract(
+        task=_declared_task(ppa_supported=True),
+        ppa_enabled=True,
+        ppa_max_executions=3,
+        resolved_profile=_commercial_profile(isolated=True),
+        profile_backend="synopsys.dc.mcp",
+    )
+
+    assert contract is not None
+    assert contract.contract_id == "agent_feedback_contract.v2"
+    assert contract.ppa_execution_semantics == "dispatched_synthesis_attempt"
+    assert contract.agent_worker_contract_hash == "d" * 64
+    assert [(item.name, item.direction) for item in contract.metric_semantics] == [
+        ("area", "minimize"),
+        ("maximum_path_delay", "minimize"),
+        ("worst_negative_slack", "maximize"),
+        ("power", "minimize"),
+    ]
 
 
 def test_feedback_resolution_without_ppa_preserves_compile_only_contract() -> None:
@@ -255,7 +367,7 @@ def test_candidate_only_ppa_is_compile_gated_cached_and_quota_bounded(
     rtl.write_text("module candidate; endmodule\n", encoding="utf-8")
     executions = 0
 
-    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics]:
+    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics, bool]:
         nonlocal executions
         executions += 1
         return (
@@ -280,6 +392,7 @@ def test_candidate_only_ppa_is_compile_gated_cached_and_quota_bounded(
                 power_unit="mW",
                 power_activity_mode="vectorless",
             ),
+            True,
         )
 
     monkeypatch.setattr(
@@ -345,3 +458,171 @@ def test_missing_public_compiler_is_infrastructure_not_candidate_failure(tmp_pat
     assert completed.failure_origin == "control_plane"
     assert completed.failure_reason == "agent_compile_infrastructure"
     assert controller.evaluations[-1].category == "infrastructure_error"
+
+
+def test_v2_feedback_exposes_directions_budget_and_last_valid_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rtl = tmp_path / "candidate.v"
+    rtl.write_text("module candidate; endmodule\n", encoding="utf-8")
+    calls = 0
+
+    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics, bool]:
+        nonlocal calls
+        calls += 1
+        passed = calls == 1
+        return (
+            VerifierResult(
+                node_id="agent_ppa",
+                plugin="synopsys.dc.mcp",
+                status=VerifierStatus.PASSED if passed else VerifierStatus.FAILED,
+                error_category=(ErrorCategory.SUCCESS if passed else ErrorCategory.COMPILE_FAILED),
+            ),
+            SynthesisMetrics(
+                status="passed" if passed else "failed",
+                synthesis_ok=passed,
+                role="candidate",
+                top="candidate",
+                mapped_area_raw=12.5 if passed else None,
+                mapped_area_unit="um^2" if passed else None,
+                critical_path_delay_raw=1.2 if passed else None,
+                worst_negative_slack_raw=-0.2 if passed else None,
+                timing_unit="ns" if passed else None,
+                timing_constraints_hash="c" * 64 if passed else None,
+                total_power_raw=0.4 if passed else None,
+                power_unit="uW" if passed else None,
+                power_activity_mode="global_clock_relative" if passed else None,
+            ),
+            True,
+        )
+
+    monkeypatch.setattr(
+        "verigym.core.agent_feedback.execute_candidate_synthesis_feedback", synthesize
+    )
+    controller = AgentFeedbackController(
+        contract=_v2_contract(),
+        task=_task(),
+        runtime=cast(Any, object()),
+        profile=cast(Any, object()),
+        resolved_profile=cast(Any, object()),
+        backend=cast(Any, object()),
+    )
+    session = cast(Any, _Session(tmp_path))
+    controller.execute("compile", session)
+    first = json.loads(controller.execute("ppa", session).stdout)
+    first_hash = first["candidate_hash"]
+    assert first["protocol"] == "verigym_agent_feedback_v2"
+    assert first["execution_budget"]["ppa_executions_remaining"] == 1
+    assert first["metric_semantics"][2] == {
+        "name": "worst_negative_slack",
+        "direction": "maximize",
+        "unit": "ns",
+    }
+
+    rtl.write_text("module candidate; bad syntax\n", encoding="utf-8")
+    controller.execute("compile", session)
+    failed = json.loads(controller.execute("ppa", session).stdout)
+    assert failed["category"] == "synthesis_failed"
+    assert failed["last_valid"]["candidate_hash"] == first_hash
+    assert failed["execution_budget"]["ppa_executions_used"] == 2
+    ledger = controller.evaluations[-1]
+    assert isinstance(ledger, AgentFeedbackEvaluationV2)
+    assert ledger.evaluation_contract_id == "agent_feedback_evaluation.v2"
+    assert ledger.execution_dispatched is True
+    assert ledger.last_valid_candidate_hash == first_hash
+
+
+def test_v2_pre_dispatch_failure_does_not_consume_synthesis_quota(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "candidate.v").write_text("module candidate; endmodule\n", encoding="utf-8")
+
+    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics, bool]:
+        metrics = SynthesisMetrics(
+            status="error",
+            synthesis_ok=False,
+            role="candidate",
+            top="candidate",
+            failure_category="sandbox_error",
+        )
+        return (
+            VerifierResult(
+                node_id="agent_ppa",
+                plugin="synopsys.dc.mcp",
+                status=VerifierStatus.ERROR,
+                error_category=ErrorCategory.SANDBOX_ERROR,
+            ),
+            metrics,
+            False,
+        )
+
+    monkeypatch.setattr(
+        "verigym.core.agent_feedback.execute_candidate_synthesis_feedback", synthesize
+    )
+    controller = AgentFeedbackController(
+        contract=_v2_contract(quota=1),
+        task=_task(),
+        runtime=cast(Any, object()),
+        profile=cast(Any, object()),
+        resolved_profile=cast(Any, object()),
+        backend=cast(Any, object()),
+    )
+    session = cast(Any, _Session(tmp_path))
+    controller.execute("compile", session)
+    first = json.loads(controller.execute("ppa", session).stdout)
+    second = json.loads(controller.execute("ppa", session).stdout)
+
+    assert first["category"] == second["category"] == "infrastructure_error"
+    assert first["execution_budget"]["ppa_executions_used"] == 0
+    assert second["execution_budget"]["ppa_executions_remaining"] == 1
+    assert controller.evaluations[-1].synthesis_executed is False
+
+
+def test_v2_post_dispatch_infrastructure_failure_consumes_synthesis_quota(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "candidate.v").write_text("module candidate; endmodule\n", encoding="utf-8")
+
+    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics, bool]:
+        metrics = SynthesisMetrics(
+            status="error",
+            synthesis_ok=False,
+            role="candidate",
+            top="candidate",
+            failure_category="timeout",
+        )
+        return (
+            VerifierResult(
+                node_id="agent_ppa",
+                plugin="synopsys.dc.mcp",
+                status=VerifierStatus.ERROR,
+                error_category=ErrorCategory.TIMEOUT,
+            ),
+            metrics,
+            True,
+        )
+
+    monkeypatch.setattr(
+        "verigym.core.agent_feedback.execute_candidate_synthesis_feedback", synthesize
+    )
+    controller = AgentFeedbackController(
+        contract=_v2_contract(quota=1),
+        task=_task(),
+        runtime=cast(Any, object()),
+        profile=cast(Any, object()),
+        resolved_profile=cast(Any, object()),
+        backend=cast(Any, object()),
+    )
+    session = cast(Any, _Session(tmp_path))
+    controller.execute("compile", session)
+    first = json.loads(controller.execute("ppa", session).stdout)
+    second = json.loads(controller.execute("ppa", session).stdout)
+
+    assert first["category"] == "infrastructure_error"
+    assert first["execution_budget"]["execution_dispatched"] is True
+    assert first["execution_budget"]["ppa_executions_used"] == 1
+    assert second["category"] == "ppa_quota_exhausted"
+    assert controller.evaluations[-2].synthesis_executed is True

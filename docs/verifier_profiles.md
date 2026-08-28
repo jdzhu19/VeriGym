@@ -119,6 +119,7 @@ Direct `synopsys.vcs.simulate` and `synopsys.dc.synth` remain trusted verifier b
 or server-internal use. New commercial RTLLM campaigns should use `synopsys.vcs.mcp` for
 functional verification and `synopsys.dc.mcp` for final PPA.
 
-Agent-visible DC/MCP PPA is not implemented in phase one. It still requires a separately isolated,
-disposable worker and a new threat-model claim; do not expose either commercial MCP backend in the
-six-action agent tool registry.
+Phase-two DC/MCP feedback is enabled only by a separately resolved disposable-worker contract.
+It remains behind `run_public_test("ppa")`; neither the DC MCP tools nor VCS MCP are added to the
+six-action agent tool registry. A verifier-only/final-PPA DC profile without the worker contract
+continues to fail pre-model if iterative commercial feedback is requested.

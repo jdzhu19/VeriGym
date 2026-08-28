@@ -4,6 +4,35 @@
       "additionalProperties": false,
       "description": "Run-time resolved feedback contract bound before a model is consulted.",
       "properties": {
+        "agent_worker_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Contract Hash"
+        },
+        "agent_worker_isolation_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "lsf_job",
+                "container",
+                "vm"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Isolation Kind"
+        },
         "benchmark_variant": {
           "title": "Benchmark Variant",
           "type": "string"
@@ -29,10 +58,21 @@
           "type": "string"
         },
         "contract_id": {
-          "const": "agent_feedback_contract.v1",
           "default": "agent_feedback_contract.v1",
+          "enum": [
+            "agent_feedback_contract.v1",
+            "agent_feedback_contract.v2"
+          ],
           "title": "Contract Id",
           "type": "string"
+        },
+        "metric_semantics": {
+          "items": {
+            "$ref": "#/$defs/AgentFeedbackMetricSemantics"
+          },
+          "maxItems": 4,
+          "title": "Metric Semantics",
+          "type": "array"
         },
         "patch_invalidates_compile": {
           "const": true,
@@ -55,6 +95,15 @@
         "ppa_enabled": {
           "title": "Ppa Enabled",
           "type": "boolean"
+        },
+        "ppa_execution_semantics": {
+          "default": "cache_miss",
+          "enum": [
+            "cache_miss",
+            "dispatched_synthesis_attempt"
+          ],
+          "title": "Ppa Execution Semantics",
+          "type": "string"
         },
         "ppa_max_executions": {
           "default": 3,
@@ -130,8 +179,11 @@
           "title": "Resolved Profile Hash"
         },
         "resolver_id": {
-          "const": "agent_feedback_contract_resolver_v1",
           "default": "agent_feedback_contract_resolver_v1",
+          "enum": [
+            "agent_feedback_contract_resolver_v1",
+            "agent_feedback_contract_resolver_v2"
+          ],
           "title": "Resolver Id",
           "type": "string"
         },
@@ -160,6 +212,41 @@
         "configuration_fingerprint"
       ],
       "title": "AgentFeedbackContract",
+      "type": "object"
+    },
+    "AgentFeedbackMetricSemantics": {
+      "additionalProperties": false,
+      "description": "Public direction and unit semantics for one candidate-only metric.",
+      "properties": {
+        "direction": {
+          "enum": [
+            "minimize",
+            "maximize"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "area",
+            "maximum_path_delay",
+            "worst_negative_slack",
+            "power"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "direction",
+        "unit"
+      ],
+      "title": "AgentFeedbackMetricSemantics",
       "type": "object"
     },
     "DockerExternalAgentRuntimeConfig": {

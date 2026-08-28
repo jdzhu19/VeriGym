@@ -35,14 +35,24 @@ class AgentFeedbackMetrics(StrictModel):
         return self
 
 
+class AgentFeedbackMetricSemantics(StrictModel):
+    """Public direction and unit semantics for one candidate-only metric."""
+
+    name: Literal["area", "maximum_path_delay", "worst_negative_slack", "power"]
+    direction: Literal["minimize", "maximize"]
+    unit: str
+
+
 class AgentFeedbackContract(StrictModel):
     """Run-time resolved feedback contract bound before a model is consulted."""
 
     schema_version: str = SCHEMA_VERSION
-    contract_id: Literal["agent_feedback_contract.v1"] = "agent_feedback_contract.v1"
-    resolver_id: Literal["agent_feedback_contract_resolver_v1"] = (
-        "agent_feedback_contract_resolver_v1"
+    contract_id: Literal["agent_feedback_contract.v1", "agent_feedback_contract.v2"] = (
+        "agent_feedback_contract.v1"
     )
+    resolver_id: Literal[
+        "agent_feedback_contract_resolver_v1", "agent_feedback_contract_resolver_v2"
+    ] = "agent_feedback_contract_resolver_v1"
     task_id: str
     benchmark_variant: str
     state_machine_id: Literal["repository_action_state_machine_v3"] = (
@@ -61,6 +71,10 @@ class AgentFeedbackContract(StrictModel):
     ppa_max_executions: int = Field(default=3, ge=1, le=8)
     resolved_profile_hash: str | None = None
     profile_backend: str | None = None
+    ppa_execution_semantics: Literal["cache_miss", "dispatched_synthesis_attempt"] = "cache_miss"
+    metric_semantics: list[AgentFeedbackMetricSemantics] = Field(default_factory=list, max_length=4)
+    agent_worker_contract_hash: str | None = None
+    agent_worker_isolation_kind: Literal["lsf_job", "container", "vm"] | None = None
     public_test_contract_hash: str | None = None
     configuration_fingerprint: str
 
@@ -68,7 +82,11 @@ class AgentFeedbackContract(StrictModel):
     def validate_contract(self) -> AgentFeedbackContract:
         if not _HASH.fullmatch(self.configuration_fingerprint):
             raise ValueError("agent feedback contract requires a SHA-256 fingerprint")
-        for value in (self.resolved_profile_hash, self.public_test_contract_hash):
+        for value in (
+            self.resolved_profile_hash,
+            self.public_test_contract_hash,
+            self.agent_worker_contract_hash,
+        ):
             if value is not None and not _HASH.fullmatch(value):
                 raise ValueError("agent feedback contract contains an invalid SHA-256")
         expected = [
@@ -89,6 +107,27 @@ class AgentFeedbackContract(StrictModel):
                 raise ValueError("enabled PPA feedback lacks its compile/profile binding")
         elif self.ppa_test_id is not None or self.resolved_profile_hash is not None:
             raise ValueError("disabled PPA feedback must not expose a PPA test or profile")
+        if self.contract_id == "agent_feedback_contract.v1":
+            if (
+                self.resolver_id != "agent_feedback_contract_resolver_v1"
+                or self.ppa_execution_semantics != "cache_miss"
+                or self.metric_semantics
+                or self.agent_worker_contract_hash is not None
+                or self.agent_worker_isolation_kind is not None
+            ):
+                raise ValueError("v1 agent feedback contract contains v2 execution semantics")
+        else:
+            if (
+                self.resolver_id != "agent_feedback_contract_resolver_v2"
+                or self.ppa_execution_semantics != "dispatched_synthesis_attempt"
+                or self.agent_worker_contract_hash is None
+                or self.agent_worker_isolation_kind is None
+                or len(self.metric_semantics) < 3
+            ):
+                raise ValueError("v2 agent feedback contract lacks its worker/metric semantics")
+            names = [item.name for item in self.metric_semantics]
+            if len(names) != len(set(names)):
+                raise ValueError("agent feedback metric semantics contain duplicate names")
         return self
 
 
@@ -133,9 +172,33 @@ class AgentFeedbackEvaluation(StrictModel):
         return self
 
 
+class AgentFeedbackEvaluationV2(AgentFeedbackEvaluation):
+    """POSTEDA-inspired execution ledger for isolated commercial feedback."""
+
+    evaluation_contract_id: Literal["agent_feedback_evaluation.v2"] = "agent_feedback_evaluation.v2"
+    ppa_tool_call_index: int | None = Field(default=None, ge=1)
+    ppa_execution_index: int | None = Field(default=None, ge=1)
+    execution_dispatched: bool
+    worker_contract_hash: str
+    last_valid_candidate_hash: str | None = None
+
+    @model_validator(mode="after")
+    def validate_v2_evaluation(self) -> AgentFeedbackEvaluationV2:
+        for value in (self.worker_contract_hash, self.last_valid_candidate_hash):
+            if value is not None and not _HASH.fullmatch(value):
+                raise ValueError("v2 agent feedback evaluation contains an invalid SHA-256")
+        if self.execution_dispatched and not self.synthesis_executed:
+            raise ValueError("a dispatched feedback evaluation must execute synthesis")
+        if self.ppa_execution_index is not None and not self.synthesis_executed:
+            raise ValueError("a PPA execution index requires synthesis execution")
+        return self
+
+
 __all__ = [
     "AgentFeedbackCategory",
     "AgentFeedbackContract",
     "AgentFeedbackEvaluation",
+    "AgentFeedbackEvaluationV2",
+    "AgentFeedbackMetricSemantics",
     "AgentFeedbackMetrics",
 ]
