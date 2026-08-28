@@ -1030,6 +1030,161 @@ class WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLL
         return resolved_instructions, resolved_input, constrained, call_kwargs, telemetry
 
 
+class SdkContinuationRequiredToolLLM(
+    WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
+):
+    """Require one typed tool on the single adapter-owned continuation turn.
+
+    The ordinary agent loop remains on Chat Completions with automatic tool
+    selection.  After the Stop-hook recovery has produced and executed one
+    validated non-terminal tool, the adapter may arm exactly one continuation.
+    That next request uses the same bounded Responses conversion and exact
+    six-tool validation as the recovery request.  No action is synthesized.
+    """
+
+    _sdk_continuation_armed: bool = PrivateAttr(default=False)
+    _sdk_continuation_forced_request_count: int = PrivateAttr(default=0)
+    _sdk_continuation_validated_tool_count: int = PrivateAttr(default=0)
+    _sdk_continuation_response_shape: dict[str, Any] = PrivateAttr(default_factory=dict)
+
+    @property
+    def sdk_continuation_forced_request_count(self) -> int:
+        return self._sdk_continuation_forced_request_count
+
+    @property
+    def sdk_continuation_validated_tool_count(self) -> int:
+        return self._sdk_continuation_validated_tool_count
+
+    @property
+    def sdk_continuation_response_shape(self) -> dict[str, Any]:
+        return dict(self._sdk_continuation_response_shape)
+
+    def arm_sdk_stop_continuation(self) -> None:
+        """Arm the one continuation only from the exact validated recovery state."""
+
+        if (
+            self._sdk_continuation_armed
+            or self._sdk_continuation_forced_request_count != 0
+            or self._recovery_forced_request_count != 1
+            or self._recovery_validated_finish_count != 0
+            or self._recovery_validated_tool_count != 1
+        ):
+            raise ValueError("OpenHands HWE SDK continuation state is invalid")
+        self._sdk_continuation_armed = True
+
+    def _claim_sdk_continuation(self, tools: Sequence[ToolDefinition] | None) -> frozenset[str]:
+        if not self._sdk_continuation_armed:
+            return frozenset()
+        allowed = frozenset(tool.name for tool in tools or [])
+        if not allowed:
+            raise ValueError("OpenHands HWE SDK continuation requires a non-empty tool contract")
+        self._sdk_continuation_armed = False
+        self._sdk_continuation_forced_request_count += 1
+        return allowed
+
+    def _complete_sdk_continuation(
+        self,
+        *,
+        response: LLMResponse,
+        allowed_tool_names: frozenset[str],
+        recovery_shape: dict[str, Any],
+    ) -> LLMResponse:
+        continuation_shape = dict(self._recovery_response_shape)
+        self._recovery_response_shape = recovery_shape
+        self._sdk_continuation_response_shape = continuation_shape
+        _validate_recovery_required_tool_response(
+            response,
+            allowed_tool_names=allowed_tool_names,
+        )
+        self._validate_provider_response(response)
+        self._sdk_continuation_validated_tool_count += 1
+        return response
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE SDK continuation tool choice is adapter-owned")
+        allowed = self._claim_sdk_continuation(tools)
+        if not allowed:
+            return super().completion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        recovery_shape = dict(self._recovery_response_shape)
+        try:
+            response = BoundedProviderCallLLM.responses(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+                **kwargs,
+            )
+        except Exception:
+            self._recovery_response_shape = recovery_shape
+            raise
+        return self._complete_sdk_continuation(
+            response=response,
+            allowed_tool_names=allowed,
+            recovery_shape=recovery_shape,
+        )
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE SDK continuation tool choice is adapter-owned")
+        allowed = self._claim_sdk_continuation(tools)
+        if not allowed:
+            return await super().acompletion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        recovery_shape = dict(self._recovery_response_shape)
+        try:
+            response = await BoundedProviderCallLLM.aresponses(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+                **kwargs,
+            )
+        except Exception:
+            self._recovery_response_shape = recovery_shape
+            raise
+        return self._complete_sdk_continuation(
+            response=response,
+            allowed_tool_names=allowed,
+            recovery_shape=recovery_shape,
+        )
+
+
 WorkspaceRelativeRequiredToolLLM = (
     WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
 )
@@ -1049,6 +1204,7 @@ __all__ = [
     "RecoveryStateForcedFinishLLM",
     "RecoveryToolChoiceViolation",
     "RequiredToolChoiceLLM",
+    "SdkContinuationRequiredToolLLM",
     "ValidatedRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateForcedFinishLLM",
     "ValidatedResponsesRecoveryStateRequiredToolLLM",
