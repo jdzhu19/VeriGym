@@ -192,8 +192,8 @@ def test_no_model_qualification_executes_open_and_commercial_ppa_feedback(
 ) -> None:
     launcher = _launcher_module()
     visible = tmp_path / "visible"
-    (visible / "repository" / "rtl").mkdir(parents=True)
-    (visible / "repository" / "rtl" / "design.v").write_text("", encoding="utf-8")
+    (visible / "rtl").mkdir(parents=True)
+    (visible / "rtl" / "design.v").write_text("", encoding="utf-8")
 
     class Backend:
         pass
@@ -216,9 +216,9 @@ def test_no_model_qualification_executes_open_and_commercial_ppa_feedback(
 
     def synthesize(**kwargs: object) -> tuple[SimpleNamespace, SimpleNamespace, bool]:
         candidate = Path(str(kwargs["candidate_dir"]))
-        assert (candidate / "repository" / "rtl" / "design.v").read_text(
-            encoding="utf-8"
-        ) == "module design; endmodule\n"
+        assert (candidate / "rtl" / "design.v").read_text(encoding="utf-8") == (
+            "module design; endmodule\n"
+        )
         calls.append(str(kwargs["plugin"]))
         return (
             SimpleNamespace(status=launcher.VerifierStatus.PASSED),

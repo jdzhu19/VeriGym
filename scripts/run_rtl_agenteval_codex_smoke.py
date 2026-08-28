@@ -780,7 +780,7 @@ def _qualify_agent_ppa_feedback(
         candidate = scratch / profile_name
         copy_tree_safely(Path(assets.visible_root), candidate)
         for relative, content in sorted(reference.files.items()):
-            destination = candidate / "repository" / normalize_relative_path(relative)
+            destination = candidate / normalize_relative_path(relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(content, encoding="utf-8")
         result, metrics, dispatched = execute_candidate_synthesis_feedback(
