@@ -411,6 +411,20 @@ kind, and value length. Suspected credential values are neither serialized nor h
 matching similarly records presence only. Malformed structured artifacts, unknown evidence kinds,
 unsafe filesystem entries, and scanner errors block finalization.
 
+### OpenHands bounded-iteration termination
+
+The OpenHands HWE adapter distinguishes a typed broker finish from one exact SDK iteration-limit
+boundary. An iteration-limit outcome is model non-completion only when the frozen provider budget
+is fully accounted, every provider response has a usage record, the broker accepted exactly the
+configured number of canonical actions, the next decision alone was rejected as
+`decision_steps_hard_limit`, and the sanitized SDK event counts match the registered boundary.
+The outcome exports no training trajectory and does not invoke the verifier.
+
+Any different policy failure, rejection code or count, mutation limit, provider/accounting drift,
+interrupt, additional conversation error, persisted message content, or missing private-artifact
+scan remains fail closed. Historical reports retain their original classification; a newer policy
+identity cannot relabel a prior canary or authorize downstream collection retroactively.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

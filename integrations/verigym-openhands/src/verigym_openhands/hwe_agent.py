@@ -66,6 +66,9 @@ from .trajectory import (
 PROMPT_CONTRACT_ID = "openhands_hwe_native_shell_training_v2"
 PROMPT_CONTRACT_VERSION = "2.0.0"
 BASE_INSTRUCTION_POLICY = "openhands_hwe_exact_one_tool_bounded_recovery_v2"
+OPENHANDS_BOUNDED_ITERATION_TERMINATION_POLICY = (
+    "openhands_sdk_broker_bounded_iteration_exhaustion_v1"
+)
 _TOOL_NAMES = sorted(item["function"]["name"] for item in deepseek_harness_tool_definitions())
 
 
@@ -101,6 +104,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             "exact_provider_call_budget",
             "same_session_format_recovery",
             "broker_authoritative_typed_finish",
+            "bounded_iteration_exhaustion_receipt",
         ],
     )
 
@@ -819,6 +823,12 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 str(exc),
                 infrastructure=True,
             ) from exc
+        bounded_iteration_limit_exhausted = _bounded_iteration_limit_exhausted(
+            stats=stats,
+            settings=settings,
+            provider=provider,
+            event_types=event_types,
+        )
         accounting = ExternalAgentAccounting(
             process_wall_time_s=duration_s,
             cli_event_count=sum(event_types.values()),
@@ -867,6 +877,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     path_policy_recovery_validated_tool_count
                 ),
                 path_policy_recovery_response_shape=(path_policy_recovery_response_shape),
+                bounded_iteration_limit_exhausted=bounded_iteration_limit_exhausted,
                 trajectory_captured=trajectory_captured,
                 ordinary_hidden_verifier_pending=ordinary_hidden_verifier_pending,
             )
@@ -907,7 +918,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             and set(stats.rejection_codes) <= {"invalid_arguments"}
         )
         if (stats.policy_failure is not None or stats.rejected_calls) and not (
-            recoverable_invalid_arguments
+            recoverable_invalid_arguments or bounded_iteration_limit_exhausted
         ):
             persist_evidence(
                 trajectory_captured=False,
@@ -1388,6 +1399,7 @@ def _write_evidence(
     path_policy_recovery_forced_request_count: int,
     path_policy_recovery_validated_tool_count: int,
     path_policy_recovery_response_shape: dict[str, Any],
+    bounded_iteration_limit_exhausted: bool,
     trajectory_captured: bool,
     ordinary_hidden_verifier_pending: bool,
 ) -> None:
@@ -1474,10 +1486,53 @@ def _write_evidence(
             "path_policy_recovery_response_shape": path_policy_recovery_response_shape,
             "raw_rejected_provider_arguments_persisted": False,
             "sdk_upstream_source_modified": False,
-            "termination_authority": "broker_typed_finish",
+            "bounded_iteration_termination_policy_id": (
+                OPENHANDS_BOUNDED_ITERATION_TERMINATION_POLICY
+            ),
+            "bounded_iteration_limit_exhausted": bounded_iteration_limit_exhausted,
+            "termination_authority": (
+                "sdk_iteration_limit"
+                if bounded_iteration_limit_exhausted
+                else "broker_typed_finish"
+            ),
             "ordinary_hidden_verifier_pending": ordinary_hidden_verifier_pending,
             "benchmark_score_claimed": False,
         },
+    )
+
+
+def _bounded_iteration_limit_exhausted(
+    *,
+    stats: Any,
+    settings: OpenHandsHweSettings,
+    provider: dict[str, int],
+    event_types: dict[str, int],
+) -> bool:
+    """Recognize only the exact SDK/broker boundary produced at the frozen hard limit."""
+
+    limit = settings.max_iterations
+    return (
+        settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v18"
+        and limit == 200
+        and stats.finished is False
+        and stats.finish_calls == 0
+        and stats.policy_failure == "decision_steps_hard_limit"
+        and stats.infrastructure_failure is None
+        and stats.rejected_calls == 1
+        and stats.rejection_codes == ("episode_limit",)
+        and stats.tool_calls == limit
+        and stats.decision_steps == limit + 1
+        and provider.get("provider_call_count") == limit
+        and provider.get("successful_provider_response_count") == limit
+        and provider.get("provider_usage_record_count") == limit
+        and event_types
+        == {
+            "ActionEvent": limit + 1,
+            "ConversationErrorEvent": 1,
+            "MessageEvent": 1,
+            "ObservationEvent": limit + 1,
+            "SystemPromptEvent": 1,
+        }
     )
 
 
