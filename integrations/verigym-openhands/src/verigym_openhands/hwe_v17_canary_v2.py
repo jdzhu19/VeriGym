@@ -20,12 +20,12 @@ from verigym.schemas.options import validate_plugin_options
 from ._recovery import OPENHANDS_FORMAT_RECOVERY_BUDGET, OPENHANDS_FORMAT_RECOVERY_POLICY
 from .hwe_agent import OpenHandsHweAgentAdapter
 
-OPENHANDS_V17_CANARY_FORMAT = "verigym_openhands_hwe_v17_collection_canary_v1"
-OPENHANDS_V17_CANARY_REPORT_FORMAT = "verigym_openhands_hwe_v17_collection_canary_report_v1"
-OPENHANDS_V17_CANARY_GATE_FORMAT = "verigym_openhands_hwe_v17_collection_canary_gate_v1"
-OPENHANDS_V17_CANARY_CAMPAIGN_ID = "openhands-hwe-v17-collection-canary-v1"
-OPENHANDS_V17_CANARY_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-v17-collection-canary-v1"
-OPENHANDS_V17_CANARY_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_HWE_V17_COLLECTION_CANARY_V1"
+OPENHANDS_V17_CANARY_FORMAT = "verigym_openhands_hwe_v17_collection_canary_v2"
+OPENHANDS_V17_CANARY_REPORT_FORMAT = "verigym_openhands_hwe_v17_collection_canary_report_v2"
+OPENHANDS_V17_CANARY_GATE_FORMAT = "verigym_openhands_hwe_v17_collection_canary_gate_v2"
+OPENHANDS_V17_CANARY_CAMPAIGN_ID = "openhands-hwe-v17-collection-canary-v2"
+OPENHANDS_V17_CANARY_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-v17-collection-canary-v2"
+OPENHANDS_V17_CANARY_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_HWE_V17_COLLECTION_CANARY_V2"
 OPENHANDS_V17_CANARY_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
 OPENHANDS_V17_CANARY_API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 OPENHANDS_V17_CANARY_MODEL = "openai/deepseek-v4-flash"
@@ -34,7 +34,7 @@ OPENHANDS_V17_CANARY_SDK_VERSION = "1.42.1"
 OPENHANDS_V17_CANARY_LITELLM_VERSION = "1.93.0"
 OPENHANDS_V17_CANARY_TIKTOKEN_VERSION = "0.7.0"
 OPENHANDS_V17_CANARY_TOOL_CHOICE_POLICY = "validated_responses_recovery_state_required_tool_v17"
-OPENHANDS_V17_CANARY_CONTRACT_FILE = "qwen35_hwe_openhands_v17_canary_v1.json"
+OPENHANDS_V17_CANARY_CONTRACT_FILE = "qwen35_hwe_openhands_v17_canary_v2.json"
 OPENHANDS_V17_CANARY_SEED = 486
 OPENHANDS_V17_CANARY_SAMPLE_INDEX = 2
 OPENHANDS_V17_CANARY_MAX_ITERATIONS = 200

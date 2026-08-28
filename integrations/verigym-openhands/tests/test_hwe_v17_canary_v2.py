@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from verigym.schemas.evolution import TaskSplitManifest
 
-from verigym_openhands.hwe_v17_canary import (
+from verigym_openhands.hwe_v17_canary_v2 import (
     OPENHANDS_V17_CANARY_AGENT_VERSION_ID,
     OPENHANDS_V17_CANARY_PR2248,
     OPENHANDS_V17_CANARY_PR2944,
@@ -38,7 +38,7 @@ def _root() -> Path:
 
 
 def _contract_path() -> Path:
-    return _root() / "configs" / "training" / "qwen35_hwe_openhands_v17_canary_v1.json"
+    return _root() / "configs" / "training" / "qwen35_hwe_openhands_v17_canary_v2.json"
 
 
 def _locks() -> dict[str, _Lock]:
@@ -113,6 +113,7 @@ def test_v17_canary_agent_version_has_new_non_diagnostic_identity() -> None:
 
     assert first == second
     assert first.agent_version_id == OPENHANDS_V17_CANARY_AGENT_VERSION_ID
+    assert first.agent_version_id.endswith("-canary-v2")
     assert "diagnostic" not in first.agent_version_id
     assert first.model_weights_modified is False
     assert set(first.image_hashes) == {
@@ -230,7 +231,7 @@ def test_v17_canary_gate_fails_closed_on_invalid_evidence() -> None:
 
 
 def test_v17_canary_runner_has_no_gpu_or_heldout_execution_path() -> None:
-    source = (_root() / "scripts" / "collect_cva6_hwe_openhands_v17_canary.py").read_text(
+    source = (_root() / "scripts" / "collect_cva6_hwe_openhands_v17_canary_v2.py").read_text(
         encoding="utf-8"
     )
 
@@ -240,3 +241,4 @@ def test_v17_canary_runner_has_no_gpu_or_heldout_execution_path() -> None:
     assert '"optimizer_steps": 0' in source
     assert "optimizer.step" not in source
     assert "bsub" not in source
+    assert source.index("atomic_dump_json(scans") < source.index("require_security_scan_pass(scan)")

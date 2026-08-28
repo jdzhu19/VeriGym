@@ -281,6 +281,41 @@ def test_authorization_audit_metadata_still_detects_explicit_bearer(
     assert any(finding.evidence_category == "authorization_bearer" for finding in report.findings)
 
 
+@pytest.mark.parametrize("value", ["pass", "passed", "fail", "failed"])
+def test_security_scan_status_enum_is_not_a_credential_value(tmp_path: Path, value: str) -> None:
+    assert (
+        classify_structured_field_role(
+            key="secret_scan",
+            value=value,
+            content_class="runtime_artifact",
+            field_path="$.raw_audit_manifest.secret_scan",
+        )
+        == "enum_or_identifier"
+    )
+    _write(
+        tmp_path / "broker.json",
+        json.dumps({"raw_audit_manifest": {"secret_scan": value}}),
+    )
+    report = _scan(tmp_path)
+    assert report.gate == "pass"
+    assert report.hard_secret_leak_count == report.scanner_error_count == 0
+
+
+def test_security_scan_status_key_still_blocks_non_enum_secret(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "broker.json",
+        json.dumps({"raw_audit_manifest": {"secret_scan": CANARIES["assignment"]}}),
+    )
+    report = _scan(tmp_path)
+    assert report.gate == "fail"
+    assert any(
+        finding.structured_field_path == "$.raw_audit_manifest.secret_scan"
+        and finding.field_role == "credential_value_candidate"
+        and finding.severity == "hard_secret_leak"
+        for finding in report.findings
+    )
+
+
 def test_credential_source_distinguishes_environment_name_from_value(tmp_path: Path) -> None:
     environment_name = "SYNTHETIC_PROVIDER_API_KEY"
     assert (

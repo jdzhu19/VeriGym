@@ -13,7 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from verigym_openhands.hwe_v17_canary import (
+from verigym_openhands.hwe_v17_canary_v2 import (
     OPENHANDS_V17_CANARY_AGENT_VERSION_ID,
     OPENHANDS_V17_CANARY_API_KEY_ENV,
     OPENHANDS_V17_CANARY_BASE_URL_ENV,
@@ -129,7 +129,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
     atomic_dump_json(root / "agent-version.json", agent_version)
     image_receipt = {
         "schema_version": "1.0",
-        "format_id": "verigym_openhands_hwe_v17_canary_image_locks_v1",
+        "format_id": "verigym_openhands_hwe_v17_canary_image_locks_v2",
         "locks": {
             task_id: {
                 "lock_hash": lock.lock_hash,
@@ -357,14 +357,13 @@ def _run_episode(
         verifier_resolved=result.scorecard.resolved,
     )
     provider_scan = _scan_provider_values(root)
-    scan = require_security_scan_pass(
-        scan_artifact_roots(
-            [evidence_root],
-            report_id=f"openhands-hwe-v17-canary-{episode['episode_id']}",
-            forbidden_host_roots=(str(qualification), str(Path.cwd().resolve())),
-        )
+    scan = scan_artifact_roots(
+        [evidence_root],
+        report_id=f"openhands-hwe-v17-canary-{episode['episode_id']}",
+        forbidden_host_roots=(str(qualification), str(Path.cwd().resolve())),
     )
     atomic_dump_json(scans / f"{episode['episode_id']}.json", scan)
+    require_security_scan_pass(scan)
     return {
         "episode_id": episode["episode_id"],
         "role": episode["role"],

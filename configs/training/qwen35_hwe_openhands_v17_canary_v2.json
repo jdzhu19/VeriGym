@@ -1,7 +1,7 @@
 {
   "benchmark_score_claimed": false,
-  "contract_hash": "59266cdc1704cfdad67ccd734c76a809e90b5c282103911cea5d9cbca31ecc97",
-  "format_id": "verigym_openhands_hwe_v17_collection_canary_v1",
+  "contract_hash": "28a0da3b5ba9c51762c1d64af27c43064b6001e2c9cba65361faf29a3e6f8570",
+  "format_id": "verigym_openhands_hwe_v17_collection_canary_v2",
   "gate": {
     "allowed_recovery_counter_states": [[0, 0, 0], [1, 1, 1]],
     "infrastructure_or_security_failure_policy": "stop_immediately",
