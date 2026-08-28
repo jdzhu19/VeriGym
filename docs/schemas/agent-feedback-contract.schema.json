@@ -69,6 +69,31 @@
       "default": null,
       "title": "Agent Worker Isolation Kind"
     },
+    "agent_worker_release_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Worker Release Hash"
+    },
+    "agent_worker_release_protocol": {
+      "anyOf": [
+        {
+          "const": "commercial_worker_release.v1",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Worker Release Protocol"
+    },
     "benchmark_variant": {
       "title": "Benchmark Variant",
       "type": "string"

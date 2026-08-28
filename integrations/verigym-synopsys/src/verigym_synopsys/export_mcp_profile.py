@@ -22,6 +22,7 @@ from .dc import (
     VECTORLESS_POWER_FLOW_TEMPLATE_ID,
 )
 from .mcp_server import SERVER_VERSION, SERVICE_PROTOCOL
+from .worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 _AGENT_WORKER_PROTOCOL = "verigym.synopsys.dc.agent_worker.v1"
 
@@ -179,6 +180,14 @@ def _parser() -> argparse.ArgumentParser:
         "--agent-feedback-worker-isolation-kind",
         choices=["lsf_job", "container", "vm"],
     )
+    parser.add_argument(
+        "--agent-feedback-worker-release-hash",
+        help="Expected commercial_worker_release.v1 hash from the worker description.",
+    )
+    parser.add_argument(
+        "--agent-feedback-worker-release-protocol",
+        choices=[COMMERCIAL_WORKER_RELEASE_PROTOCOL],
+    )
     return parser
 
 
@@ -201,6 +210,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         and _SHA256.fullmatch(args.agent_feedback_worker_contract_hash) is None
     ):
         raise ValueError("agent feedback worker contract must be a lowercase SHA-256")
+    if (args.agent_feedback_worker_release_hash is None) != (
+        args.agent_feedback_worker_release_protocol is None
+    ):
+        raise ValueError("worker release hash and protocol are required together")
+    if (
+        args.agent_feedback_worker_release_hash is not None
+        and _SHA256.fullmatch(args.agent_feedback_worker_release_hash) is None
+    ):
+        raise ValueError("worker release hash must be a lowercase SHA-256")
     if args.runtime == "docker":
         if args.docker_image is None or args.prepared_image_id is None:
             raise ValueError("Docker MCP export requires --docker-image and --prepared-image-id")
@@ -253,6 +271,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "agent_feedback_worker_contract_hash": (args.agent_feedback_worker_contract_hash),
                 "agent_feedback_worker_protocol": _AGENT_WORKER_PROTOCOL,
                 "agent_feedback_worker_isolation_kind": (args.agent_feedback_worker_isolation_kind),
+            }
+        )
+    if args.agent_feedback_worker_release_hash is not None:
+        metadata.update(
+            {
+                "agent_feedback_worker_release_protocol": (
+                    args.agent_feedback_worker_release_protocol
+                ),
+                "agent_feedback_worker_release_hash": args.agent_feedback_worker_release_hash,
+                "commercial_worker_release_protocol": args.agent_feedback_worker_release_protocol,
+                "commercial_worker_release_hash": args.agent_feedback_worker_release_hash,
             }
         )
     if args.runtime == "docker":

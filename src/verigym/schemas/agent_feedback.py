@@ -75,6 +75,8 @@ class AgentFeedbackContract(StrictModel):
     metric_semantics: list[AgentFeedbackMetricSemantics] = Field(default_factory=list, max_length=4)
     agent_worker_contract_hash: str | None = None
     agent_worker_isolation_kind: Literal["lsf_job", "container", "vm"] | None = None
+    agent_worker_release_protocol: Literal["commercial_worker_release.v1"] | None = None
+    agent_worker_release_hash: str | None = None
     public_test_contract_hash: str | None = None
     configuration_fingerprint: str
 
@@ -86,6 +88,7 @@ class AgentFeedbackContract(StrictModel):
             self.resolved_profile_hash,
             self.public_test_contract_hash,
             self.agent_worker_contract_hash,
+            self.agent_worker_release_hash,
         ):
             if value is not None and not _HASH.fullmatch(value):
                 raise ValueError("agent feedback contract contains an invalid SHA-256")
@@ -114,6 +117,8 @@ class AgentFeedbackContract(StrictModel):
                 or self.metric_semantics
                 or self.agent_worker_contract_hash is not None
                 or self.agent_worker_isolation_kind is not None
+                or self.agent_worker_release_protocol is not None
+                or self.agent_worker_release_hash is not None
             ):
                 raise ValueError("v1 agent feedback contract contains v2 execution semantics")
         else:
@@ -128,6 +133,10 @@ class AgentFeedbackContract(StrictModel):
             names = [item.name for item in self.metric_semantics]
             if len(names) != len(set(names)):
                 raise ValueError("agent feedback metric semantics contain duplicate names")
+            if (self.agent_worker_release_protocol is None) != (
+                self.agent_worker_release_hash is None
+            ):
+                raise ValueError("agent feedback worker release identity must be paired")
         return self
 
 

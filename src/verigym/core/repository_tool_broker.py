@@ -124,7 +124,7 @@ class RepositoryToolBroker:
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._tool_calls = 0
         self._public_test_calls = 0
         self._file_reads = 0
@@ -344,16 +344,9 @@ class RepositoryToolBroker:
             if name == "apply_patch":
                 with self._lock:
                     self._patches += 1
-                response, success = self._workspace_result_with_success(
+                response, _success = self._workspace_result_with_success(
                     name, "file.apply_patch", arguments
                 )
-                if success:
-                    with self._lock:
-                        self._patch_applied = True
-                        if self._feedback_contract is not None:
-                            self._public_observed = False
-                            self._compile_passed = False
-                            self._diff_observed = False
                 return self._capture_response(name, canonical_arguments, response)
             if name == "run_public_test":
                 response = self._run_public_test(arguments)
@@ -361,12 +354,9 @@ class RepositoryToolBroker:
             if name == "inspect_diff":
                 with self._lock:
                     self._diff_inspections += 1
-                response, success = self._workspace_result_with_success(
+                response, _success = self._workspace_result_with_success(
                     name, "file.diff", arguments
                 )
-                if success:
-                    with self._lock:
-                        self._diff_observed = True
                 return self._capture_response(name, canonical_arguments, response)
             if name == "finish":
                 if set(arguments) != {"message"} or not isinstance(arguments["message"], str):
@@ -466,20 +456,32 @@ class RepositoryToolBroker:
     ) -> tuple[dict[str, Any], bool]:
         result = self._bridge.invoke_workspace_tool(tool_name, _json_arguments(arguments))
         payload = result.model_dump(mode="json")
+        failure_message = result.message or result.stderr or result.category.value
         if not result.success and result.category.value in {
             "permission_denied",
             "policy_denied",
             "sandbox_error",
         }:
-            message = result.message or result.stderr or result.category.value
             with self._lock:
-                if name == "apply_patch" and message.startswith(_RETRYABLE_PATCH_ERRORS):
+                if name == "apply_patch" and failure_message.startswith(_RETRYABLE_PATCH_ERRORS):
                     self._record_rejection_locked()
                 else:
-                    self._policy_failure = message
+                    self._policy_failure = failure_message
         elif not result.success and result.category.value == "internal_error":
             with self._lock:
                 self._infrastructure_failure = result.message or "workspace tool internal error"
+        elif result.success:
+            with self._lock:
+                if name == "apply_patch":
+                    self._patch_applied = True
+                    if self._feedback_contract is not None:
+                        self._public_observed = False
+                        self._compile_passed = False
+                        self._diff_observed = False
+                elif name == "inspect_diff":
+                    self._diff_observed = True
+        if not result.success:
+            return self._error_result(name, failure_message), False
         return self._payload_result(name, payload, is_error=not result.success), result.success
 
     def _run_public_test(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -538,15 +540,106 @@ class RepositoryToolBroker:
                 self._compile_passed = completed.exit_code == 0
         return self._payload_result(name, payload, is_error=is_error)
 
-    @staticmethod
-    def _payload_result(name: str, payload: dict[str, Any], *, is_error: bool) -> dict[str, Any]:
-        text = canonical_tool_observation(name, payload, is_error=is_error)
+    def _payload_result(
+        self, name: str, payload: dict[str, Any], *, is_error: bool
+    ) -> dict[str, Any]:
+        with self._lock:
+            enriched = {
+                **payload,
+                "state": self._state_summary_locked(),
+                "next_allowed_actions": self._next_allowed_actions_locked(),
+            }
+        text = canonical_tool_observation(name, enriched, is_error=is_error)
         return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
-    @classmethod
-    def _error_result(cls, name: str, message: str) -> dict[str, Any]:
+    def _error_result(self, name: str, message: str) -> dict[str, Any]:
         tool_name = name if name in _TOOL_NAMES else "list_files"
-        return cls._payload_result(tool_name, {"message": message}, is_error=True)
+        return self._payload_result(
+            tool_name,
+            {"error_subcategory": _safe_error_subcategory(message)},
+            is_error=True,
+        )
+
+    def _state_summary_locked(self) -> dict[str, Any]:
+        terminal = (
+            any(
+                value is not None
+                for value in (
+                    self._policy_failure,
+                    self._infrastructure_failure,
+                    self._limit_failure,
+                )
+            )
+            or self._pending_limit_locked()
+        )
+        if terminal:
+            phase = "terminal_failure"
+        elif self._finished:
+            phase = "finished"
+        elif self._patch_applied and not self._compile_passed:
+            phase = "current_revision_needs_compile"
+        elif self._patch_applied and not self._diff_observed:
+            phase = "current_revision_needs_diff"
+        else:
+            phase = "working"
+        return {
+            "phase": phase,
+            "patch_applied": self._patch_applied,
+            "compile_passed": self._compile_passed,
+            "public_feedback_observed": self._public_observed,
+            "latest_diff_observed": self._diff_observed,
+            "finished": self._finished,
+        }
+
+    def _next_allowed_actions_locked(self) -> list[str]:
+        if (
+            self._policy_failure is not None
+            or self._infrastructure_failure is not None
+            or self._limit_failure is not None
+            or self._pending_limit_locked()
+            or self._finished
+        ):
+            return []
+        actions = ["list_files", "read_file"]
+        if self._limits is None or self._patches < self._limits.max_patch_calls:
+            actions.append("apply_patch")
+        if self._public_test_ids:
+            actions.append("run_public_test")
+        if self._patch_applied:
+            actions.append("inspect_diff")
+        finish_failure = repository_action_state_failure(
+            "finish",
+            state_machine_id=self._state_machine_id,
+            public_test_required=bool(self._public_test_ids),
+            patch_applied=self._patch_applied,
+            public_observed=self._public_observed,
+            diff_observed=self._diff_observed,
+            finished=self._finished,
+            public_test_id=None,
+            compile_test_id=(
+                self._feedback_contract.compile_test_id
+                if self._feedback_contract is not None
+                else None
+            ),
+            compile_passed=self._compile_passed,
+            compile_required_for_finish=(
+                self._feedback_contract.compile_required_for_finish
+                if self._feedback_contract is not None
+                else False
+            ),
+        )
+        if finish_failure is None:
+            actions.append("finish")
+        return actions
+
+    def _pending_limit_locked(self) -> bool:
+        if self._limits is None or self._finished:
+            return False
+        consecutive = self._consecutive_rejected_calls + int(self._current_call_rejected)
+        return (
+            consecutive >= self._limits.max_consecutive_rejected_calls
+            or self._tool_calls >= self._limits.max_tool_calls
+        )
 
 
 def _json_arguments(arguments: dict[str, Any]) -> dict[str, JsonValue]:
@@ -559,6 +652,38 @@ def _json_arguments(arguments: dict[str, Any]) -> dict[str, JsonValue]:
 def _safe_error(text: str) -> str:
     clean = text.replace(str(Path.home()), "<redacted-root>")
     return _CONTROL.sub(" ", clean)
+
+
+def _safe_error_subcategory(message: str) -> str:
+    """Map caller-controlled diagnostics to a bounded, path-free category."""
+
+    normalized = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_")
+    if message.startswith(_RETRYABLE_PATCH_ERRORS) or "patch" in normalized:
+        return "patch_rejected"
+    if any(
+        marker in normalized
+        for marker in (
+            "absolute_path",
+            "outside_workspace",
+            "path_policy",
+            "symlink",
+            "hardlink",
+            "hidden_asset",
+            "credential",
+        )
+    ):
+        return "workspace_path_policy"
+    if "limit" in normalized:
+        return "broker_resource_limit"
+    if "public_test" in normalized or "test_id" in normalized:
+        return "invalid_public_test"
+    if normalized.startswith(("agent_", "repository_")) and len(normalized) <= 96:
+        return normalized
+    if "state" in normalized or "finish" in normalized:
+        return "invalid_state_transition"
+    if "internal" in normalized or "broker_error" in normalized:
+        return "broker_internal_error"
+    return "invalid_request"
 
 
 __all__ = [

@@ -36,7 +36,11 @@ from verigym.plugin_api import (
 )
 from verigym.schemas.action_protocol import RepositoryActionProtocolSpec
 
-from .agenteval_config import CodexAgentEvalSettings, agenteval_settings
+from .agenteval_config import (
+    AGENTEVAL_PROMPT_INSTRUCTIONS,
+    CodexAgentEvalSettings,
+    agenteval_settings,
+)
 from .agenteval_invocation import (
     build_agenteval_arguments,
     sanitized_agenteval_invocation,
@@ -47,6 +51,7 @@ from .events import (
     EventParseError,
     ParsedEventStream,
     parse_event_stream,
+    parse_partial_event_stream,
     validate_scoring_mcp_stream,
 )
 from .process import (
@@ -77,7 +82,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="codex-cli-agenteval-agent",
-        version="1.0.0",
+        version="2.0.0",
         api_version=PLUGIN_API_VERSION,
         provider="openai-codex-cli",
         capabilities=[
@@ -190,67 +195,18 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                 "codex_process_boundary", redact_text(str(exc)), infrastructure=True
             ) from exc
 
+        parsed, parse_error = _parse_returned_event_stream(process.stdout)
         process_failure = _preparse_process_failure(process, broker_stats)
-        if process_failure is not None:
-            accounting = _accounting(process, broker_stats, None)
-            bridge.record_accounting(accounting)
-            _write_scoring_evidence(
-                bridge.artifact_root,
-                capabilities=capabilities,
-                invocation=invocation,
-                process=process,
-                broker=broker_stats,
-                identity=None,
-                accounting=accounting,
-                parsed=None,
-                failure_category=process_failure.failure.category,
+        scoring_failure: AgentTerminationError | None = process_failure
+        if scoring_failure is None:
+            scoring_failure = _postparse_scoring_failure(
+                process,
+                broker_stats,
+                parsed,
+                parse_error=parse_error,
+                expected_model_id=settings.execution.model_id,
             )
-            raise process_failure
 
-        parsed: ParsedEventStream | None = None
-        try:
-            parsed = parse_event_stream(process.stdout)
-            completed_tools = validate_scoring_mcp_stream(process.stdout)
-            if (
-                process.exit_code != 0
-                or not parsed.terminal_event_seen
-                or parsed.error_messages
-                or len(completed_tools) != broker_stats.tool_calls
-                or not broker_stats.finished
-                or broker_stats.finish_calls != 1
-                or completed_tools[-1] != "finish"
-            ):
-                raise EventParseError("Codex AgentEval did not finish through canonical MCP")
-            if parsed.input_tokens is None or parsed.output_tokens is None:
-                raise EventParseError("Codex AgentEval terminal event omitted provider usage")
-            if (
-                parsed.observed_model_id is not None
-                and parsed.observed_model_id != settings.execution.model_id
-            ):
-                raise EventParseError("Codex AgentEval observed model identity changed")
-        except (EventParseError, ValueError) as exc:
-            accounting = _accounting(process, broker_stats, parsed)
-            bridge.record_accounting(accounting)
-            _write_scoring_evidence(
-                bridge.artifact_root,
-                capabilities=capabilities,
-                invocation=invocation,
-                process=process,
-                broker=broker_stats,
-                identity=None,
-                accounting=accounting,
-                parsed=parsed,
-                failure_category="scoring_event_ineligible",
-            )
-            raise _termination(
-                "scoring_event_ineligible",
-                str(exc),
-                infrastructure=True,
-                kind="runtime",
-                reason=TerminationReason.RUNTIME_ERROR,
-            ) from exc
-
-        assert parsed is not None
         identity = _identity(settings, capabilities, parsed, broker_stats)
         accounting = _accounting(process, broker_stats, parsed)
         bridge.emit_event("codex_cli_identity_observed", identity.model_dump(mode="json"))
@@ -264,7 +220,12 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             identity=identity,
             accounting=accounting,
             parsed=parsed,
+            failure_category=(
+                scoring_failure.failure.category if scoring_failure is not None else None
+            ),
         )
+        if scoring_failure is not None:
+            raise scoring_failure
         return FinalSubmissionAction(
             message="Codex AgentEval finished; submit the broker-owned candidate to VeriGym."
         )
@@ -306,17 +267,12 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
 def _agenteval_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
     contract = context.agent_feedback_contract
     assert contract is not None
-    instructions = [
-        "Use only the VeriGym MCP repository tools.",
-        "Use exactly one MCP tool per turn and no built-in tools.",
-        "Start with a shallow list_files view and use bounded read_file views for large files.",
-        "Read visible task files before editing.",
+    instructions = list(AGENTEVAL_PROMPT_INSTRUCTIONS)
+    instructions.append(
         "apply_patch requires --- a/path and +++ b/path headers plus numbered @@ hunks; never "
-        "use *** Update File syntax.",
-        "Every successful patch invalidates prior compile, PPA, and diff evidence.",
-        "After the final patch, inspect the latest diff and call finish exactly once.",
-        "Do not access shell, network, host files, hidden assets, or reference solutions.",
-    ]
+        "use *** Update File syntax."
+    )
+    instructions.append("Every successful patch invalidates prior compile, PPA, and diff evidence.")
     if contract.compile_test_id is not None:
         instructions.append(
             "Run compile for the current revision and require it to pass before finish."
@@ -351,19 +307,86 @@ def settings_version_id() -> str:
     return AGENTEVAL_AGENT_VERSION_ID
 
 
+def _parse_returned_event_stream(
+    stdout: str,
+) -> tuple[ParsedEventStream, str | None]:
+    """Parse a returned process before classifying broker or process failures."""
+
+    try:
+        return parse_event_stream(stdout), None
+    except EventParseError:
+        return parse_partial_event_stream(stdout), "event_stream_malformed_or_incomplete"
+
+
+def _postparse_scoring_failure(
+    process: CodexProcessResult,
+    broker: RepositoryToolBrokerStats,
+    parsed: ParsedEventStream,
+    *,
+    parse_error: str | None,
+    expected_model_id: str,
+) -> AgentTerminationError | None:
+    if parsed.observed_model_id is not None and parsed.observed_model_id != expected_model_id:
+        return _termination(
+            "model_identity_drift",
+            "Codex AgentEval observed a different model identity",
+            infrastructure=True,
+            kind="runtime",
+            reason=TerminationReason.RUNTIME_ERROR,
+        )
+    if parse_error is not None or not parsed.canonical_stream_complete:
+        return _termination(
+            "scoring_event_ineligible",
+            "Codex AgentEval returned an incomplete machine-event stream",
+        )
+    try:
+        completed_tools = validate_scoring_mcp_stream(process.stdout)
+    except (EventParseError, ValueError):
+        return _termination(
+            "scoring_event_ineligible",
+            "Codex AgentEval returned a non-canonical MCP event stream",
+        )
+    canonical_finish = bool(completed_tools) and completed_tools[-1] == "finish"
+    if (
+        process.exit_code != 0
+        or not parsed.terminal_event_seen
+        or parsed.error_messages
+        or len(completed_tools) != broker.tool_calls
+        or not broker.finished
+        or broker.finish_calls != 1
+        or not canonical_finish
+    ):
+        return _termination(
+            "scoring_event_ineligible",
+            "Codex AgentEval did not finish through canonical MCP",
+        )
+    if parsed.input_tokens is None or parsed.output_tokens is None:
+        return _termination(
+            "provider_usage_incomplete",
+            "Codex AgentEval terminal event omitted complete provider usage",
+        )
+    return None
+
+
 def _identity(
     settings: CodexAgentEvalSettings,
     capabilities: CapabilityReport,
-    parsed: ParsedEventStream,
+    parsed: ParsedEventStream | None,
     broker: RepositoryToolBrokerStats,
 ) -> ExternalAgentCallIdentity:
     calls = broker.tool_calls
+    complete_terminal = bool(
+        parsed is not None and parsed.canonical_stream_complete and parsed.terminal_event_seen
+    )
+    observed_model_id = (
+        parsed.observed_model_id if complete_terminal and parsed is not None else None
+    )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agenteval-agent",
-        adapter_version="1.0.0",
+        adapter_version="2.0.0",
         harness_name="verigym-codex-agenteval-scoring",
         requested_model_id="gpt-5.4",
-        observed_model_id=parsed.observed_model_id,
+        observed_model_id=observed_model_id,
         requested_reasoning_effort="xhigh",
         effective_reasoning_effort="xhigh",
         reasoning_effort_source="verigym_explicit_cli_override",
@@ -378,9 +401,12 @@ def _identity(
         execution_surface="codex_cli",
         interaction_class="cli_agent_mcp_repository_scoring",
         harness_id=settings.agent_version_id,
+        agent_version_hash=settings.agent_version_hash,
+        prompt_contract_hash=settings.prompt_hash,
+        tool_policy_fingerprint=settings.tool_policy_fingerprint,
         model_client_kind="cli_agent_mediated",
         agent_harness_kind="codex_cli",
-        tool_availability_policy="verigym_required_allowlisted_mcp_only_v1",
+        tool_availability_policy="verigym_required_allowlisted_mcp_only_v2",
         tool_use_policy="repository_action_state_machine_v3",
         tool_event_count=calls,
         side_effecting_tool_event_count=0,
@@ -398,9 +424,7 @@ def _identity(
         auth_alias_used=settings.execution.auth_alias_used,
         sandbox_policy="read-only_mcp-only",
         approval_policy="never",
-        identity_confidence=(
-            "observed" if parsed.observed_model_id is not None else "requested_only"
-        ),
+        identity_confidence=("observed" if observed_model_id is not None else "requested_only"),
         reproducibility_scope="mutable_remote_observation",
     )
 
@@ -410,18 +434,27 @@ def _accounting(
     broker: RepositoryToolBrokerStats,
     parsed: ParsedEventStream | None,
 ) -> ExternalAgentAccounting:
+    usage_complete = bool(
+        parsed is not None
+        and parsed.canonical_stream_complete
+        and parsed.terminal_event_seen
+        and parsed.input_tokens is not None
+        and parsed.output_tokens is not None
+    )
     return ExternalAgentAccounting(
         process_wall_time_s=process.duration_s,
         cli_event_count=len(parsed.events) if parsed is not None else 0,
+        model_call_count=parsed.model_call_count if parsed is not None else None,
         external_tool_call_count=broker.tool_calls,
         external_command_count=0,
         public_test_invocation_count=broker.public_test_calls,
         external_file_read_count=broker.file_reads,
         external_file_write_count=0,
         external_patch_count=broker.patches,
-        input_tokens=parsed.input_tokens if parsed is not None else None,
-        output_tokens=parsed.output_tokens if parsed is not None else None,
-        total_tokens=parsed.total_tokens if parsed is not None else None,
+        input_tokens=parsed.input_tokens if usage_complete and parsed is not None else None,
+        output_tokens=parsed.output_tokens if usage_complete and parsed is not None else None,
+        total_tokens=parsed.total_tokens if usage_complete and parsed is not None else None,
+        usage_complete=usage_complete,
     )
 
 
@@ -462,15 +495,15 @@ def _write_scoring_evidence(
         root / "provider-usage.json",
         {
             "schema_version": "1.0",
-            "usage_complete": (
-                parsed is not None
-                and parsed.input_tokens is not None
-                and parsed.output_tokens is not None
+            "usage_complete": accounting.usage_complete is True,
+            "input_tokens": accounting.input_tokens,
+            "output_tokens": accounting.output_tokens,
+            "total_tokens": accounting.total_tokens,
+            "cached_input_tokens": (
+                parsed.cached_input_tokens
+                if accounting.usage_complete is True and parsed is not None
+                else None
             ),
-            "input_tokens": parsed.input_tokens if parsed is not None else None,
-            "output_tokens": parsed.output_tokens if parsed is not None else None,
-            "total_tokens": parsed.total_tokens if parsed is not None else None,
-            "cached_input_tokens": parsed.cached_input_tokens if parsed is not None else None,
             "cost_usd": None,
             "currency": None,
         },
@@ -487,6 +520,7 @@ def _write_scoring_evidence(
             "training_transcript_captured": False,
             "raw_event_stream_persisted": False,
             "private_reasoning_persisted": False,
+            "provider_observation_recorded": identity is not None,
             "failure_category": failure_category,
         },
     )
@@ -534,14 +568,14 @@ def _preparse_process_failure(
     if broker.policy_failure is not None:
         return _termination(
             "workspace_policy",
-            broker.policy_failure,
+            "repository broker reported a terminal workspace policy failure",
             kind="policy",
             reason=TerminationReason.POLICY_VIOLATION,
         )
     if broker.infrastructure_failure is not None:
         return _termination(
             "runtime_tool_infrastructure",
-            broker.infrastructure_failure,
+            "repository broker reported a terminal tool infrastructure failure",
             infrastructure=True,
             kind="runtime",
             reason=TerminationReason.RUNTIME_ERROR,

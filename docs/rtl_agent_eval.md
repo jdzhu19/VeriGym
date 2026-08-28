@@ -80,6 +80,14 @@ must reserve 300 seconds beyond the worker wall bound so scheduler termination a
 before the launcher can be stopped. A profile without all of these fields is rejected before model
 lookup; there is no fallback to the older in-process service.
 
+New phase-two profiles also bind `commercial_worker_release.v1`. Server and worker Python,
+startup code, sanitized profile identities, remote-tool identities, commercial-asset hash
+manifests, and the isolation contract contribute to one release hash. Code is materialized in a
+read-only content-addressed directory; DB, PDK, SDC, licenses, and commercial reports are never
+copied into it. Resolve and execute carry the same expected release hash, and the launcher,
+server, client, and cleanup receipt all reject a mismatch. Legacy worker-protocol-v1 payloads
+remain parseable, but the smoke-v3 site profiles require the release binding explicitly.
+
 ```bash
 verigym run ... \
   --suite-variant counter_12_agent_eval_v1 \
@@ -112,7 +120,13 @@ The guarded four-run Codex smoke is implemented by
 DC-worker, VCS/MCP, reference, and known-bad check before creating the experiment directory. The
 launcher then authorizes exactly four ordered Codex processes, persists its authorization ledger
 atomically, never retries, performs structural offline replay, and scans scoring artifacts for
-hidden/reference content and site/commercial path leakage. This smoke and its successor bounded
+hidden/reference content and site/commercial path leakage. Smoke-v3 records authorization,
+process start, provider observation, and retry count separately. Contained model failures,
+policy failures, and verifier rejections are recorded before the next ordinal; resolved-identity,
+commercial-tool, and Docker control-plane failures stop the campaign immediately. A 14-run pilot
+is authorized only when all four processes have one identity observation, every candidate is
+resolved through typed `finish`, both RTLLM candidates have current valid PPA metrics, and replay
+plus leakage scanning pass without policy or infrastructure failures. This smoke and any successor
 pilot are qualifications, not benchmark scores.
 
 ## Design choices informed by POSTEDA-Bench

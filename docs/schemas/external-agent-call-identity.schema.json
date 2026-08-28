@@ -28,6 +28,18 @@
       "default": null,
       "title": "Agent Harness Kind"
     },
+    "agent_version_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Version Hash"
+    },
     "approval_policy": {
       "anyOf": [
         {
@@ -291,6 +303,18 @@
       ],
       "title": "Observed Model Id"
     },
+    "prompt_contract_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Contract Hash"
+    },
     "pure_api_model_eval": {
       "anyOf": [
         {
@@ -450,6 +474,18 @@
       ],
       "default": null,
       "title": "Tool Event Count"
+    },
+    "tool_policy_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Policy Fingerprint"
     },
     "tool_use_policy": {
       "anyOf": [

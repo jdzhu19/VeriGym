@@ -74,6 +74,31 @@
           "default": null,
           "title": "Agent Worker Isolation Kind"
         },
+        "agent_worker_release_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Release Hash"
+        },
+        "agent_worker_release_protocol": {
+          "anyOf": [
+            {
+              "const": "commercial_worker_release.v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Worker Release Protocol"
+        },
         "benchmark_variant": {
           "title": "Benchmark Variant",
           "type": "string"
@@ -941,6 +966,18 @@
           "default": null,
           "title": "Agent Harness Kind"
         },
+        "agent_version_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Version Hash"
+        },
         "approval_policy": {
           "anyOf": [
             {
@@ -1204,6 +1241,18 @@
           ],
           "title": "Observed Model Id"
         },
+        "prompt_contract_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Contract Hash"
+        },
         "pure_api_model_eval": {
           "anyOf": [
             {
@@ -1363,6 +1412,18 @@
           ],
           "default": null,
           "title": "Tool Event Count"
+        },
+        "tool_policy_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Policy Fingerprint"
         },
         "tool_use_policy": {
           "anyOf": [

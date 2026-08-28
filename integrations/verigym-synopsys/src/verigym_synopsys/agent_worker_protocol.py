@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 from verigym.plugin_api import StrictModel
 
+from .worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL, CommercialWorkerRelease
+
 AGENT_WORKER_PROTOCOL = "verigym.synopsys.dc.agent_worker.v1"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -29,6 +31,8 @@ class AgentWorkerIsolationContract(StrictModel):
     max_wall_seconds: int = Field(ge=1, le=7200)
     memory_mb: int = Field(ge=256, le=1_048_576)
     cores: int = Field(ge=1, le=256)
+    release_protocol: Literal["commercial_worker_release.v1"] | None = None
+    release_hash: str | None = None
 
     @field_validator("code_identity_hash", "isolation_profile_hash")
     @classmethod
@@ -36,6 +40,21 @@ class AgentWorkerIsolationContract(StrictModel):
         if _SHA256.fullmatch(value) is None:
             raise ValueError("worker isolation profile requires a lowercase SHA-256")
         return value
+
+    @field_validator("release_hash")
+    @classmethod
+    def validate_release_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("worker release identity must be a lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_release_pair(self) -> AgentWorkerIsolationContract:
+        if (self.release_protocol is None) != (self.release_hash is None):
+            raise ValueError("worker release protocol and hash must be supplied together")
+        if self.release_protocol not in {None, COMMERCIAL_WORKER_RELEASE_PROTOCOL}:
+            raise ValueError("unsupported worker release protocol")
+        return self
 
 
 class AgentWorkerDescribeRequest(StrictModel):
@@ -45,6 +64,7 @@ class AgentWorkerDescribeRequest(StrictModel):
 class AgentWorkerDescribeResponse(StrictModel):
     protocol: Literal["verigym.synopsys.dc.agent_worker.v1"] = "verigym.synopsys.dc.agent_worker.v1"
     contract: AgentWorkerIsolationContract
+    release: CommercialWorkerRelease | None = None
 
 
 class AgentWorkerLaunchRequest(StrictModel):
@@ -55,6 +75,7 @@ class AgentWorkerLaunchRequest(StrictModel):
     request_hash: str
     source_bundle_hash: str
     synthesis: dict[str, Any]
+    expected_release_hash: str | None = None
 
     @field_validator(
         "contract_hash",
@@ -67,6 +88,13 @@ class AgentWorkerLaunchRequest(StrictModel):
     def validate_hash(cls, value: str) -> str:
         if _SHA256.fullmatch(value) is None:
             raise ValueError("worker request identity must be a lowercase SHA-256")
+        return value
+
+    @field_validator("expected_release_hash")
+    @classmethod
+    def validate_expected_release_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("expected worker release hash must be a lowercase SHA-256")
         return value
 
 
@@ -87,6 +115,8 @@ class AgentWorkerReceipt(StrictModel):
         "infrastructure_failed_clean",
     ]
     duration_s: float = Field(ge=0, le=7200)
+    release_protocol: Literal["commercial_worker_release.v1"] | None = None
+    release_hash: str | None = None
 
     @field_validator(
         "contract_hash",
@@ -101,6 +131,21 @@ class AgentWorkerReceipt(StrictModel):
         if _SHA256.fullmatch(value) is None:
             raise ValueError("worker receipt identity must be a lowercase SHA-256")
         return value
+
+    @field_validator("release_hash")
+    @classmethod
+    def validate_receipt_release_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("worker receipt release hash must be a lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_receipt_release_pair(self) -> AgentWorkerReceipt:
+        if (self.release_protocol is None) != (self.release_hash is None):
+            raise ValueError("worker receipt release protocol and hash must be paired")
+        if self.release_protocol not in {None, COMMERCIAL_WORKER_RELEASE_PROTOCOL}:
+            raise ValueError("unsupported worker receipt release protocol")
+        return self
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> AgentWorkerReceipt:

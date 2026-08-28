@@ -11,7 +11,43 @@ from .capabilities import CapabilityReport
 from .config import CodexSettings, readonly_agent_settings
 from .util import stable_hash
 
-AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v1"
+AGENTEVAL_PROMPT_INSTRUCTIONS = (
+    "Use only repository-relative paths accepted by the VeriGym MCP repository tools.",
+    "Use exactly one MCP tool per turn and no built-in tools.",
+    "Start with a shallow list_files view and use bounded read_file views for large files.",
+    "Read visible task files before editing.",
+    "Use only the typed apply_patch action with canonical unified-diff paths and hunks.",
+    "After every successful patch, compile the current revision again before relying on it.",
+    "When PPA is available, call it at least once for the latest compiled revision.",
+    "Before finishing, inspect the latest diff and call the typed finish action exactly once.",
+    "Do not access shell, network, host files, hidden assets, or reference solutions.",
+)
+AGENTEVAL_PROMPT_HASH = stable_hash(
+    {
+        "prompt_contract_id": "repository_action_v2_prompt_v3",
+        "prompt_contract_version": "3.0.0",
+        "instructions": AGENTEVAL_PROMPT_INSTRUCTIONS,
+        "workspace_path_format": "repository_relative_only",
+        "conditional_compile": True,
+        "conditional_ppa": True,
+    }
+)
+AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
+    {
+        "availability": "verigym_required_allowlisted_mcp_only_v2",
+        "state_machine": "repository_action_state_machine_v3",
+        "tools": [
+            "list_files",
+            "read_file",
+            "apply_patch",
+            "run_public_test",
+            "inspect_diff",
+            "finish",
+        ],
+        "terminal_path_violations": True,
+    }
+)
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v2"
 AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
     {
         "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
@@ -21,7 +57,11 @@ AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
         "cli_version": "codex-cli 0.147.0",
         "repository_action_protocol": "repository_action.v2",
         "state_machine": "repository_action_state_machine_v3",
-        "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v1",
+        "prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+        "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v2",
+        "event_processing": "tolerant_parse_before_failure_precedence_v2",
+        "returned_process_identity": "exactly_one_requested_or_observed_v2",
         "max_tool_calls": 40,
         "max_patch_calls": 20,
         "max_consecutive_rejected_calls": 3,
@@ -44,6 +84,8 @@ _OPTIONS = {
     "expected_cli_version",
     "expected_cli_executable_sha256",
     "expected_capability_fingerprint",
+    "expected_prompt_hash",
+    "expected_tool_policy_fingerprint",
     "expected_requested_auth_mode",
     "expected_resolved_auth_mode",
     "expected_auth_semantic_id",
@@ -77,6 +119,9 @@ class CodexAgentEvalSettings:
     execution: CodexSettings
     agent_version_id: str
     agent_version_hash: str
+    prompt_hash: str
+    tool_policy_fingerprint: str
+    capability_fingerprint: str
     max_tool_calls: int
     max_patch_calls: int
     max_consecutive_rejected_calls: int
@@ -99,6 +144,8 @@ def agenteval_settings(
         "expected_cli_version": _EXPECTED_CLI_VERSION,
         "expected_cli_executable_sha256": _EXPECTED_EXECUTABLE_SHA256,
         "expected_capability_fingerprint": capabilities.capability_fingerprint,
+        "expected_prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "scoring_agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
         "scoring_agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
     }
@@ -111,7 +158,7 @@ def agenteval_settings(
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
     if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v1")
+        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v2")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",
@@ -131,6 +178,9 @@ def agenteval_settings(
             "prompt_contract_id": _PROMPT_CONTRACT_ID,
             "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
             "agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+            "prompt_hash": AGENTEVAL_PROMPT_HASH,
+            "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+            "capability_fingerprint": capabilities.capability_fingerprint,
             "broker_limits": _BROKER_LIMITS,
             "training": False,
         }
@@ -139,7 +189,7 @@ def agenteval_settings(
         base,
         integration_track="codex_cli_agenteval_scoring",
         prompt_contract_id=_PROMPT_CONTRACT_ID,
-        tool_availability_policy="verigym_required_allowlisted_mcp_only_v1",
+        tool_availability_policy="verigym_required_allowlisted_mcp_only_v2",
         tool_use_policy="repository_action_state_machine_v3",
         configuration_fingerprint=fingerprint,
     )
@@ -147,6 +197,9 @@ def agenteval_settings(
         execution=execution,
         agent_version_id=AGENTEVAL_AGENT_VERSION_ID,
         agent_version_hash=AGENTEVAL_AGENT_VERSION_HASH,
+        prompt_hash=AGENTEVAL_PROMPT_HASH,
+        tool_policy_fingerprint=AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+        capability_fingerprint=capabilities.capability_fingerprint,
         max_tool_calls=_BROKER_LIMITS[0],
         max_patch_calls=_BROKER_LIMITS[1],
         max_consecutive_rejected_calls=_BROKER_LIMITS[2],
@@ -156,6 +209,9 @@ def agenteval_settings(
 __all__ = [
     "AGENTEVAL_AGENT_VERSION_HASH",
     "AGENTEVAL_AGENT_VERSION_ID",
+    "AGENTEVAL_PROMPT_HASH",
+    "AGENTEVAL_PROMPT_INSTRUCTIONS",
+    "AGENTEVAL_TOOL_POLICY_FINGERPRINT",
     "CodexAgentEvalSettings",
     "agenteval_settings",
 ]

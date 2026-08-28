@@ -343,7 +343,14 @@ worker contract. The contract requires a fixed regular launcher, one candidate p
 job/container/VM, bounded wall time/memory/cores, worker-only commercial credentials, no raw
 artifact return, and cleanup before response. The launcher accepts no model-controlled command,
 argument, environment, queue, profile path, or resource setting. The worker request binds the
-candidate source bundle and server profile. Its isolation identity also hashes the loaded VeriGym
+candidate and contract to an expected `commercial_worker_release.v1` hash for new site profiles.
+That release includes server/worker/startup code and hash-only profile, remote-tool, commercial
+asset, and isolation manifests. Its code files are read-only and content-addressed; licensed DB,
+PDK, SDC, report, license, and credential content is forbidden from the bundle. Resolve and
+execute both check the release, and the server re-hashes the launcher immediately before use.
+Release mismatch or code mutation is infrastructure-invalid and stops a campaign before another
+model process is authorized. The worker request also binds the candidate source bundle and server
+profile. Its isolation identity hashes the loaded VeriGym
 core and Synopsys-integration Python source trees, interpreter, scheduler executable, site profile,
 queue, and resource settings; that code identity is checked again in the launcher and inner job.
 The receipt binds the request, dispatch, lifecycle, cleanup, launcher, code, and isolation-profile

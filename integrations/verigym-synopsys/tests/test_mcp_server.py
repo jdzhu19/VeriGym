@@ -505,6 +505,41 @@ def test_mcp_control_plane_transport_output_is_bounded(tmp_path: Path) -> None:
     assert len(completed.stdout.encode("utf-8")) == 2 * 1024 * 1024
 
 
+def test_agent_worker_code_change_is_rejected_immediately_before_execution(
+    tmp_path: Path,
+) -> None:
+    server_profile_path, rtl = _site_profile(tmp_path)
+    profile = ToolchainProfileRegistry().load_file(server_profile_path)
+    worker = _fake_agent_worker(tmp_path, server_profile_path)
+    worker_hash = hashlib.sha256(worker.read_bytes()).hexdigest()
+    service = DesignCompilerMcpService(
+        [server_profile_path],
+        tmp_path / "worker-mutation-work",
+        agent_worker_executable=worker,
+        agent_worker_sha256=worker_hash,
+        agent_worker_timeout_s=330,
+    )
+    worker.write_text(worker.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+    request = McpSynthesisRequest(
+        profile_id=profile.id,
+        declared_profile_hash=content_hash(profile),
+        reference_candidate_hash="b" * 64,
+        top="counter",
+        sources=[
+            McpSource(
+                path="rtl/counter.v",
+                sha256=hashlib.sha256(rtl).hexdigest(),
+                content_base64=base64.b64encode(rtl).decode("ascii"),
+            )
+        ],
+        run_label="agent_feedback",
+        artifact_content_policy="none",
+    )
+
+    with pytest.raises(ConfigurationError, match="hash differs"):
+        service._synthesize_agent_feedback(request)
+
+
 def test_agent_feedback_uses_hash_bound_disposable_worker_and_returns_no_reports(
     tmp_path: Path,
 ) -> None:
@@ -638,7 +673,9 @@ def test_lsf_launcher_runs_one_job_and_cleans_the_disposable_workspace(tmp_path:
         timeout=45,
     )
     assert described.returncode == 0, described.stderr
-    contract = AgentWorkerDescribeResponse.model_validate_json(described.stdout).contract
+    description = AgentWorkerDescribeResponse.model_validate_json(described.stdout)
+    contract = description.contract
+    assert description.release is not None
     synthesis = McpSynthesisRequest(
         profile_id=profile.id,
         declared_profile_hash=content_hash(profile),
@@ -662,6 +699,7 @@ def test_lsf_launcher_runs_one_job_and_cleans_the_disposable_workspace(tmp_path:
         request_hash=content_hash(synthesis.model_dump(mode="json")),
         source_bundle_hash=content_hash({"top": synthesis.top, "sources": source_bundle}),
         synthesis=synthesis.model_dump(mode="json"),
+        expected_release_hash=description.release.release_hash,
     )
     completed = subprocess.run(
         launcher_argv,
@@ -680,6 +718,7 @@ def test_lsf_launcher_runs_one_job_and_cleans_the_disposable_workspace(tmp_path:
     assert envelope.receipt.worker_completed
     assert envelope.receipt.cleanup_complete
     assert envelope.receipt.lifecycle == "completed_clean"
+    assert envelope.receipt.release_hash == description.release.release_hash
     assert envelope.synthesis is not None
     assert envelope.synthesis["artifacts"] == []
     assert list(work_root.iterdir()) == []
@@ -726,6 +765,7 @@ def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
         request_hash=content_hash(synthesis.model_dump(mode="json")),
         source_bundle_hash=content_hash({"top": synthesis.top, "sources": source_bundle}),
         synthesis=synthesis.model_dump(mode="json"),
+        expected_release_hash=contract.release_hash,
     )
 
     def time_out(*_args: object, **_kwargs: object) -> None:
@@ -738,6 +778,7 @@ def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
     assert envelope.failure_category == "scheduler"
     assert envelope.receipt.lifecycle == "infrastructure_failed_clean"
     assert envelope.receipt.cleanup_complete is True
+    assert envelope.receipt.release_hash == contract.release_hash
     assert list(work_root.iterdir()) == []
 
 

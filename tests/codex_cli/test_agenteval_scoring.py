@@ -7,12 +7,18 @@ from pathlib import Path
 import pytest
 from verigym_codex_cli.agenteval_agent import (
     CodexCliAgentEvalAdapter,
+    _accounting,
     _identity,
+    _parse_returned_event_stream,
+    _preparse_process_failure,
     _write_scoring_evidence,
 )
 from verigym_codex_cli.agenteval_config import (
     AGENTEVAL_AGENT_VERSION_HASH,
     AGENTEVAL_AGENT_VERSION_ID,
+    AGENTEVAL_PROMPT_HASH,
+    AGENTEVAL_PROMPT_INSTRUCTIONS,
+    AGENTEVAL_TOOL_POLICY_FINGERPRINT,
     agenteval_settings,
 )
 from verigym_codex_cli.agenteval_invocation import (
@@ -57,6 +63,8 @@ def _settings(fake_codex: tuple[Path, Path, object]):  # type: ignore[no-untyped
         "expected_cli_version": "codex-cli 0.147.0",
         "expected_cli_executable_sha256": _CLI_SHA256,
         "expected_capability_fingerprint": capabilities.capability_fingerprint,
+        "expected_prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "expected_requested_auth_mode": "inherited_codex_login",
         "expected_resolved_auth_mode": "inherited_codex_login",
         "expected_auth_semantic_id": "codex.auth.inherited_chatgpt_session.v1",
@@ -146,6 +154,8 @@ def test_scoring_agent_version_is_not_treated_as_prompt_memory(
         "expected_cli_version": "codex-cli 0.147.0",
         "expected_cli_executable_sha256": _CLI_SHA256,
         "expected_capability_fingerprint": capabilities.capability_fingerprint,
+        "expected_prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "expected_requested_auth_mode": "inherited_codex_login",
         "expected_resolved_auth_mode": "inherited_codex_login",
         "expected_auth_semantic_id": "codex.auth.inherited_chatgpt_session.v1",
@@ -167,6 +177,28 @@ def test_scoring_agent_version_is_not_treated_as_prompt_memory(
     assert policy.agent_version_id is None
     assert policy.agent_version_hash is None
     assert policy.memory_pack_hash is None
+
+
+def test_v2_settings_require_prompt_and_tool_policy_fingerprints(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    settings, capabilities = _settings(fake_codex)
+    options = {
+        "model_id": "gpt-5.4",
+        "reasoning_effort": "xhigh",
+        "expected_cli_version": "codex-cli 0.147.0",
+        "expected_cli_executable_sha256": _CLI_SHA256,
+        "expected_capability_fingerprint": capabilities.capability_fingerprint,
+        "expected_requested_auth_mode": settings.execution.requested_auth_mode,
+        "expected_resolved_auth_mode": settings.execution.resolved_auth_mode,
+        "expected_auth_semantic_id": settings.execution.auth_semantic_id,
+        "scoring_agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
+        "scoring_agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+    }
+
+    with pytest.raises(ValueError, match="expected_prompt_hash"):
+        agenteval_settings(options, capabilities, task_wall_time_s=300)
 
 
 def test_scoring_event_stream_accepts_finish_and_rejects_builtin_tools() -> None:
@@ -258,3 +290,103 @@ def test_scoring_evidence_never_exports_a_training_transcript(
     persisted = "\n".join(path.read_text(encoding="utf-8") for path in root.iterdir())
     assert "private stderr" not in persisted
     assert json.loads((root / "summary.json").read_text())["training_mode"] is False
+
+
+def test_returned_policy_failure_keeps_requested_identity_and_incomplete_usage(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    settings, capabilities = _settings(fake_codex)
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=1,
+        stdout=_line({"type": "turn.started", "model": "gpt-5.4"}) + "\n{malformed",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    broker = RepositoryToolBrokerStats(
+        tool_calls=1,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=1,
+        file_writes=0,
+        patches=0,
+        finish_calls=0,
+        finished=False,
+        policy_failure="absolute path rejected",
+        infrastructure_failure=None,
+    )
+
+    parsed, parse_error = _parse_returned_event_stream(process.stdout)
+    failure = _preparse_process_failure(process, broker)
+    identity = _identity(settings, capabilities, parsed, broker)
+    accounting = _accounting(process, broker, parsed)
+
+    assert parse_error == "event_stream_malformed_or_incomplete"
+    assert failure is not None
+    assert failure.failure.kind == "policy"
+    assert failure.failure.category == "workspace_policy"
+    assert identity.invocation_count == 1
+    assert identity.observed_model_id is None
+    assert identity.identity_confidence == "requested_only"
+    assert identity.agent_version_hash == AGENTEVAL_AGENT_VERSION_HASH
+    assert identity.prompt_contract_hash == AGENTEVAL_PROMPT_HASH
+    assert identity.tool_policy_fingerprint == AGENTEVAL_TOOL_POLICY_FINGERPRINT
+    assert accounting.usage_complete is False
+    assert accounting.input_tokens is None
+    assert accounting.output_tokens is None
+    assert accounting.total_tokens is None
+
+
+def test_complete_terminal_usage_is_recorded_without_estimation(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    settings, capabilities = _settings(fake_codex)
+    parsed, parse_error = _parse_returned_event_stream(_finish_stream())
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=0,
+        stdout=_finish_stream(),
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    broker = RepositoryToolBrokerStats(
+        tool_calls=1,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=0,
+        file_writes=0,
+        patches=0,
+        finish_calls=1,
+        finished=True,
+        policy_failure=None,
+        infrastructure_failure=None,
+    )
+
+    identity = _identity(settings, capabilities, parsed, broker)
+    accounting = _accounting(process, broker, parsed)
+
+    assert parse_error is None
+    assert identity.observed_model_id == "gpt-5.4"
+    assert identity.identity_confidence == "observed"
+    assert accounting.usage_complete is True
+    assert accounting.input_tokens == 10
+    assert accounting.output_tokens == 4
+    assert accounting.total_tokens == 14
+
+
+def test_v2_prompt_requires_relative_paths_compile_ppa_diff_and_finish() -> None:
+    instructions = " ".join(AGENTEVAL_PROMPT_INSTRUCTIONS)
+
+    assert "repository-relative paths" in instructions
+    assert "After every successful patch, compile" in instructions
+    assert "PPA is available" in instructions
+    assert "inspect the latest diff" in instructions
+    assert "typed finish" in instructions

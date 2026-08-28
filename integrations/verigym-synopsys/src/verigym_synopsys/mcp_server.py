@@ -41,6 +41,7 @@ from .agent_worker_protocol import (
 )
 from .common import redact
 from .dc import DesignCompilerSynthesisTool, _safe_relative
+from .worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 _PROTOCOL_VERSION = "2024-11-05"
 SERVER_VERSION = "0.1.0"
@@ -101,6 +102,7 @@ class ProfileIdentityRequest(StrictModel):
     declared_profile_hash: str
     reference_candidate_hash: str
     expected_resolved_profile_hash: str | None = None
+    expected_release_hash: str | None = None
 
     @field_validator("profile_id")
     @classmethod
@@ -113,6 +115,7 @@ class ProfileIdentityRequest(StrictModel):
         "declared_profile_hash",
         "reference_candidate_hash",
         "expected_resolved_profile_hash",
+        "expected_release_hash",
     )
     @classmethod
     def validate_hash(cls, value: str | None) -> str | None:
@@ -146,6 +149,8 @@ class AgentWorkerBinding:
     contract: dict[str, Any]
     contract_hash: str
     timeout_s: int
+    release_protocol: str | None = None
+    release_hash: str | None = None
 
 
 class McpRequestError(ValueError):
@@ -226,12 +231,20 @@ def _resolve_agent_worker(
         )
     contract = described.contract.model_dump(mode="json")
     contract_hash = content_hash({"launcher_sha256": actual_hash, "isolation_contract": contract})
+    release_protocol = described.release.protocol if described.release is not None else None
+    release_hash = described.release.release_hash if described.release is not None else None
+    if contract.get("release_protocol") != release_protocol or contract.get("release_hash") != (
+        release_hash
+    ):
+        raise ConfigurationError("agent worker contract and release description differ")
     return AgentWorkerBinding(
         executable=executable,
         executable_sha256=actual_hash,
         contract=contract,
         contract_hash=contract_hash,
         timeout_s=timeout_s,
+        release_protocol=release_protocol,
+        release_hash=release_hash,
     )
 
 
@@ -241,6 +254,10 @@ def _profile_input_schema(*, synthesis: bool) -> dict[str, Any]:
         "declared_profile_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "reference_candidate_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "expected_resolved_profile_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+        },
+        "expected_release_hash": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
         },
@@ -405,11 +422,19 @@ class DesignCompilerMcpService:
         binding = self._agent_worker
         if binding is None:
             return None
-        return {
+        summary: dict[str, Any] = {
             "contract_hash": binding.contract_hash,
             "launcher_sha256": binding.executable_sha256,
             "contract": binding.contract,
         }
+        if binding.release_hash is not None:
+            summary.update(
+                {
+                    "release_protocol": binding.release_protocol,
+                    "release_hash": binding.release_hash,
+                }
+            )
+        return summary
 
     def _resolve(
         self,
@@ -421,6 +446,30 @@ class DesignCompilerMcpService:
             raise McpRequestError("requested profile is not approved by this server") from exc
         if content_hash(profile) != request.declared_profile_hash:
             raise McpRequestError("declared profile hash differs from the server profile")
+        expected_profile_release = profile.metadata.get(
+            "agent_feedback_worker_release_hash",
+            profile.metadata.get("commercial_worker_release_hash"),
+        )
+        expected_profile_release_protocol = profile.metadata.get(
+            "agent_feedback_worker_release_protocol",
+            profile.metadata.get("commercial_worker_release_protocol"),
+        )
+        if expected_profile_release is not None and request.expected_release_hash != (
+            expected_profile_release
+        ):
+            raise McpRequestError("commercial worker release differs from the expected identity")
+        if request.expected_release_hash is not None:
+            binding = self._agent_worker
+            if (
+                binding is None
+                or binding.release_hash != request.expected_release_hash
+                or binding.release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+                or (
+                    expected_profile_release_protocol is not None
+                    and expected_profile_release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+                )
+            ):
+                raise McpRequestError("commercial worker release is unavailable or mismatched")
         assert profile.flow is not None
         runtime = LocalRuntime()
         try:
@@ -451,6 +500,11 @@ class DesignCompilerMcpService:
         binding = self._agent_worker
         if binding is None:
             raise McpRequestError("agent feedback requires a configured disposable worker")
+        executable, executable_hash = _agent_worker_executable(
+            Path(binding.executable), binding.executable_sha256
+        )
+        if executable != binding.executable or executable_hash != binding.executable_sha256:
+            raise McpRequestError("agent worker executable identity changed before execution")
         profile, resolved = self._resolve(request)
         source_bundle = [{"path": item.path, "sha256": item.sha256} for item in request.sources]
         synthesis = request.model_dump(mode="json")
@@ -462,9 +516,10 @@ class DesignCompilerMcpService:
             request_hash=request_hash,
             source_bundle_hash=content_hash({"top": request.top, "sources": source_bundle}),
             synthesis=synthesis,
+            expected_release_hash=request.expected_release_hash,
         )
         raw = _run_agent_worker(
-            binding.executable,
+            executable,
             launch.model_dump(mode="json"),
             binding.timeout_s,
         )
@@ -480,6 +535,11 @@ class DesignCompilerMcpService:
             or receipt.isolation_profile_hash != binding.contract["isolation_profile_hash"]
             or receipt.request_hash != request_hash
             or receipt.source_bundle_hash != launch.source_bundle_hash
+            or receipt.release_hash != request.expected_release_hash
+            or (
+                request.expected_release_hash is not None
+                and receipt.release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+            )
             or not receipt.cleanup_complete
         ):
             raise McpRequestError("agent worker receipt differs from the dispatched request")

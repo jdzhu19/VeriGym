@@ -81,6 +81,8 @@ def resolve_agent_feedback_contract(
             )
         commercial_worker_hash: str | None = None
         commercial_isolation_kind: str | None = None
+        commercial_release_protocol: str | None = None
+        commercial_release_hash: str | None = None
         if profile_backend in _OPEN_PPA_BACKENDS:
             if (
                 resolved_profile.flow_template_id != _OPEN_PPA_FLOW
@@ -97,6 +99,21 @@ def resolve_agent_feedback_contract(
                 "agent_feedback_worker_isolation_kind"
             )
             worker_contract = resolved_profile.metadata.get("agent_feedback_worker_contract")
+            commercial_release_protocol = resolved_profile.metadata.get(
+                "agent_feedback_worker_release_protocol"
+            )
+            commercial_release_hash = resolved_profile.metadata.get(
+                "agent_feedback_worker_release_hash"
+            )
+            release_declared = (
+                commercial_release_protocol is not None or commercial_release_hash is not None
+            )
+            release_valid = (
+                commercial_release_protocol == "commercial_worker_release.v1"
+                and isinstance(commercial_release_hash, str)
+                and len(commercial_release_hash) == 64
+                and all(character in "0123456789abcdef" for character in commercial_release_hash)
+            )
             if (
                 resolved_profile.flow_template_id != _COMMERCIAL_PPA_FLOW
                 or resolved_profile.metric_scope != "synthesis_area_timing_power"
@@ -113,6 +130,10 @@ def resolve_agent_feedback_contract(
                     "agent-visible DC/MCP requires the explicit-power flow and a resolved "
                     "disposable worker contract"
                 )
+            if release_declared and not release_valid:
+                raise ConfigurationError(
+                    "agent-visible DC/MCP commercial worker release identity is invalid"
+                )
         else:
             raise ConfigurationError(
                 "agent PPA feedback supports only Yosys/OpenSTA ATP v2 or isolated DC/MCP"
@@ -122,6 +143,8 @@ def resolve_agent_feedback_contract(
     else:
         commercial_worker_hash = None
         commercial_isolation_kind = None
+        commercial_release_protocol = None
+        commercial_release_hash = None
     public_ids = [value for value in (compile_test_id, "ppa" if ppa_enabled else None) if value]
     commercial_feedback = ppa_enabled and profile_backend == _COMMERCIAL_PPA_BACKEND
     payload: dict[str, Any] = {
@@ -183,6 +206,10 @@ def resolve_agent_feedback_contract(
         ),
         "agent_worker_contract_hash": (commercial_worker_hash if commercial_feedback else None),
         "agent_worker_isolation_kind": (commercial_isolation_kind if commercial_feedback else None),
+        "agent_worker_release_protocol": (
+            commercial_release_protocol if commercial_feedback else None
+        ),
+        "agent_worker_release_hash": commercial_release_hash if commercial_feedback else None,
         "public_test_contract_hash": public_contract_hash,
     }
     return AgentFeedbackContract.model_validate(

@@ -65,6 +65,7 @@ from .mcp_server import (
     SERVICE_PROTOCOL,
     SYNTHESIZE_TOOL,
 )
+from .worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _MCP_SERVER_NAME = "verigym-synopsys-verifier"
@@ -112,6 +113,7 @@ class McpDesignCompilerRequest(StrictModel):
     agent_worker_contract_hash: str | None = None
     agent_worker_code_identity_hash: str | None = None
     agent_worker_isolation_profile_hash: str | None = None
+    expected_release_hash: str | None = None
     timeout_s: int = Field(default=900, ge=1, le=7200)
 
     @field_validator("sources")
@@ -163,6 +165,7 @@ class McpDesignCompilerRequest(StrictModel):
         "agent_worker_contract_hash",
         "agent_worker_code_identity_hash",
         "agent_worker_isolation_profile_hash",
+        "expected_release_hash",
     )
     @classmethod
     def validate_optional_hash(cls, value: str | None) -> str | None:
@@ -223,6 +226,8 @@ class McpAgentWorkerSummary(StrictModel):
     contract_hash: str
     launcher_sha256: str
     contract: AgentWorkerIsolationContract
+    release_protocol: Literal["commercial_worker_release.v1"] | None = None
+    release_hash: str | None = None
 
     @field_validator("contract_hash", "launcher_sha256")
     @classmethod
@@ -230,6 +235,26 @@ class McpAgentWorkerSummary(StrictModel):
         if _SHA256.fullmatch(value) is None:
             raise ValueError("MCP worker summary requires lowercase SHA-256 identities")
         return value
+
+    @field_validator("release_hash")
+    @classmethod
+    def validate_release_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("MCP worker release identity must be lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_release_pair(self) -> McpAgentWorkerSummary:
+        if (self.release_protocol is None) != (self.release_hash is None):
+            raise ValueError("MCP worker release protocol and hash must be paired")
+        if self.release_protocol not in {None, COMMERCIAL_WORKER_RELEASE_PROTOCOL}:
+            raise ValueError("MCP worker release protocol is unsupported")
+        if (
+            self.contract.release_hash is not None
+            and self.release_hash != self.contract.release_hash
+        ):
+            raise ValueError("MCP worker contract and release identities differ")
+        return self
 
 
 class McpResolveResponse(StrictModel):
@@ -661,6 +686,14 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "agent_feedback_worker_isolation_kind"
             ),
         }
+        release_hash = profile.metadata.get(
+            "agent_feedback_worker_release_hash",
+            profile.metadata.get("commercial_worker_release_hash"),
+        )
+        release_protocol = profile.metadata.get(
+            "agent_feedback_worker_release_protocol",
+            profile.metadata.get("commercial_worker_release_protocol"),
+        )
         if any(value is not None for value in worker_fields.values()):
             if not all(value is not None for value in worker_fields.values()):
                 errors.append("agent feedback worker metadata must be declared as one contract")
@@ -681,6 +714,19 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "vm",
             }:
                 errors.append("agent feedback worker isolation kind is unsupported")
+            if (release_hash is None) != (release_protocol is None):
+                errors.append("commercial worker release metadata must be declared as one identity")
+            if release_hash is not None and (
+                not isinstance(release_hash, str) or _SHA256.fullmatch(release_hash) is None
+            ):
+                errors.append("commercial worker release hash is invalid")
+            if (
+                release_protocol is not None
+                and release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+            ):
+                errors.append("commercial worker release protocol is unsupported")
+        elif release_hash is not None or release_protocol is not None:
+            errors.append("commercial worker release requires an agent feedback worker contract")
         if not set(profile.environment_allowlist).issubset(_TRANSPORT_ENVIRONMENT):
             errors.append("profile contains unsupported MCP transport environment names")
         libraries = [
@@ -785,6 +831,15 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             raw_expected = expected.metadata.get("mcp_server_resolved_profile_hash")
             if isinstance(raw_expected, str):
                 expected_server_hash = raw_expected
+        expected_release_hash = None
+        for key in (
+            "agent_feedback_worker_release_hash",
+            "commercial_worker_release_hash",
+        ):
+            raw_release = profile.metadata.get(key)
+            if isinstance(raw_release, str):
+                expected_release_hash = raw_release
+                break
         arguments: dict[str, Any] = {
             "profile_id": server_profile_id,
             "declared_profile_hash": server_declared_hash,
@@ -792,6 +847,8 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         }
         if expected_server_hash is not None:
             arguments["expected_resolved_profile_hash"] = expected_server_hash
+        if expected_release_hash is not None:
+            arguments["expected_release_hash"] = expected_release_hash
         completed = _run_stdio(
             executable,
             _mcp_messages(RESOLVE_PROFILE_TOOL, arguments),
@@ -890,6 +947,16 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                         "agent_feedback_worker_contract_hash": worker.contract_hash,
                         "agent_feedback_worker_contract": worker.contract.model_dump(mode="json"),
                         "agent_feedback_worker_isolation_kind": worker.contract.isolation_kind,
+                        **(
+                            {
+                                "agent_feedback_worker_release_protocol": worker.release_protocol,
+                                "agent_feedback_worker_release_hash": worker.release_hash,
+                                "commercial_worker_release_protocol": worker.release_protocol,
+                                "commercial_worker_release_hash": worker.release_hash,
+                            }
+                            if worker.release_hash is not None
+                            else {}
+                        ),
                     }
                     if worker is not None
                     and profile.metadata.get("agent_feedback_worker_contract_hash") is not None
@@ -1000,6 +1067,22 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             "agent_feedback_worker_isolation_kind"
         ):
             raise McpProtocolError("MCP agent feedback worker isolation differs from the profile")
+        expected_release_hash = profile.metadata.get(
+            "agent_feedback_worker_release_hash",
+            profile.metadata.get("commercial_worker_release_hash"),
+        )
+        expected_release_protocol = profile.metadata.get(
+            "agent_feedback_worker_release_protocol",
+            profile.metadata.get("commercial_worker_release_protocol"),
+        )
+        if expected_release_hash is not None:
+            if (
+                worker.release_protocol != expected_release_protocol
+                or worker.release_hash != expected_release_hash
+                or worker.contract.release_protocol != expected_release_protocol
+                or worker.contract.release_hash != expected_release_hash
+            ):
+                raise McpProtocolError("MCP commercial worker release differs from the profile")
 
     def build_synthesis_request(
         self,
@@ -1076,6 +1159,17 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 if run_label == "agent_feedback"
                 else None
             ),
+            expected_release_hash=(
+                cast(
+                    str | None,
+                    resolved.metadata.get(
+                        "agent_feedback_worker_release_hash",
+                        resolved.metadata.get("commercial_worker_release_hash"),
+                    ),
+                )
+                if run_label == "agent_feedback"
+                else None
+            ),
         )
         return request.model_dump(mode="json")
 
@@ -1133,6 +1227,8 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "none" if request.run_label == "agent_feedback" else "reports"
             ),
         }
+        if request.expected_release_hash is not None:
+            arguments["expected_release_hash"] = request.expected_release_hash
         return CommandSpec(
             argv=[executable],
             cwd=".",
@@ -1269,6 +1365,11 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 or receipt.contract_hash != request.agent_worker_contract_hash
                 or receipt.code_identity_hash != request.agent_worker_code_identity_hash
                 or receipt.isolation_profile_hash != request.agent_worker_isolation_profile_hash
+                or receipt.release_hash != request.expected_release_hash
+                or (
+                    request.expected_release_hash is not None
+                    and receipt.release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+                )
                 or not receipt.scheduler_dispatched
                 or not receipt.worker_started
                 or not receipt.worker_completed

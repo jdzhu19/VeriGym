@@ -20,12 +20,15 @@ from verigym_codex_cli.agenteval_agent import CodexCliAgentEvalAdapter
 from verigym_codex_cli.agenteval_config import (
     AGENTEVAL_AGENT_VERSION_HASH,
     AGENTEVAL_AGENT_VERSION_ID,
+    AGENTEVAL_PROMPT_HASH,
+    AGENTEVAL_TOOL_POLICY_FINGERPRINT,
 )
 from verigym_codex_cli.capabilities import discover_capabilities
 from verigym_codex_cli.preflight import run_auth_preflight
 from verigym_codex_cli.process import auth_identity_configuration
 from verigym_rtllm import RTLLMSuite
 from verigym_synopsys.export_mcp_profile import bind_mcp_client_profile_to_docker
+from verigym_synopsys.worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 from verigym.core.agent_feedback import (
     resolve_agent_feedback_contract,
@@ -43,6 +46,11 @@ from verigym.core.verifier_profiles import (
 )
 from verigym.core.workspace import copy_tree_safely
 from verigym.experiments.state import atomic_dump_json, atomic_write_text
+from verigym.profiles.identity import (
+    RESOLVED_PROFILE_IDENTITY_COMPONENTS,
+    require_resolved_profile_identity,
+    resolved_profile_component_hashes,
+)
 from verigym.profiles.registry import ToolchainProfileRegistry
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.verifier_registry import load_verifier_profile
@@ -58,8 +66,11 @@ from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
-_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v2"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v3"
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
+_SMOKE_V2_PLAN = Path(
+    "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v2/plan.json"
+)
 _EXPECTED_CLI_VERSION = "codex-cli 0.147.0"
 _EXPECTED_CODEX_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
 _TASKS = (
@@ -80,10 +91,15 @@ class PreparedProfile:
     resolved: Any
 
 
+class CampaignInfrastructureError(ConfigurationError):
+    """A fail-fast campaign error that invalidates subsequent launches."""
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--output", type=Path, default=_OUTPUT)
+    parser.add_argument("--smoke-v2-plan", type=Path, default=_SMOKE_V2_PLAN)
     parser.add_argument("--site-work", type=Path, required=True)
     parser.add_argument(
         "--broker-root",
@@ -105,9 +121,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = _parser().parse_args()
-    output = _new_path(arguments.output, "experiment output")
     site_work = _new_path(arguments.site_work, "site-profile work directory")
-    broker_root = _new_path(arguments.broker_root, "Codex broker root")
     inputs = {
         "rtllm": _directory(arguments.rtllm_source),
         "verilog_eval": _directory(arguments.verilog_eval_source),
@@ -120,11 +134,11 @@ def main() -> int:
         "vcs_counter": _regular_file(arguments.vcs_counter_profile),
         "vcs_up_down": _regular_file(arguments.vcs_up_down_profile),
     }
-    image_id = _docker_image_id(arguments.image)
-    docker_config = _docker_config(arguments.image, image_id)
+    smoke_v2_plan = _regular_file(arguments.smoke_v2_plan, "smoke-v2 plan")
     capability_path, capability, auth = _codex_preflight(arguments.codex_binary, site_work)
     os.environ["VERIGYM_CODEX_CAPABILITY_FILE"] = str(capability_path)
-    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(_broker_root(broker_root))
+    image_id = _docker_image_id(arguments.image)
+    docker_config = _docker_config(arguments.image, image_id)
 
     registries = _registries()
     service = VeriGym(registries)
@@ -146,6 +160,10 @@ def main() -> int:
         vcs_paths=profile_paths,
         scratch=site_work / "qualification",
     )
+    qualifications["smoke_v2_identity_audit"] = _smoke_v2_identity_audit(smoke_v2_plan, prepared)
+    output = _new_path(arguments.output, "experiment output")
+    broker_root = _new_path(arguments.broker_root, "Codex broker root")
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(_broker_root(broker_root))
     agent_options = _agent_options(capability, auth)
     run_configs = _frozen_run_configs(
         service,
@@ -172,6 +190,8 @@ def main() -> int:
             "capability_fingerprint": capability.capability_fingerprint,
             "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
             "agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+            "prompt_hash": AGENTEVAL_PROMPT_HASH,
+            "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
             "auth": auth.safe_dict(),
         },
         "runtime": runtime_descriptor.model_dump(mode="json"),
@@ -184,6 +204,8 @@ def main() -> int:
         },
         "qualifications": qualifications,
         "run_config_hashes": [content_hash(item.identity_payload()) for item in run_configs],
+        "pilot_requires_fully_successful_smoke": True,
+        "benchmark_score_claimed": False,
     }
 
     if not arguments.execute:
@@ -199,13 +221,20 @@ def main() -> int:
     atomic_dump_json(output / "plan.json", plan)
     results = _execute_exactly_four(service, run_configs, output)
     replay = _offline_replay(results)
-    scan = _scan_outputs(results, service, source_configs, profile_paths, inputs)
+    scan = _scan_outputs(
+        results,
+        service,
+        source_configs,
+        profile_paths,
+        inputs,
+        site_paths=(site_work, broker_root, output, smoke_v2_plan),
+    )
     summary = _campaign_summary(results, replay, scan)
     atomic_dump_json(output / "replay.json", replay)
     atomic_dump_json(output / "security-scan.json", scan)
     atomic_dump_json(output / "summary.json", summary)
     print(json.dumps(summary, indent=2, sort_keys=True))
-    return 0 if summary["infrastructure_complete"] else 2
+    return 0 if summary["fully_successful"] else 2
 
 
 def _new_path(path: Path, label: str) -> Path:
@@ -222,13 +251,13 @@ def _directory(path: Path) -> Path:
     return resolved
 
 
-def _regular_file(path: Path) -> Path:
+def _regular_file(path: Path, label: str = "site profile") -> Path:
     if path.is_symlink():
-        raise ConfigurationError("site profile cannot be a symlink")
+        raise ConfigurationError(f"{label} cannot be a symlink")
     resolved = path.expanduser().resolve(strict=True)
     metadata = os.lstat(resolved)
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024 * 1024:
-        raise ConfigurationError("site profile must be a regular file no larger than 1 MiB")
+        raise ConfigurationError(f"{label} must be a regular file no larger than 1 MiB")
     return resolved
 
 
@@ -407,6 +436,7 @@ def _prepare_profiles(
         ("up_down_dc", "dc_up_down"),
     ):
         client = loader.load_file(dc_paths[source_key])
+        _require_commercial_worker_release(client)
         generated[name] = bind_mcp_client_profile_to_docker(
             client,
             image=image,
@@ -424,6 +454,83 @@ def _prepare_profiles(
             ),
         )
     return {name: PreparedProfile(profile, None) for name, profile in generated.items()}
+
+
+def _require_commercial_worker_release(profile: ToolchainProfile) -> str:
+    protocol = profile.metadata.get("agent_feedback_worker_release_protocol")
+    release_hash = profile.metadata.get("agent_feedback_worker_release_hash")
+    if protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL:
+        raise ConfigurationError("commercial DC profile lacks the v2 worker release contract")
+    if not isinstance(release_hash, str) or _SHA256.fullmatch(release_hash) is None:
+        raise ConfigurationError("commercial DC profile lacks a valid worker release identity")
+    if profile.metadata.get("commercial_worker_release_protocol") != protocol or (
+        profile.metadata.get("commercial_worker_release_hash") != release_hash
+    ):
+        raise ConfigurationError("commercial worker release aliases are inconsistent")
+    return release_hash
+
+
+def _smoke_v2_identity_audit(
+    plan_path: Path,
+    prepared: dict[str, PreparedProfile],
+) -> dict[str, Any]:
+    try:
+        baseline = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("smoke-v2 identity plan is unreadable") from exc
+    if not isinstance(baseline, dict) or baseline.get("campaign_id") != (
+        "rtl-agenteval-codex-gpt54-xhigh-smoke-v2"
+    ):
+        raise ConfigurationError("smoke-v2 identity plan has the wrong campaign identity")
+    baseline_profiles = baseline.get("profiles")
+    if not isinstance(baseline_profiles, dict):
+        raise ConfigurationError("smoke-v2 identity plan lacks profile identities")
+    records: list[dict[str, Any]] = []
+    for name in sorted(prepared):
+        item = prepared[name]
+        previous = baseline_profiles.get(name)
+        if item.resolved is None or not isinstance(previous, dict):
+            raise ConfigurationError("smoke-v2 identity plan is incomplete")
+        expected_hash = previous.get("resolved_hash")
+        if not isinstance(expected_hash, str) or _SHA256.fullmatch(expected_hash) is None:
+            raise ConfigurationError("smoke-v2 profile identity is invalid")
+        observed_hash = item.resolved.resolved_profile_hash
+        previous_components = previous.get("component_hashes")
+        if isinstance(previous_components, dict):
+            if set(previous_components) != set(RESOLVED_PROFILE_IDENTITY_COMPONENTS) or any(
+                not isinstance(value, str) or _SHA256.fullmatch(value) is None
+                for value in previous_components.values()
+            ):
+                raise ConfigurationError("smoke-v2 component identity snapshot is invalid")
+            observed_components = resolved_profile_component_hashes(item.resolved)
+            changed = [
+                component
+                for component in RESOLVED_PROFILE_IDENTITY_COMPONENTS
+                if previous_components[component] != observed_components[component]
+            ]
+        else:
+            changed = (
+                [] if expected_hash == observed_hash else list(RESOLVED_PROFILE_IDENTITY_COMPONENTS)
+            )
+        if (expected_hash == observed_hash) != (not changed):
+            raise ConfigurationError("smoke-v2 profile snapshot is internally inconsistent")
+        records.append(
+            {
+                "profile": name,
+                "expected_hash": expected_hash,
+                "observed_hash": observed_hash,
+                "changed_components": changed,
+                "component_resolution": (
+                    "exact" if isinstance(previous_components, dict) else "fail_closed_hash_only"
+                ),
+            }
+        )
+    return {
+        "comparison_completed": True,
+        "model_calls": 0,
+        "drift_observed": any(record["changed_components"] for record in records),
+        "records": records,
+    }
 
 
 def _no_model_qualification(
@@ -455,6 +562,7 @@ def _no_model_qualification(
         for name, key in (
             ("counter_open", "counter"),
             ("up_down_open", "up_down"),
+            ("counter_dc", "counter"),
             ("up_down_dc", "up_down"),
         ):
             item = prepared[name]
@@ -467,23 +575,6 @@ def _no_model_qualification(
             )
             resolved_items[name] = PreparedProfile(item.profile, resolved)
             functional[f"synthesis_{name}"] = record
-        counter_dc = prepared["counter_dc"]
-        counter_suite, counter_task, _ = service.load_task(_TASKS[0], source_configs["counter"])
-        counter_ref = counter_suite.reference_solution(counter_task)
-        assert counter_ref is not None and counter_dc.profile.flow is not None
-        counter_projection = resolve_synthesis_source_projection(counter_task)
-        counter_backend = service.registries.tools.get(counter_dc.profile.flow.backend_plugin)
-        assert isinstance(counter_backend, SynthesisBackendPlugin)
-        counter_resolved = resolve_toolchain_profile(
-            counter_dc.profile,
-            runtime,
-            source_paths=counter_projection.profile_sources,
-            top_module=counter_dc.profile.flow.top_module,
-            reference_candidate_hash=content_hash(counter_ref),
-            backend=counter_backend,
-            synthesis_source_projection_hash=counter_projection.projection_hash,
-        )
-        resolved_items["counter_dc"] = PreparedProfile(counter_dc.profile, counter_resolved)
         _qualify_vcs(
             service,
             rtllm_source=source_configs["counter"].source_root,
@@ -544,6 +635,15 @@ def _qualify_synthesis(
     backend = service.registries.tools.get(profile.flow.backend_plugin)
     if not isinstance(backend, SynthesisBackendPlugin):
         raise ConfigurationError("synthesis qualification backend is unavailable")
+    first_resolved = resolve_toolchain_profile(
+        profile,
+        runtime,
+        source_paths=projection.profile_sources,
+        top_module=profile.flow.top_module,
+        reference_candidate_hash=content_hash(reference),
+        backend=backend,
+        synthesis_source_projection_hash=projection.projection_hash,
+    )
     resolved = resolve_toolchain_profile(
         profile,
         runtime,
@@ -553,6 +653,7 @@ def _qualify_synthesis(
         backend=backend,
         synthesis_source_projection_hash=projection.projection_hash,
     )
+    comparison = require_resolved_profile_identity(first_resolved, resolved)
     candidate = scratch / "candidate"
     copy_tree_safely(Path(assets.visible_root), candidate)
     for relative, content in reference.files.items():
@@ -593,6 +694,7 @@ def _qualify_synthesis(
         "candidate_metrics_valid": evaluation.candidate.synthesis_ok,
         "reference_metrics_valid": evaluation.reference.synthesis_ok,
         "known_bad_synthesis_skipped": True,
+        "consecutive_resolution": comparison.model_dump(mode="json"),
     }
 
 
@@ -656,6 +758,8 @@ def _agent_options(capability: Any, auth: Any) -> dict[str, Any]:
         "expected_cli_version": _EXPECTED_CLI_VERSION,
         "expected_cli_executable_sha256": _EXPECTED_CODEX_SHA256,
         "expected_capability_fingerprint": capability.capability_fingerprint,
+        "expected_prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "expected_requested_auth_mode": auth.requested_auth_mode,
         "expected_resolved_auth_mode": auth.resolved_auth_mode,
         "expected_auth_semantic_id": auth.auth_semantic_id,
@@ -785,7 +889,9 @@ def _execute_exactly_four(
             "ordinal": ordinal,
             "run_id": config.run_id,
             "task_id": config.task_id,
-            "authorized_process_count": 1,
+            "authorization_granted": True,
+            "process_started": False,
+            "provider_observation_recorded": False,
             "retry_count": 0,
             "status": "authorized",
         }
@@ -793,19 +899,53 @@ def _execute_exactly_four(
         atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
         try:
             run = service.run(config)
-        except BaseException:
-            record["status"] = "failed"
+        except Exception:
+            run_dir = config.output.expanduser().resolve() / str(config.run_id)
+            _update_process_ledger_record(record, run_dir=run_dir)
+            record["status"] = "infrastructure_failure"
             atomic_dump_json(
                 output / "evidence" / "process-authorizations.json", {"records": ledger}
             )
             raise
-        record["status"] = "completed"
+        _update_process_ledger_record(record, run_dir=run.run_dir, run=run)
         record["resolved"] = run.scorecard.resolved
         results.append(run)
+        failure = run.scorecard.failure
+        infrastructure = run.scorecard.correctness.infrastructure_error or (
+            failure is not None and failure.infrastructure
+        )
+        if infrastructure:
+            record["status"] = "infrastructure_failure"
+        elif failure is not None and failure.kind == "policy":
+            record["status"] = "policy_failure"
+        elif failure is not None:
+            record["status"] = "contained_model_failure"
+        elif not run.scorecard.resolved:
+            record["status"] = "verifier_rejection"
+        else:
+            record["status"] = "completed"
         atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
+        if infrastructure:
+            raise CampaignInfrastructureError(
+                "smoke-v3 stopped after an infrastructure-invalid run"
+            )
     if len(results) != 4:
         raise ConfigurationError("four-process smoke stopped before all runs completed")
     return results
+
+
+def _update_process_ledger_record(
+    record: dict[str, Any],
+    *,
+    run_dir: Path,
+    run: RunResult | None = None,
+) -> None:
+    evidence_root = run_dir / "artifacts" / "codex_cli"
+    record["process_started"] = (evidence_root / "process.json").is_file()
+    observations = run.manifest.external_agent_observations if run is not None else []
+    record["provider_observation_recorded"] = (
+        len(observations) == 1 and (evidence_root / "identity.json").is_file()
+    )
 
 
 def _offline_replay(results: list[RunResult]) -> dict[str, Any]:
@@ -833,6 +973,8 @@ def _scan_outputs(
     configs: dict[str, SuiteSourceConfig],
     profile_paths: dict[str, Path],
     inputs: dict[str, Path],
+    *,
+    site_paths: tuple[Path, ...] = (),
 ) -> dict[str, Any]:
     sensitive: list[tuple[str, bytes]] = []
     for task_id, key in ((_TASKS[0], "counter"), (_TASKS[1], "up_down")):
@@ -848,6 +990,7 @@ def _scan_outputs(
     path_markers = [
         *(str(path).encode() for path in profile_paths.values()),
         *(str(path).encode() for path in inputs.values()),
+        *(str(path).encode() for path in site_paths),
     ]
     findings: list[dict[str, str]] = []
     for result in results:
@@ -883,6 +1026,9 @@ def _campaign_summary(
 ) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     infrastructure_complete = len(results) == 4 and replay["all_valid"] and scan["passed"]
+    process_started_count = 0
+    provider_observation_count = 0
+    policy_failure_count = 0
     for result in results:
         observations = result.manifest.external_agent_observations
         broker_path = result.run_dir / "artifacts" / "codex_cli" / "broker.json"
@@ -895,29 +1041,75 @@ def _campaign_summary(
             and observations[0].requested_model_id == "gpt-5.4"
             and observations[0].observed_model_id in {None, "gpt-5.4"}
             and observations[0].effective_reasoning_effort == "xhigh"
+            and observations[0].harness_id == AGENTEVAL_AGENT_VERSION_ID
+            and observations[0].agent_version_hash == AGENTEVAL_AGENT_VERSION_HASH
+            and observations[0].prompt_contract_hash == AGENTEVAL_PROMPT_HASH
+            and observations[0].tool_policy_fingerprint == AGENTEVAL_TOOL_POLICY_FINGERPRINT
         )
         finish_ok = broker.get("finished") is True and broker.get("finish_calls") == 1
-        infrastructure_complete = infrastructure_complete and identity_ok and finish_ok
+        process_started = (result.run_dir / "artifacts" / "codex_cli" / "process.json").is_file()
+        provider_recorded = (
+            identity_ok and (result.run_dir / "artifacts" / "codex_cli" / "identity.json").is_file()
+        )
+        process_started_count += int(process_started)
+        provider_observation_count += int(provider_recorded)
+        failure = result.scorecard.failure
+        policy_failure = failure is not None and failure.kind == "policy"
+        infrastructure_failure = result.scorecard.correctness.infrastructure_error or (
+            failure is not None and failure.infrastructure
+        )
+        legal_candidate_ppa = any(
+            evaluation.passed
+            and evaluation.metrics is not None
+            and evaluation.candidate_hash == result.manifest.candidate_hash
+            and evaluation.profile_hash == result.manifest.resolved_profile_hash
+            for evaluation in result.manifest.agent_feedback_evaluations
+        )
+        policy_failure_count += int(policy_failure)
+        infrastructure_complete = (
+            infrastructure_complete
+            and process_started
+            and provider_recorded
+            and not infrastructure_failure
+        )
         records.append(
             {
                 "run_id": result.manifest.run_id,
                 "task_id": result.manifest.task_id,
                 "resolved": result.scorecard.resolved,
                 "model_identity_valid": identity_ok,
+                "process_started": process_started,
+                "provider_observation_recorded": provider_recorded,
                 "typed_finish": finish_ok,
+                "policy_failure": policy_failure,
+                "infrastructure_failure": infrastructure_failure,
                 "ppa_feedback_count": len(result.manifest.agent_feedback_evaluations),
+                "legal_candidate_ppa": legal_candidate_ppa,
             }
         )
+    all_candidates_resolved = len(records) == 4 and all(record["resolved"] for record in records)
+    fully_successful = (
+        infrastructure_complete
+        and process_started_count == 4
+        and provider_observation_count == 4
+        and policy_failure_count == 0
+        and all_candidates_resolved
+        and all(record["typed_finish"] for record in records)
+        and len(records) >= 2
+        and all(record["legal_candidate_ppa"] for record in records[:2])
+    )
     return {
         "schema_version": "1.0",
         "campaign_id": _CAMPAIGN_ID,
         "codex_processes_authorized": 4,
+        "codex_processes_started": process_started_count,
+        "provider_observations_recorded": provider_observation_count,
         "automatic_retries": 0,
         "runs": records,
-        "all_candidates_resolved": all(record["resolved"] for record in records),
+        "all_candidates_resolved": all_candidates_resolved,
         "infrastructure_complete": infrastructure_complete,
-        "fully_successful": infrastructure_complete
-        and all(record["resolved"] and record["ppa_feedback_count"] > 0 for record in records[:2]),
+        "fully_successful": fully_successful,
+        "pilot_authorized": fully_successful,
         "benchmark_score_claimed": False,
     }
 

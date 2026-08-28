@@ -36,6 +36,12 @@ from .mcp_server import (
     DesignCompilerMcpService,
     McpSynthesisRequest,
 )
+from .worker_release import (
+    COMMERCIAL_WORKER_RELEASE_PROTOCOL,
+    CommercialWorkerRelease,
+    build_commercial_worker_release,
+    materialize_commercial_worker_release,
+)
 
 LAUNCHER_VERSION = "0.1.0"
 _MAX_MESSAGE_BYTES = 48 * 1024 * 1024
@@ -44,6 +50,7 @@ _QUEUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _JOB_ID = re.compile(r"Job <([0-9]+)>")
 _MAX_CODE_FILES = 4096
 _MAX_CODE_BYTES = 128 * 1024 * 1024
+_STARTUP_SCRIPT_TEMPLATE = "verigym.synopsys.dc.agent_worker.v1|lsf|umask-077|isolated-release-v1"
 
 
 def _read_request() -> dict[str, Any]:
@@ -144,12 +151,41 @@ def _cleanup_run_dir(run_dir: Path, root: Path) -> None:
     raise RuntimeError("disposable worker cleanup did not stabilize")
 
 
-def _launcher_contract(args: argparse.Namespace) -> AgentWorkerIsolationContract:
+def _asset_manifest(profile_paths: list[Path]) -> dict[str, str]:
+    """Extract only remote asset hashes from sanitized profile bundles."""
+
+    import yaml
+
+    manifest: dict[str, str] = {}
+    for index, path in enumerate(profile_paths):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("worker profile bundle is not an object")
+        for section in ("pdk", "libraries", "constraints", "scripts"):
+            values = raw.get(section)
+            if section == "pdk":
+                values = [values] if isinstance(values, dict) else []
+            if not isinstance(values, list):
+                continue
+            for item_index, item in enumerate(values):
+                if not isinstance(item, dict):
+                    continue
+                content_hash_value = item.get("content_hash")
+                if isinstance(content_hash_value, str) and re.fullmatch(
+                    r"[0-9a-f]{64}", content_hash_value
+                ):
+                    manifest[f"profile-{index}/{section}-{item_index}"] = content_hash_value
+    return manifest
+
+
+def _launcher_contract_and_release(
+    args: argparse.Namespace,
+) -> tuple[AgentWorkerIsolationContract, CommercialWorkerRelease]:
     python = _regular_executable(args.python_executable, "Python executable")
     bsub = _regular_executable(args.bsub_executable, "LSF bsub executable")
     if _QUEUE.fullmatch(args.queue) is None:
         raise ValueError("LSF queue name is invalid")
-    profile_paths = [str(path.expanduser().resolve(strict=True)) for path in args.profile]
+    resolved_profile_paths = [path.expanduser().resolve(strict=True) for path in args.profile]
     code_identity = _worker_code_identity()
     identity = {
         "launcher_version": LAUNCHER_VERSION,
@@ -158,12 +194,61 @@ def _launcher_contract(args: argparse.Namespace) -> AgentWorkerIsolationContract
         "queue_hash": content_hash(args.queue),
         "python_sha256": hash_bytes(python.read_bytes()),
         "bsub_sha256": hash_bytes(bsub.read_bytes()),
-        "profile_hashes": [hash_bytes(Path(path).read_bytes()) for path in profile_paths],
+        "profile_hashes": [hash_bytes(path.read_bytes()) for path in resolved_profile_paths],
         "max_wall_seconds": args.max_wall_seconds,
         "memory_mb": args.memory_mb,
         "cores": args.cores,
     }
-    return AgentWorkerIsolationContract(
+    package_root = Path(__file__).resolve(strict=True).parent
+    core_file = getattr(verigym, "__file__", None)
+    if not isinstance(core_file, str):
+        raise ValueError("VeriGym core package has no materializable source root")
+    core_root = Path(core_file).resolve(strict=True).parent
+    worker_names = {"agent_worker.py", "agent_worker_protocol.py", "worker_release.py"}
+    worker_files = {
+        **{
+            f"verigym/{path.relative_to(core_root).as_posix()}": path
+            for path in sorted(core_root.rglob("*.py"))
+        },
+        **{f"verigym_synopsys/{name}": package_root / name for name in sorted(worker_names)},
+    }
+    server_files = {
+        f"verigym_synopsys/{path.relative_to(package_root).as_posix()}": path
+        for path in sorted(package_root.rglob("*.py"))
+        if path.name not in worker_names
+    }
+    release = build_commercial_worker_release(
+        server_code=server_files,
+        worker_code=worker_files,
+        startup_script=_STARTUP_SCRIPT_TEMPLATE,
+        profile_bundle={
+            f"profile-{index}": path for index, path in enumerate(resolved_profile_paths)
+        },
+        remote_tools={
+            "python": python,
+            "bsub": bsub,
+            "launcher_version": LAUNCHER_VERSION,
+        },
+        asset_manifest=_asset_manifest(resolved_profile_paths),
+        worker_contract=identity,
+        worker_isolation_contract=identity,
+    )
+    release_files = {
+        **{f"server/{name}": path.read_bytes() for name, path in server_files.items()},
+        **{f"worker/{name}": path.read_bytes() for name, path in worker_files.items()},
+        "startup.sh": _STARTUP_SCRIPT_TEMPLATE.encode("utf-8"),
+    }
+    work_root = _dedicated_root(args.work_root)
+    configured_release_root = getattr(args, "release_root", None)
+    release_root = _dedicated_root(
+        configured_release_root
+        if configured_release_root is not None
+        else work_root.parent / f".{work_root.name}-commercial-releases"
+    )
+    if release_root == work_root or release_root.is_relative_to(work_root):
+        raise ValueError("commercial release root must be separate from disposable worker runs")
+    materialize_commercial_worker_release(release_root, release, release_files)
+    contract = AgentWorkerIsolationContract(
         isolation_kind="lsf_job",
         launcher_version=LAUNCHER_VERSION,
         code_identity_hash=code_identity,
@@ -172,7 +257,14 @@ def _launcher_contract(args: argparse.Namespace) -> AgentWorkerIsolationContract
         max_wall_seconds=args.max_wall_seconds,
         memory_mb=args.memory_mb,
         cores=args.cores,
+        release_protocol=COMMERCIAL_WORKER_RELEASE_PROTOCOL,
+        release_hash=release.release_hash,
     )
+    return contract, release
+
+
+def _launcher_contract(args: argparse.Namespace) -> AgentWorkerIsolationContract:
+    return _launcher_contract_and_release(args)[0]
 
 
 def _validate_launch_identity(request: AgentWorkerLaunchRequest) -> McpSynthesisRequest:
@@ -203,6 +295,11 @@ def inner_main(argv: Sequence[str] | None = None) -> int:
         != request.isolation_profile_hash
     ):
         raise ValueError("worker code or isolation identity changed after dispatch")
+    if (
+        request.expected_release_hash is not None
+        and os.environ.get("VERIGYM_AGENT_WORKER_RELEASE_HASH") != request.expected_release_hash
+    ):
+        raise ValueError("worker release identity changed after dispatch")
     synthesis = _validate_launch_identity(request)
     service = DesignCompilerMcpService(args.profile, args.work_root)
     response = service._synthesize_local(synthesis)
@@ -220,6 +317,7 @@ def _job_script(
     request_path: Path,
     response_path: Path,
     isolation_profile_hash: str,
+    release_hash: str | None = None,
 ) -> str:
     profile_args = " ".join(f"--profile {shlex.quote(str(path))}" for path in profiles)
     command = (
@@ -227,13 +325,17 @@ def _job_script(
         f"{profile_args} --work-root {shlex.quote(str(work_root))} "
         f"< {shlex.quote(str(request_path))} > {shlex.quote(str(response_path))}"
     )
+    release_export = (
+        f"export VERIGYM_AGENT_WORKER_RELEASE_HASH={shlex.quote(release_hash)}\n"
+        if release_hash is not None
+        else ""
+    )
     return (
         "#!/bin/sh\n"
         "set -eu\n"
         "umask 077\n"
         f"export VERIGYM_AGENT_WORKER_ISOLATION_PROFILE_HASH="
-        f"{shlex.quote(isolation_profile_hash)}\n"
-        f"exec {command}\n"
+        f"{shlex.quote(isolation_profile_hash)}\n" + release_export + f"exec {command}\n"
     )
 
 
@@ -261,18 +363,29 @@ def _failed_envelope(
             worker_completed=False,
             lifecycle="infrastructure_failed_clean",
             duration_s=duration_s,
+            release_protocol=(
+                COMMERCIAL_WORKER_RELEASE_PROTOCOL
+                if request.expected_release_hash is not None
+                else None
+            ),
+            release_hash=request.expected_release_hash,
         ),
     )
 
 
 def _run_lsf(request: AgentWorkerLaunchRequest, args: argparse.Namespace) -> AgentWorkerEnvelope:
     _validate_launch_identity(request)
-    contract = _launcher_contract(args)
+    contract, release = _launcher_contract_and_release(args)
     if (
         request.code_identity_hash != contract.code_identity_hash
         or request.isolation_profile_hash != contract.isolation_profile_hash
     ):
         raise ValueError("worker code or isolation identity differs from the resolved contract")
+    if (
+        request.expected_release_hash is not None
+        and request.expected_release_hash != release.release_hash
+    ):
+        raise ValueError("worker release identity differs from the resolved contract")
     root = _dedicated_root(args.work_root)
     started = time.monotonic()
     run_dir = Path(tempfile.mkdtemp(prefix="verigym-dc-agent-", dir=root))
@@ -298,6 +411,7 @@ def _run_lsf(request: AgentWorkerLaunchRequest, args: argparse.Namespace) -> Age
             request_path=request_path,
             response_path=response_path,
             isolation_profile_hash=contract.isolation_profile_hash,
+            release_hash=release.release_hash,
         ),
         encoding="utf-8",
     )
@@ -386,6 +500,8 @@ def _run_lsf(request: AgentWorkerLaunchRequest, args: argparse.Namespace) -> Age
                     worker_completed=True,
                     lifecycle=lifecycle,
                     duration_s=time.monotonic() - started,
+                    release_protocol=COMMERCIAL_WORKER_RELEASE_PROTOCOL,
+                    release_hash=release.release_hash,
                 ),
             )
     except (OSError, ValueError, json.JSONDecodeError, ValidationError):
@@ -411,6 +527,7 @@ def lsf_main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Launch one DC feedback job through LSF.")
     parser.add_argument("--profile", type=Path, action="append", required=True)
     parser.add_argument("--work-root", type=Path, required=True)
+    parser.add_argument("--release-root", type=Path)
     parser.add_argument("--queue", required=True)
     parser.add_argument("--python-executable", type=Path, default=Path(sys.executable))
     parser.add_argument("--bsub-executable", type=Path, required=True)
@@ -420,7 +537,8 @@ def lsf_main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     raw = _read_request()
     if raw.get("operation") == "describe":
-        response = AgentWorkerDescribeResponse(contract=_launcher_contract(args))
+        contract, release = _launcher_contract_and_release(args)
+        response = AgentWorkerDescribeResponse(contract=contract, release=release)
         _write_response(response.model_dump(mode="json"))
         return 0
     request = AgentWorkerLaunchRequest.model_validate(raw)

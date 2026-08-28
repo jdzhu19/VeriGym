@@ -13,7 +13,8 @@ This package provides three ordinary evaluation plugins plus an opt-in training-
   candidate freeze, and hidden verifier. External CLI actions never increment VeriGym-native
   tool-call counters.
 - `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
-  0.147.0, GPT-5.4, `xhigh`, and an independent agent version. One ephemeral, read-only
+  0.147.0, GPT-5.4, `xhigh`, and agent version
+  `codex-cli-agenteval-gpt54-xhigh-v2`. One ephemeral, read-only
   `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
   Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
   disabled. Its limits are 40 tool calls, 20 patch calls, and three consecutive rejections.
@@ -86,6 +87,15 @@ event_policy.json (read-only track)
 The scoring-only AgentEval track instead stores only sanitized capability, invocation, identity,
 usage/accounting, broker counters, content-free event statistics, and summary documents. It does
 not store raw stdout/stderr, parsed event text, prompts, responses, or a training transcript.
+
+After every returned Codex process, the adapter tolerantly parses the event stream before applying
+broker/process failure precedence. It emits exactly one external-agent identity: a complete
+terminal event may provide the observed model and usage, while an incomplete stream records only
+the requested model with `usage_complete: false`. It never estimates tokens. Prompt, tool-policy,
+capability, and agent-version fingerprints are bound into the safe invocation and identity
+evidence. Recoverable broker responses include a bounded state summary and next allowed actions;
+path, symlink, hardlink, hidden-asset, and workspace-boundary violations remain terminal policy
+failures.
 
 Reasoning is discarded, secrets and runtime roots are redacted, output is bounded, and the
 ordinary run integrity manifest binds every file. `verigym replay <run-dir> --verify` uses frozen

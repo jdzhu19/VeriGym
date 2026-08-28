@@ -238,7 +238,7 @@ def test_historical_v1_feedback_evaluation_shape_is_unchanged() -> None:
     assert evaluation.model_dump(mode="json") == payload
 
 
-def _commercial_profile(*, isolated: bool) -> Any:
+def _commercial_profile(*, isolated: bool, release: bool = False) -> Any:
     metadata: dict[str, Any] = {}
     if isolated:
         metadata = {
@@ -251,6 +251,13 @@ def _commercial_profile(*, isolated: bool) -> Any:
                 "raw_artifacts_returned": False,
             },
         }
+        if release:
+            metadata.update(
+                {
+                    "agent_feedback_worker_release_protocol": "commercial_worker_release.v1",
+                    "agent_feedback_worker_release_hash": "e" * 64,
+                }
+            )
     return SimpleNamespace(
         flow_template_id="synopsys-dc-area-timing-power-explicit-v4",
         metric_scope="synthesis_area_timing_power",
@@ -296,12 +303,38 @@ def test_feedback_resolution_accepts_hash_bound_isolated_dc_mcp() -> None:
     assert contract.contract_id == "agent_feedback_contract.v2"
     assert contract.ppa_execution_semantics == "dispatched_synthesis_attempt"
     assert contract.agent_worker_contract_hash == "d" * 64
+    assert contract.agent_worker_release_hash is None
     assert [(item.name, item.direction) for item in contract.metric_semantics] == [
         ("area", "minimize"),
         ("maximum_path_delay", "minimize"),
         ("worst_negative_slack", "maximize"),
         ("power", "minimize"),
     ]
+
+
+def test_feedback_resolution_binds_optional_v2_worker_release_identity() -> None:
+    contract = resolve_agent_feedback_contract(
+        task=_declared_task(ppa_supported=True),
+        ppa_enabled=True,
+        ppa_max_executions=3,
+        resolved_profile=_commercial_profile(isolated=True, release=True),
+        profile_backend="synopsys.dc.mcp",
+    )
+
+    assert contract is not None
+    assert contract.agent_worker_release_protocol == "commercial_worker_release.v1"
+    assert contract.agent_worker_release_hash == "e" * 64
+
+    invalid = _commercial_profile(isolated=True)
+    invalid.metadata["agent_feedback_worker_release_hash"] = "e" * 64
+    with pytest.raises(ConfigurationError, match="release identity"):
+        resolve_agent_feedback_contract(
+            task=_declared_task(ppa_supported=True),
+            ppa_enabled=True,
+            ppa_max_executions=3,
+            resolved_profile=invalid,
+            profile_backend="synopsys.dc.mcp",
+        )
 
 
 def test_feedback_resolution_without_ppa_preserves_compile_only_contract() -> None:

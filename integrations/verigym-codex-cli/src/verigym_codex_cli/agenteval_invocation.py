@@ -110,6 +110,9 @@ def sanitized_agenteval_invocation(
         "broker_max_consecutive_rejected_calls": settings.max_consecutive_rejected_calls,
         "agent_version_id": settings.agent_version_id,
         "agent_version_hash": settings.agent_version_hash,
+        "prompt_hash": settings.prompt_hash,
+        "tool_policy_fingerprint": settings.tool_policy_fingerprint,
+        "capability_fingerprint": settings.capability_fingerprint,
         "training_mode": False,
     }
 

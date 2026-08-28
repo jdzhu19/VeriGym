@@ -246,3 +246,12 @@ on a verifier control plane. Never register the MCP tools as candidate-agent/mod
 AgentEval reaches isolated feedback only through its existing `run_public_test("ppa")` action. The
 existing in-process `synopsys.dc.synth` plugin and final candidate/reference MCP mode remain
 trusted, site-controlled backends and are unchanged.
+
+Phase-two worker profiles may require `commercial_worker_release.v1`. The release builder hashes
+the server and worker code, startup script, sanitized profile bundle, remote tools, commercial
+asset hash manifest, and isolation contract. Its code bundle is materialized read-only under an
+independent content-addressed release root (`--release-root`); the disposable `--work-root`
+remains empty after cleanup. Commercial assets are represented only by logical-name/SHA-256 pairs.
+The client supplies `expected_release_hash` at resolve and execute, and validates the server
+summary plus worker receipt against the profile. Existing release-free worker-protocol-v1
+messages remain supported for historical profiles.
