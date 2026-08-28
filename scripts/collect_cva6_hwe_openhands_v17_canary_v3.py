@@ -206,6 +206,10 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
                 campaign_id=arguments.campaign_id,
                 source_commit=source_commit,
                 agent_version=agent_version,
+                agent_options_builder=build_v17_canary_agent_options,
+                runtime_evidence_validator=validate_v17_runtime_evidence,
+                system_id=OPENHANDS_V17_CANARY_AGENT_VERSION_ID,
+                security_report_prefix="openhands-hwe-v17-canary-v3",
             )
         except Exception as exc:
             reason = f"{episode['episode_id']}:{type(exc).__name__}"
@@ -283,6 +287,10 @@ def _run_episode(
     campaign_id: str,
     source_commit: str,
     agent_version: Any,
+    agent_options_builder: Any,
+    runtime_evidence_validator: Any,
+    system_id: str,
+    security_report_prefix: str,
 ) -> dict[str, Any]:
     task_id = str(episode["task_id"])
     source_root = (qualification / source_relative).resolve(strict=True)
@@ -310,7 +318,7 @@ def _run_episode(
             expected_source_hash=entry.source_hash,
             mode=InteractionMode.AGENT,
             agent="openhands-hwe-agent",
-            agent_options=build_v17_canary_agent_options(
+            agent_options=agent_options_builder(
                 seed=seed,
                 agent_version=agent_version,
             ),
@@ -322,7 +330,7 @@ def _run_episode(
             run_id=run_id,
             experiment_id=campaign_id,
             plan_item_id=run_id,
-            system_id=OPENHANDS_V17_CANARY_AGENT_VERSION_ID,
+            system_id=system_id,
             base_seed=seed,
         )
     )
@@ -346,12 +354,15 @@ def _run_episode(
     broker = _json(evidence_root / "broker.json")
     summary = _json(evidence_root / "summary.json")
     accounting = ExternalAgentAccounting.model_validate(_json(evidence_root / "accounting.json"))
-    recovery_path = _validate_runtime_evidence(
-        broker,
-        summary,
-        accounting,
-        verifier_resolved=result.scorecard.resolved,
-    )
+    try:
+        recovery_path = runtime_evidence_validator(
+            broker,
+            summary,
+            accounting,
+            verifier_resolved=result.scorecard.resolved,
+        )
+    except ValueError as exc:
+        raise ConfigurationError(str(exc)) from exc
 
     trajectory_path = evidence_root / "training-trajectory.json"
     trajectory_summary = _trajectory_summary(
@@ -362,7 +373,7 @@ def _run_episode(
     provider_scan = _scan_provider_values(root)
     scan = scan_artifact_roots(
         [evidence_root],
-        report_id=f"openhands-hwe-v17-canary-v3-{episode['episode_id']}",
+        report_id=f"{security_report_prefix}-{episode['episode_id']}",
         forbidden_host_roots=(str(qualification), str(Path.cwd().resolve())),
     )
     atomic_dump_json(scans / f"{episode['episode_id']}.json", scan)

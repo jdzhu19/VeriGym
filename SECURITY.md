@@ -207,6 +207,19 @@ OpenHands SDK, its model client dependencies, the reviewed MCP adapter and broke
 and host kernel. The model endpoint remains external, and Docker does not protect against a
 compromised trusted host control plane.
 
+The v17 formal collector has a separate agent and campaign identity from its three-task canary. It
+imports only the two hash-bound, verifier-passed canary training trajectories and validates the
+sealed canary report, gate, agent manifest, trajectory bytes, task/source hashes, and candidate and
+verifier receipts before re-tokenization. New public tasks run once in frozen order with no
+provider or episode retry. After every atomic attempt, the collector recomputes distinct-task pass
+capacity and stops immediately when either target is impossible or when the exact 8-training /
+2-validation target is reached. It never loads held-out tasks. Only verifier-passed trajectories
+may produce decision rows; every row preserves complete model-visible messages and six-tool schema,
+uses a decision-only loss mask and exact Qwen receipt, and fails rather than truncates above 65,536
+tokens. Training and validation datasets, equal-trajectory schedules, and security scans are sealed
+separately. Passing this data gate authorizes only the preregistered bounded development SFT; it does
+not make the dataset or a later adapter production-ready and does not support a benchmark claim.
+
 ### DeepSeek Harness HWE controller boundary
 
 The opt-in `verigym-deepseek-harness` integration runs the pinned official Harness source in a

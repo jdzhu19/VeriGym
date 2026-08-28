@@ -26,12 +26,33 @@ V4_EXPECTED_TOOL_ACTIONS = 85
 V4_EXPECTED_MAX_TOKENS = 50_117
 OPENHANDS_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v1"
 OPENHANDS_RECOVERY_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v2"
+OPENHANDS_MASKED_RECOVERY_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v3"
+OPENHANDS_CONTINUATION_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v4"
+OPENHANDS_MASKED_CONTINUATION_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v5"
+OPENHANDS_PATH_RECOVERY_RECORD_FORMAT = "verigym_openhands_decision_sft_64k_v6"
 OPENHANDS_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v1"
 OPENHANDS_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v2"
+OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v3"
+OPENHANDS_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v4"
+OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v5"
+OPENHANDS_PATH_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v6"
 OPENHANDS_RECOVERY_POLICY = "openhands_broker_stop_hook_recovery_v1"
+OPENHANDS_CONTINUATION_POLICY = "openhands_sdk_blocked_stop_continuation_v1"
+OPENHANDS_PATH_RECOVERY_POLICY = "openhands_provider_path_policy_recovery_v1"
 OPENHANDS_RECOVERY_MESSAGE = (
     "[Stop hook feedback] Your previous response did not call a tool. Continue in this same "
     "session with exactly one typed tool call and no prose. If the task is complete, call finish."
+)
+OPENHANDS_CONTINUATION_MESSAGE = (
+    "[Adapter continuation] Continue from the Stop hook feedback already present above with "
+    "exactly one typed tool call and no prose."
+)
+OPENHANDS_PATH_RECOVERY_MESSAGE = (
+    "[Adapter path-policy feedback] The previous provider response was rejected before tool "
+    "dispatch because one argument contained a host absolute path. Continue in this same "
+    "session with exactly one typed tool call and no prose. Use only '.' or workspace-relative "
+    "POSIX repository paths in every path, cwd, shell command, patch header, and summary. Do not "
+    "mention, reconstruct, or reuse the rejected path."
 )
 DECISION_BALANCED_OBJECTIVE = "decision_balanced_target_token_mean_batch1_v1"
 TRAJECTORY_BALANCED_OBJECTIVE = "trajectory_balanced_all_assistant_token_mean_batch1_v1"
@@ -45,6 +66,25 @@ V4_TOOL_NAMES = (
     "shell",
 )
 _MAX_DATASET_BYTES = 16 * 1024 * 1024
+_MAX_OPENHANDS_DATASET_BYTES = 512 * 1024 * 1024
+
+_OPENHANDS_RECORD_FORMATS = {
+    OPENHANDS_RECORD_FORMAT,
+    OPENHANDS_RECOVERY_RECORD_FORMAT,
+    OPENHANDS_MASKED_RECOVERY_RECORD_FORMAT,
+    OPENHANDS_CONTINUATION_RECORD_FORMAT,
+    OPENHANDS_MASKED_CONTINUATION_RECORD_FORMAT,
+    OPENHANDS_PATH_RECOVERY_RECORD_FORMAT,
+}
+_OPENHANDS_DATASET_FORMATS = {
+    OPENHANDS_DATASET_FORMAT,
+    OPENHANDS_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_CONTINUATION_DATASET_FORMAT,
+    OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT,
+    OPENHANDS_PATH_RECOVERY_DATASET_FORMAT,
+}
+_OPENHANDS_RECOVERY_RECORD_FORMATS = _OPENHANDS_RECORD_FORMATS - {OPENHANDS_RECORD_FORMAT}
 
 
 class ToolAwareTokenizer(Protocol):
@@ -181,16 +221,17 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
     """Load one sealed OpenHands decision dataset without dropping SDK tool schemas."""
 
     directory = _safe_directory(root)
-    manifest_payload = _read_regular(directory / "dataset-manifest.json")
-    train_payload = _read_regular(directory / "train.jsonl")
+    manifest_payload = _read_regular(
+        directory / "dataset-manifest.json", max_bytes=_MAX_OPENHANDS_DATASET_BYTES
+    )
+    train_payload = _read_regular(directory / "train.jsonl", max_bytes=_MAX_OPENHANDS_DATASET_BYTES)
     try:
         manifest = json.loads(manifest_payload)
     except json.JSONDecodeError as exc:
         raise ValueError("OpenHands 64K manifest is invalid JSON") from exc
-    if not isinstance(manifest, dict) or manifest.get("format_id") not in {
-        OPENHANDS_DATASET_FORMAT,
-        OPENHANDS_RECOVERY_DATASET_FORMAT,
-    }:
+    if not isinstance(manifest, dict) or manifest.get("format_id") not in (
+        _OPENHANDS_DATASET_FORMATS
+    ):
         raise ValueError("OpenHands 64K dataset format changed")
     expected_dataset_hash = manifest.get("dataset_hash")
     manifest_base = {key: value for key, value in manifest.items() if key != "dataset_hash"}
@@ -215,9 +256,8 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
     }
     if any(manifest.get(key) != expected for key, expected in manifest_contract.items()):
         raise ValueError("OpenHands 64K dataset eligibility or safety contract changed")
-    if manifest["format_id"] == OPENHANDS_RECOVERY_DATASET_FORMAT:
+    if manifest["format_id"] != OPENHANDS_DATASET_FORMAT:
         recovery_contract = {
-            "schema_version": "2.0",
             "format_recovery_policy_id": OPENHANDS_RECOVERY_POLICY,
             "same_session_recovery_hash_bound": True,
             "whole_episode_retries": 0,
@@ -230,9 +270,8 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
             not isinstance(record_formats, list)
             or not record_formats
             or record_formats != sorted(set(record_formats))
-            or not set(record_formats)
-            <= {OPENHANDS_RECORD_FORMAT, OPENHANDS_RECOVERY_RECORD_FORMAT}
-            or OPENHANDS_RECOVERY_RECORD_FORMAT not in record_formats
+            or not set(record_formats) <= _OPENHANDS_RECORD_FORMATS
+            or manifest["format_id"].replace("dataset_", "") not in record_formats
         ):
             raise ValueError("OpenHands 64K recovery record formats changed")
         recovery_count = manifest.get("format_recovery_count")
@@ -250,6 +289,7 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
             or recovery_count != recovery_trajectory_count
         ):
             raise ValueError("OpenHands 64K recovery accounting changed")
+        _validate_openhands_dataset_extension(manifest)
 
     raw_lines = train_payload.decode("utf-8").splitlines()
     record_count = manifest.get("record_count")
@@ -266,7 +306,7 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
     observed_record_formats = sorted({str(record.get("format_id")) for record in records})
     expected_record_formats = (
         manifest.get("record_formats")
-        if manifest["format_id"] == OPENHANDS_RECOVERY_DATASET_FORMAT
+        if manifest["format_id"] != OPENHANDS_DATASET_FORMAT
         else [OPENHANDS_RECORD_FORMAT]
     )
     if observed_record_formats != expected_record_formats:
@@ -297,6 +337,73 @@ def load_openhands_tool_aware_dataset(root: Path) -> OpenHandsToolAwareParquetIn
         rows=rows,
         train_jsonl_sha256=hashlib.sha256(train_payload).hexdigest(),
     )
+
+
+def _validate_openhands_dataset_extension(manifest: dict[str, Any]) -> None:
+    """Validate v2-v6 recovery, masking, continuation, and path receipts."""
+
+    format_id = str(manifest["format_id"])
+    schema_versions = {
+        OPENHANDS_RECOVERY_DATASET_FORMAT: "2.0",
+        OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT: "3.0",
+        OPENHANDS_CONTINUATION_DATASET_FORMAT: "4.0",
+        OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT: "5.0",
+        OPENHANDS_PATH_RECOVERY_DATASET_FORMAT: "6.0",
+    }
+    if manifest.get("schema_version") != schema_versions[format_id]:
+        raise ValueError("OpenHands 64K recovery dataset schema changed")
+    if format_id in {
+        OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT,
+        OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT,
+    }:
+        masked_count = manifest.get("masked_policy_error_decision_count")
+        masked_trajectories = manifest.get("masked_policy_error_trajectory_count")
+        if (
+            manifest.get("failed_decisions_retained_as_context") is not True
+            or manifest.get("failed_decisions_supervised") is not False
+            or not isinstance(masked_count, int)
+            or isinstance(masked_count, bool)
+            or masked_count <= 0
+            or not isinstance(masked_trajectories, int)
+            or isinstance(masked_trajectories, bool)
+            or masked_trajectories <= 0
+        ):
+            raise ValueError("OpenHands 64K masked-recovery accounting changed")
+    continuation_present = "sdk_stop_continuation_policy_id" in manifest
+    if (
+        format_id
+        in {
+            OPENHANDS_CONTINUATION_DATASET_FORMAT,
+            OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT,
+        }
+        and not continuation_present
+    ):
+        raise ValueError("OpenHands 64K continuation receipt is missing")
+    if continuation_present:
+        continuation_count = manifest.get("sdk_stop_continuation_count")
+        continuation_trajectories = manifest.get("sdk_stop_continuation_trajectory_count")
+        if (
+            manifest.get("sdk_stop_continuation_policy_id") != OPENHANDS_CONTINUATION_POLICY
+            or manifest.get("sdk_upstream_source_modified") is not False
+            or not isinstance(continuation_count, int)
+            or isinstance(continuation_count, bool)
+            or continuation_count <= 0
+            or continuation_count != continuation_trajectories
+        ):
+            raise ValueError("OpenHands 64K continuation accounting changed")
+    if format_id == OPENHANDS_PATH_RECOVERY_DATASET_FORMAT:
+        path_count = manifest.get("path_policy_recovery_count")
+        path_trajectories = manifest.get("path_policy_recovery_trajectory_count")
+        if (
+            manifest.get("path_policy_recovery_policy_id") != OPENHANDS_PATH_RECOVERY_POLICY
+            or manifest.get("raw_rejected_provider_arguments_persisted") is not False
+            or manifest.get("path_policy_recovery_hash_bound") is not True
+            or not isinstance(path_count, int)
+            or isinstance(path_count, bool)
+            or path_count <= 0
+            or path_count != path_trajectories
+        ):
+            raise ValueError("OpenHands 64K path-recovery accounting changed")
 
 
 def write_tool_aware_parquet(
@@ -538,7 +645,7 @@ def _parquet_row(example: HweDeepSeekHarnessDecisionSftExampleV4) -> dict[str, A
 def _validate_parquet_row(row: Any, *, index: int) -> None:
     if not isinstance(row, dict):
         raise ValueError(f"tool-aware parquet row {index} is not an object")
-    if row.get("format_id") in {OPENHANDS_RECORD_FORMAT, OPENHANDS_RECOVERY_RECORD_FORMAT}:
+    if row.get("format_id") in _OPENHANDS_RECORD_FORMATS:
         _validate_openhands_parquet_row(row, index=index)
         return
     required = {
@@ -715,13 +822,17 @@ def _validate_openhands_parquet_row(row: dict[str, Any], *, index: int) -> None:
     }
     if any(source.get(key) != expected for key, expected in source_contract.items()):
         raise ValueError(f"OpenHands tool-aware parquet row {index} safety contract changed")
-    if row.get("format_id") == OPENHANDS_RECOVERY_RECORD_FORMAT:
+    if row.get("format_id") in _OPENHANDS_RECOVERY_RECORD_FORMATS:
         recoveries = source.get("format_recoveries")
         recovery_count = source.get("format_recovery_count")
         trajectory_recovery_count = source.get("trajectory_format_recovery_count")
+        schema_version = str(row["format_id"]).rsplit("_v", 1)[-1] + ".0"
+        source_trajectory_format = str(row["format_id"]).replace(
+            "decision_sft_64k", "exact_tool_trajectory"
+        )
         recovery_contract = {
-            "schema_version": "2.0",
-            "source_trajectory_format": "verigym_openhands_exact_tool_trajectory_v2",
+            "schema_version": schema_version,
+            "source_trajectory_format": source_trajectory_format,
             "format_recovery_policy_id": OPENHANDS_RECOVERY_POLICY,
             "same_session_recovery": True,
             "whole_episode_retries": 0,
@@ -738,6 +849,7 @@ def _validate_openhands_parquet_row(row: dict[str, Any], *, index: int) -> None:
         ):
             raise ValueError(f"OpenHands tool-aware parquet row {index} recovery changed")
         _validate_openhands_recovery_source(source, index=index)
+        _validate_openhands_record_extension(source, index=index)
     token_count = receipt.get("token_count", V4_MAX_LENGTH + 1)
     if not isinstance(token_count, int) or token_count > V4_MAX_LENGTH:
         raise ValueError(f"OpenHands tool-aware parquet row {index} is overlength")
@@ -761,9 +873,19 @@ def _validate_openhands_recovery_source(source: dict[str, Any], *, index: int) -
         "whole_episode_retries",
         "broker_typed_finish_before",
     }
+    continuation_fields = {
+        "sdk_blocked_stop_hook_index",
+        "adapter_continuation_message_index",
+        "adapter_continuation_message_sha256",
+        "adapter_continuation_text_sha256",
+    }
     feedback_text_hash = hashlib.sha256(OPENHANDS_RECOVERY_MESSAGE.encode()).hexdigest()
+    continuation_text_hash = hashlib.sha256(OPENHANDS_CONTINUATION_MESSAGE.encode()).hexdigest()
     for recovery_index, receipt in enumerate(receipts):
-        if not isinstance(receipt, dict) or set(receipt) != expected_fields:
+        if not isinstance(receipt, dict) or set(receipt) not in {
+            frozenset(expected_fields),
+            frozenset(expected_fields | continuation_fields),
+        }:
             raise ValueError(f"OpenHands tool-aware parquet row {index} recovery fields changed")
         assistant_index = receipt.get("assistant_message_index")
         feedback_index = receipt.get("feedback_message_index")
@@ -798,6 +920,151 @@ def _validate_openhands_recovery_source(source: dict[str, Any], *, index: int) -
             or receipt.get("feedback_message_sha256") != content_hash(feedback)
         ):
             raise ValueError(f"OpenHands tool-aware parquet row {index} recovery binding changed")
+        if continuation_fields <= set(receipt):
+            continuation_index = receipt.get("adapter_continuation_message_index")
+            blocked_hook_index = receipt.get("sdk_blocked_stop_hook_index")
+            if (
+                not isinstance(continuation_index, int)
+                or isinstance(continuation_index, bool)
+                or not feedback_index < continuation_index < len(messages)
+                or not isinstance(blocked_hook_index, int)
+                or isinstance(blocked_hook_index, bool)
+                or blocked_hook_index <= hook_index
+                or receipt.get("adapter_continuation_text_sha256") != continuation_text_hash
+            ):
+                raise ValueError(
+                    f"OpenHands tool-aware parquet row {index} continuation receipt changed"
+                )
+            continuation = messages[continuation_index]
+            if (
+                not isinstance(continuation, dict)
+                or continuation != {"role": "user", "content": OPENHANDS_CONTINUATION_MESSAGE}
+                or receipt.get("adapter_continuation_message_sha256") != content_hash(continuation)
+            ):
+                raise ValueError(
+                    f"OpenHands tool-aware parquet row {index} continuation binding changed"
+                )
+
+
+def _validate_openhands_record_extension(source: dict[str, Any], *, index: int) -> None:
+    """Validate v3-v6 row-level controls retained inside the lossless source record."""
+
+    format_id = source.get("format_id")
+    if format_id in {
+        OPENHANDS_MASKED_RECOVERY_RECORD_FORMAT,
+        OPENHANDS_MASKED_CONTINUATION_RECORD_FORMAT,
+    }:
+        masked_count = source.get("trajectory_masked_policy_error_decision_count")
+        if (
+            not isinstance(masked_count, int)
+            or isinstance(masked_count, bool)
+            or masked_count <= 0
+            or source.get("failed_decisions_retained_as_context") is not True
+            or source.get("failed_decisions_supervised") is not False
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} masking changed")
+    continuation_present = "trajectory_sdk_stop_continuation_count" in source
+    if (
+        format_id
+        in {
+            OPENHANDS_CONTINUATION_RECORD_FORMAT,
+            OPENHANDS_MASKED_CONTINUATION_RECORD_FORMAT,
+        }
+        and not continuation_present
+    ):
+        raise ValueError(f"OpenHands tool-aware parquet row {index} continuation is missing")
+    if continuation_present:
+        visible_count = source.get("sdk_stop_continuation_count")
+        if (
+            source.get("sdk_stop_continuation_policy_id") != OPENHANDS_CONTINUATION_POLICY
+            or source.get("trajectory_sdk_stop_continuation_count") != 1
+            or visible_count not in {0, 1}
+            or source.get("sdk_upstream_source_modified") is not False
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} continuation changed")
+    if format_id == OPENHANDS_PATH_RECOVERY_RECORD_FORMAT:
+        recoveries = source.get("path_policy_recoveries")
+        visible_count = source.get("path_policy_recovery_count")
+        if (
+            source.get("path_policy_recovery_policy_id") != OPENHANDS_PATH_RECOVERY_POLICY
+            or source.get("trajectory_path_policy_recovery_count") != 1
+            or not isinstance(recoveries, list)
+            or visible_count != len(recoveries)
+            or visible_count not in {0, 1}
+            or source.get("raw_rejected_provider_arguments_persisted") is not False
+            or source.get("path_policy_recovery_tool_choice_policy")
+            != "responses_required_validated_v1"
+        ):
+            raise ValueError(f"OpenHands tool-aware parquet row {index} path recovery changed")
+        _validate_openhands_path_recovery_source(source, index=index)
+
+
+def _validate_openhands_path_recovery_source(source: dict[str, Any], *, index: int) -> None:
+    messages = source.get("input_messages")
+    receipts = source.get("path_policy_recoveries")
+    if not isinstance(messages, list) or not isinstance(receipts, list):
+        raise ValueError(f"OpenHands tool-aware parquet row {index} path recovery is malformed")
+    expected_fields = {
+        "policy_id",
+        "recovery_budget",
+        "recovery_index",
+        "trigger_stage",
+        "root_message_sha256",
+        "tool_name",
+        "argument_field",
+        "violation_kind",
+        "raw_provider_arguments_persisted",
+        "same_session",
+        "whole_episode_retries",
+        "conversation_error_event_index",
+        "feedback_message_index",
+        "feedback_message_sha256",
+        "feedback_text_sha256",
+    }
+    feedback_text_hash = hashlib.sha256(OPENHANDS_PATH_RECOVERY_MESSAGE.encode()).hexdigest()
+    for recovery_index, receipt in enumerate(receipts):
+        if not isinstance(receipt, dict) or set(receipt) != expected_fields:
+            raise ValueError(
+                f"OpenHands tool-aware parquet row {index} path recovery fields changed"
+            )
+        feedback_index = receipt.get("feedback_message_index")
+        event_index = receipt.get("conversation_error_event_index")
+        root_hash = receipt.get("root_message_sha256")
+        if (
+            receipt.get("policy_id") != OPENHANDS_PATH_RECOVERY_POLICY
+            or receipt.get("recovery_budget") != 1
+            or receipt.get("recovery_index") != recovery_index
+            or receipt.get("trigger_stage") not in {"agent_loop", "sdk_stop_continuation"}
+            or not isinstance(root_hash, str)
+            or len(root_hash) != 64
+            or any(character not in "0123456789abcdef" for character in root_hash)
+            or receipt.get("tool_name") not in V4_TOOL_NAMES
+            or receipt.get("argument_field")
+            not in {"command", "cwd", "patch", "path", "summary", "unparsed"}
+            or receipt.get("violation_kind") != "raw_host_path"
+            or receipt.get("raw_provider_arguments_persisted") is not False
+            or receipt.get("same_session") is not True
+            or receipt.get("whole_episode_retries") != 0
+            or not isinstance(event_index, int)
+            or isinstance(event_index, bool)
+            or event_index < 0
+            or not isinstance(feedback_index, int)
+            or isinstance(feedback_index, bool)
+            or not 2 <= feedback_index < len(messages)
+            or receipt.get("feedback_text_sha256") != feedback_text_hash
+        ):
+            raise ValueError(
+                f"OpenHands tool-aware parquet row {index} path recovery receipt changed"
+            )
+        feedback = messages[feedback_index]
+        if (
+            not isinstance(feedback, dict)
+            or feedback != {"role": "user", "content": OPENHANDS_PATH_RECOVERY_MESSAGE}
+            or receipt.get("feedback_message_sha256") != content_hash(feedback)
+        ):
+            raise ValueError(
+                f"OpenHands tool-aware parquet row {index} path recovery binding changed"
+            )
 
 
 def _encode_parquet_payloads(row: dict[str, Any]) -> dict[str, Any]:
@@ -949,10 +1216,10 @@ def _safe_regular_path(path: Path) -> Path:
     return path.resolve(strict=True)
 
 
-def _read_regular(path: Path) -> bytes:
+def _read_regular(path: Path, *, max_bytes: int = _MAX_DATASET_BYTES) -> bytes:
     safe = _safe_regular_path(path)
     size = safe.stat().st_size
-    if size <= 0 or size > _MAX_DATASET_BYTES:
+    if size <= 0 or size > max_bytes:
         raise ValueError(f"64K v4 dataset file size is invalid: {safe.name}")
     return safe.read_bytes()
 
@@ -961,6 +1228,14 @@ __all__ = [
     "DECISION_BALANCED_OBJECTIVE",
     "ExactToolAwareTokens",
     "OPENHANDS_DATASET_FORMAT",
+    "OPENHANDS_CONTINUATION_DATASET_FORMAT",
+    "OPENHANDS_CONTINUATION_RECORD_FORMAT",
+    "OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT",
+    "OPENHANDS_MASKED_CONTINUATION_RECORD_FORMAT",
+    "OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT",
+    "OPENHANDS_MASKED_RECOVERY_RECORD_FORMAT",
+    "OPENHANDS_PATH_RECOVERY_DATASET_FORMAT",
+    "OPENHANDS_PATH_RECOVERY_RECORD_FORMAT",
     "OPENHANDS_RECORD_FORMAT",
     "OPENHANDS_RECOVERY_DATASET_FORMAT",
     "OPENHANDS_RECOVERY_RECORD_FORMAT",

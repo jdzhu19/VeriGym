@@ -13,6 +13,8 @@ from verigym.hwe.qwen_action_tokenizer import loss_mask_sha256, token_ids_sha256
 from verigym_training_reference.hwe_decision_sft_64k import (
     DECISION_BALANCED_OBJECTIVE,
     OPENHANDS_DATASET_FORMAT,
+    OPENHANDS_PATH_RECOVERY_DATASET_FORMAT,
+    OPENHANDS_PATH_RECOVERY_RECORD_FORMAT,
     OPENHANDS_RECORD_FORMAT,
     OPENHANDS_RECOVERY_DATASET_FORMAT,
     OPENHANDS_RECOVERY_RECORD_FORMAT,
@@ -473,6 +475,43 @@ def test_openhands_recovery_dataset_preserves_masked_same_session_context(
     assert inputs.rows[0]["format_id"] == OPENHANDS_RECOVERY_RECORD_FORMAT
     assert inputs.rows[0]["messages"][2:4] == input_messages[2:4]
     assert exact.loss_mask[: receipt["input_tokens"]] == [0] * receipt["input_tokens"]
+
+    path_record_base = {
+        **record_base,
+        "schema_version": "6.0",
+        "format_id": OPENHANDS_PATH_RECOVERY_RECORD_FORMAT,
+        "source_trajectory_format": "verigym_openhands_exact_tool_trajectory_v6",
+        "path_policy_recovery_policy_id": "openhands_provider_path_policy_recovery_v1",
+        "trajectory_path_policy_recovery_count": 1,
+        "path_policy_recovery_count": 0,
+        "path_policy_recoveries": [],
+        "raw_rejected_provider_arguments_persisted": False,
+        "path_policy_recovery_tool_choice_policy": "responses_required_validated_v1",
+    }
+    path_record = {**path_record_base, "record_hash": content_hash(path_record_base)}
+    path_line = json.dumps(path_record, sort_keys=True, separators=(",", ":")) + "\n"
+    path_manifest_base = {
+        **manifest_base,
+        "schema_version": "6.0",
+        "format_id": OPENHANDS_PATH_RECOVERY_DATASET_FORMAT,
+        "record_hashes": [path_record["record_hash"]],
+        "records_sha256": hashlib.sha256(path_line.encode()).hexdigest(),
+        "record_formats": [OPENHANDS_PATH_RECOVERY_RECORD_FORMAT],
+        "path_policy_recovery_policy_id": "openhands_provider_path_policy_recovery_v1",
+        "path_policy_recovery_trajectory_count": 1,
+        "path_policy_recovery_count": 1,
+        "raw_rejected_provider_arguments_persisted": False,
+        "path_policy_recovery_hash_bound": True,
+    }
+    path_manifest = {**path_manifest_base, "dataset_hash": content_hash(path_manifest_base)}
+    path_dataset = tmp_path / "openhands-path-recovery"
+    path_dataset.mkdir()
+    (path_dataset / "train.jsonl").write_text(path_line, encoding="utf-8")
+    (path_dataset / "dataset-manifest.json").write_text(json.dumps(path_manifest), encoding="utf-8")
+
+    path_inputs = load_openhands_tool_aware_dataset(path_dataset)
+    assert path_inputs.manifest["format_id"] == OPENHANDS_PATH_RECOVERY_DATASET_FORMAT
+    assert path_inputs.rows[0]["source_record"] == path_record
 
 
 def test_full_trajectory_objective_supervises_every_assistant_decision() -> None:
