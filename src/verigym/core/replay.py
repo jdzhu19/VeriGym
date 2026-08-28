@@ -289,7 +289,8 @@ def replay_run(
     reverified: list[VerifierResult] | None = None
     replay_candidate_synthesis: SynthesisMetrics | None = None
     replay_reference_synthesis: SynthesisMetrics | None = None
-    if verify:
+    policy_quarantined = _is_external_workspace_quarantine(scorecard)
+    if verify and not policy_quarantined:
         service = service or VeriGym()
         suite_id = manifest.task_id.split("/", 1)[0]
         suite = service.registries.suites.get(suite_id)
@@ -406,6 +407,22 @@ def replay_run(
                     content_hash(reverified) if reverified is not None else None
                 ),
                 runtime=runtime.descriptor,
+                build_provenance=get_build_provenance(),
+            ),
+        )
+    elif verify:
+        replay_artifact_root = run_dir / "artifacts" / "replay-verification"
+        replay_artifact_root.mkdir(parents=True, exist_ok=True)
+        dump_json(
+            replay_artifact_root / "replay_evidence.json",
+            ReplayEvidence(
+                run_id=manifest.run_id,
+                created_at_utc=datetime.now(UTC),
+                verifier_reexecuted=False,
+                stored_integrity_status=integrity.status,
+                original_artifact_manifest_hash=integrity.manifest_hash,
+                reverified_result_hash=None,
+                runtime=None,
                 build_provenance=get_build_provenance(),
             ),
         )
@@ -771,6 +788,13 @@ def _validate_stored_synthesis_artifacts(
 ) -> None:
     candidate = scorecard.quality.synthesis
     if candidate is None:
+        reference_summaries = list((run_dir / "artifacts").glob("*/reference_summary.json"))
+        if (
+            _is_external_workspace_quarantine(scorecard)
+            and manifest.reference_summary_hash is None
+            and not reference_summaries
+        ):
+            return
         raise ReplayError("profile-enabled scorecard has no candidate synthesis record")
     backend_root = _resolve_synthesis_backend_artifact_root(run_dir, manifest, candidate)
     artifact_root = backend_root / "candidate" if backend_root is not None else None
@@ -823,6 +847,22 @@ def _validate_stored_synthesis_artifacts(
         or summary.get("reference_netlist_exported") is not False
     ):
         raise ReplayError("reference summary identity or visibility contract is invalid")
+
+
+def _is_external_workspace_quarantine(scorecard: ScoreCard) -> bool:
+    return (
+        scorecard.status == "failed"
+        and not scorecard.resolved
+        and scorecard.termination_reason == "policy_violation"
+        and scorecard.quality.synthesis is None
+        and scorecard.quality.reference_synthesis is None
+        and bool(scorecard.verifier_results)
+        and all(
+            result.status == VerifierStatus.SKIPPED
+            and result.message == "candidate quarantined after external workspace policy violation"
+            for result in scorecard.verifier_results
+        )
+    )
 
 
 def _resolve_synthesis_backend_artifact_root(

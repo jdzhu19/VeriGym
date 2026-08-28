@@ -52,3 +52,11 @@ def test_launcher_preserves_all_prelaunch_agent_resolutions() -> None:
     assert frozen.expected_agent_configuration_hash == frozen.resolved_agent_configuration_hash
     assert frozen.expected_action_protocol == frozen.resolved_action_protocol
     assert frozen.expected_agent_feedback_contract == frozen.resolved_agent_feedback_contract
+
+
+def test_commercial_diagnostic_scan_allows_only_local_mcp_configuration() -> None:
+    launcher = _launcher_module()
+
+    assert launcher._COMMERCIAL_DIAGNOSTIC.search(b"mcp_servers.verigym.command") is None
+    assert launcher._COMMERCIAL_DIAGNOSTIC.search(b"mcp_server_profile_id") is not None
+    assert launcher._COMMERCIAL_DIAGNOSTIC.search(b"license server unavailable") is not None

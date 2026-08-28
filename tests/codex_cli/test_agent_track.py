@@ -260,7 +260,7 @@ def test_path_escape_is_policy_failure(
     fake_codex: tuple[Path, Path, object],
     tmp_path: Path,
 ) -> None:
-    _executable, _log, scenario = fake_codex
+    _executable, log, scenario = fake_codex
     scenario("path_escape")
     result = _run(tmp_path / "runs")
     assert result.scorecard.status == "failed"
@@ -268,6 +268,17 @@ def test_path_escape_is_policy_failure(
     assert result.scorecard.failure.kind == "policy"
     assert result.scorecard.failure.infrastructure is False
     assert result.scorecard.termination_reason == "policy_violation"
+    before_replay = log.read_bytes()
+    replay = replay_run(result.run_dir, verify=True)
+    assert replay.reverified_results is None
+    assert log.read_bytes() == before_replay
+    evidence = json.loads(
+        (result.run_dir / "artifacts" / "replay-verification" / "replay_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert evidence["verifier_reexecuted"] is False
+    assert evidence["runtime"] is None
 
 
 @pytest.mark.parametrize(

@@ -69,6 +69,9 @@ _TASKS = (
     "rtl-repo/official-parquet-v1-agent-eval-v1/test-000000",
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_COMMERCIAL_DIAGNOSTIC = re.compile(
+    rb"(?i)(license[_ -]?server|lsf|mcp[_ -]?server(?:_[a-z0-9_]+|\b)|\.db\b)"
+)
 
 
 @dataclass(frozen=True)
@@ -865,9 +868,7 @@ def _scan_outputs(
             for marker in path_markers:
                 if model_facing and marker and marker in payload:
                     findings.append({"run_id": result.manifest.run_id, "category": "site_path"})
-            if model_facing and re.search(
-                rb"(?i)(license[_ -]?server|lsf|mcp[_ -]?server|\.db\b)", payload
-            ):
+            if model_facing and _COMMERCIAL_DIAGNOSTIC.search(payload):
                 findings.append(
                     {"run_id": result.manifest.run_id, "category": "commercial_diagnostic"}
                 )
