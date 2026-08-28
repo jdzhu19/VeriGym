@@ -16,11 +16,14 @@ from typing import Any, cast
 from verigym_openhands.hwe_pilot import load_predecessor_qualification, seal_campaign_report
 from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID,
+    OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID,
     OPENHANDS_BOUNDED_SFT_API_KEY_ENV,
     OPENHANDS_BOUNDED_SFT_BASE_URL_ENV,
     OPENHANDS_BOUNDED_SFT_OPT_IN_ENV,
+    OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV,
     OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT,
     OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT,
+    OPENHANDS_BOUNDED_SFT_PILOT_V3_FORMAT,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
     build_bounded_sft_agent_options,
@@ -28,6 +31,10 @@ from verigym_openhands.hwe_sft_pilot import (
     evaluate_bounded_sft_data_gate,
     load_bounded_sft_pilot_contract_v2,
     validate_bounded_sft_source_v2,
+)
+from verigym_openhands.hwe_sft_pilot_v3 import (
+    load_bounded_sft_pilot_contract_v3,
+    validate_bounded_sft_source_v3,
 )
 from verigym_openhands.trajectory import (
     OpenHandsTrajectoryError,
@@ -75,6 +82,7 @@ _new_output = _legacy._new_output
 _nonpositive_outcome = _legacy._nonpositive_outcome
 
 _REPORT_FORMAT = "verigym_openhands_hwe_bounded_sft_collection_report_v2"
+_REPORT_FORMAT_V3 = "verigym_openhands_hwe_bounded_sft_collection_report_v3"
 _DRY_RUN_FORMAT = "verigym_openhands_hwe_bounded_sft_loader_dry_run_v1"
 _MODEL = "openai/deepseek-v4-flash"
 _MODEL_IDENTITY = "deepseek-v4-flash"
@@ -94,8 +102,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-image-lock-dir", type=Path, required=True)
     parser.add_argument("--tokenizer-root", type=Path, required=True)
     parser.add_argument("--base-model-lock", type=Path, required=True)
-    parser.add_argument("--predecessor-root", type=Path, required=True)
-    parser.add_argument("--predecessor-dataset", type=Path, required=True)
+    parser.add_argument("--predecessor-root", type=Path)
+    parser.add_argument("--predecessor-dataset", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--campaign-id", required=True)
     return parser
@@ -109,24 +117,43 @@ def collect(
     validation_image_lock_dir: Path,
     tokenizer_root: Path,
     base_model_lock: Path,
-    predecessor_root: Path,
-    predecessor_dataset: Path,
+    predecessor_root: Path | None,
+    predecessor_dataset: Path | None,
     output: Path,
     campaign_id: str,
 ) -> dict[str, Any]:
     """Execute exactly the preregistered provider episodes and seal admitted datasets."""
 
-    _require_runtime_opt_in(campaign_id)
     source_commit = _clean_source_commit()
     _require_baseline_ancestor(source_commit)
-    contract = load_bounded_sft_pilot_contract_v2(contract_path.resolve(strict=True))
+    resolved_contract_path = contract_path.resolve(strict=True)
+    raw_contract = _json(resolved_contract_path)
+    pilot_format = raw_contract.get("format_id")
+    if pilot_format == OPENHANDS_BOUNDED_SFT_PILOT_V3_FORMAT:
+        contract = load_bounded_sft_pilot_contract_v3(resolved_contract_path)
+        policy_version = "v13"
+        report_format = _REPORT_FORMAT_V3
+        opt_in_env = OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV
+    elif pilot_format == OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT:
+        contract = load_bounded_sft_pilot_contract_v2(resolved_contract_path)
+        policy_version = "v12"
+        report_format = _REPORT_FORMAT
+        opt_in_env = OPENHANDS_BOUNDED_SFT_OPT_IN_ENV
+    else:
+        raise ConfigurationError("bounded SFT collector contract version is unsupported")
+    _require_runtime_opt_in(campaign_id, opt_in_env=opt_in_env)
     qualification = qualification_root.resolve(strict=True)
     tokenizer_directory = tokenizer_root.resolve(strict=True)
     split = validate_task_split(
         TaskSplitManifest.model_validate(_json(qualification / "task-split.json"))
     )
     try:
-        validate_bounded_sft_source_v2(
+        validator = (
+            validate_bounded_sft_source_v3
+            if policy_version == "v13"
+            else validate_bounded_sft_source_v2
+        )
+        validator(
             contract,
             split=split,
             task_split_path=qualification / "task-split.json",
@@ -161,22 +188,30 @@ def collect(
     if exact_tokenizer.tokenizer_hash != model_lock["tokenizer_hash"]:
         raise ConfigurationError("bounded SFT exact tokenizer differs from the model lock")
 
-    predecessor_directory = predecessor_dataset.resolve(strict=True)
-    predecessor_manifest = _predecessor_dataset_manifest(predecessor_directory, contract)
-    predecessor_records = _predecessor_dataset_records(
-        predecessor_directory,
-        predecessor_manifest,
-    )
-    predecessor = load_predecessor_qualification(predecessor_root)
-    predecessor_entry = entries[str(predecessor.report["task_id"])]
-    if (
-        predecessor.report.get("task_hash") != predecessor_entry.task_hash
-        or predecessor.report.get("source_hash") != predecessor_entry.source_hash
-    ):
-        raise ConfigurationError("bounded SFT predecessor differs from the frozen split")
+    predecessor_manifest: dict[str, Any] | None = None
+    predecessor_records: list[dict[str, Any]] = []
+    predecessor: Any | None = None
+    predecessor_entry: TaskSplitEntry | None = None
+    if policy_version == "v12":
+        if predecessor_dataset is None or predecessor_root is None:
+            raise ConfigurationError("bounded SFT v2 requires its frozen predecessor")
+        predecessor_directory = predecessor_dataset.resolve(strict=True)
+        predecessor_manifest = _predecessor_dataset_manifest(predecessor_directory, contract)
+        predecessor_records = _predecessor_dataset_records(
+            predecessor_directory,
+            predecessor_manifest,
+        )
+        predecessor = load_predecessor_qualification(predecessor_root)
+        predecessor_entry = entries[str(predecessor.report["task_id"])]
+        if (
+            predecessor.report.get("task_hash") != predecessor_entry.task_hash
+            or predecessor.report.get("source_hash") != predecessor_entry.source_hash
+        ):
+            raise ConfigurationError("bounded SFT predecessor differs from the frozen split")
     agent_version = build_bounded_sft_agent_version(
         source_commit=source_commit,
         image_locks=locks,
+        policy_version=policy_version,
     )
     training_schedule = list(contract["collection"]["training_schedule"])
     validation_schedule = list(contract["collection"]["validation_schedule"])
@@ -185,6 +220,7 @@ def collect(
             build_bounded_sft_agent_options(
                 seed=int(episode["seed"]),
                 agent_version=agent_version,
+                policy_version=policy_version,
             )
     _zero_call_preflight(locks)
 
@@ -213,61 +249,71 @@ def collect(
         {**image_receipt, "receipt_hash": content_hash(image_receipt)},
     )
 
-    predecessor_episode = next(item for item in training_schedule if item.get("predecessor"))
-    predecessor_dry_runs = [
-        dry_run_decision_record_v4(record, tokenizer=exact_tokenizer)
-        for record in predecessor_records
-    ]
-    predecessor_attempt = {
-        "episode_id": predecessor_episode["episode_id"],
-        "role": "training",
-        "task_id": predecessor_entry.task_id,
-        "sample_index": predecessor_episode["sample_index"],
-        "seed": predecessor_episode["seed"],
-        "run_id": predecessor.report["run_id"],
-        "run_hash": content_hash(
-            {
-                "predecessor_report_hash": predecessor.report_hash,
-                "trajectory_hash": predecessor.trajectory["transcript_hash"],
-            }
-        ),
-        "status": "eligible_predecessor",
-        "historical_predecessor": True,
-        "source_commit": predecessor.report["source_commit"],
-        "infrastructure_valid": True,
-        "ordinary_verifier_resolved": True,
-        "exact_64k_eligible": True,
-        "truncation_applied": False,
-        "transcript_hash": predecessor.trajectory["transcript_hash"],
-        "decision_record_count": len(predecessor_records),
-        "max_decision_record_tokens": max(
-            int(record["token_count"]) for record in predecessor_records
-        ),
-        "model_call_count": predecessor.report["agent_model_calls"],
-        "whole_episode_retries": 0,
-    }
-    _write_trajectory_records(
-        records_root / f"{predecessor_episode['episode_id']}.jsonl",
-        predecessor_records,
-        episode_id=str(predecessor_episode["episode_id"]),
-        role="training",
-        task_id=predecessor_entry.task_id,
-        transcript_hash=str(predecessor.trajectory["transcript_hash"]),
-        run_hash=str(predecessor_attempt["run_hash"]),
-    )
-    attempts: list[dict[str, Any]] = [predecessor_attempt]
+    attempts: list[dict[str, Any]] = []
     records_by_role: dict[str, list[dict[str, Any]]] = {
         "training": list(predecessor_records),
         "validation": [],
     }
     dry_runs_by_role: dict[str, list[dict[str, Any]]] = {
-        "training": predecessor_dry_runs,
+        "training": [],
         "validation": [],
     }
+    predecessor_report_hash: str | None = None
+    predecessor_dataset_hash: str | None = None
+    if policy_version == "v12":
+        assert predecessor is not None
+        assert predecessor_entry is not None
+        assert predecessor_manifest is not None
+        predecessor_episode = next(item for item in training_schedule if item.get("predecessor"))
+        predecessor_dry_runs = [
+            dry_run_decision_record_v4(record, tokenizer=exact_tokenizer)
+            for record in predecessor_records
+        ]
+        dry_runs_by_role["training"].extend(predecessor_dry_runs)
+        predecessor_attempt = {
+            "episode_id": predecessor_episode["episode_id"],
+            "role": "training",
+            "task_id": predecessor_entry.task_id,
+            "sample_index": predecessor_episode["sample_index"],
+            "seed": predecessor_episode["seed"],
+            "run_id": predecessor.report["run_id"],
+            "run_hash": content_hash(
+                {
+                    "predecessor_report_hash": predecessor.report_hash,
+                    "trajectory_hash": predecessor.trajectory["transcript_hash"],
+                }
+            ),
+            "status": "eligible_predecessor",
+            "historical_predecessor": True,
+            "source_commit": predecessor.report["source_commit"],
+            "infrastructure_valid": True,
+            "ordinary_verifier_resolved": True,
+            "exact_64k_eligible": True,
+            "truncation_applied": False,
+            "transcript_hash": predecessor.trajectory["transcript_hash"],
+            "decision_record_count": len(predecessor_records),
+            "max_decision_record_tokens": max(
+                int(record["token_count"]) for record in predecessor_records
+            ),
+            "model_call_count": predecessor.report["agent_model_calls"],
+            "whole_episode_retries": 0,
+        }
+        _write_trajectory_records(
+            records_root / f"{predecessor_episode['episode_id']}.jsonl",
+            predecessor_records,
+            episode_id=str(predecessor_episode["episode_id"]),
+            role="training",
+            task_id=predecessor_entry.task_id,
+            transcript_hash=str(predecessor.trajectory["transcript_hash"]),
+            run_hash=str(predecessor_attempt["run_hash"]),
+        )
+        attempts.append(predecessor_attempt)
+        predecessor_report_hash = predecessor.report_hash
+        predecessor_dataset_hash = str(predecessor_manifest["dataset_hash"])
     base_report = {
         "schema_version": "1.0",
-        "format_id": _REPORT_FORMAT,
-        "pilot_format": OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT,
+        "format_id": report_format,
+        "pilot_format": pilot_format,
         "contract_hash": contract["contract_hash"],
         "campaign_id": campaign_id,
         "status": "collection_running",
@@ -278,9 +324,9 @@ def collect(
         "validation_schedule": validation_schedule,
         "heldout_task_ids": contract["collection"]["heldout_task_ids"],
         "heldout_episodes_collected": 0,
-        "predecessor_report_hash": predecessor.report_hash,
-        "predecessor_dataset_hash": predecessor_manifest["dataset_hash"],
-        "predecessor_reused": True,
+        "predecessor_report_hash": predecessor_report_hash,
+        "predecessor_dataset_hash": predecessor_dataset_hash,
+        "predecessor_reused": policy_version == "v12",
         "predecessor_resampled": False,
         "whole_episode_retries": 0,
         "provider_request_retries": 0,
@@ -295,7 +341,11 @@ def collect(
         "openhands_sdk_version": _SDK_VERSION,
         "litellm_version": _LITELLM_VERSION,
         "tiktoken_version": _TIKTOKEN_VERSION,
-        "agent_version_id": OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID,
+        "agent_version_id": (
+            OPENHANDS_BOUNDED_SFT_AGENT_VERSION_V3_ID
+            if policy_version == "v13"
+            else OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID
+        ),
         "agent_version_hash": agent_version.version_hash,
         "temperature": 0,
         "top_p": 1,
@@ -305,6 +355,16 @@ def collect(
         "max_iterations": _MAX_ITERATIONS,
         "tool_contract": "hwe_native_shell_v2",
         "tool_schema_count": 6,
+        "provider_tool_schema_policy": (
+            "canonical_hwe_without_sdk_metadata_v1"
+            if policy_version == "v13"
+            else "openhands_sdk_metadata_v1"
+        ),
+        "tool_choice_policy": (
+            "validated_responses_recovery_state_required_tool_v13"
+            if policy_version == "v13"
+            else "validated_responses_recovery_state_required_tool_v12"
+        ),
         "capture_training_transcript": True,
         "tokenizer_hash": exact_tokenizer.tokenizer_hash,
         "chat_template_hash": exact_tokenizer.chat_template_hash,
@@ -352,6 +412,7 @@ def collect(
             verifier_replays=verifier_replays,
             exact_tokenizer=exact_tokenizer,
             agent_version=agent_version,
+            policy_version=policy_version,
             source_commit=source_commit,
             root=root,
             base_report=base_report,
@@ -364,6 +425,9 @@ def collect(
         progress = {**base_report, "attempts": attempts, "status": "collection_running"}
         atomic_dump_json(root / "campaign-progress.json", seal_campaign_report(progress))
 
+    if not records_by_role["training"]:
+        _stop(root, base_report, attempts, "no_eligible_training_trajectories")
+        raise ConfigurationError("bounded SFT collection produced no eligible training data")
     training_manifest, training_security = _write_dataset(
         records=records_by_role["training"],
         dry_runs=dry_runs_by_role["training"],
@@ -394,9 +458,9 @@ def collect(
         "schema_version": "1.0",
         "format_id": "verigym_openhands_hwe_bounded_sft_data_gate_v1",
         **asdict(gate),
-        "target_training_trajectories": 16,
-        "scheduled_training_episodes": 16,
-        "scheduled_validation_episodes": 4,
+        "target_training_trajectories": contract["data_gate"]["target_training_trajectories"],
+        "scheduled_training_episodes": len(training_schedule),
+        "scheduled_validation_episodes": len(validation_schedule),
         "heldout_episodes_collected": 0,
     }
     atomic_dump_json(
@@ -412,7 +476,9 @@ def collect(
         ),
         "attempts": ordered_attempts,
         "attempt_count": len(ordered_attempts),
-        "new_provider_episode_count": len(ordered_attempts) - 1,
+        "new_provider_episode_count": sum(
+            item.get("historical_predecessor") is not True for item in ordered_attempts
+        ),
         "verifier_only_replay_count": sum(
             item.get("verifier_replay_hash") is not None for item in ordered_attempts
         ),
@@ -458,7 +524,7 @@ def collect(
     sealed = seal_campaign_report(final)
     atomic_dump_json(root / "campaign-progress.json", sealed)
     atomic_dump_json(root / "campaign-report.json", sealed)
-    return cast(dict[str, Any], sealed)
+    return sealed
 
 
 def _run_episode(
@@ -475,6 +541,7 @@ def _run_episode(
     verifier_replays: Path,
     exact_tokenizer: QwenDecisionExampleTokenizer,
     agent_version: AgentVersionManifest,
+    policy_version: str,
     source_commit: str,
     root: Path,
     base_report: dict[str, Any],
@@ -509,6 +576,7 @@ def _run_episode(
         agent_options=build_bounded_sft_agent_options(
             seed=seed,
             agent_version=agent_version,
+            policy_version=policy_version,
         ),
         runtime="docker",
         docker_config=_docker_config(lock),
@@ -518,7 +586,7 @@ def _run_episode(
         run_id=run_id,
         experiment_id=campaign_id,
         plan_item_id=episode_id,
-        system_id="openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v2",
+        system_id=agent_version.agent_version_id,
         base_seed=seed,
     )
     try:
@@ -782,9 +850,14 @@ def _run_episode(
     return attempt, records, dry_runs
 
 
-def _require_runtime_opt_in(campaign_id: str) -> None:
-    if os.environ.get(OPENHANDS_BOUNDED_SFT_OPT_IN_ENV) != "1":
-        raise ConfigurationError(f"{OPENHANDS_BOUNDED_SFT_OPT_IN_ENV}=1 is required")
+def _require_runtime_opt_in(campaign_id: str, *, opt_in_env: str) -> None:
+    if opt_in_env not in {
+        OPENHANDS_BOUNDED_SFT_OPT_IN_ENV,
+        OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV,
+    }:
+        raise ConfigurationError("bounded SFT opt-in identity is unsupported")
+    if os.environ.get(opt_in_env) != "1":
+        raise ConfigurationError(f"{opt_in_env}=1 is required")
     if not os.environ.get(OPENHANDS_BOUNDED_SFT_API_KEY_ENV) or not os.environ.get(
         OPENHANDS_BOUNDED_SFT_BASE_URL_ENV
     ):

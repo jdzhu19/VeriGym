@@ -68,7 +68,11 @@ class OpenHandsHweSettings:
             "api_key_env": self.api_key_env,
             "max_iterations": self.max_iterations,
             "max_provider_calls": self.max_iterations,
-            "provider_call_accounting": "adapter_attempt_counter_v1",
+            "provider_call_accounting": (
+                "conversation_agent_attempt_counter_v2"
+                if self.tool_choice_policy == "validated_responses_recovery_state_required_tool_v17"
+                else "adapter_attempt_counter_v1"
+            ),
             "process_timeout_s": self.process_timeout_s,
             "max_output_tokens": self.max_output_tokens,
             "max_context_tokens": self.max_context_tokens,
@@ -152,6 +156,11 @@ def resolve_hwe_settings(
         "validated_responses_recovery_state_forced_finish_v9",
         "validated_responses_recovery_state_required_tool_v11",
         "validated_responses_recovery_state_required_tool_v12",
+        "validated_responses_recovery_state_required_tool_v13",
+        "validated_responses_recovery_state_required_tool_v14",
+        "validated_responses_recovery_state_required_tool_v15",
+        "validated_responses_recovery_state_required_tool_v16",
+        "validated_responses_recovery_state_required_tool_v17",
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
@@ -177,7 +186,11 @@ def resolve_hwe_settings(
         "api_key_env": api_key_env,
         "max_iterations": max_iterations,
         "max_provider_calls": max_iterations,
-        "provider_call_accounting": "adapter_attempt_counter_v1",
+        "provider_call_accounting": (
+            "conversation_agent_attempt_counter_v2"
+            if tool_choice_policy == "validated_responses_recovery_state_required_tool_v17"
+            else "adapter_attempt_counter_v1"
+        ),
         "process_timeout_s": process_timeout_s,
         "max_output_tokens": max_output_tokens,
         "max_context_tokens": max_context_tokens,

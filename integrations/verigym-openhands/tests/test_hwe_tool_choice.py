@@ -20,10 +20,12 @@ from verigym_openhands._recovery import (
 from verigym_openhands.hwe_tool_choice import (
     BoundedProviderCallLLM,
     ProviderCallBudgetExceeded,
+    ProviderToolArgumentsPolicyError,
     RecoveryForcedFinishLLM,
     RecoveryStateForcedFinishLLM,
     RecoveryToolChoiceViolation,
     RequiredToolChoiceLLM,
+    SdkContinuationRequiredToolLLM,
     ValidatedRecoveryStateForcedFinishLLM,
     ValidatedResponsesRecoveryStateForcedFinishLLM,
     ValidatedResponsesRecoveryStateRequiredToolLLM,
@@ -115,6 +117,19 @@ def _validated_responses_required_tool_llm(
     path: Path,
 ) -> ValidatedResponsesRecoveryStateRequiredToolLLM:
     return ValidatedResponsesRecoveryStateRequiredToolLLM(
+        model="openai/test-model",
+        api_key="test-only",
+        base_url="https://example.invalid/v1",
+        api_mode="chat",
+        native_tool_calling=True,
+        capability_overrides={"supports_responses_api": False},
+        litellm_extra_body={"thinking": {"type": "disabled"}},
+        recovery_state_path=path,
+    )
+
+
+def _sdk_continuation_llm(path: Path) -> SdkContinuationRequiredToolLLM:
+    return SdkContinuationRequiredToolLLM(
         model="openai/test-model",
         api_key="test-only",
         base_url="https://example.invalid/v1",
@@ -803,3 +818,98 @@ def test_responses_required_tool_recovery_rebinds_sdk_auto_choice(tmp_path: Path
     assert result[3]["tool_choice"] == "required"
     assert result[3]["reasoning"] == {"effort": "none"}
     assert result[3]["store"] is False
+
+
+def test_sdk_continuation_requires_one_validated_tool_after_recovery(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _sdk_continuation_llm(state)
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        return_value=_response("read_file"),
+    ) as responses:
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+        llm.arm_sdk_stop_continuation()
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert responses.call_count == 2
+    assert all(call.kwargs["tool_choice"] == "required" for call in responses.call_args_list)
+    assert llm.provider_call_count == 2
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_tool_count == 1
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 1
+
+
+def test_sdk_continuation_uses_async_responses_path(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _sdk_continuation_llm(state)
+    responses = AsyncMock(side_effect=[_response("read_file"), _response("read_file")])
+    with patch("openhands.sdk.llm.llm.LLM.aresponses", responses):
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_read_file_tool()))
+        llm.arm_sdk_stop_continuation()
+        asyncio.run(llm.acompletion(messages=_messages(), tools=_read_file_tool()))
+
+    assert responses.call_count == 2
+    assert all(call.kwargs["tool_choice"] == "required" for call in responses.call_args_list)
+    assert llm.provider_call_count == 2
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 1
+
+
+def test_sdk_continuation_cannot_be_armed_outside_exact_recovery_state(tmp_path: Path) -> None:
+    llm = _sdk_continuation_llm(tmp_path / "recovery.json")
+
+    with pytest.raises(ValueError, match="continuation state"):
+        llm.arm_sdk_stop_continuation()
+
+
+def test_sdk_continuation_rejects_content_only_response(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _sdk_continuation_llm(state)
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        side_effect=[_response("read_file"), _response(None)],
+    ):
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+        llm.arm_sdk_stop_continuation()
+        with pytest.raises(RecoveryToolChoiceViolation, match="one allowed tool"):
+            llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 0
+
+
+def test_sdk_continuation_rejects_raw_host_path_before_dispatch(tmp_path: Path) -> None:
+    state = tmp_path / "recovery.json"
+    _write_recovery_state(state)
+    llm = _sdk_continuation_llm(state)
+    unsafe = SimpleNamespace(
+        message=Message(
+            role="assistant",
+            tool_calls=[
+                MessageToolCall(
+                    id="call-2",
+                    name="read_file",
+                    arguments='{"path":"/data/private"}',
+                    origin="completion",
+                )
+            ],
+        )
+    )
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        side_effect=[_response("read_file"), unsafe],
+    ):
+        llm.completion(messages=_messages(), tools=_read_file_tool())
+        llm.arm_sdk_stop_continuation()
+        with pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path"):
+            llm.completion(messages=_messages(), tools=_read_file_tool())
+
+    assert llm.sdk_continuation_forced_request_count == 1
+    assert llm.sdk_continuation_validated_tool_count == 0

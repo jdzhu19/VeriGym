@@ -118,6 +118,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     assert "RecoveryForcedFinishLLM" in source
     assert 'settings.tool_choice_policy == "recovery_state_forced_finish_v6"' in source
     assert "RecoveryStateForcedFinishLLM" in source
+    assert "WorkspaceRelativeRequiredToolLLM" in source
     assert 'settings.tool_choice_policy == "validated_recovery_state_forced_finish_v7"' in source
     assert "ValidatedRecoveryStateForcedFinishLLM" in source
     assert '"validated_recovery_state_forced_finish_v8"' in source
@@ -251,6 +252,56 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
         == "validated_responses_recovery_state_required_tool_v11"
     )
 
+    workspace_relative = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v14",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        workspace_relative.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v14"
+    )
+
+    continued_recovery = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v15",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        continued_recovery.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v15"
+    )
+
+    all_string_path_contract = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v16",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        all_string_path_contract.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v16"
+    )
+
+    typed_continuation = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v17",
+        },
+        task_wall_time_s=100,
+    )
+    assert typed_continuation.tool_choice_policy == (
+        "validated_responses_recovery_state_required_tool_v17"
+    )
+    assert typed_continuation.safe_dict()["provider_call_accounting"] == (
+        "conversation_agent_attempt_counter_v2"
+    )
+
     with pytest.raises(ValueError, match="unsupported"):
         module.resolve_hwe_settings(
             {
@@ -259,6 +310,78 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
             },
             task_wall_time_s=100,
         )
+
+
+def test_v14_path_prompt_is_distinct_without_changing_the_historical_prompt() -> None:
+    from verigym_openhands.hwe_agent import _system_prompt
+
+    historical = _system_prompt()
+    constrained = _system_prompt(workspace_relative=True)
+
+    assert historical == _system_prompt(workspace_relative=False)
+    assert constrained.startswith(historical)
+    assert "Every path and cwd argument" not in historical
+    assert "Every path and cwd argument" in constrained
+
+
+@pytest.mark.parametrize(
+    ("policy", "recovery_count", "forced", "finish", "tool", "expected"),
+    [
+        ("validated_responses_recovery_state_required_tool_v12", 1, 0, 0, 0, True),
+        ("validated_responses_recovery_state_required_tool_v14", 1, 1, 0, 1, False),
+        ("validated_responses_recovery_state_required_tool_v15", 1, 1, 0, 1, True),
+        ("validated_responses_recovery_state_required_tool_v16", 1, 1, 0, 1, True),
+        ("validated_responses_recovery_state_required_tool_v17", 1, 1, 0, 1, True),
+        ("validated_responses_recovery_state_required_tool_v15", 1, 1, 1, 0, False),
+        ("validated_responses_recovery_state_required_tool_v15", 0, 0, 0, 0, False),
+    ],
+)
+def test_sdk_stop_continuation_requires_the_exact_frozen_state(
+    policy: str,
+    recovery_count: int,
+    forced: int,
+    finish: int,
+    tool: int,
+    expected: bool,
+) -> None:
+    from verigym_openhands.hwe_agent import _requires_sdk_stop_continuation
+
+    assert (
+        _requires_sdk_stop_continuation(
+            tool_choice_policy=policy,
+            recovery_count=recovery_count,
+            choice_counts={
+                "recovery_forced_request_count": forced,
+                "recovery_validated_finish_count": finish,
+                "recovery_validated_tool_count": tool,
+                "recovery_coalesced_output_count": 0,
+            },
+        )
+        is expected
+    )
+
+
+def test_provider_path_violation_receipt_retains_only_safe_categories() -> None:
+    from verigym_openhands.hwe_agent import _sdk_failure_receipt
+    from verigym_openhands.hwe_tool_choice import ProviderToolArgumentsPolicyError
+
+    root = ProviderToolArgumentsPolicyError(
+        "content intentionally omitted",
+        tool_name="finish",
+        argument_field="summary",
+        violation_kind="raw_host_path",
+    )
+    wrapper = RuntimeError("wrapper")
+    wrapper.__cause__ = root
+
+    receipt = _sdk_failure_receipt(wrapper, [])
+
+    assert receipt["provider_tool_arguments_violation"] == {
+        "tool_name": "finish",
+        "argument_field": "summary",
+        "violation_kind": "raw_host_path",
+    }
+    assert "content intentionally omitted" not in str(receipt)
 
 
 def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_path: Path) -> None:
@@ -439,6 +562,22 @@ def test_openhands_hwe_identity_classifies_mcp_events_once() -> None:
     assert required_recovery_identity.harness_id == ("openhands-sdk-1.42.1-hwe-native-shell-v11")
     assert required_recovery_identity.tool_use_policy == (
         "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
+    )
+
+    typed_continuation_state = settings.__class__(
+        **{
+            **settings.__dict__,
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v17",
+        }
+    )
+    typed_continuation_identity = _identity(
+        typed_continuation_state,
+        tool_calls=20,
+        patches=1,
+    )
+    assert typed_continuation_identity.harness_id == ("openhands-sdk-1.42.1-hwe-native-shell-v17")
+    assert typed_continuation_identity.tool_use_policy == (
+        "repository_action_state_machine_typed_sdk_continuation_v17"
     )
 
 

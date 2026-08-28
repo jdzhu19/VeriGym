@@ -183,6 +183,34 @@ spent, made no workspace mutation, and never called typed `finish`; it therefore
 completion outcome rather than an OpenHands/Responses transport defect. The runner permits no
 provider or episode retry and never admits a diagnostic result to a dataset automatically.
 
+The v15 adapter added one explicit same-session SDK continuation after that exact validated,
+non-terminal recovery state. Its real PR-2032 run continued for 20 typed actions and made five
+patch attempts, but a raw host path appeared in a provider tool argument and was rejected before
+broker dispatch. The v16 provider schema therefore applies the workspace boundary to every string
+field, not only `path` and `cwd`, and records only the tool name, top-level field name, and violation
+kind. Its real run crossed that boundary with no path violation. The recovery and adapter
+continuation were both exercised, but the continuation was still an ordinary `auto` request and
+the model again returned prose instead of a typed tool, so no trajectory was admitted.
+
+The distinct v17 diagnostic arms exactly one adapter-continuation request only after the validated
+recovery state. That request uses the Responses serializer with `tool_choice="required"`, requires
+exactly one of the six canonical tools with no prose, reuses the v16 path contract, and then returns
+to ordinary Chat Completions. Recovery and continuation response-shape receipts remain separate,
+and provider accounting is read from the LLM object actually owned by the OpenHands conversation.
+The installed OpenHands SDK is not modified, no action is synthesized, and the continuation budget
+remains one.
+
+The real v17 PR-2032 diagnostic passed those adapter and protocol gates exactly once: one recovery,
+one same-session SDK continuation, one `tool_choice="required"` request, and one validated
+`read_file` tool. It made 16 model calls and 14 broker tool calls, with no path/schema violation,
+patch, or typed `finish`. The run therefore ended as the infrastructure-valid model failure
+`openhands_hwe_missing_finish`; it exported no trajectory and did not enter a dataset. Its sealed
+report hash is `440b47085983bd204713c5c732905eef67ff8d94d0053cadd9a2eb5cb57bd423`. This closes
+the current adapter boundary, but it does not qualify PR-2032 or justify a retry, synthesized
+`finish`, benchmark claim, or production-training claim. See the
+[v17 audit](../../docs/audits/2026-08-28_openhands-hwe-typed-continuation-v17.md) for the complete
+sanitized counts and frozen identities.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
