@@ -1185,6 +1185,179 @@ class SdkContinuationRequiredToolLLM(
         )
 
 
+class PathPolicyRecoveryRequiredToolLLM(SdkContinuationRequiredToolLLM):
+    """Allow one adapter-armed, provider-emitted correction after a raw host path.
+
+    The rejected response never reaches OpenHands or the broker. The adapter adds
+    one canonical user message to the same conversation and arms this class for
+    exactly one Responses request with required tool choice. The corrected action
+    must still be emitted by the provider and pass the ordinary argument policy.
+    """
+
+    _path_policy_recovery_armed: bool = PrivateAttr(default=False)
+    _path_policy_recovery_forced_request_count: int = PrivateAttr(default=0)
+    _path_policy_recovery_validated_tool_count: int = PrivateAttr(default=0)
+    _path_policy_recovery_response_shape: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _path_policy_recovery_parent: str = PrivateAttr(default="ordinary")
+
+    @property
+    def path_policy_recovery_forced_request_count(self) -> int:
+        return self._path_policy_recovery_forced_request_count
+
+    @property
+    def path_policy_recovery_validated_tool_count(self) -> int:
+        return self._path_policy_recovery_validated_tool_count
+
+    @property
+    def path_policy_recovery_response_shape(self) -> dict[str, Any]:
+        return dict(self._path_policy_recovery_response_shape)
+
+    def arm_path_policy_recovery(self) -> None:
+        """Arm one correction only after the adapter validates a raw-host-path error."""
+
+        if self._path_policy_recovery_armed or self._path_policy_recovery_forced_request_count != 0:
+            raise ValueError("OpenHands HWE path-policy recovery state is invalid")
+        pending_format_recovery = (
+            self._recovery_forced_request_count == 1
+            and self._recovery_validated_finish_count == 0
+            and self._recovery_validated_tool_count == 0
+        )
+        pending_sdk_continuation = (
+            self._sdk_continuation_forced_request_count == 1
+            and self._sdk_continuation_validated_tool_count == 0
+        )
+        if pending_format_recovery and pending_sdk_continuation:
+            raise ValueError("OpenHands HWE path-policy recovery parent is ambiguous")
+        self._path_policy_recovery_parent = (
+            "format_recovery"
+            if pending_format_recovery
+            else "sdk_stop_continuation"
+            if pending_sdk_continuation
+            else "ordinary"
+        )
+        self._path_policy_recovery_armed = True
+
+    def _claim_path_policy_recovery(self, tools: Sequence[ToolDefinition] | None) -> frozenset[str]:
+        if not self._path_policy_recovery_armed:
+            return frozenset()
+        allowed = frozenset(tool.name for tool in tools or [])
+        if not allowed:
+            raise ValueError("OpenHands HWE path-policy recovery requires tools")
+        self._path_policy_recovery_armed = False
+        self._path_policy_recovery_forced_request_count += 1
+        return allowed
+
+    def _complete_path_policy_recovery(
+        self,
+        *,
+        response: LLMResponse,
+        allowed_tool_names: frozenset[str],
+        recovery_shape: dict[str, Any],
+    ) -> LLMResponse:
+        path_shape = dict(self._recovery_response_shape)
+        self._recovery_response_shape = recovery_shape
+        self._path_policy_recovery_response_shape = path_shape
+        _validate_recovery_required_tool_response(
+            response,
+            allowed_tool_names=allowed_tool_names,
+        )
+        self._validate_provider_response(response)
+        if self._path_policy_recovery_parent == "format_recovery":
+            self._recovery_response_shape = path_shape
+            self._recovery_validated_tool_count += 1
+        elif self._path_policy_recovery_parent == "sdk_stop_continuation":
+            self._sdk_continuation_response_shape = path_shape
+            self._sdk_continuation_validated_tool_count += 1
+        elif self._path_policy_recovery_parent != "ordinary":
+            raise ValueError("OpenHands HWE path-policy recovery parent changed")
+        self._path_policy_recovery_validated_tool_count += 1
+        return response
+
+    def completion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: TokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE path-policy tool choice is adapter-owned")
+        allowed = self._claim_path_policy_recovery(tools)
+        if not allowed:
+            return super().completion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        recovery_shape = dict(self._recovery_response_shape)
+        try:
+            response = BoundedProviderCallLLM.responses(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+                **kwargs,
+            )
+        except Exception:
+            self._recovery_response_shape = recovery_shape
+            raise
+        return self._complete_path_policy_recovery(
+            response=response,
+            allowed_tool_names=allowed,
+            recovery_shape=recovery_shape,
+        )
+
+    async def acompletion(
+        self,
+        messages: list[Message],
+        tools: Sequence[ToolDefinition] | None = None,
+        add_security_risk_prediction: bool = False,
+        on_token: AnyTokenCallbackType | None = None,
+        call_context: LLMCallContext | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        if "tool_choice" in kwargs:
+            raise ValueError("OpenHands HWE path-policy tool choice is adapter-owned")
+        allowed = self._claim_path_policy_recovery(tools)
+        if not allowed:
+            return await super().acompletion(
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                **kwargs,
+            )
+        recovery_shape = dict(self._recovery_response_shape)
+        try:
+            response = await BoundedProviderCallLLM.aresponses(
+                self,
+                messages=messages,
+                tools=tools,
+                add_security_risk_prediction=add_security_risk_prediction,
+                on_token=on_token,
+                call_context=call_context,
+                tool_choice=_RESPONSES_REQUIRED_TOOL_CHOICE,
+                **kwargs,
+            )
+        except Exception:
+            self._recovery_response_shape = recovery_shape
+            raise
+        return self._complete_path_policy_recovery(
+            response=response,
+            allowed_tool_names=allowed,
+            recovery_shape=recovery_shape,
+        )
+
+
 WorkspaceRelativeRequiredToolLLM = (
     WorkspaceRelativeMetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
 )
@@ -1198,6 +1371,7 @@ __all__ = [
     "OPENHANDS_HWE_VALIDATED_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_FORCED_FINISH",
     "OPENHANDS_HWE_VALIDATED_RESPONSES_RECOVERY_STATE_REQUIRED_TOOL",
+    "PathPolicyRecoveryRequiredToolLLM",
     "ProviderCallBudgetExceeded",
     "ProviderToolArgumentsPolicyError",
     "RecoveryForcedFinishLLM",
