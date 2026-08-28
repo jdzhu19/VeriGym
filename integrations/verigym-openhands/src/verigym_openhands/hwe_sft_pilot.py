@@ -77,6 +77,24 @@ OPENHANDS_RECOVERY_CONTINUATION_V15_PROFILE_HASH = content_hash(
         "whole_episode_retries": 0,
     }
 )
+OPENHANDS_PROVIDER_PATH_CONTRACT_V16_AGENT_VERSION_ID = (
+    "openhands-deepseek-v4-flash-hwe-provider-path-contract-v16-diagnostic"
+)
+OPENHANDS_PROVIDER_PATH_CONTRACT_V16_PROFILE_HASH = content_hash(
+    {
+        "format_id": "verigym_openhands_hwe_provider_path_contract_diagnostic_v1",
+        "tool_choice_policy": "validated_responses_recovery_state_required_tool_v16",
+        "provider_tool_schema_policy": (
+            "canonical_hwe_without_sdk_metadata_all_string_host_path_constraints_v3"
+        ),
+        "provider_violation_receipt": "tool_and_top_level_field_only_v1",
+        "sdk_stop_continuation_trigger": "validated_nonfinish_recovery_tool_v1",
+        "sdk_stop_continuation_budget": 1,
+        "episode_scope": "single_training_task_diagnostic",
+        "provider_request_retries": 0,
+        "whole_episode_retries": 0,
+    }
+)
 OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V2"
 OPENHANDS_BOUNDED_SFT_OPT_IN_V3_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V3"
 OPENHANDS_BOUNDED_SFT_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
@@ -150,6 +168,13 @@ def build_bounded_sft_agent_version(
         pilot_contract_hash = OPENHANDS_RECOVERY_CONTINUATION_V15_PROFILE_HASH
         tool_choice_policy = "validated_responses_recovery_state_required_tool_v15"
         provider_tool_schema_policy = "canonical_hwe_without_sdk_metadata_workspace_relative_v2"
+    elif policy_version == "v16":
+        agent_version_id = OPENHANDS_PROVIDER_PATH_CONTRACT_V16_AGENT_VERSION_ID
+        pilot_contract_hash = OPENHANDS_PROVIDER_PATH_CONTRACT_V16_PROFILE_HASH
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v16"
+        provider_tool_schema_policy = (
+            "canonical_hwe_without_sdk_metadata_all_string_host_path_constraints_v3"
+        )
     else:
         raise ValueError("bounded SFT agent policy version is unsupported")
 
@@ -239,8 +264,11 @@ def build_bounded_sft_agent_version(
                 "sdk_stop_continuation_budget": 1,
                 "sdk_stop_continuation_trigger": (
                     "validated_nonfinish_recovery_tool_v1"
-                    if policy_version == "v15"
+                    if policy_version in {"v15", "v16"}
                     else "legacy_v12_only"
+                ),
+                "provider_violation_receipt": (
+                    "tool_and_top_level_field_only_v1" if policy_version == "v16" else "none"
                 ),
                 "sdk_upstream_source_modified": False,
                 "task_image_lock_hashes": lock_receipts,
@@ -287,6 +315,9 @@ def build_bounded_sft_agent_options(
     elif policy_version == "v15":
         agent_version_id = OPENHANDS_RECOVERY_CONTINUATION_V15_AGENT_VERSION_ID
         tool_choice_policy = "validated_responses_recovery_state_required_tool_v15"
+    elif policy_version == "v16":
+        agent_version_id = OPENHANDS_PROVIDER_PATH_CONTRACT_V16_AGENT_VERSION_ID
+        tool_choice_policy = "validated_responses_recovery_state_required_tool_v16"
     else:
         raise ValueError("bounded SFT agent policy version is unsupported")
 
@@ -826,6 +857,8 @@ __all__ = [
     "OPENHANDS_PATH_DISCIPLINE_V14_PROFILE_HASH",
     "OPENHANDS_RECOVERY_CONTINUATION_V15_AGENT_VERSION_ID",
     "OPENHANDS_RECOVERY_CONTINUATION_V15_PROFILE_HASH",
+    "OPENHANDS_PROVIDER_PATH_CONTRACT_V16_AGENT_VERSION_ID",
+    "OPENHANDS_PROVIDER_PATH_CONTRACT_V16_PROFILE_HASH",
     "BoundedSftDataGate",
     "build_bounded_sft_agent_options",
     "build_bounded_sft_agent_version",

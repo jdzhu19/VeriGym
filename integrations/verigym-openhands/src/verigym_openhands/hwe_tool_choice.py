@@ -58,6 +58,19 @@ class ProviderCallBudgetExceeded(RuntimeError):
 class ProviderToolArgumentsPolicyError(RuntimeError):
     """A metadata-free provider response crossed the HWE argument boundary."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool_name: str,
+        argument_field: str,
+        violation_kind: str,
+    ) -> None:
+        super().__init__(message)
+        self.tool_name = tool_name
+        self.argument_field = argument_field
+        self.violation_kind = violation_kind
+
 
 _RAW_HOST_PATH = re.compile(
     r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\",
@@ -828,19 +841,34 @@ class MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
     def _validate_provider_response(response: LLMResponse) -> None:
         for call in response.message.tool_calls or []:
             arguments = call.arguments
-            if _RAW_HOST_PATH.search(arguments):
-                raise ProviderToolArgumentsPolicyError(
-                    "OpenHands HWE provider tool arguments contain a raw host path"
-                )
             try:
                 parsed = json.loads(arguments)
             except json.JSONDecodeError:
+                if _RAW_HOST_PATH.search(arguments):
+                    raise ProviderToolArgumentsPolicyError(
+                        "OpenHands HWE provider tool arguments contain a raw host path",
+                        tool_name=call.name,
+                        argument_field="unparsed",
+                        violation_kind="raw_host_path",
+                    ) from None
                 continue
             if not isinstance(parsed, dict):
                 continue
+            for field, value in parsed.items():
+                encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                if _RAW_HOST_PATH.search(encoded):
+                    raise ProviderToolArgumentsPolicyError(
+                        "OpenHands HWE provider tool arguments contain a raw host path",
+                        tool_name=call.name,
+                        argument_field=field,
+                        violation_kind="raw_host_path",
+                    )
             if "security_risk" in parsed or (call.name != "finish" and "summary" in parsed):
                 raise ProviderToolArgumentsPolicyError(
-                    "OpenHands HWE provider emitted forbidden SDK tool metadata"
+                    "OpenHands HWE provider emitted forbidden SDK tool metadata",
+                    tool_name=call.name,
+                    argument_field=("security_risk" if "security_risk" in parsed else "summary"),
+                    violation_kind="forbidden_sdk_metadata",
                 )
 
     def completion(

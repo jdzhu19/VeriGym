@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
@@ -124,12 +125,28 @@ def test_workspace_constraints_bind_exact_six_tools_without_mutating_input() -> 
     by_name = {item["function"]["name"]: item["function"] for item in constrained}
     for name, function in by_name.items():
         assert function["parameters"]["additionalProperties"] is False, name
-    relative_pattern = r"^(?!/)(?![A-Za-z]:[\\/]).*$"
+    no_host_pattern = (
+        r"^(?![\s\S]*(?:^|[^A-Za-z0-9._-])/(?:home|data|hpc)"
+        r"(?:/|$|[^A-Za-z0-9._-]))(?![\s\S]*[A-Za-z]:\\)[\s\S]*$"
+    )
+    relative_pattern = (
+        r"^(?!/)(?![A-Za-z]:[\\/])"
+        r"(?![\s\S]*(?:^|[^A-Za-z0-9._-])/(?:home|data|hpc)"
+        r"(?:/|$|[^A-Za-z0-9._-]))(?![\s\S]*[A-Za-z]:\\)[\s\S]*$"
+    )
     assert by_name["list_files"]["parameters"]["properties"]["path"]["pattern"] == (
         relative_pattern
     )
     assert by_name["read_file"]["parameters"]["properties"]["path"]["pattern"] == (relative_pattern)
     assert by_name["shell"]["parameters"]["properties"]["cwd"]["pattern"] == relative_pattern
+    assert by_name["shell"]["parameters"]["properties"]["command"]["pattern"] == (no_host_pattern)
+    assert by_name["apply_patch"]["parameters"]["properties"]["patch"]["pattern"] == (
+        no_host_pattern
+    )
+    assert by_name["finish"]["parameters"]["properties"]["summary"]["pattern"] == (no_host_pattern)
+    assert re.fullmatch(no_host_pattern, "inspect repository/core/decoder.sv")
+    assert not re.fullmatch(no_host_pattern, "inspect /data/private/decoder.sv")
+    assert not re.fullmatch(no_host_pattern, "line one\n/home/user/decoder.sv")
     assert (
         "workspace-relative"
         in (by_name["shell"]["parameters"]["properties"]["command"]["description"])
@@ -213,15 +230,37 @@ def test_workspace_relative_llm_rebinds_both_provider_routes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "arguments", "message"),
+    ("name", "arguments", "message", "field", "kind"),
     [
-        ("shell", '{"command":"pwd","summary":"inspect /data/private"}', "raw host path"),
-        ("shell", '{"command":"pwd","summary":"inspect files"}', "forbidden SDK"),
-        ("read_file", '{"path":"rtl/top.sv","security_risk":"LOW"}', "forbidden SDK"),
+        (
+            "shell",
+            '{"command":"pwd","summary":"inspect /data/private"}',
+            "raw host path",
+            "summary",
+            "raw_host_path",
+        ),
+        (
+            "shell",
+            '{"command":"pwd","summary":"inspect files"}',
+            "forbidden SDK",
+            "summary",
+            "forbidden_sdk_metadata",
+        ),
+        (
+            "read_file",
+            '{"path":"rtl/top.sv","security_risk":"LOW"}',
+            "forbidden SDK",
+            "security_risk",
+            "forbidden_sdk_metadata",
+        ),
     ],
 )
 def test_metadata_free_llm_rejects_sdk_metadata_before_agent_execution(
-    name: str, arguments: str, message: str
+    name: str,
+    arguments: str,
+    message: str,
+    field: str,
+    kind: str,
 ) -> None:
     llm = _metadata_free_llm()
     response = SimpleNamespace(
@@ -234,9 +273,12 @@ def test_metadata_free_llm_rejects_sdk_metadata_before_agent_execution(
             autospec=True,
             return_value=response,
         ),
-        pytest.raises(ProviderToolArgumentsPolicyError, match=message),
+        pytest.raises(ProviderToolArgumentsPolicyError, match=message) as caught,
     ):
         llm.completion(messages=[], tools=[])
+    assert caught.value.tool_name == name
+    assert caught.value.argument_field == field
+    assert caught.value.violation_kind == kind
 
 
 def test_metadata_free_llm_keeps_semantic_finish_summary() -> None:

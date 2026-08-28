@@ -6,7 +6,15 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
-_WORKSPACE_RELATIVE_PATH_PATTERN = r"^(?!/)(?![A-Za-z]:[\\/]).*$"
+_NO_RAW_HOST_PATH_PATTERN = (
+    r"^(?![\s\S]*(?:^|[^A-Za-z0-9._-])/(?:home|data|hpc)"
+    r"(?:/|$|[^A-Za-z0-9._-]))(?![\s\S]*[A-Za-z]:\\)[\s\S]*$"
+)
+_WORKSPACE_RELATIVE_PATH_PATTERN = (
+    r"^(?!/)(?![A-Za-z]:[\\/])"
+    r"(?![\s\S]*(?:^|[^A-Za-z0-9._-])/(?:home|data|hpc)"
+    r"(?:/|$|[^A-Za-z0-9._-]))(?![\s\S]*[A-Za-z]:\\)[\s\S]*$"
+)
 _EXPECTED_TOOL_FIELDS = {
     "apply_patch": {"patch"},
     "finish": {"summary"},
@@ -128,6 +136,8 @@ def with_workspace_relative_hwe_constraints(
             guidance = _FIELD_GUIDANCE.get((name, field))
             if guidance is not None:
                 schema["description"] = guidance
+            if schema.get("type") == "string":
+                schema["pattern"] = _NO_RAW_HOST_PATH_PATTERN
             if field in {"path", "cwd"}:
                 schema["pattern"] = _WORKSPACE_RELATIVE_PATH_PATTERN
         observed.add(name)
