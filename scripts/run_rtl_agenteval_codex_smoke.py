@@ -353,6 +353,7 @@ def _docker_config(image: str, image_id: str) -> DockerRuntimeConfig:
 
 
 def _codex_preflight(binary: str, site_work: Path) -> tuple[Path, Any, Any]:
+    _configure_campaign_temp_root(site_work)
     os.environ["VERIGYM_CODEX_BINARY"] = binary
     os.environ.setdefault("VERIGYM_CODEX_AUTH_MODE", "chatgpt_cli_session")
     executable, capability = discover_capabilities(force=True)
@@ -370,11 +371,21 @@ def _codex_preflight(binary: str, site_work: Path) -> tuple[Path, Any, Any]:
         or auth_preflight.login_processes != 0
     ):
         raise ConfigurationError("the selected existing Codex authentication is unavailable")
-    site_work.mkdir(parents=True)
     path = site_work / "codex-capabilities.json"
     atomic_dump_json(path, capability.safe_dict())
     atomic_dump_json(site_work / "codex-auth-preflight.json", auth_preflight.safe_dict())
     return path, capability, auth
+
+
+def _configure_campaign_temp_root(site_work: Path) -> Path:
+    """Keep campaign control-plane scratch off the host's shared /tmp filesystem."""
+
+    site_work.mkdir(mode=0o700, parents=True)
+    temp_root = site_work / "tmp"
+    temp_root.mkdir(mode=0o700)
+    os.environ["TMPDIR"] = str(temp_root)
+    tempfile.tempdir = str(temp_root)
+    return temp_root
 
 
 def _broker_root(root: Path) -> Path:

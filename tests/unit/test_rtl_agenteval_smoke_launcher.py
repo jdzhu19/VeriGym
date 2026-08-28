@@ -108,6 +108,23 @@ def test_smoke_runtime_binds_the_frozen_public_test_utility_image() -> None:
     assert agent.pull_policy == "never"
 
 
+def test_campaign_temp_root_is_bound_to_site_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = _launcher_module()
+    site_work = tmp_path / "site-work"
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "prior-tmp"))
+    monkeypatch.setattr(launcher.tempfile, "tempdir", None)
+
+    temp_root = launcher._configure_campaign_temp_root(site_work)  # noqa: SLF001
+
+    assert temp_root == site_work / "tmp"
+    assert temp_root.is_dir()
+    assert launcher.os.environ["TMPDIR"] == str(temp_root)
+    assert launcher.tempfile.tempdir == str(temp_root)
+
+
 def test_no_model_qualification_exercises_agent_session_compile(tmp_path: Path) -> None:
     launcher = _launcher_module()
     public = tmp_path / "public"
