@@ -95,6 +95,11 @@ def test_container_tmp_tool_argument_is_not_misclassified_as_a_host_path() -> No
     )
 
 
+@pytest.mark.parametrize("value", ['{"path":"docs/data/example.txt"}', "cd ./data && ls"])
+def test_workspace_relative_data_segments_are_not_host_paths(value: str) -> None:
+    _validate_public_text(value, allow_host_paths=False)
+
+
 @pytest.mark.parametrize(
     "value",
     [

@@ -17,6 +17,7 @@ from verigym.protocols.repository_action import (
 )
 from verigym.schemas.multiturn_sft import (
     MultiTurnSftMessage,
+    SftFunctionCall,
     VerifiedMultiTurnSftExample,
     seal_multi_turn_example,
     seal_multi_turn_example_v2,
@@ -255,6 +256,12 @@ def test_multiturn_example_rejects_duplicate_ids_host_paths_and_over_16k() -> No
     host_path_argument["messages"] = messages
     with pytest.raises(ValidationError, match="forbidden"):
         seal_multi_turn_example(host_path_argument)
+
+    relative_data_path = SftFunctionCall(
+        name="read_file",
+        arguments='{"path":"docs/data/example.txt"}',
+    )
+    assert relative_data_path.arguments == '{"path":"docs/data/example.txt"}'
 
     duplicate = _example_payload()
     messages = [message.model_dump(mode="json", exclude_none=True) for message in _messages()]

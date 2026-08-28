@@ -121,6 +121,13 @@ def test_broker_rejects_raw_host_paths_before_any_side_effect(tmp_path: Path) ->
                 "arguments": {"command": "ls /hpc"},
             }
         )
+        relative_data = broker._dispatch(  # noqa: SLF001
+            {
+                "id": "call-relative-data",
+                "name": "read_file",
+                "arguments": {"path": "docs/data/example.txt"},
+            }
+        )
         ephemeral = broker._dispatch(  # noqa: SLF001
             {
                 "id": "call-3",
@@ -135,8 +142,9 @@ def test_broker_rejects_raw_host_paths_before_any_side_effect(tmp_path: Path) ->
         }
         assert shell == read
         assert bare_root == read
+        assert relative_data["ok"] is True
         assert ephemeral["ok"] is True
-        assert [name for name, _request in bridge.calls] == ["shell"]
+        assert [name for name, _request in bridge.calls] == ["file.read", "shell"]
         assert broker.stats().rejection_codes == (
             "raw_host_path",
             "raw_host_path",

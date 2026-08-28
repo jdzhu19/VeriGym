@@ -80,7 +80,8 @@ _FORBIDDEN_KEY = re.compile(
     re.IGNORECASE,
 )
 _FORBIDDEN_VALUE = re.compile(
-    r"(?:/(?:data|etc|home|proc|root|run|sys|tmp|var)/|\\\\Users\\\\|"
+    r"(?:(?<![A-Za-z0-9._-])/(?:data|etc|home|proc|root|run|sys|tmp|var)"
+    r"(?:/|(?![A-Za-z0-9._-]))|\\\\Users\\\\|"
     r"BEGIN [A-Z ]*PRIVATE KEY|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}|"
     r"https?://[^/\s:@]+:[^/\s@]+@)",
     re.IGNORECASE,

@@ -62,7 +62,10 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # ``/tmp`` is the frozen HWE v2 container-only ephemeral write scope, not a
 # host path.  The agent container has no host mounts, so retaining it in exact
 # model-visible tool arguments does not weaken the host-path boundary.
-_HOST_PATH = re.compile(r"/(?:home|data|hpc)/|[A-Za-z]:\\", re.IGNORECASE)
+_HOST_PATH = re.compile(
+    r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\",
+    re.IGNORECASE,
+)
 _SENSITIVE = re.compile(
     r"(?:\b(?:authorization|password|api[_ -]?key|access[_ -]?token)\s*[:=]|"
     r"\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|\b(?:sk|ds)-[A-Za-z0-9_-]{12,}|"

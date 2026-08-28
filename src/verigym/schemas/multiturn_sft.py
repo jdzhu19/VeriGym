@@ -19,7 +19,10 @@ from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _PORTABLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+@/\[\]-]{0,255}$")
 _CALL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_RAW_HOST_PATH = re.compile(r"/(?:home|data|tmp|hpc)/|[A-Za-z]:\\", re.IGNORECASE)
+_RAW_HOST_PATH = re.compile(
+    r"(?<![A-Za-z0-9._-])/(?:home|data|tmp|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\",
+    re.IGNORECASE,
+)
 _FORBIDDEN_SENSITIVE_CONTENT = re.compile(
     r"(?:"
     r"\b(?:authorization|password|api[_ -]?key|access[_ -]?token)\s*[:=]|"

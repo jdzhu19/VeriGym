@@ -584,7 +584,10 @@ def test_memory_synthesis_rejects_empty_or_sensitive_summary_before_authorizatio
 
 def test_trajectory_content_policy_rejects_private_fields_secrets_and_host_paths() -> None:
     trajectory_exporter._safe_json(  # noqa: SLF001 - direct fail-closed policy fixture
-        {"logical_workspace": "/workspace", "message": "Inspect repository/rtl safely."}
+        {
+            "logical_workspace": "/workspace",
+            "message": "Inspect repository/docs/data/example safely.",
+        }
     )
     for payload in (
         {"chain_of_thought": "must not be exported"},
