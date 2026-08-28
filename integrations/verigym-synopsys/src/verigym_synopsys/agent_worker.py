@@ -278,6 +278,8 @@ def _validate_launch_identity(request: AgentWorkerLaunchRequest) -> McpSynthesis
         raise ValueError("worker source bundle hash mismatch")
     if synthesis.run_label != "agent_feedback" or synthesis.artifact_content_policy != "none":
         raise ValueError("worker accepts only no-artifact agent feedback requests")
+    if synthesis.expected_release_hash != request.expected_release_hash:
+        raise ValueError("worker synthesis release identity differs from the launch request")
     return synthesis
 
 
@@ -301,8 +303,9 @@ def inner_main(argv: Sequence[str] | None = None) -> int:
     ):
         raise ValueError("worker release identity changed after dispatch")
     synthesis = _validate_launch_identity(request)
+    local_synthesis = synthesis.model_copy(update={"expected_release_hash": None})
     service = DesignCompilerMcpService(args.profile, args.work_root)
-    response = service._synthesize_local(synthesis)
+    response = service._synthesize_local(local_synthesis)
     if response.get("protocol") != SERVICE_PROTOCOL or response.get("artifacts") != []:
         raise ValueError("inner worker produced a non-sanitized response")
     _write_response(response)

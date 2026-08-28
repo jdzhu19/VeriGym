@@ -25,7 +25,11 @@ from verigym.schemas.common import (
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.task import Candidate
 
-from verigym_synopsys.agent_worker import _launcher_contract, _run_lsf
+from verigym_synopsys.agent_worker import (
+    _launcher_contract,
+    _run_lsf,
+    _validate_launch_identity,
+)
 from verigym_synopsys.agent_worker_protocol import (
     AgentWorkerDescribeResponse,
     AgentWorkerEnvelope,
@@ -812,6 +816,9 @@ def test_lsf_launcher_runs_one_job_and_cleans_the_disposable_workspace(tmp_path:
         run_label="agent_feedback",
         artifact_content_policy="none",
     )
+    synthesis = synthesis.model_copy(
+        update={"expected_release_hash": description.release.release_hash}
+    )
     source_bundle = [{"path": item.path, "sha256": item.sha256} for item in synthesis.sources]
     launch = AgentWorkerLaunchRequest(
         contract_hash="c" * 64,
@@ -863,6 +870,7 @@ def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
         cores=1,
     )
     contract = _launcher_contract(args)
+    assert contract.release_hash is not None
     synthesis = McpSynthesisRequest(
         profile_id=profile.id,
         declared_profile_hash=content_hash(profile),
@@ -878,6 +886,7 @@ def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
         run_label="agent_feedback",
         artifact_content_policy="none",
     )
+    synthesis = synthesis.model_copy(update={"expected_release_hash": contract.release_hash})
     source_bundle = [{"path": item.path, "sha256": item.sha256} for item in synthesis.sources]
     launch = AgentWorkerLaunchRequest(
         contract_hash="c" * 64,
@@ -901,6 +910,39 @@ def test_lsf_launcher_timeout_returns_only_a_clean_failure_receipt(
     assert envelope.receipt.cleanup_complete is True
     assert envelope.receipt.release_hash == contract.release_hash
     assert list(work_root.iterdir()) == []
+
+
+def test_worker_launch_rejects_a_release_identity_missing_from_synthesis(tmp_path: Path) -> None:
+    profile_path, rtl = _site_profile(tmp_path)
+    profile = ToolchainProfileRegistry().load_file(profile_path)
+    synthesis = McpSynthesisRequest(
+        profile_id=profile.id,
+        declared_profile_hash=content_hash(profile),
+        reference_candidate_hash="b" * 64,
+        top="counter",
+        sources=[
+            McpSource(
+                path="rtl/counter.v",
+                sha256=hashlib.sha256(rtl).hexdigest(),
+                content_base64=base64.b64encode(rtl).decode("ascii"),
+            )
+        ],
+        run_label="agent_feedback",
+        artifact_content_policy="none",
+    )
+    source_bundle = [{"path": item.path, "sha256": item.sha256} for item in synthesis.sources]
+    launch = AgentWorkerLaunchRequest(
+        contract_hash="c" * 64,
+        code_identity_hash="d" * 64,
+        isolation_profile_hash="e" * 64,
+        request_hash=content_hash(synthesis.model_dump(mode="json")),
+        source_bundle_hash=content_hash({"top": synthesis.top, "sources": source_bundle}),
+        synthesis=synthesis.model_dump(mode="json"),
+        expected_release_hash="f" * 64,
+    )
+
+    with pytest.raises(ValueError, match="release identity differs"):
+        _validate_launch_identity(launch)
 
 
 def test_mcp_client_profile_can_bind_an_off_host_wrapper_hash(tmp_path: Path) -> None:
