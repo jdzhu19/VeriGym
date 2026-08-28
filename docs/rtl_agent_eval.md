@@ -167,6 +167,15 @@ reduced to a fixed generic subtype. The launcher also executes real open and com
 candidate-feedback synthesis during its no-model qualification, so a disposable-worker failure
 stops before any Codex process is authorized.
 
+Smoke-v7 preflight exposed and fixed two no-model integration defects: qualification candidates
+were staged under an extra repository directory, and the already-validated outer release binding
+was incorrectly forwarded to the inner local synthesis service. The rebuilt release passes the
+complete disposable-worker lifecycle and commercial synthesis qualification. The full plan-only
+preflight is nevertheless incomplete because the host root filesystem is full and the container
+runtime cannot create its control-plane shim directory. No smoke-v7 experiment directory or Codex
+process was created, and the model-call count remains zero. Smoke-v7 therefore does not yet
+authorize a formal four-run smoke, a pilot, or a benchmark score.
+
 ## Design choices informed by POSTEDA-Bench
 
 [POSTEDA-Bench](https://github.com/pengjas/posteda-bench) and its
