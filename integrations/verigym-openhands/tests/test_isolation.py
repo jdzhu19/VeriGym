@@ -264,6 +264,18 @@ def test_openhands_hwe_tool_choice_defaults_to_historical_auto(monkeypatch) -> N
         == "validated_responses_recovery_state_required_tool_v14"
     )
 
+    continued_recovery = module.resolve_hwe_settings(
+        {
+            "model_id": "local/Qwen3.5-9B",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v15",
+        },
+        task_wall_time_s=100,
+    )
+    assert (
+        continued_recovery.tool_choice_policy
+        == "validated_responses_recovery_state_required_tool_v15"
+    )
+
     with pytest.raises(ValueError, match="unsupported"):
         module.resolve_hwe_settings(
             {
@@ -284,6 +296,41 @@ def test_v14_path_prompt_is_distinct_without_changing_the_historical_prompt() ->
     assert constrained.startswith(historical)
     assert "Every path and cwd argument" not in historical
     assert "Every path and cwd argument" in constrained
+
+
+@pytest.mark.parametrize(
+    ("policy", "recovery_count", "forced", "finish", "tool", "expected"),
+    [
+        ("validated_responses_recovery_state_required_tool_v12", 1, 0, 0, 0, True),
+        ("validated_responses_recovery_state_required_tool_v14", 1, 1, 0, 1, False),
+        ("validated_responses_recovery_state_required_tool_v15", 1, 1, 0, 1, True),
+        ("validated_responses_recovery_state_required_tool_v15", 1, 1, 1, 0, False),
+        ("validated_responses_recovery_state_required_tool_v15", 0, 0, 0, 0, False),
+    ],
+)
+def test_sdk_stop_continuation_requires_the_exact_frozen_state(
+    policy: str,
+    recovery_count: int,
+    forced: int,
+    finish: int,
+    tool: int,
+    expected: bool,
+) -> None:
+    from verigym_openhands.hwe_agent import _requires_sdk_stop_continuation
+
+    assert (
+        _requires_sdk_stop_continuation(
+            tool_choice_policy=policy,
+            recovery_count=recovery_count,
+            choice_counts={
+                "recovery_forced_request_count": forced,
+                "recovery_validated_finish_count": finish,
+                "recovery_validated_tool_count": tool,
+                "recovery_coalesced_output_count": 0,
+            },
+        )
+        is expected
+    )
 
 
 def test_openhands_hwe_mcp_pythonpath_is_explicit_and_bounded(monkeypatch, tmp_path: Path) -> None:

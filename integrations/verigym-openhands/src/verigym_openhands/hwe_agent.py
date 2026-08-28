@@ -133,9 +133,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             or policy.memory_pack_hash is not None
         ):
             raise ValueError("OpenHands HWE version differs from its prompt binding")
-        workspace_relative = (
-            settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v14"
-        )
+        workspace_relative = settings.tool_choice_policy in {
+            "validated_responses_recovery_state_required_tool_v14",
+            "validated_responses_recovery_state_required_tool_v15",
+        }
         system_prompt = _system_prompt(workspace_relative=workspace_relative)
         task_prompt = validate_prompt_text(
             _task_prompt(context, bridge, workspace_relative=workspace_relative),
@@ -290,12 +291,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v12",
                     "validated_responses_recovery_state_required_tool_v13",
                     "validated_responses_recovery_state_required_tool_v14",
+                    "validated_responses_recovery_state_required_tool_v15",
                 }:
                     from .hwe_tool_choice import RecoveryToolChoiceViolation
 
                     if settings.tool_choice_policy in {
                         "validated_responses_recovery_state_required_tool_v13",
                         "validated_responses_recovery_state_required_tool_v14",
+                        "validated_responses_recovery_state_required_tool_v15",
                     }:
                         from .hwe_tool_choice import (
                             MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM,
@@ -303,7 +306,10 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         )
 
                         llm_type = MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM
-                        if settings.tool_choice_policy.endswith("_v14"):
+                        if settings.tool_choice_policy in {
+                            "validated_responses_recovery_state_required_tool_v14",
+                            "validated_responses_recovery_state_required_tool_v15",
+                        }:
                             from .hwe_tool_choice import WorkspaceRelativeRequiredToolLLM
 
                             llm_type = WorkspaceRelativeRequiredToolLLM
@@ -326,6 +332,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     "validated_responses_recovery_state_required_tool_v12",
                     "validated_responses_recovery_state_required_tool_v13",
                     "validated_responses_recovery_state_required_tool_v14",
+                    "validated_responses_recovery_state_required_tool_v15",
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 llm = llm_type(
@@ -456,10 +463,11 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     initial_choice_counts = _recovery_choice_counts(llm)
                     initial_stats = broker.stats()
                     if (
-                        settings.tool_choice_policy
-                        == "validated_responses_recovery_state_required_tool_v12"
-                        and initial_recovery_count == 1
-                        and initial_choice_counts["recovery_forced_request_count"] == 0
+                        _requires_sdk_stop_continuation(
+                            tool_choice_policy=settings.tool_choice_policy,
+                            recovery_count=initial_recovery_count,
+                            choice_counts=initial_choice_counts,
+                        )
                         and not provider_budget_failure
                         and not recovery_protocol_failure
                         and not initial_stats.finished
@@ -552,11 +560,15 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                     in {
                                         "validated_responses_recovery_state_required_tool_v13",
                                         "validated_responses_recovery_state_required_tool_v14",
+                                        "validated_responses_recovery_state_required_tool_v15",
                                     }
                                 ),
                                 workspace_relative_constraints=(
                                     settings.tool_choice_policy
-                                    == "validated_responses_recovery_state_required_tool_v14"
+                                    in {
+                                        "validated_responses_recovery_state_required_tool_v14",
+                                        "validated_responses_recovery_state_required_tool_v15",
+                                    }
                                 ),
                             )
                     except Exception as exc:
@@ -1025,6 +1037,7 @@ def _identity(
         "validated_responses_recovery_state_required_tool_v12": "v12",
         "validated_responses_recovery_state_required_tool_v13": "v13",
         "validated_responses_recovery_state_required_tool_v14": "v14",
+        "validated_responses_recovery_state_required_tool_v15": "v15",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -1067,6 +1080,8 @@ def _identity(
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v13"
             else "repository_action_state_machine_workspace_relative_sdk_continuation_v14"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v14"
+            else "repository_action_state_machine_nonterminal_recovery_continuation_v15"
+            if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v15"
             else "repository_action_state_machine_validated_responses_sdk_continuation_v12"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v12"
             else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
@@ -1189,6 +1204,26 @@ def _recovery_choice_counts(llm: Any) -> dict[str, int]:
             )
         result[name] = value
     return result
+
+
+def _requires_sdk_stop_continuation(
+    *,
+    tool_choice_policy: str,
+    recovery_count: int,
+    choice_counts: dict[str, int],
+) -> bool:
+    """Continue only the frozen SDK stop states that cannot finish in one run."""
+
+    if recovery_count != 1:
+        return False
+    forced = choice_counts.get("recovery_forced_request_count")
+    validated_finish = choice_counts.get("recovery_validated_finish_count")
+    validated_tool = choice_counts.get("recovery_validated_tool_count")
+    if tool_choice_policy == "validated_responses_recovery_state_required_tool_v12":
+        return forced == 0
+    if tool_choice_policy == "validated_responses_recovery_state_required_tool_v15":
+        return forced == 1 and validated_finish == 0 and validated_tool == 1
+    return False
 
 
 def _provider_accounting_receipt(
