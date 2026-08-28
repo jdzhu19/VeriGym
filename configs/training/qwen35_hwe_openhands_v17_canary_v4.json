@@ -1,0 +1,179 @@
+{
+  "benchmark_score_claimed": false,
+  "contract_hash": "18ba9369eb59b96b468f42e2338600d0c029ad3c9f0a64763125af9b4360fb83",
+  "formal_collection_capacity": {
+    "heldout_tasks_eligible": false,
+    "prior_task_ids_excluded": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2032"
+    ],
+    "role_overlay": {
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3168": {
+        "derived_role": "validation",
+        "purpose": "development_validation_capacity_reserve",
+        "source_role": "training"
+      }
+    },
+    "stop_at_target": true,
+    "task_retries": 0,
+    "training_attempt_order": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2282",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2468",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2469",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2916"
+    ],
+    "training_target_distinct_tasks": 8,
+    "validation_attempt_order": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3168"
+    ],
+    "validation_target_distinct_tasks": 2
+  },
+  "format_id": "verigym_openhands_hwe_v17_collection_canary_v4",
+  "gate": {
+    "allowed_combined_recovery_paths": [
+      "direct",
+      "validated_required_tool_continuation",
+      "validated_path_policy_recovery",
+      "validated_format_and_path_policy_recovery",
+      "validated_format_continuation_and_path_policy_recovery"
+    ],
+    "allowed_path_policy_recovery_counter_states": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        1
+      ]
+    ],
+    "allowed_recovery_counter_states": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        1
+      ]
+    ],
+    "bounded_iteration_limit_exact_shape": {
+      "accepted_tool_calls": 200,
+      "broker_decision_steps": 201,
+      "conversation_error_events": 1,
+      "policy_failure": "decision_steps_hard_limit",
+      "provider_calls": 200,
+      "rejected_calls": 1,
+      "rejection_code": "episode_limit",
+      "trajectory_exported": false
+    },
+    "bounded_iteration_limit_is_model_nonfinish": true,
+    "downstream_capacity_required_for_formal_collection": true,
+    "format_recovery_requires_sdk_continuation_unless_path_feedback_resumed": true,
+    "infrastructure_or_security_failure_policy": "stop_immediately",
+    "path_policy_recovery_budget": 1,
+    "path_policy_recovery_message_sha256": "89fe0ecf6232ccb6335ba6ee8bf0559c4aa2d03b060c4fa500ff13293d4e95ef",
+    "path_policy_recovery_policy_id": "openhands_provider_path_policy_recovery_v1",
+    "path_policy_recovery_requires_one_canonical_tool": true,
+    "path_policy_recovery_requires_same_session": true,
+    "pr2944_requires_fresh_exact_trajectory": true,
+    "pr2944_requires_verifier_pass": true,
+    "pr3191_required_for_formal_collection": false,
+    "raw_rejected_provider_arguments_persisted": false,
+    "secondary_pass_minimum": 1,
+    "truncation_allowed": false
+  },
+  "heldout_task_ids_loaded": [],
+  "production_training_ready": false,
+  "schedule": [
+    {
+      "episode_id": "training-pr2944-s486",
+      "role": "training",
+      "sample_index": 2,
+      "seed": 486,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944"
+    },
+    {
+      "episode_id": "training-pr2248-s486",
+      "role": "training",
+      "sample_index": 2,
+      "seed": 486,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248"
+    },
+    {
+      "episode_id": "validation-pr3191-s486",
+      "role": "validation",
+      "sample_index": 2,
+      "seed": 486,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191"
+    }
+  ],
+  "schema_version": "1.0",
+  "scope": "three_task_precollection_canary",
+  "source": {
+    "baseline_commit": "0ad17bd8259141e63efdfd7914407ed821993b60",
+    "derived_task_split_id": "cva6-multiturn-sft-2026-08-v2-path-recovery-capacity",
+    "derived_task_split_manifest_hash": "a4678fdf8ca8f13ab1e722b0738a66736ba3c074962c8982b1ad0744affef618",
+    "qualification_progress_file_sha256": "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3",
+    "qualification_status": "completed",
+    "repository": "jdzhu19/VeriGym",
+    "source_task_split_manifest_hash": "68c76482f81ac4bbbb64a54d0886fda4b1a0b7c38e489916b919f768ec3146e6",
+    "task_split_file_sha256": "844bf3f65d648f1e8542b80e55d16d6612b614df5283b350123b33c79b2c13bc"
+  },
+  "task_bindings": {
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248": {
+      "agent_image": "sha256:d857a665e0f162bae2a4739070b615eea1c9449cdba4d868cbb8f60ab8682d88",
+      "image_lock_hash": "f6f6039a460ccfa6d8e8a3d8ad1ec17e3bfd7eb2fe236002fc84659fa716178e",
+      "role": "training",
+      "source_hash": "8c416582b8d0b7e33ff00d343c7e35ea7a20b9a82a86dc0964f0ffa184e40296",
+      "task_hash": "164f4bf0ce995f99910369894329e7ff068d4c2a4de431e477a288a8785fee36",
+      "verifier_image": "sha256:f7c2d797a9786815d65d328f05fcd4565c922f4a53da53fa121475b3c44df91b"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944": {
+      "agent_image": "sha256:d20ffcf6ba42570d225ec9fe0757f501f654c222250c83e3fd83ab70918834e3",
+      "image_lock_hash": "99cb8d40807c62fdfb0c48f9b1e98bdbfc2a55e73223367c3f81337eea39de0c",
+      "role": "training",
+      "source_hash": "86228bcc27147400105b29069ee34a2b428cf897be700d77e3ed019760dd1e4f",
+      "task_hash": "ec7f79b3bb830aa0390b3be14635808455cef1c5786f93a676d2d0c5b9ae5277",
+      "verifier_image": "sha256:91a135852c3ab371c24e2f49fad382568ffb830167d3c26006c26f88fe190b6a"
+    },
+    "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3191": {
+      "agent_image": "sha256:8147c9ed502eb9c0c3806262b17eba1a599b9b73dc7a9ea964af7c95acf18b3c",
+      "image_lock_hash": "ccc44dda92dfe3c3ab32107365f331d9e667b0fc4fdb9e03e00ceab531816299",
+      "role": "validation",
+      "source_hash": "c8533c84cb6aaa6641e42127971b5524c17a579cd1a614aee47074c2d389c3b8",
+      "task_hash": "ac576e92711851e49a69039c5270f52f23cfad559bc48f431070e2a7e0d58159",
+      "verifier_image": "sha256:d00d4fa72c0c63cd200391ee8f012fa3190f347e6681ab0b53af53b91e5f8f98"
+    }
+  },
+  "teacher": {
+    "bounded_iteration_termination_policy_id": "openhands_sdk_broker_bounded_iteration_exhaustion_v1",
+    "capture_training_transcript": true,
+    "litellm_version": "1.93.0",
+    "max_context_tokens": 65536,
+    "max_iterations": 200,
+    "max_output_tokens": 2048,
+    "model_identity": "deepseek-v4-flash",
+    "model_transport_id": "openai/deepseek-v4-flash",
+    "openhands_sdk_version": "1.42.1",
+    "provider_request_retries": 0,
+    "provider_tool_schema_policy": "canonical_hwe_without_sdk_metadata_workspace_relative_path_recovery_v4",
+    "reasoning": "thinking-disabled",
+    "sandbox_network": "none",
+    "scaffold": "openhands-sdk-1.42.1-verigym-broker-v2-v18-bounded-limit-v1",
+    "temperature": 0,
+    "tiktoken_version": "0.7.0",
+    "tool_choice_policy": "validated_responses_recovery_state_required_tool_v18",
+    "tool_contract": "hwe_native_shell_v2",
+    "tool_schema_count": 6,
+    "top_p": 1,
+    "whole_episode_retries": 0
+  }
+}
