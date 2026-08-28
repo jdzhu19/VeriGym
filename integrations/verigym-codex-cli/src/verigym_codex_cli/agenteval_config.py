@@ -49,9 +49,22 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
         "terminal_path_violations": True,
         "malformed_patch_recoverable": True,
         "bounded_terminal_failure_subcategory": True,
+        "commercial_feedback_failure_subcategories": [
+            "agent_feedback_dispatch_internal",
+            "agent_feedback_infrastructure",
+            "agent_worker_configuration",
+            "agent_worker_execution",
+            "agent_worker_identity",
+            "agent_worker_infrastructure",
+            "agent_worker_response",
+            "agent_worker_scheduler",
+            "agent_worker_start",
+            "agent_worker_timeout",
+            "mcp_service_rejected",
+        ],
     }
 )
-AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v3"
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v4"
 AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
     {
         "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
@@ -64,9 +77,10 @@ AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
         "prompt_hash": AGENTEVAL_PROMPT_HASH,
         "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v2",
-        "event_processing": "tolerant_parse_before_failure_precedence_v3",
-        "returned_process_identity": "exactly_one_requested_or_observed_v3",
-        "broker_error_contract": "recoverable_patch_and_bounded_terminal_subtype_v1",
+        "event_processing": "tolerant_parse_before_failure_precedence_v4",
+        "returned_process_identity": "exactly_one_requested_or_observed_v4",
+        "broker_error_contract": "recoverable_patch_and_bounded_terminal_subtype_v2",
+        "commercial_feedback_error_contract": "allowlisted_worker_subcategory_v1",
         "empty_file_observation": "bounded_zero_line_view_v1",
         "max_tool_calls": 40,
         "max_patch_calls": 20,
@@ -164,7 +178,7 @@ def agenteval_settings(
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
     if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v3")
+        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v4")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",

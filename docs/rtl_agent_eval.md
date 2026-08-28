@@ -152,6 +152,21 @@ allowlisted terminal broker subtypes, and finalizes formal replay/leakage eviden
 materialized run is infrastructure-invalid. Earlier infrastructure failure still stops before
 another model authorization.
 
+Smoke-v5 then showed that the first three public compile calls were rejected before their
+utility containers started because the launcher had not bound the external public-test image.
+Smoke-v6 bound that exact image and qualified the compile bridge without a model. Its open RTLLM
+run completed typed `finish` with valid PPA feedback, while the commercial RTLLM run stopped the
+campaign after a dispatched disposable worker failure; ordinary candidate and reference DC/MCP
+verification still passed. Smoke-v6 therefore remains a failed qualification and does not
+authorize a pilot.
+
+The next successor freezes Agent `codex-cli-agenteval-gpt54-xhigh-v4` and campaign smoke-v7.
+Commercial worker failures now retain only an allowlisted `scheduler`, `worker`, or `response`
+subcategory across the server, client, feedback controller, and broker. Unknown remote text is
+reduced to a fixed generic subtype. The launcher also executes real open and commercial
+candidate-feedback synthesis during its no-model qualification, so a disposable-worker failure
+stops before any Codex process is authorized.
+
 ## Design choices informed by POSTEDA-Bench
 
 [POSTEDA-Bench](https://github.com/pengjas/posteda-bench) and its

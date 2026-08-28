@@ -545,7 +545,8 @@ class DesignCompilerMcpService:
         ):
             raise McpRequestError("agent worker receipt differs from the dispatched request")
         if not envelope.success or envelope.synthesis is None:
-            raise McpRequestError("agent worker reported an infrastructure failure")
+            category = envelope.failure_category or "response"
+            raise McpRequestError(f"agent worker infrastructure failure: {category}")
         response = envelope.synthesis
         if response.get("protocol") != SERVICE_PROTOCOL:
             raise McpRequestError("agent worker returned an invalid synthesis protocol")

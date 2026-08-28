@@ -659,3 +659,51 @@ def test_v2_post_dispatch_infrastructure_failure_consumes_synthesis_quota(
     assert first["execution_budget"]["ppa_executions_used"] == 1
     assert second["category"] == "ppa_quota_exhausted"
     assert controller.evaluations[-2].synthesis_executed is True
+
+
+def test_v2_feedback_preserves_only_allowlisted_worker_infrastructure_subcategory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "candidate.v").write_text("module candidate; endmodule\n", encoding="utf-8")
+
+    def synthesize(**_kwargs: Any) -> tuple[VerifierResult, SynthesisMetrics, bool]:
+        metrics = SynthesisMetrics(
+            status="error",
+            synthesis_ok=False,
+            role="candidate",
+            top="candidate",
+            failure_category="agent_worker_scheduler",
+            failure_message="private scheduler detail at /private/site/path",
+        )
+        return (
+            VerifierResult(
+                node_id="agent_ppa",
+                plugin="synopsys.dc.mcp",
+                status=VerifierStatus.ERROR,
+                error_category=ErrorCategory.PARSER_ERROR,
+            ),
+            metrics,
+            True,
+        )
+
+    monkeypatch.setattr(
+        "verigym.core.agent_feedback.execute_candidate_synthesis_feedback", synthesize
+    )
+    controller = AgentFeedbackController(
+        contract=_v2_contract(quota=1),
+        task=_task(),
+        runtime=cast(Any, object()),
+        profile=cast(Any, object()),
+        resolved_profile=cast(Any, object()),
+        backend=cast(Any, object()),
+    )
+    session = cast(Any, _Session(tmp_path))
+    controller.execute("compile", session)
+    completed = controller.execute("ppa", session)
+    payload = json.loads(completed.stdout)
+
+    assert completed.failure_origin == "control_plane"
+    assert completed.failure_reason == "agent_worker_scheduler"
+    assert payload["infrastructure_subcategory"] == "agent_worker_scheduler"
+    assert "/private/site/path" not in completed.stdout

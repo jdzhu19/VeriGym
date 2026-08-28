@@ -186,6 +186,69 @@ def test_no_model_qualification_exercises_agent_session_compile(tmp_path: Path) 
     assert all(session.closed for session in runtime.sessions)
 
 
+def test_no_model_qualification_executes_open_and_commercial_ppa_feedback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = _launcher_module()
+    visible = tmp_path / "visible"
+    (visible / "repository" / "rtl").mkdir(parents=True)
+    (visible / "repository" / "rtl" / "design.v").write_text("", encoding="utf-8")
+
+    class Backend:
+        pass
+
+    backend = Backend()
+
+    class Suite:
+        def reference_solution(self, task: object) -> SimpleNamespace:
+            del task
+            return SimpleNamespace(files={"rtl/design.v": "module design; endmodule\n"})
+
+    class Service:
+        registries = SimpleNamespace(tools=SimpleNamespace(get=lambda _name: backend))
+
+        def load_task(self, task_id: str, config: object) -> tuple[object, object, object]:
+            del task_id, config
+            return Suite(), object(), SimpleNamespace(visible_root=visible)
+
+    calls: list[str] = []
+
+    def synthesize(**kwargs: object) -> tuple[SimpleNamespace, SimpleNamespace, bool]:
+        candidate = Path(str(kwargs["candidate_dir"]))
+        assert (candidate / "repository" / "rtl" / "design.v").read_text(
+            encoding="utf-8"
+        ) == "module design; endmodule\n"
+        calls.append(str(kwargs["plugin"]))
+        return (
+            SimpleNamespace(status=launcher.VerifierStatus.PASSED),
+            SimpleNamespace(synthesis_ok=True, failure_category=None),
+            True,
+        )
+
+    monkeypatch.setattr(launcher, "SynthesisBackendPlugin", Backend)
+    monkeypatch.setattr(launcher, "execute_candidate_synthesis_feedback", synthesize)
+    prepared = {
+        name: launcher.PreparedProfile(
+            profile=SimpleNamespace(flow=SimpleNamespace(backend_plugin=name)),
+            resolved=object(),
+        )
+        for name in ("counter_open", "up_down_dc")
+    }
+    qualification = launcher._qualify_agent_ppa_feedback(  # noqa: SLF001
+        Service(),  # type: ignore[arg-type]
+        source_configs={"counter": object(), "up_down": object()},  # type: ignore[arg-type]
+        runtime=object(),
+        prepared=prepared,  # type: ignore[arg-type]
+        scratch=tmp_path / "ppa",
+    )
+
+    assert qualification["passed"] is True
+    assert qualification["model_calls"] == 0
+    assert len(qualification["records"]) == 2
+    assert len(calls) == 2
+
+
 def _configs(output: Path) -> list[RunConfig]:
     return [
         RunConfig(task_id=f"fake/task-{index}", output=output / "runs", run_id=f"run-{index}")
@@ -329,7 +392,7 @@ def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     assert record["retry_count"] == 0
 
 
-def test_smoke_v6_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
+def test_smoke_v7_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
     launcher = _launcher_module()
     release_hash = "a" * 64
     profile = SimpleNamespace(
@@ -341,7 +404,7 @@ def test_smoke_v6_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
         }
     )
 
-    assert launcher._CAMPAIGN_ID.endswith("smoke-v6")
+    assert launcher._CAMPAIGN_ID.endswith("smoke-v7")
     assert launcher._require_commercial_worker_release(profile) == release_hash
     with pytest.raises(Exception, match="release contract"):
         launcher._require_commercial_worker_release(SimpleNamespace(metadata={}))
@@ -373,7 +436,7 @@ def test_smoke_v6_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
     )
 
 
-def test_smoke_v6_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
+def test_smoke_v7_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
     launcher = _launcher_module()
     results = []
     for index in range(4):

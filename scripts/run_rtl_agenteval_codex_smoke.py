@@ -31,6 +31,7 @@ from verigym_synopsys.export_mcp_profile import bind_mcp_client_profile_to_docke
 from verigym_synopsys.worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 from verigym.core.agent_feedback import (
+    AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES,
     resolve_agent_feedback_contract,
     task_with_agent_feedback_contract,
 )
@@ -42,7 +43,10 @@ from verigym.core.repository_observation import (
     BOUNDED_REPOSITORY_OBSERVATION_POLICY,
     bounded_read_view,
 )
-from verigym.core.synthesis import execute_synthesis_quality
+from verigym.core.synthesis import (
+    execute_candidate_synthesis_feedback,
+    execute_synthesis_quality,
+)
 from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
@@ -74,7 +78,7 @@ from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
-_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v6"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v7"
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
 _SMOKE_V2_PLAN = Path(
     "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v2/plan.json"
@@ -678,6 +682,13 @@ def _no_model_qualification(
             )
             resolved_items[name] = PreparedProfile(item.profile, resolved)
             functional[f"synthesis_{name}"] = record
+        functional["agent_ppa_feedback"] = _qualify_agent_ppa_feedback(
+            service,
+            source_configs=source_configs,
+            runtime=runtime,
+            prepared=resolved_items,
+            scratch=scratch / "agent-ppa-feedback",
+        )
         _qualify_vcs(
             service,
             rtllm_source=source_configs["counter"].source_root,
@@ -740,6 +751,62 @@ def _qualify_agent_compile_bridge(
             )
         finally:
             session.close()
+    return {"passed": True, "model_calls": 0, "records": records}
+
+
+def _qualify_agent_ppa_feedback(
+    service: VeriGym,
+    *,
+    source_configs: dict[str, SuiteSourceConfig],
+    runtime: Any,
+    prepared: dict[str, PreparedProfile],
+    scratch: Path,
+) -> dict[str, Any]:
+    """Execute exact open and commercial candidate-feedback paths before model use."""
+
+    records: list[dict[str, Any]] = []
+    for source_key, task_id, profile_name in (
+        ("counter", _TASKS[0], "counter_open"),
+        ("up_down", _TASKS[1], "up_down_dc"),
+    ):
+        suite, task, assets = service.load_task(task_id, source_configs[source_key])
+        reference = suite.reference_solution(task)
+        item = prepared[profile_name]
+        if reference is None or item.resolved is None or item.profile.flow is None:
+            raise ConfigurationError("agent PPA feedback qualification inputs are incomplete")
+        backend = service.registries.tools.get(item.profile.flow.backend_plugin)
+        if not isinstance(backend, SynthesisBackendPlugin):
+            raise ConfigurationError("agent PPA feedback qualification backend is unavailable")
+        candidate = scratch / profile_name
+        copy_tree_safely(Path(assets.visible_root), candidate)
+        for relative, content in sorted(reference.files.items()):
+            destination = candidate / "repository" / normalize_relative_path(relative)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(content, encoding="utf-8")
+        result, metrics, dispatched = execute_candidate_synthesis_feedback(
+            task=task,
+            candidate_dir=candidate,
+            runtime=runtime,
+            profile=item.profile,
+            resolved=item.resolved,
+            plugin=backend,
+        )
+        if result.status != VerifierStatus.PASSED or not metrics.synthesis_ok or not dispatched:
+            subcategory = (
+                metrics.failure_category
+                if metrics.failure_category in AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES
+                else result.error_category.value
+            )
+            raise ConfigurationError(f"agent PPA feedback qualification failed: {subcategory}")
+        records.append(
+            {
+                "task_id": task_id,
+                "profile_name": profile_name,
+                "passed": True,
+                "execution_dispatched": True,
+                "synthesis_ok": True,
+            }
+        )
     return {"passed": True, "model_calls": 0, "records": records}
 
 

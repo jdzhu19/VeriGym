@@ -14,7 +14,7 @@ This package provides three ordinary evaluation plugins plus an opt-in training-
   tool-call counters.
 - `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
   0.147.0, GPT-5.4, `xhigh`, and agent version
-  `codex-cli-agenteval-gpt54-xhigh-v3`. One ephemeral, read-only
+  `codex-cli-agenteval-gpt54-xhigh-v4`. One ephemeral, read-only
   `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
   Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
   disabled. Its limits are 40 tool calls, 20 patch calls, and three consecutive rejections.

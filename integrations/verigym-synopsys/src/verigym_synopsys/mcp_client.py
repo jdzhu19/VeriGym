@@ -89,6 +89,24 @@ _TEMPLATE_HASHES = {
     VECTORLESS_POWER_FLOW_TEMPLATE_ID: VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
 }
+_MCP_TOOL_ERROR_SUBCATEGORIES = {
+    "agent feedback requires a configured disposable worker": "agent_worker_configuration",
+    "agent worker executable identity changed before execution": "agent_worker_identity",
+    "agent worker timed out": "agent_worker_timeout",
+    "agent worker could not be started": "agent_worker_start",
+    "agent worker exited unsuccessfully": "agent_worker_execution",
+    "agent worker response exceeds the service bound": "agent_worker_response",
+    "agent worker returned malformed JSON": "agent_worker_response",
+    "agent worker returned a non-object response": "agent_worker_response",
+    "agent worker envelope failed schema validation": "agent_worker_response",
+    "agent worker receipt differs from the dispatched request": "agent_worker_identity",
+    "agent worker reported an infrastructure failure": "agent_worker_infrastructure",
+    "agent worker infrastructure failure: scheduler": "agent_worker_scheduler",
+    "agent worker infrastructure failure: worker": "agent_worker_execution",
+    "agent worker infrastructure failure: response": "agent_worker_response",
+    "agent worker returned an invalid synthesis protocol": "agent_worker_response",
+    "agent worker returned forbidden report or diagnostic content": "agent_worker_response",
+}
 
 
 class McpDesignCompilerRequest(StrictModel):
@@ -295,6 +313,14 @@ class McpSynthesisResponse(StrictModel):
 
 class McpProtocolError(ValueError):
     """One caller-safe remote transport or response-contract error."""
+
+
+class McpToolRejection(McpProtocolError):
+    """One remote tool rejection reduced to an allowlisted safe subcategory."""
+
+    def __init__(self, safe_subcategory: str) -> None:
+        self.safe_subcategory = safe_subcategory
+        super().__init__(f"MCP service rejected the verifier request: {safe_subcategory}")
 
 
 def _descriptor() -> ToolDescriptor:
@@ -551,7 +577,14 @@ def _parse_tool_response(
     if not isinstance(result, dict):
         raise McpProtocolError("MCP tool call returned no result object")
     if result.get("isError") is True:
-        raise McpProtocolError("MCP service rejected the verifier request")
+        structured = result.get("structuredContent")
+        error = structured.get("error") if isinstance(structured, dict) else None
+        subcategory = (
+            _MCP_TOOL_ERROR_SUBCATEGORIES.get(error, "mcp_service_rejected")
+            if isinstance(error, str)
+            else "mcp_service_rejected"
+        )
+        raise McpToolRejection(subcategory)
     structured = result.get("structuredContent")
     if not isinstance(structured, dict) or structured.get("protocol") != SERVICE_PROTOCOL:
         raise McpProtocolError("MCP tool call returned an invalid structured result")
@@ -1309,6 +1342,14 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 ErrorCategory.PARSER_ERROR,
                 "MCP synthesis response failed schema validation",
             )
+        except McpToolRejection as exc:
+            return self._failure(
+                request,
+                completed,
+                ErrorCategory.PARSER_ERROR,
+                str(exc),
+                failure_category=exc.safe_subcategory,
+            )
         except (McpProtocolError, ValueError, OSError) as exc:
             return self._failure(
                 request,
@@ -1477,6 +1518,8 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         completed: CompletedCommand,
         category: ErrorCategory,
         message: str,
+        *,
+        failure_category: str | None = None,
     ) -> ToolResult:
         sanitized = redact(message)
         metrics = SynthesisMetrics(
@@ -1490,7 +1533,7 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             },
             resolved_profile_hash=request.client_resolved_profile_hash,
             generated_script_hash=request.generated_script_hash,
-            failure_category=category.value,
+            failure_category=failure_category or category.value,
             failure_message=sanitized,
         )
         return ToolResult(

@@ -30,6 +30,21 @@ _OPEN_PPA_FLOW = "verigym-yosys-opensta-atp-v2"
 _OPEN_PPA_BACKENDS = frozenset({"yosys.synth", "yosys.stat"})
 _COMMERCIAL_PPA_BACKEND = "synopsys.dc.mcp"
 _COMMERCIAL_PPA_FLOW = "synopsys-dc-area-timing-power-explicit-v4"
+AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES = frozenset(
+    {
+        "agent_feedback_dispatch_internal",
+        "agent_feedback_infrastructure",
+        "agent_worker_configuration",
+        "agent_worker_execution",
+        "agent_worker_identity",
+        "agent_worker_infrastructure",
+        "agent_worker_response",
+        "agent_worker_scheduler",
+        "agent_worker_start",
+        "agent_worker_timeout",
+        "mcp_service_rejected",
+    }
+)
 
 
 def resolve_agent_feedback_contract(
@@ -395,6 +410,7 @@ class AgentFeedbackController:
                     started=started,
                     profile_hash=profile_hash,
                     infrastructure=True,
+                    infrastructure_subcategory="agent_feedback_dispatch_internal",
                     execution_dispatched=False,
                 )
             if dispatched:
@@ -425,6 +441,9 @@ class AgentFeedbackController:
                     started=started,
                     profile_hash=profile_hash,
                     infrastructure=True,
+                    infrastructure_subcategory=_feedback_infrastructure_subcategory(
+                        raw_metrics.failure_category
+                    ),
                     execution_dispatched=dispatched,
                 )
             self._cache[key] = (category, metrics)
@@ -452,6 +471,7 @@ class AgentFeedbackController:
         started: float,
         profile_hash: str | None = None,
         infrastructure: bool = False,
+        infrastructure_subcategory: str | None = None,
         execution_dispatched: bool = False,
     ) -> CompletedCommand:
         duration = time.monotonic() - started
@@ -501,6 +521,9 @@ class AgentFeedbackController:
                         "contract_hash": self.contract.agent_worker_contract_hash,
                         "isolation_kind": self.contract.agent_worker_isolation_kind,
                     },
+                    "infrastructure_subcategory": (
+                        infrastructure_subcategory if infrastructure else None
+                    ),
                 }
             )
         self._record(
@@ -520,7 +543,11 @@ class AgentFeedbackController:
             exit_code=0 if category == "passed" else 1,
             stdout=json.dumps(payload, sort_keys=True, separators=(",", ":")),
             duration_s=duration,
-            failure_reason=(category if category != "passed" else None),
+            failure_reason=(
+                infrastructure_subcategory
+                if infrastructure and infrastructure_subcategory is not None
+                else (category if category != "passed" else None)
+            ),
             failure_origin=(
                 "control_plane"
                 if infrastructure
@@ -635,7 +662,14 @@ def _compile_infrastructure_failure(completed: CompletedCommand) -> bool:
     )
 
 
+def _feedback_infrastructure_subcategory(value: str | None) -> str:
+    if value in AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES:
+        return value
+    return "agent_feedback_infrastructure"
+
+
 __all__ = [
+    "AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES",
     "AgentFeedbackController",
     "public_feedback_test_ids",
     "resolve_agent_feedback_contract",

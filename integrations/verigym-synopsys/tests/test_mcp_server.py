@@ -8,11 +8,11 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from verigym.core.synthesis import execute_synthesis_quality
-from verigym.plugin_api import ConfigurationError, ToolContext, content_hash
+from verigym.plugin_api import CompletedCommand, ConfigurationError, ToolContext, content_hash
 from verigym.profiles.registry import ToolchainProfileRegistry
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.runtimes.local import LocalRuntime
@@ -30,6 +30,7 @@ from verigym_synopsys.agent_worker_protocol import (
     AgentWorkerDescribeResponse,
     AgentWorkerEnvelope,
     AgentWorkerLaunchRequest,
+    AgentWorkerReceipt,
 )
 from verigym_synopsys.export_mcp_profile import (
     bind_mcp_client_profile_to_docker,
@@ -39,6 +40,8 @@ from verigym_synopsys.export_mcp_profile import (
 )
 from verigym_synopsys.mcp_client import (
     McpDesignCompilerSynthesisTool,
+    McpToolRejection,
+    _parse_tool_response,
     _run_stdio,
     _runtime_identity,
 )
@@ -311,6 +314,51 @@ def test_mcp_synthesis_binds_profile_sources_and_exports_candidate_artifacts(
     assert "arbitrary-command" not in json.dumps(rejected)
 
 
+def test_mcp_client_reduces_remote_tool_errors_to_safe_subcategories() -> None:
+    initialized = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "protocolVersion": "2024-11-05",
+            "serverInfo": {
+                "name": "verigym-synopsys-verifier",
+                "version": "test-version",
+            },
+        },
+    }
+
+    def completed(error: str) -> CompletedCommand:
+        response = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{"type": "text", "text": error}],
+                "structuredContent": {"error": error},
+                "isError": True,
+            },
+        }
+        return CompletedCommand(
+            argv=["transport"],
+            cwd=".",
+            exit_code=0,
+            stdout="\n".join((json.dumps(initialized), json.dumps(response))),
+        )
+
+    with pytest.raises(McpToolRejection) as scheduler:
+        _parse_tool_response(
+            completed("agent worker infrastructure failure: scheduler"),
+            expected_server_version="test-version",
+        )
+    assert scheduler.value.safe_subcategory == "agent_worker_scheduler"
+    with pytest.raises(McpToolRejection) as unknown:
+        _parse_tool_response(
+            completed("private detail at /secret/site/path"),
+            expected_server_version="test-version",
+        )
+    assert unknown.value.safe_subcategory == "mcp_service_rejected"
+    assert "/secret/site/path" not in str(unknown.value)
+
+
 def test_mcp_reference_response_never_exports_artifact_content(tmp_path: Path) -> None:
     profile_path, rtl = _site_profile(tmp_path)
     profile = ToolchainProfileRegistry().load_file(profile_path)
@@ -542,6 +590,75 @@ def test_agent_worker_code_change_is_rejected_immediately_before_execution(
 
     with pytest.raises(ConfigurationError, match="hash differs"):
         service._synthesize_agent_feedback(request)
+
+
+def test_agent_worker_failure_category_reaches_the_safe_mcp_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server_profile_path, rtl = _site_profile(tmp_path)
+    profile = ToolchainProfileRegistry().load_file(server_profile_path)
+    worker = _fake_agent_worker(tmp_path, server_profile_path)
+    service = DesignCompilerMcpService(
+        [server_profile_path],
+        tmp_path / "failed-worker-work",
+        agent_worker_executable=worker,
+        agent_worker_sha256=hashlib.sha256(worker.read_bytes()).hexdigest(),
+        agent_worker_timeout_s=330,
+    )
+
+    def fail_worker(
+        _executable: str, payload: dict[str, object], _timeout_s: int
+    ) -> dict[str, Any]:
+        launch = AgentWorkerLaunchRequest.model_validate(payload)
+        return AgentWorkerEnvelope(
+            success=False,
+            failure_category="scheduler",
+            receipt=AgentWorkerReceipt(
+                contract_hash=launch.contract_hash,
+                code_identity_hash=launch.code_identity_hash,
+                isolation_profile_hash=launch.isolation_profile_hash,
+                request_hash=launch.request_hash,
+                source_bundle_hash=launch.source_bundle_hash,
+                dispatch_id_hash="d" * 64,
+                scheduler_dispatched=False,
+                worker_started=False,
+                worker_completed=False,
+                lifecycle="infrastructure_failed_clean",
+                duration_s=0.01,
+            ),
+        ).model_dump(mode="json")
+
+    monkeypatch.setattr("verigym_synopsys.mcp_server._run_agent_worker", fail_worker)
+    response = _handle(
+        _tool_call(
+            2,
+            SYNTHESIZE_TOOL,
+            {
+                "profile_id": profile.id,
+                "declared_profile_hash": content_hash(profile),
+                "reference_candidate_hash": "b" * 64,
+                "top": "counter",
+                "sources": [
+                    {
+                        "path": "rtl/counter.v",
+                        "sha256": hashlib.sha256(rtl).hexdigest(),
+                        "content_base64": base64.b64encode(rtl).decode("ascii"),
+                    }
+                ],
+                "run_label": "agent_feedback",
+                "artifact_content_policy": "none",
+            },
+        ),
+        service,
+    )
+
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"] == {
+        "error": "agent worker infrastructure failure: scheduler"
+    }
 
 
 def test_agent_feedback_uses_hash_bound_disposable_worker_and_returns_no_reports(

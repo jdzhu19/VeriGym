@@ -12,7 +12,7 @@ from verigym.core.repository_tool_broker import (
     RepositoryToolBrokerLimits,
 )
 from verigym.schemas.common import ErrorCategory
-from verigym.schemas.tool import ToolResult
+from verigym.schemas.tool import CompletedCommand, ToolResult
 
 
 class _Bridge:
@@ -23,11 +23,13 @@ class _Bridge:
         patch_rejected: bool = False,
         result_category: ErrorCategory | None = None,
         result_message: str = "",
+        public_result: CompletedCommand | None = None,
     ) -> None:
         self.path_failure = path_failure
         self.patch_rejected = patch_rejected
         self.result_category = result_category
         self.result_message = result_message
+        self.public_result = public_result
 
     def invoke_workspace_tool(self, tool: str, arguments: dict[str, Any]) -> ToolResult:
         if self.path_failure is not None:
@@ -47,6 +49,11 @@ class _Bridge:
                 message=self.result_message,
             )
         return ToolResult(tool=tool, success=True, category=ErrorCategory.SUCCESS)
+
+    def execute_public_test(self, _test_id: str) -> CompletedCommand:
+        if self.public_result is None:
+            raise AssertionError("no public-test result was configured")
+        return self.public_result
 
 
 def _broker(tmp_path: Path, bridge: _Bridge) -> RepositoryToolBroker:
@@ -173,6 +180,34 @@ def test_workspace_internal_error_records_only_a_bounded_subcategory(tmp_path: P
     assert stats.infrastructure_failure is not None
     assert stats.infrastructure_failure_subcategory == "workspace_tool_internal_error"
     assert stats.policy_failure_subcategory is None
+
+
+def test_commercial_feedback_worker_subcategory_reaches_broker_stats(tmp_path: Path) -> None:
+    completed = CompletedCommand(
+        argv=["verigym-agent-feedback", "ppa"],
+        cwd=".",
+        exit_code=1,
+        stdout=json.dumps(
+            {
+                "protocol": "verigym_agent_feedback_v2",
+                "category": "infrastructure_error",
+                "infrastructure_subcategory": "agent_worker_scheduler",
+            }
+        ),
+        failure_origin="control_plane",
+        failure_reason="agent_worker_scheduler",
+    )
+    broker = RepositoryToolBroker(
+        bridge=_Bridge(public_result=completed),  # type: ignore[arg-type]
+        socket_path=tmp_path / "broker" / "mcp.sock",
+        public_test_ids=("ppa",),
+    )
+
+    broker._run_public_test({"test_id": "ppa"})  # noqa: SLF001
+    stats = broker.stats()
+
+    assert stats.infrastructure_failure_subcategory == "agent_worker_scheduler"
+    assert "/" not in (stats.infrastructure_failure or "")
 
 
 def test_successful_broker_result_includes_current_minimal_state(tmp_path: Path) -> None:

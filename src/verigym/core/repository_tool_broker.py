@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from verigym.agents.external import ExternalAgentBridge
+from verigym.core.agent_feedback import AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES
 from verigym.core.errors import PathPolicyError
 from verigym.core.repository_observation import bounded_text_with_marker
 from verigym.protocols.repository_action import (
@@ -527,10 +528,15 @@ class RepositoryToolBroker:
             self._public_test_calls += 1
         completed = self._bridge.execute_public_test(test_id)
         if completed.failure_origin == "control_plane":
+            subcategory = (
+                completed.failure_reason
+                if completed.failure_reason in AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES
+                else "public_test_control_plane"
+            )
             with self._lock:
                 self._set_infrastructure_failure_locked(
                     completed.failure_reason or "public-test failure",
-                    "public_test_control_plane",
+                    subcategory,
                 )
         payload = {
             "test_id": test_id,

@@ -73,6 +73,17 @@ _POLICY_FAILURE_SUBCATEGORIES = frozenset(
 _INFRASTRUCTURE_FAILURE_SUBCATEGORIES = frozenset(
     {
         "broker_dispatch_internal_error",
+        "agent_feedback_dispatch_internal",
+        "agent_feedback_infrastructure",
+        "agent_worker_configuration",
+        "agent_worker_execution",
+        "agent_worker_identity",
+        "agent_worker_infrastructure",
+        "agent_worker_response",
+        "agent_worker_scheduler",
+        "agent_worker_start",
+        "agent_worker_timeout",
+        "mcp_service_rejected",
         "public_test_control_plane",
         "training_capture_limit",
         "training_observation_internal_error",
@@ -100,7 +111,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="codex-cli-agenteval-agent",
-        version="3.0.0",
+        version="4.0.0",
         api_version=PLUGIN_API_VERSION,
         provider="openai-codex-cli",
         capabilities=[
@@ -401,7 +412,7 @@ def _identity(
     )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agenteval-agent",
-        adapter_version="3.0.0",
+        adapter_version="4.0.0",
         harness_name="verigym-codex-agenteval-scoring",
         requested_model_id="gpt-5.4",
         observed_model_id=observed_model_id,
