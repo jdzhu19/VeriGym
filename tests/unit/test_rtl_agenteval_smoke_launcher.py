@@ -12,6 +12,7 @@ from verigym_codex_cli.agenteval_agent import CodexCliAgentEvalAdapter
 from tests.milestone9_helpers import offline_service
 from verigym.schemas.common import InteractionMode
 from verigym.schemas.run import RunConfig
+from verigym.schemas.runtime import SessionReadOnlyMount
 
 
 def _launcher_module() -> ModuleType:
@@ -85,6 +86,104 @@ def test_broker_regression_qualification_exercises_empty_visible_files(tmp_path:
     assert qualification["model_calls"] == 0
     assert qualification["empty_file_views_checked"] == 8
     assert all(record["empty_files_checked"] == 1 for record in qualification["records"])
+
+
+def test_smoke_runtime_binds_the_frozen_public_test_utility_image() -> None:
+    launcher = _launcher_module()
+
+    config = launcher._docker_config("verifier-image", "sha256:" + "1" * 64)  # noqa: SLF001
+    agent = config.external_agent
+
+    assert agent is not None
+    assert agent.image == launcher._PUBLIC_TEST_IMAGE  # noqa: SLF001
+    assert agent.expected_image_id == launcher._EXPECTED_PUBLIC_TEST_IMAGE_ID  # noqa: SLF001
+    assert agent.expected_executable_sha256 == launcher._PUBLIC_TEST_IMAGE_CODEX_SHA256  # noqa: SLF001
+    assert (
+        agent.required_image_labels["org.verigym.public_test_launcher.sha256"]
+        == launcher._EXPECTED_PUBLIC_TEST_LAUNCHER_SHA256  # noqa: SLF001
+    )
+    assert agent.required_image_labels["org.verigym.provider_credentials"] == "absent"
+    assert agent.required_image_labels["org.verigym.credential_material"] == "absent"
+    assert agent.network_mode == "none"
+    assert agent.pull_policy == "never"
+
+
+def test_no_model_qualification_exercises_agent_session_compile(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    public = tmp_path / "public"
+    public.mkdir()
+    mount = SessionReadOnlyMount(
+        source_dir=str(public),
+        destination="/verigym-public",
+        content_hash="a" * 64,
+        label="public_tests",
+    )
+
+    class Session:
+        external_process_backend = "docker_outer_runtime_delegated"
+
+        def __init__(self) -> None:
+            self.writes: list[tuple[str, bytes]] = []
+            self.closed = False
+
+        def write_file(self, path: str, data: bytes) -> None:
+            self.writes.append((path, data))
+
+        def execute_public_test(self, test_id: str) -> SimpleNamespace:
+            assert test_id == "compile"
+            return SimpleNamespace(
+                exit_code=0,
+                timed_out=False,
+                oom_killed=False,
+                failure_origin=None,
+            )
+
+        def snapshot_diff(self) -> SimpleNamespace:
+            return SimpleNamespace(changed_files=["repository/rtl/design.v"])
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Runtime:
+        def __init__(self) -> None:
+            self.sessions: list[Session] = []
+            self.specs: list[object] = []
+
+        def create_session(self, spec: object) -> Session:
+            self.specs.append(spec)
+            session = Session()
+            self.sessions.append(session)
+            return session
+
+    class Suite:
+        def reference_solution(self, task: object) -> SimpleNamespace:
+            del task
+            return SimpleNamespace(files={"rtl/design.v": "module design; endmodule\n"})
+
+    class Service:
+        def load_task(self, task_id: str, config: object) -> tuple[object, object, object]:
+            del task_id, config
+            task = SimpleNamespace(budget=SimpleNamespace(max_output_bytes_per_tool=4096))
+            assets = SimpleNamespace(
+                visible_root=str(tmp_path),
+                read_only_mounts=[mount],
+            )
+            return Suite(), task, assets
+
+    runtime = Runtime()
+    configs = {key: object() for key in ("counter", "up_down", "verilog_eval")}
+    qualification = launcher._qualify_agent_compile_bridge(  # noqa: SLF001
+        Service(),  # type: ignore[arg-type]
+        source_configs=configs,  # type: ignore[arg-type]
+        runtime=runtime,
+    )
+
+    assert qualification["passed"] is True
+    assert qualification["model_calls"] == 0
+    assert len(qualification["records"]) == 3
+    assert len(runtime.sessions) == 3
+    assert all(session.writes[0][0] == "repository/rtl/design.v" for session in runtime.sessions)
+    assert all(session.closed for session in runtime.sessions)
 
 
 def _configs(output: Path) -> list[RunConfig]:
@@ -230,7 +329,7 @@ def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     assert record["retry_count"] == 0
 
 
-def test_smoke_v5_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
+def test_smoke_v6_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
     launcher = _launcher_module()
     release_hash = "a" * 64
     profile = SimpleNamespace(
@@ -242,7 +341,7 @@ def test_smoke_v5_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
         }
     )
 
-    assert launcher._CAMPAIGN_ID.endswith("smoke-v5")
+    assert launcher._CAMPAIGN_ID.endswith("smoke-v6")
     assert launcher._require_commercial_worker_release(profile) == release_hash
     with pytest.raises(Exception, match="release contract"):
         launcher._require_commercial_worker_release(SimpleNamespace(metadata={}))
@@ -274,7 +373,7 @@ def test_smoke_v5_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
     )
 
 
-def test_smoke_v5_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
+def test_smoke_v6_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
     launcher = _launcher_module()
     results = []
     for index in range(4):

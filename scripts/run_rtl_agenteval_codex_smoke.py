@@ -35,7 +35,7 @@ from verigym.core.agent_feedback import (
     task_with_agent_feedback_contract,
 )
 from verigym.core.errors import ConfigurationError
-from verigym.core.hashing import content_hash, hash_directory
+from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.repository_observation import (
@@ -48,7 +48,7 @@ from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
     task_with_verifier_profile,
 )
-from verigym.core.workspace import copy_tree_safely
+from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.experiments.state import atomic_dump_json, atomic_write_text
 from verigym.profiles.identity import (
     RESOLVED_PROFILE_IDENTITY_COMPONENTS,
@@ -64,19 +64,32 @@ from verigym.registry.base import PluginOrigin
 from verigym.registry.collections import Registries, build_registries
 from verigym.schemas.common import InteractionMode, ToolchainProfile
 from verigym.schemas.run import RunConfig, RunResult
-from verigym.schemas.runtime import DockerRuntimeConfig
+from verigym.schemas.runtime import (
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+    SessionSpec,
+)
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
-_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v5"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v6"
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
 _SMOKE_V2_PLAN = Path(
     "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v2/plan.json"
 )
 _EXPECTED_CLI_VERSION = "codex-cli 0.147.0"
 _EXPECTED_CODEX_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
+_PUBLIC_TEST_IMAGE = "verigym/codex-repository-agent:0.144.6"
+_EXPECTED_PUBLIC_TEST_IMAGE_ID = (
+    "sha256:41f8e89b37b2d809e19295642fc666f25ccc699b1f4519e36bc6d05e3bff5691"
+)
+_PUBLIC_TEST_IMAGE_CODEX_VERSION = "codex-cli 0.144.6"
+_PUBLIC_TEST_IMAGE_CODEX_SHA256 = "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15"
+_EXPECTED_PUBLIC_TEST_LAUNCHER_SHA256 = (
+    "e3276ee142e7de78fd60bf4078138152d1974c93f72f27fd2eb95a3f6493b407"
+)
 _TASKS = (
     "rtllm/counter_12_agent_eval_v1",
     "rtllm/up_down_counter_agent_eval_v1",
@@ -283,6 +296,10 @@ def _docker_image_id(image: str) -> str:
 
 
 def _docker_config(image: str, image_id: str) -> DockerRuntimeConfig:
+    launcher = Path(__file__).resolve().parents[1] / "src" / "verigym" / "public_test_launcher.py"
+    if hash_bytes(launcher.read_bytes()) != _EXPECTED_PUBLIC_TEST_LAUNCHER_SHA256:
+        raise ConfigurationError("the trusted public-test launcher identity changed")
+    runtime_user = f"{os.getuid()}:{os.getgid()}"
     return DockerRuntimeConfig(
         image=image,
         expected_image_id=image_id,
@@ -294,6 +311,40 @@ def _docker_config(image: str, image_id: str) -> DockerRuntimeConfig:
         pids_limit=256,
         tmpfs_bytes=128 * 1024**2,
         max_command_time_s=900,
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image=_PUBLIC_TEST_IMAGE,
+            expected_image_id=_EXPECTED_PUBLIC_TEST_IMAGE_ID,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version=_PUBLIC_TEST_IMAGE_CODEX_VERSION,
+            expected_executable_sha256=_PUBLIC_TEST_IMAGE_CODEX_SHA256,
+            process_argv=[
+                "/usr/local/bin/codex",
+                "exec-server",
+                "--listen",
+                "stdio://",
+            ],
+            protocol="codex_app_server_remote_environment_v1",
+            required_image_labels={
+                "org.verigym.runtime.role": "repository-agent",
+                "org.verigym.codex.version": "0.144.6",
+                "org.verigym.codex.binary.sha256": _PUBLIC_TEST_IMAGE_CODEX_SHA256,
+                "org.verigym.external_agent.protocol": ("codex_app_server_remote_environment_v1"),
+                "org.verigym.public_test.protocol": "verigym_public_test_v1",
+                "org.verigym.public_test_launcher.sha256": (_EXPECTED_PUBLIC_TEST_LAUNCHER_SHA256),
+                "org.verigym.iverilog.version": "12.0",
+                "org.verigym.provider_credentials": "absent",
+                "org.verigym.credential_material": "absent",
+            },
+            pull_policy="never",
+            run_as_user=runtime_user,
+            memory_bytes=512 * 1024**2,
+            cpus=1.0,
+            pids_limit=128,
+            tmpfs_bytes=64 * 1024**2,
+            max_process_time_s=900,
+            max_output_bytes=8 * 1024 * 1024,
+        ),
     )
 
 
@@ -605,6 +656,11 @@ def _no_model_qualification(
                 runtime,
                 scratch / f"functional-{key}",
             )
+        functional["agent_compile_bridge"] = _qualify_agent_compile_bridge(
+            service,
+            source_configs=source_configs,
+            runtime=runtime,
+        )
         resolved_items: dict[str, PreparedProfile] = {}
         for name, key in (
             ("counter_open", "counter"),
@@ -632,6 +688,59 @@ def _no_model_qualification(
         return descriptor, functional
     finally:
         runtime.close()
+
+
+def _qualify_agent_compile_bridge(
+    service: VeriGym,
+    *,
+    source_configs: dict[str, SuiteSourceConfig],
+    runtime: Any,
+) -> dict[str, Any]:
+    """Exercise the exact agent-session public compile path without launching a model."""
+
+    records: list[dict[str, Any]] = []
+    for key, task_id in (
+        ("counter", _TASKS[0]),
+        ("up_down", _TASKS[1]),
+        ("verilog_eval", _TASKS[2]),
+    ):
+        suite, task, assets = service.load_task(task_id, source_configs[key])
+        reference = suite.reference_solution(task)
+        if reference is None or len(assets.read_only_mounts) != 1:
+            raise ConfigurationError("agent compile qualification assets are incomplete")
+        session = runtime.create_session(
+            SessionSpec(
+                source_dir=assets.visible_root,
+                label="agent",
+                max_output_bytes=task.budget.max_output_bytes_per_tool,
+                read_only_mounts=assets.read_only_mounts,
+            )
+        )
+        try:
+            if session.external_process_backend != "docker_outer_runtime_delegated":
+                raise ConfigurationError("agent compile qualification lacks its utility image")
+            for relative, content in sorted(reference.files.items()):
+                path = f"repository/{normalize_relative_path(relative)}"
+                session.write_file(path, content.encode("utf-8"))
+            completed = session.execute_public_test("compile")
+            if (
+                completed.exit_code != 0
+                or completed.timed_out
+                or completed.oom_killed
+                or completed.failure_origin == "control_plane"
+            ):
+                raise ConfigurationError("agent-session public compile qualification failed")
+            records.append(
+                {
+                    "task_id": task_id,
+                    "public_test_id": "compile",
+                    "passed": True,
+                    "changed_file_count": len(session.snapshot_diff().changed_files),
+                }
+            )
+        finally:
+            session.close()
+    return {"passed": True, "model_calls": 0, "records": records}
 
 
 def _qualify_functional(
