@@ -38,6 +38,7 @@ from .agent_worker_protocol import (
     AgentWorkerDescribeResponse,
     AgentWorkerEnvelope,
     AgentWorkerLaunchRequest,
+    agent_worker_contract_identity_payload,
 )
 from .common import redact
 from .dc import DesignCompilerSynthesisTool, _safe_relative
@@ -229,7 +230,7 @@ def _resolve_agent_worker(
         raise ConfigurationError(
             "agent worker timeout must reserve 300 seconds beyond the worker wall bound"
         )
-    contract = described.contract.model_dump(mode="json")
+    contract = agent_worker_contract_identity_payload(described.contract)
     contract_hash = content_hash({"launcher_sha256": actual_hash, "isolation_contract": contract})
     release_protocol = described.release.protocol if described.release is not None else None
     release_hash = described.release.release_hash if described.release is not None else None

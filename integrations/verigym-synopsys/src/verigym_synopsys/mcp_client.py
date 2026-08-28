@@ -45,7 +45,11 @@ from verigym.plugin_api import (
     hash_bytes,
 )
 
-from .agent_worker_protocol import AgentWorkerIsolationContract, AgentWorkerReceipt
+from .agent_worker_protocol import (
+    AgentWorkerIsolationContract,
+    AgentWorkerReceipt,
+    agent_worker_contract_identity_payload,
+)
 from .common import redact, resolve_executable, safe_executable
 from .dc import (
     AREA_TIMING_FLOW_TEMPLATE_HASH,
@@ -1056,7 +1060,7 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         computed = content_hash(
             {
                 "launcher_sha256": worker.launcher_sha256,
-                "isolation_contract": worker.contract.model_dump(mode="json"),
+                "isolation_contract": agent_worker_contract_identity_payload(worker.contract),
             }
         )
         if computed != worker.contract_hash or worker.contract_hash != expected_hash:

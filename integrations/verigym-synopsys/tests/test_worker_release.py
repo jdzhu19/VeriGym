@@ -12,6 +12,7 @@ from verigym_synopsys.agent_worker_protocol import (
     AgentWorkerIsolationContract,
     AgentWorkerLaunchRequest,
     AgentWorkerReceipt,
+    agent_worker_contract_identity_payload,
 )
 from verigym_synopsys.worker_release import (
     COMMERCIAL_WORKER_RELEASE_PROTOCOL,
@@ -125,6 +126,8 @@ def test_worker_protocol_accepts_v1_and_requires_paired_v2_release() -> None:
         cores=1,
     )
     assert legacy.release_hash is None
+    assert "release_protocol" not in agent_worker_contract_identity_payload(legacy)
+    assert "release_hash" not in agent_worker_contract_identity_payload(legacy)
     release = _release()
     current = legacy.model_copy(
         update={
@@ -133,6 +136,7 @@ def test_worker_protocol_accepts_v1_and_requires_paired_v2_release() -> None:
         }
     )
     assert current.release_hash == release.release_hash
+    assert agent_worker_contract_identity_payload(current)["release_hash"] == release.release_hash
     with pytest.raises(ValidationError, match="supplied together"):
         AgentWorkerIsolationContract.model_validate(
             {**legacy.model_dump(mode="json"), "release_hash": release.release_hash}

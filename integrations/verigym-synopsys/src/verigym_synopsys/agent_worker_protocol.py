@@ -57,6 +57,14 @@ class AgentWorkerIsolationContract(StrictModel):
         return self
 
 
+def agent_worker_contract_identity_payload(
+    contract: AgentWorkerIsolationContract,
+) -> dict[str, Any]:
+    """Return the hash payload shared by release-free v1 and release-bound v2 peers."""
+
+    return contract.model_dump(mode="json", exclude_none=True)
+
+
 class AgentWorkerDescribeRequest(StrictModel):
     operation: Literal["describe"] = "describe"
 
@@ -182,4 +190,5 @@ __all__ = [
     "AgentWorkerIsolationContract",
     "AgentWorkerLaunchRequest",
     "AgentWorkerReceipt",
+    "agent_worker_contract_identity_payload",
 ]
