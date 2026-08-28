@@ -14,7 +14,7 @@ This package provides three ordinary evaluation plugins plus an opt-in training-
   tool-call counters.
 - `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
   0.147.0, GPT-5.4, `xhigh`, and agent version
-  `codex-cli-agenteval-gpt54-xhigh-v2`. One ephemeral, read-only
+  `codex-cli-agenteval-gpt54-xhigh-v3`. One ephemeral, read-only
   `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
   Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
   disabled. Its limits are 40 tool calls, 20 patch calls, and three consecutive rejections.
@@ -94,8 +94,10 @@ terminal event may provide the observed model and usage, while an incomplete str
 the requested model with `usage_complete: false`. It never estimates tokens. Prompt, tool-policy,
 capability, and agent-version fingerprints are bound into the safe invocation and identity
 evidence. Recoverable broker responses include a bounded state summary and next allowed actions;
-path, symlink, hardlink, hidden-asset, and workspace-boundary violations remain terminal policy
-failures.
+malformed unified diffs remain recoverable, including malformed hunk headers and bodies. Empty
+visible files produce a valid zero-line observation. Path, symlink, hardlink, hidden-asset, and
+workspace-boundary violations remain terminal policy failures. Terminal broker evidence stores
+only an allowlisted failure subtype, never the underlying diagnostic or path.
 
 Reasoning is discarded, secrets and runtime roots are redacted, output is bounded, and the
 ordinary run integrity manifest binds every file. `verigym replay <run-dir> --verify` uses frozen

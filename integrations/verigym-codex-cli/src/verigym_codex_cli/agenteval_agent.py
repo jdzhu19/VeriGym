@@ -62,6 +62,24 @@ from .process import (
 )
 from .util import atomic_json, redact_text
 
+_POLICY_FAILURE_SUBCATEGORIES = frozenset(
+    {
+        "workspace_access_policy",
+        "workspace_patch_policy",
+        "workspace_path_policy",
+        "workspace_sandbox_policy",
+    }
+)
+_INFRASTRUCTURE_FAILURE_SUBCATEGORIES = frozenset(
+    {
+        "broker_dispatch_internal_error",
+        "public_test_control_plane",
+        "training_capture_limit",
+        "training_observation_internal_error",
+        "workspace_tool_internal_error",
+    }
+)
+
 
 class CodexCliAgentEvalAdapter(AgentAdapter):
     """Run one gpt-5.4/xhigh MCP-only scoring episode without transcript capture."""
@@ -82,7 +100,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="codex-cli-agenteval-agent",
-        version="2.0.0",
+        version="3.0.0",
         api_version=PLUGIN_API_VERSION,
         provider="openai-codex-cli",
         capabilities=[
@@ -383,7 +401,7 @@ def _identity(
     )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agenteval-agent",
-        adapter_version="2.0.0",
+        adapter_version="3.0.0",
         harness_name="verigym-codex-agenteval-scoring",
         requested_model_id="gpt-5.4",
         observed_model_id=observed_model_id,
@@ -522,6 +540,11 @@ def _write_scoring_evidence(
             "private_reasoning_persisted": False,
             "provider_observation_recorded": identity is not None,
             "failure_category": failure_category,
+            "failure_subcategory": (
+                _bounded_policy_failure_subcategory(broker)
+                if broker.policy_failure is not None
+                else _bounded_infrastructure_failure_subcategory(broker)
+            ),
         },
     )
 
@@ -538,6 +561,8 @@ def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
         "finished": stats.finished,
         "policy_failure": stats.policy_failure is not None,
         "infrastructure_failure": stats.infrastructure_failure is not None,
+        "policy_failure_subcategory": _bounded_policy_failure_subcategory(stats),
+        "infrastructure_failure_subcategory": _bounded_infrastructure_failure_subcategory(stats),
         "limit_failure": stats.limit_failure,
         "maximum_consecutive_rejected_calls": stats.maximum_consecutive_rejected_calls,
         "max_tool_calls": stats.max_tool_calls,
@@ -571,6 +596,7 @@ def _preparse_process_failure(
             "repository broker reported a terminal workspace policy failure",
             kind="policy",
             reason=TerminationReason.POLICY_VIOLATION,
+            protocol_error_subcategory=_bounded_policy_failure_subcategory(broker),
         )
     if broker.infrastructure_failure is not None:
         return _termination(
@@ -579,6 +605,7 @@ def _preparse_process_failure(
             infrastructure=True,
             kind="runtime",
             reason=TerminationReason.RUNTIME_ERROR,
+            protocol_error_subcategory=_bounded_infrastructure_failure_subcategory(broker),
         )
     if process.timed_out:
         return _termination("agent_timeout", "Codex AgentEval exhausted its episode deadline")
@@ -593,6 +620,24 @@ def _preparse_process_failure(
     return None
 
 
+def _bounded_policy_failure_subcategory(broker: RepositoryToolBrokerStats) -> str | None:
+    if broker.policy_failure is None:
+        return None
+    if broker.policy_failure_subcategory in _POLICY_FAILURE_SUBCATEGORIES:
+        return broker.policy_failure_subcategory
+    return "workspace_policy_unspecified"
+
+
+def _bounded_infrastructure_failure_subcategory(
+    broker: RepositoryToolBrokerStats,
+) -> str | None:
+    if broker.infrastructure_failure is None:
+        return None
+    if broker.infrastructure_failure_subcategory in _INFRASTRUCTURE_FAILURE_SUBCATEGORIES:
+        return broker.infrastructure_failure_subcategory
+    return "tool_infrastructure_unspecified"
+
+
 def _termination(
     category: str,
     message: str,
@@ -600,6 +645,7 @@ def _termination(
     infrastructure: bool = False,
     kind: Literal["agent", "model", "policy", "runtime"] = "model",
     reason: TerminationReason = TerminationReason.MODEL_ERROR,
+    protocol_error_subcategory: str | None = None,
 ) -> AgentTerminationError:
     return AgentTerminationError(
         reason,
@@ -608,6 +654,7 @@ def _termination(
             category=category,
             message=redact_text(message)[:2000],
             infrastructure=infrastructure,
+            protocol_error_subcategory=protocol_error_subcategory,
         ),
     )
 

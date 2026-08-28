@@ -179,7 +179,7 @@ def test_scoring_agent_version_is_not_treated_as_prompt_memory(
     assert policy.memory_pack_hash is None
 
 
-def test_v2_settings_require_prompt_and_tool_policy_fingerprints(
+def test_v3_settings_require_prompt_and_tool_policy_fingerprints(
     fake_codex: tuple[Path, Path, object],
 ) -> None:
     settings, capabilities = _settings(fake_codex)
@@ -292,6 +292,56 @@ def test_scoring_evidence_never_exports_a_training_transcript(
     assert json.loads((root / "summary.json").read_text())["training_mode"] is False
 
 
+def test_scoring_evidence_persists_only_bounded_broker_failure_subcategory(
+    fake_codex: tuple[Path, Path, object], tmp_path: Path
+) -> None:
+    settings, capabilities = _settings(fake_codex)
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=1,
+        stdout=_finish_stream(),
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    broker = RepositoryToolBrokerStats(
+        tool_calls=1,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=1,
+        file_writes=0,
+        patches=0,
+        policy_failure="absolute path rejected at /private/site/path",
+        infrastructure_failure=None,
+        policy_failure_subcategory="workspace_path_policy",
+    )
+    root = tmp_path / "evidence"
+    root.mkdir()
+
+    _write_scoring_evidence(
+        root,
+        capabilities=capabilities,
+        invocation={"training_mode": False, "agent_version_id": settings.agent_version_id},
+        process=process,
+        broker=broker,
+        identity=None,
+        accounting=ExternalAgentAccounting(process_wall_time_s=1.0, cli_event_count=4),
+        parsed=None,
+        failure_category="workspace_policy",
+    )
+
+    persisted_broker = json.loads((root / "broker.json").read_text())
+    persisted_summary = json.loads((root / "summary.json").read_text())
+    persisted = "\n".join(path.read_text(encoding="utf-8") for path in root.iterdir())
+    assert persisted_broker["policy_failure"] is True
+    assert persisted_broker["policy_failure_subcategory"] == "workspace_path_policy"
+    assert persisted_summary["failure_subcategory"] == "workspace_path_policy"
+    assert "/private/site/path" not in persisted
+
+
 def test_returned_policy_failure_keeps_requested_identity_and_incomplete_usage(
     fake_codex: tuple[Path, Path, object],
 ) -> None:
@@ -318,6 +368,7 @@ def test_returned_policy_failure_keeps_requested_identity_and_incomplete_usage(
         finished=False,
         policy_failure="absolute path rejected",
         infrastructure_failure=None,
+        policy_failure_subcategory="workspace_path_policy",
     )
 
     parsed, parse_error = _parse_returned_event_stream(process.stdout)
@@ -329,6 +380,7 @@ def test_returned_policy_failure_keeps_requested_identity_and_incomplete_usage(
     assert failure is not None
     assert failure.failure.kind == "policy"
     assert failure.failure.category == "workspace_policy"
+    assert failure.failure.protocol_error_subcategory == "workspace_path_policy"
     assert identity.invocation_count == 1
     assert identity.observed_model_id is None
     assert identity.identity_confidence == "requested_only"
@@ -339,6 +391,40 @@ def test_returned_policy_failure_keeps_requested_identity_and_incomplete_usage(
     assert accounting.input_tokens is None
     assert accounting.output_tokens is None
     assert accounting.total_tokens is None
+
+
+def test_unrecognized_terminal_subcategory_is_not_persisted_as_diagnostic_text(
+    fake_codex: tuple[Path, Path, object],
+) -> None:
+    del fake_codex
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=1,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    broker = RepositoryToolBrokerStats(
+        tool_calls=1,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=1,
+        file_writes=0,
+        patches=0,
+        policy_failure="private diagnostic",
+        infrastructure_failure=None,
+        policy_failure_subcategory="private diagnostic at /private/site/path",
+    )
+
+    failure = _preparse_process_failure(process, broker)
+
+    assert failure is not None
+    assert failure.failure.protocol_error_subcategory == "workspace_policy_unspecified"
+    assert "/private/site/path" not in failure.failure.model_dump_json()
 
 
 def test_complete_terminal_usage_is_recorded_without_estimation(
@@ -382,10 +468,12 @@ def test_complete_terminal_usage_is_recorded_without_estimation(
     assert accounting.total_tokens == 14
 
 
-def test_v2_prompt_requires_relative_paths_compile_ppa_diff_and_finish() -> None:
+def test_v3_prompt_requires_relative_paths_recovery_compile_ppa_diff_and_finish() -> None:
     instructions = " ".join(AGENTEVAL_PROMPT_INSTRUCTIONS)
 
     assert "repository-relative paths" in instructions
+    assert "patch_rejected" in instructions
+    assert "empty editable file" in instructions
     assert "After every successful patch, compile" in instructions
     assert "PPA is available" in instructions
     assert "inspect the latest diff" in instructions

@@ -64,6 +64,29 @@ def test_commercial_diagnostic_scan_allows_only_local_mcp_configuration() -> Non
     assert launcher._COMMERCIAL_DIAGNOSTIC.search(b"license server unavailable") is not None
 
 
+def test_broker_regression_qualification_exercises_empty_visible_files(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    visible = tmp_path / "visible"
+    visible.mkdir()
+    (visible / "completion.txt").write_text("", encoding="utf-8")
+
+    class Service:
+        def load_task(self, task_id: str, config: object) -> tuple[object, object, object]:
+            del task_id, config
+            return object(), object(), SimpleNamespace(visible_root=visible)
+
+    configs = {key: object() for key in ("counter", "up_down", "verilog_eval", "rtl_repo")}
+    qualification = launcher._repository_broker_regression_qualification(  # noqa: SLF001
+        Service(),  # type: ignore[arg-type]
+        configs,  # type: ignore[arg-type]
+    )
+
+    assert qualification["passed"] is True
+    assert qualification["model_calls"] == 0
+    assert qualification["empty_file_views_checked"] == 8
+    assert all(record["empty_files_checked"] == 1 for record in qualification["records"])
+
+
 def _configs(output: Path) -> list[RunConfig]:
     return [
         RunConfig(task_id=f"fake/task-{index}", output=output / "runs", run_id=f"run-{index}")
@@ -164,6 +187,25 @@ def test_launcher_stops_immediately_after_infrastructure_failure(tmp_path: Path)
     assert ledger[-1]["retry_count"] == 0
 
 
+def test_launcher_finalizes_after_fourth_infrastructure_failure(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    output = tmp_path / "campaign"
+    (output / "evidence").mkdir(parents=True)
+    infrastructure = SimpleNamespace(kind="runtime", infrastructure=True)
+    service = _FakeService(tmp_path, [{}, {}, {}, {"failure": infrastructure}])
+
+    results = launcher._execute_exactly_four(service, _configs(output), output)
+
+    ledger = json.loads(
+        (output / "evidence" / "process-authorizations.json").read_text(encoding="utf-8")
+    )["records"]
+    assert len(results) == 4
+    assert service.calls == 4
+    assert len(ledger) == 4
+    assert ledger[-1]["status"] == "infrastructure_failure"
+    assert ledger[-1]["retry_count"] == 0
+
+
 def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     tmp_path: Path,
 ) -> None:
@@ -188,7 +230,7 @@ def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     assert record["retry_count"] == 0
 
 
-def test_smoke_v4_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
+def test_smoke_v5_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
     launcher = _launcher_module()
     release_hash = "a" * 64
     profile = SimpleNamespace(
@@ -200,7 +242,7 @@ def test_smoke_v4_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
         }
     )
 
-    assert launcher._CAMPAIGN_ID.endswith("smoke-v4")
+    assert launcher._CAMPAIGN_ID.endswith("smoke-v5")
     assert launcher._require_commercial_worker_release(profile) == release_hash
     with pytest.raises(Exception, match="release contract"):
         launcher._require_commercial_worker_release(SimpleNamespace(metadata={}))
@@ -232,7 +274,7 @@ def test_smoke_v4_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
     )
 
 
-def test_smoke_v4_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
+def test_smoke_v5_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
     launcher = _launcher_module()
     results = []
     for index in range(4):

@@ -16,9 +16,18 @@ from verigym.schemas.tool import ToolResult
 
 
 class _Bridge:
-    def __init__(self, *, path_failure: str | None = None, patch_rejected: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        path_failure: str | None = None,
+        patch_rejected: bool = False,
+        result_category: ErrorCategory | None = None,
+        result_message: str = "",
+    ) -> None:
         self.path_failure = path_failure
         self.patch_rejected = patch_rejected
+        self.result_category = result_category
+        self.result_message = result_message
 
     def invoke_workspace_tool(self, tool: str, arguments: dict[str, Any]) -> ToolResult:
         if self.path_failure is not None:
@@ -29,6 +38,13 @@ class _Bridge:
                 success=False,
                 category=ErrorCategory.PERMISSION_DENIED,
                 message="patch context does not match the workspace at /private/site/path",
+            )
+        if self.result_category is not None:
+            return ToolResult(
+                tool=tool,
+                success=False,
+                category=self.result_category,
+                message=self.result_message,
             )
         return ToolResult(tool=tool, success=True, category=ErrorCategory.SUCCESS)
 
@@ -75,6 +91,37 @@ def test_recoverable_broker_error_returns_safe_state_and_next_actions(tmp_path: 
 
 
 @pytest.mark.parametrize(
+    "message",
+    [
+        "invalid unified patch hunk header",
+        "invalid unified patch hunk body",
+    ],
+)
+def test_malformed_patch_hunks_are_recoverable(message: str, tmp_path: Path) -> None:
+    broker = _broker(
+        tmp_path,
+        _Bridge(result_category=ErrorCategory.PERMISSION_DENIED, result_message=message),
+    )
+
+    response = broker._dispatch(  # noqa: SLF001
+        {
+            "name": "apply_patch",
+            "arguments": {"patch": "--- a/rtl/counter.v\n+++ b/rtl/counter.v\n@@ broken\n"},
+        }
+    )
+    payload = _payload(response)
+    stats = broker.stats()
+
+    assert response["isError"] is True
+    assert payload["error_subcategory"] == "patch_rejected"
+    assert payload["state"]["phase"] == "working"
+    assert "apply_patch" in payload["next_allowed_actions"]
+    assert stats.policy_failure is None
+    assert stats.policy_failure_subcategory is None
+    assert stats.rejected_calls == 1
+
+
+@pytest.mark.parametrize(
     "failure",
     [
         "absolute path access denied: /private/site/path",
@@ -99,7 +146,33 @@ def test_path_boundary_violations_remain_terminal_and_redacted(
     assert payload["state"]["phase"] == "terminal_failure"
     assert payload["next_allowed_actions"] == []
     assert "/private/site/path" not in json.dumps(response)
-    assert broker.stats().policy_failure is not None
+    stats = broker.stats()
+    assert stats.policy_failure is not None
+    assert stats.policy_failure_subcategory == "workspace_path_policy"
+    assert stats.infrastructure_failure_subcategory is None
+
+
+def test_workspace_internal_error_records_only_a_bounded_subcategory(tmp_path: Path) -> None:
+    broker = _broker(
+        tmp_path,
+        _Bridge(
+            result_category=ErrorCategory.INTERNAL_ERROR,
+            result_message="private implementation detail at /private/site/path",
+        ),
+    )
+
+    response = broker._dispatch(  # noqa: SLF001
+        {"name": "read_file", "arguments": {"path": "repository/completion.txt"}}
+    )
+    payload = _payload(response)
+    stats = broker.stats()
+
+    assert response["isError"] is True
+    assert payload["state"]["phase"] == "terminal_failure"
+    assert payload["next_allowed_actions"] == []
+    assert stats.infrastructure_failure is not None
+    assert stats.infrastructure_failure_subcategory == "workspace_tool_internal_error"
+    assert stats.policy_failure_subcategory is None
 
 
 def test_successful_broker_result_includes_current_minimal_state(tmp_path: Path) -> None:

@@ -142,6 +142,16 @@ task produced PPA feedback, so the pilot remains unauthorized. The complete boun
 the distinction between formal and diagnostic replay evidence are recorded in the
 [smoke-v4 audit](audits/2026-08-28_rtl-agenteval-codex-gpt54-xhigh-smoke-v4-result.md).
 
+The successor freezes Agent `codex-cli-agenteval-gpt54-xhigh-v3` and campaign smoke-v5. A
+scripted no-model diagnosis reproduced concrete defects capable of producing both broad smoke-v4
+failure classes: some malformed unified-diff hunk syntax was treated as terminal policy, and a
+bounded read of an empty RTL-Repo visible file raised an internal exception. Smoke-v4 deliberately
+did not retain enough call detail to claim these were its exact model actions. Smoke-v5 keeps
+malformed patches recoverable, renders empty files as zero-line observations, persists only
+allowlisted terminal broker subtypes, and finalizes formal replay/leakage evidence when the fourth
+materialized run is infrastructure-invalid. Earlier infrastructure failure still stops before
+another model authorization.
+
 ## Design choices informed by POSTEDA-Bench
 
 [POSTEDA-Bench](https://github.com/pengjas/posteda-bench) and its

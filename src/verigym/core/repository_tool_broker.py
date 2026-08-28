@@ -31,8 +31,10 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _TOOL_NAMES = frozenset(
     definition["name"] for definition in repository_tool_definitions(dialect="mcp")
 )
-_RETRYABLE_PATCH_ERRORS = (
+_RECOVERABLE_PATCH_ERRORS = (
     "invalid unified patch:",
+    "invalid unified patch hunk header",
+    "invalid unified patch hunk body",
     "patch context does not match the workspace",
     "patch hunk is out of range or overlaps a prior hunk",
     "patch hunk line counts do not match its header",
@@ -55,6 +57,8 @@ class RepositoryToolBrokerStats:
     patches: int
     policy_failure: str | None
     infrastructure_failure: str | None
+    policy_failure_subcategory: str | None = None
+    infrastructure_failure_subcategory: str | None = None
     diff_inspections: int = 0
     finish_calls: int = 0
     rejected_calls: int = 0
@@ -142,6 +146,8 @@ class RepositoryToolBroker:
         self._finished = False
         self._policy_failure: str | None = None
         self._infrastructure_failure: str | None = None
+        self._policy_failure_subcategory: str | None = None
+        self._infrastructure_failure_subcategory: str | None = None
         self._limit_failure: str | None = None
         self._limits = limits
         self._cancellation = threading.Event()
@@ -196,6 +202,8 @@ class RepositoryToolBroker:
                 finished=self._finished,
                 policy_failure=self._policy_failure,
                 infrastructure_failure=self._infrastructure_failure,
+                policy_failure_subcategory=self._policy_failure_subcategory,
+                infrastructure_failure_subcategory=self._infrastructure_failure_subcategory,
                 limit_failure=self._limit_failure,
                 consecutive_rejected_calls=self._consecutive_rejected_calls,
                 maximum_consecutive_rejected_calls=(self._maximum_consecutive_rejected_calls),
@@ -371,13 +379,13 @@ class RepositoryToolBroker:
         except PathPolicyError as exc:
             message = _safe_error(str(exc)) or type(exc).__name__
             with self._lock:
-                self._policy_failure = message
+                self._set_policy_failure_locked(message, "workspace_path_policy")
             response = self._error_result(name, message)
             return self._capture_response(name, canonical_arguments, response)
         except Exception as exc:
             message = _safe_error(str(exc)) or type(exc).__name__
             with self._lock:
-                self._infrastructure_failure = message
+                self._set_infrastructure_failure_locked(message, "broker_dispatch_internal_error")
             response = self._error_result(name, message)
             return self._capture_response(name, canonical_arguments, response)
         response = self._error_result(name, "unknown tool request")
@@ -398,13 +406,19 @@ class RepositoryToolBroker:
             )
             if not isinstance(observation, str):
                 with self._lock:
-                    self._infrastructure_failure = "canonical training observation was unavailable"
+                    self._set_infrastructure_failure_locked(
+                        "canonical training observation was unavailable",
+                        "training_observation_internal_error",
+                    )
                     self._finalize_call_locked()
                 return response
             capture_bytes = len(arguments_json.encode("utf-8")) + len(observation.encode("utf-8"))
             with self._lock:
                 if self._training_capture_bytes + capture_bytes > _MAX_TRAINING_CAPTURE_BYTES:
-                    self._infrastructure_failure = "canonical training capture exceeded its bound"
+                    self._set_infrastructure_failure_locked(
+                        "canonical training capture exceeded its bound",
+                        "training_capture_limit",
+                    )
                     self._finalize_call_locked()
                     return response
                 self._training_turns.append(
@@ -445,6 +459,14 @@ class RepositoryToolBroker:
             self._limit_failure = reason
             self._cancellation.set()
 
+    def _set_policy_failure_locked(self, message: str, subcategory: str) -> None:
+        self._policy_failure = message
+        self._policy_failure_subcategory = subcategory
+
+    def _set_infrastructure_failure_locked(self, message: str, subcategory: str) -> None:
+        self._infrastructure_failure = message
+        self._infrastructure_failure_subcategory = subcategory
+
     def _workspace_result(
         self, name: str, tool_name: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
@@ -463,13 +485,19 @@ class RepositoryToolBroker:
             "sandbox_error",
         }:
             with self._lock:
-                if name == "apply_patch" and failure_message.startswith(_RETRYABLE_PATCH_ERRORS):
+                if name == "apply_patch" and failure_message.startswith(_RECOVERABLE_PATCH_ERRORS):
                     self._record_rejection_locked()
                 else:
-                    self._policy_failure = failure_message
+                    self._set_policy_failure_locked(
+                        failure_message,
+                        _workspace_policy_subcategory(name, result.category.value, failure_message),
+                    )
         elif not result.success and result.category.value == "internal_error":
             with self._lock:
-                self._infrastructure_failure = result.message or "workspace tool internal error"
+                self._set_infrastructure_failure_locked(
+                    result.message or "workspace tool internal error",
+                    "workspace_tool_internal_error",
+                )
         elif result.success:
             with self._lock:
                 if name == "apply_patch":
@@ -500,7 +528,10 @@ class RepositoryToolBroker:
         completed = self._bridge.execute_public_test(test_id)
         if completed.failure_origin == "control_plane":
             with self._lock:
-                self._infrastructure_failure = completed.failure_reason or "public-test failure"
+                self._set_infrastructure_failure_locked(
+                    completed.failure_reason or "public-test failure",
+                    "public_test_control_plane",
+                )
         payload = {
             "test_id": test_id,
             "exit_code": completed.exit_code,
@@ -658,14 +689,20 @@ def _safe_error_subcategory(message: str) -> str:
     """Map caller-controlled diagnostics to a bounded, path-free category."""
 
     normalized = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_")
-    if message.startswith(_RETRYABLE_PATCH_ERRORS) or "patch" in normalized:
+    if message.startswith(_RECOVERABLE_PATCH_ERRORS):
         return "patch_rejected"
     if any(
         marker in normalized
         for marker in (
             "absolute_path",
+            "absolute_paths",
             "outside_workspace",
+            "outside_editable_globs",
             "path_policy",
+            "parent_path",
+            "read_only",
+            "not_editable",
+            "not_available",
             "symlink",
             "hardlink",
             "hidden_asset",
@@ -684,6 +721,17 @@ def _safe_error_subcategory(message: str) -> str:
     if "internal" in normalized or "broker_error" in normalized:
         return "broker_internal_error"
     return "invalid_request"
+
+
+def _workspace_policy_subcategory(name: str, category: str, message: str) -> str:
+    safe = _safe_error_subcategory(message)
+    if safe == "workspace_path_policy":
+        return safe
+    if category == "sandbox_error":
+        return "workspace_sandbox_policy"
+    if name == "apply_patch":
+        return "workspace_patch_policy"
+    return "workspace_access_policy"
 
 
 __all__ = [

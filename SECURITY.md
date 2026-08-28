@@ -85,6 +85,13 @@ Codex process never receives a workspace path or filesystem-writing tool; the br
 bounded read, patch, compile/PPA request, diff, and typed finish. Scoring evidence deliberately
 omits prompt/response text, raw CLI output, parsed event text, and training transcripts.
 
+Malformed unified diffs are recoverable agent errors, not workspace-boundary violations. The
+broker distinguishes them from absolute, traversal, read-only, symlink, hardlink, hidden-asset,
+and other boundary failures, which remain terminal. Persisted scoring evidence contains only a
+fixed allowlisted terminal broker subtype; raw broker diagnostics and requested paths are not
+stored. Empty visible files return a bounded zero-line observation instead of escaping the broker
+as an internal exception.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and

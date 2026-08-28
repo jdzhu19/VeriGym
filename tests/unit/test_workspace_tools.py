@@ -90,6 +90,24 @@ def test_bounded_read_range_error_stays_an_invalid_request(local_session, policy
     assert "start_line is outside the file" in result.message
 
 
+@pytest.mark.parametrize("concise", [None, True])
+def test_bounded_empty_file_read_succeeds(local_session, policy, concise) -> None:
+    local_session.write_file("rtl/empty.v", b"")
+    result = FileReadTool().execute(
+        {"path": "rtl/empty.v", "concise": concise},
+        ToolContext(
+            session=local_session,
+            workspace_policy=policy,
+            observation_policy=BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+        ),
+    )
+
+    assert result.success is True
+    assert result.stdout == ""
+    assert result.metadata["line_count"] == 0
+    assert result.metadata["line_range"] == [0, 0]
+
+
 def test_apply_patch_enforces_context_and_edit_glob(local_session, policy) -> None:
     context = ToolContext(session=local_session, workspace_policy=policy)
     patch = "--- a/rtl/counter.v\n+++ b/rtl/counter.v\n@@ -1 +1 @@\n-old\n+new\n"

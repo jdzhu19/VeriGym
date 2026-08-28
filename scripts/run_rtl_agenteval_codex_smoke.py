@@ -38,6 +38,10 @@ from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.core.repository_observation import (
+    BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+    bounded_read_view,
+)
 from verigym.core.synthesis import execute_synthesis_quality
 from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.verifier_profiles import (
@@ -66,7 +70,7 @@ from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
-_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v4"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v5"
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
 _SMOKE_V2_PLAN = Path(
     "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v2/plan.json"
@@ -144,6 +148,7 @@ def main() -> int:
     service = VeriGym(registries)
     source_configs = _source_configs(inputs)
     _validate_sources(service, source_configs)
+    broker_regression = _repository_broker_regression_qualification(service, source_configs)
     prepared = _prepare_profiles(
         registries,
         site_work=site_work,
@@ -161,6 +166,7 @@ def main() -> int:
         scratch=site_work / "qualification",
     )
     qualifications["smoke_v2_identity_audit"] = _smoke_v2_identity_audit(smoke_v2_plan, prepared)
+    qualifications["repository_broker_regression"] = broker_regression
     output = _new_path(arguments.output, "experiment output")
     broker_root = _new_path(arguments.broker_root, "Codex broker root")
     os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(_broker_root(broker_root))
@@ -374,6 +380,46 @@ def _validate_sources(service: VeriGym, configs: dict[str, SuiteSourceConfig]) -
         report = suite.validate_source()
         if not report.valid or not Path(assets.visible_root).is_dir() or task.id != task_id:
             raise ConfigurationError(f"source qualification failed for {task_id}")
+
+
+def _repository_broker_regression_qualification(
+    service: VeriGym,
+    configs: dict[str, SuiteSourceConfig],
+) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    total_empty_views = 0
+    for task_id, config in zip(_TASKS, configs.values(), strict=True):
+        _suite, _task, assets = service.load_task(task_id, config)
+        root = Path(assets.visible_root)
+        empty_files = 0
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.stat().st_size != 0:
+                continue
+            relative = path.relative_to(root).as_posix()
+            for concise in (None, True):
+                rendered, metadata = bounded_read_view(
+                    "",
+                    relative,
+                    concise=concise,
+                    policy=BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+                )
+                if (
+                    rendered
+                    or metadata.get("line_count") != 0
+                    or metadata.get("line_range") != [0, 0]
+                ):
+                    raise ConfigurationError("empty repository read regression failed")
+                total_empty_views += 1
+            empty_files += 1
+        records.append({"task_id": task_id, "empty_files_checked": empty_files})
+    if total_empty_views < 2:
+        raise ConfigurationError("frozen broker regression did not exercise an empty file")
+    return {
+        "passed": True,
+        "model_calls": 0,
+        "empty_file_views_checked": total_empty_views,
+        "records": records,
+    }
 
 
 def _prepare_profiles(
@@ -926,7 +972,7 @@ def _execute_exactly_four(
         else:
             record["status"] = "completed"
         atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
-        if infrastructure:
+        if infrastructure and ordinal < len(configs):
             raise CampaignInfrastructureError(
                 "smoke campaign stopped after an infrastructure-invalid run"
             )
@@ -1084,6 +1130,10 @@ def _campaign_summary(
                 "typed_finish": finish_ok,
                 "policy_failure": policy_failure,
                 "infrastructure_failure": infrastructure_failure,
+                "failure_subcategory": (
+                    broker.get("policy_failure_subcategory")
+                    or broker.get("infrastructure_failure_subcategory")
+                ),
                 "ppa_feedback_count": len(result.manifest.agent_feedback_evaluations),
                 "legal_candidate_ppa": legal_candidate_ppa,
             }

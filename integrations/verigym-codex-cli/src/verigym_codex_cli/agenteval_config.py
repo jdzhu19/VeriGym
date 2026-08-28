@@ -17,6 +17,8 @@ AGENTEVAL_PROMPT_INSTRUCTIONS = (
     "Start with a shallow list_files view and use bounded read_file views for large files.",
     "Read visible task files before editing.",
     "Use only the typed apply_patch action with canonical unified-diff paths and hunks.",
+    "If apply_patch returns patch_rejected, refresh exact lines and submit a corrected diff.",
+    "For an empty editable file, add content with a numbered @@ -0,0 +1,count @@ hunk.",
     "After every successful patch, compile the current revision again before relying on it.",
     "When PPA is available, call it at least once for the latest compiled revision.",
     "Before finishing, inspect the latest diff and call the typed finish action exactly once.",
@@ -45,9 +47,11 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
             "finish",
         ],
         "terminal_path_violations": True,
+        "malformed_patch_recoverable": True,
+        "bounded_terminal_failure_subcategory": True,
     }
 )
-AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v2"
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v3"
 AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
     {
         "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
@@ -60,8 +64,10 @@ AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
         "prompt_hash": AGENTEVAL_PROMPT_HASH,
         "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
         "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v2",
-        "event_processing": "tolerant_parse_before_failure_precedence_v2",
-        "returned_process_identity": "exactly_one_requested_or_observed_v2",
+        "event_processing": "tolerant_parse_before_failure_precedence_v3",
+        "returned_process_identity": "exactly_one_requested_or_observed_v3",
+        "broker_error_contract": "recoverable_patch_and_bounded_terminal_subtype_v1",
+        "empty_file_observation": "bounded_zero_line_view_v1",
         "max_tool_calls": 40,
         "max_patch_calls": 20,
         "max_consecutive_rejected_calls": 3,
@@ -158,7 +164,7 @@ def agenteval_settings(
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
     if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v2")
+        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v3")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",
