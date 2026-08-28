@@ -200,6 +200,17 @@ and provider accounting is read from the LLM object actually owned by the OpenHa
 The installed OpenHands SDK is not modified, no action is synthesized, and the continuation budget
 remains one.
 
+The real v17 PR-2032 diagnostic passed those adapter and protocol gates exactly once: one recovery,
+one same-session SDK continuation, one `tool_choice="required"` request, and one validated
+`read_file` tool. It made 16 model calls and 14 broker tool calls, with no path/schema violation,
+patch, or typed `finish`. The run therefore ended as the infrastructure-valid model failure
+`openhands_hwe_missing_finish`; it exported no trajectory and did not enter a dataset. Its sealed
+report hash is `440b47085983bd204713c5c732905eef67ff8d94d0053cadd9a2eb5cb57bd423`. This closes
+the current adapter boundary, but it does not qualify PR-2032 or justify a retry, synthesized
+`finish`, benchmark claim, or production-training claim. See the
+[v17 audit](../../docs/audits/2026-08-28_openhands-hwe-typed-continuation-v17.md) for the complete
+sanitized counts and frozen identities.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
