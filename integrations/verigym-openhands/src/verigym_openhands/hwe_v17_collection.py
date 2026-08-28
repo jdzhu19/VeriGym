@@ -419,8 +419,8 @@ def evaluate_v17_collection_gate(attempts: Sequence[Mapping[str, Any]]) -> V17Co
 
     allowed = set(OPENHANDS_V17_ALL_COLLECTION_TASKS)
     seen: set[str] = set()
-    passed = {"training": set(), "validation": set()}
-    attempted = {"training": set(), "validation": set()}
+    passed: dict[str, set[str]] = {"training": set(), "validation": set()}
+    attempted: dict[str, set[str]] = {"training": set(), "validation": set()}
     for position, item in enumerate(attempts):
         task_id = item.get("task_id")
         role = item.get("role")
