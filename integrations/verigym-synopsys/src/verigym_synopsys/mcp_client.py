@@ -321,6 +321,22 @@ def _runtime_identity(runtime: Runtime) -> ResolvedRuntimeIdentity:
     descriptor = runtime.descriptor
     image = descriptor.image
     resources = descriptor.resources
+    resource_contract = (
+        {
+            "memory_bytes": resources.memory_bytes,
+            "memory_swap_bytes": resources.memory_swap_bytes,
+            "swap_enforced": resources.swap_enforced,
+            "cpus": resources.cpus,
+            "pids_limit": resources.pids_limit,
+            "tmpfs_bytes": resources.tmpfs_bytes,
+            "stop_timeout_s": resources.stop_timeout_s,
+            "max_command_time_s": resources.max_command_time_s,
+            "max_artifact_file_bytes": resources.max_artifact_file_bytes,
+            "max_artifact_bytes": resources.max_artifact_bytes,
+        }
+        if resources is not None
+        else None
+    )
     return ResolvedRuntimeIdentity(
         runtime_slug=descriptor.name,
         isolation_level=descriptor.isolation_level,
@@ -333,7 +349,9 @@ def _runtime_identity(runtime: Runtime) -> ResolvedRuntimeIdentity:
         network_policy=(descriptor.security.network_mode if descriptor.security else None),
         resource_controls=resources is not None,
         security_hash=(content_hash(descriptor.security) if descriptor.security else None),
-        resource_contract_hash=(content_hash(resources) if resources else None),
+        resource_contract_hash=(
+            content_hash(resource_contract) if resource_contract is not None else None
+        ),
     )
 
 

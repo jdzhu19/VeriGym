@@ -86,7 +86,7 @@ manifests, and the isolation contract contribute to one release hash. Code is ma
 read-only content-addressed directory; DB, PDK, SDC, licenses, and commercial reports are never
 copied into it. Resolve and execute carry the same expected release hash, and the launcher,
 server, client, and cleanup receipt all reject a mismatch. Legacy worker-protocol-v1 payloads
-remain parseable, but the smoke-v3 site profiles require the release binding explicitly.
+remain parseable, but smoke-v3 and successor site profiles require the release binding explicitly.
 
 ```bash
 verigym run ... \
@@ -120,7 +120,7 @@ The guarded four-run Codex smoke is implemented by
 DC-worker, VCS/MCP, reference, and known-bad check before creating the experiment directory. The
 launcher then authorizes exactly four ordered Codex processes, persists its authorization ledger
 atomically, never retries, performs structural offline replay, and scans scoring artifacts for
-hidden/reference content and site/commercial path leakage. Smoke-v3 records authorization,
+hidden/reference content and site/commercial path leakage. Smoke-v4 records authorization,
 process start, provider observation, and retry count separately. Contained model failures,
 policy failures, and verifier rejections are recorded before the next ordinal; resolved-identity,
 commercial-tool, and Docker control-plane failures stop the campaign immediately. A 14-run pilot
@@ -128,6 +128,12 @@ is authorized only when all four processes have one identity observation, every 
 resolved through typed `finish`, both RTLLM candidates have current valid PPA metrics, and replay
 plus leakage scanning pass without policy or infrastructure failures. This smoke and any successor
 pilot are qualifications, not benchmark scores.
+
+Smoke-v3 is a read-only failed predecessor. Its first process returned a contained workspace-policy
+failure, and its second ordinal stopped before model launch when the commercial MCP client bound a
+session-local output limit into the runtime identity. Smoke-v4 removes that dynamic field while
+retaining every stable Docker resource limit, uses a new commercial release and campaign output,
+and does not resume or reinterpret smoke-v3.
 
 ## Design choices informed by POSTEDA-Bench
 

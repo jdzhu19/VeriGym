@@ -66,7 +66,7 @@ from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _IMAGE = "verigym/open-rtl-tools:iverilog12-yosys067-opensta310"
-_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v3"
+_CAMPAIGN_ID = "rtl-agenteval-codex-gpt54-xhigh-smoke-v4"
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
 _SMOKE_V2_PLAN = Path(
     "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v2/plan.json"
@@ -199,6 +199,7 @@ def main() -> int:
             name: {
                 "declared_hash": content_hash(item.profile),
                 "resolved_hash": item.resolved.resolved_profile_hash,
+                "component_hashes": resolved_profile_component_hashes(item.resolved),
             }
             for name, item in prepared.items()
         },
@@ -927,7 +928,7 @@ def _execute_exactly_four(
         atomic_dump_json(output / "evidence" / "process-authorizations.json", {"records": ledger})
         if infrastructure:
             raise CampaignInfrastructureError(
-                "smoke-v3 stopped after an infrastructure-invalid run"
+                "smoke campaign stopped after an infrastructure-invalid run"
             )
     if len(results) != 4:
         raise ConfigurationError("four-process smoke stopped before all runs completed")

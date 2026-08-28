@@ -2,9 +2,26 @@
 
 Date: 2026-08-28
 
-Status: implementation and offline regression readiness only. Smoke-v3 has not been executed,
-no model process is claimed by this document, and no benchmark score or pilot result exists.
-Smoke-v2 remains a read-only stopped campaign.
+Status: smoke-v3 was subsequently executed and stopped fail-closed. It is now a read-only failed
+campaign. No benchmark score or pilot result exists, and smoke-v2 remains read-only.
+
+## Execution outcome
+
+The plan-only pass completed the real Docker/OpenSTA, DC/MCP, VCS/MCP, reference, known-bad, and
+consecutive-resolution gates with zero model calls. The formal run then produced two ledger
+records with zero retries:
+
+- ordinal one started one real Codex process and recorded one complete provider observation, but
+  ended in a contained terminal workspace-policy failure without typed `finish`;
+- ordinal two was authorized but did not start a model process because exact commercial profile
+  replay failed; ordinals three and four were never authorized.
+
+The infrastructure mismatch was traced to `max_output_bytes`, which is tightened after a Docker
+session is created but had been included in the MCP runtime resource hash. Preflight froze the
+post-session value, while a fresh run resolved the profile before creating a session. The
+successor excludes only this session-local field, continues to bind all stable memory, swap, CPU,
+PID, tmpfs, timeout, and artifact limits, and uses campaign `smoke-v4` with a new commercial
+release. Smoke-v3 is not resumed.
 
 ## Frozen campaign contract
 
@@ -43,7 +60,7 @@ scanned for exact hidden/reference data, site paths, and commercial diagnostics.
 
 ## Promotion rule
 
-The 14-run pilot remains unauthorized until smoke-v3 has four real process starts, four unique
+The 14-run pilot remains unauthorized until a successor smoke has four real process starts, four unique
 identity observations, four resolved candidates terminated through typed `finish`, current valid
 candidate PPA for both RTLLM tasks, passing replay and leakage audit, and no policy or
 infrastructure failure. Failure to meet any condition produces no benchmark score.
@@ -57,6 +74,5 @@ infrastructure failure. Failure to meet any condition produces no benchmark scor
 - Ruff, repository format check, committed schema drift check, core mypy, Codex integration mypy,
   and Synopsys integration mypy passed.
 
-Real Docker, external dataset, Codex provider, and licensed commercial executions remain opted
-out of this readiness verification. Therefore these passing checks do not satisfy the smoke-v3
-promotion rule by themselves.
+The offline checks above predated the real execution. The execution outcome records the later
+opt-in result; it did not satisfy the promotion rule.

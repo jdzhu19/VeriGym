@@ -37,7 +37,11 @@ from verigym_synopsys.export_mcp_profile import (
 from verigym_synopsys.export_mcp_profile import (
     main as export_mcp_profile,
 )
-from verigym_synopsys.mcp_client import McpDesignCompilerSynthesisTool, _run_stdio
+from verigym_synopsys.mcp_client import (
+    McpDesignCompilerSynthesisTool,
+    _run_stdio,
+    _runtime_identity,
+)
 from verigym_synopsys.mcp_server import (
     LIST_PROFILES_TOOL,
     SYNTHESIZE_TOOL,
@@ -907,6 +911,16 @@ def test_docker_mcp_profile_uses_host_control_plane_over_private_staging(
         ),
     )
     runtime = cast(Runtime, SimpleNamespace(descriptor=descriptor))
+    unconstrained_session_identity = _runtime_identity(runtime)
+    assert descriptor.resources is not None
+    descriptor.resources = descriptor.resources.model_copy(update={"max_output_bytes": 4096})
+    constrained_session_identity = _runtime_identity(runtime)
+    assert constrained_session_identity == unconstrained_session_identity
+    descriptor.resources = descriptor.resources.model_copy(update={"memory_bytes": 1024**3})
+    assert _runtime_identity(runtime) != unconstrained_session_identity
+    descriptor.resources = descriptor.resources.model_copy(
+        update={"memory_bytes": 512 * 1024 * 1024}
+    )
     plugin = McpDesignCompilerSynthesisTool()
     reference_hash = content_hash(Candidate(files={"rtl/counter.v": rtl.decode()}))
     resolved = plugin.resolve_profile(

@@ -188,7 +188,7 @@ def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     assert record["retry_count"] == 0
 
 
-def test_smoke_v3_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
+def test_smoke_v4_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
     launcher = _launcher_module()
     release_hash = "a" * 64
     profile = SimpleNamespace(
@@ -200,7 +200,7 @@ def test_smoke_v3_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
         }
     )
 
-    assert launcher._CAMPAIGN_ID.endswith("smoke-v3")
+    assert launcher._CAMPAIGN_ID.endswith("smoke-v4")
     assert launcher._require_commercial_worker_release(profile) == release_hash
     with pytest.raises(Exception, match="release contract"):
         launcher._require_commercial_worker_release(SimpleNamespace(metadata={}))
@@ -232,7 +232,7 @@ def test_smoke_v3_identity_and_release_preconditions_are_frozen(tmp_path: Path) 
     )
 
 
-def test_smoke_v3_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
+def test_smoke_v4_pilot_gate_requires_all_acceptance_evidence(tmp_path: Path) -> None:
     launcher = _launcher_module()
     results = []
     for index in range(4):
