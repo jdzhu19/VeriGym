@@ -68,6 +68,10 @@ _AUTHENTICATION_MODE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:auth(?:entication)?)(?:[_-](?:semantic[_-]?id|mode))$"
 )
 _AUTHORIZATION_AUDIT_METADATA_KEY = re.compile(r"(?i)^authorization[_-](?:basis|scope)$")
+_SECURITY_SCAN_STATUS_KEY = re.compile(
+    r"(?i)^(?:credential|secret|security)[_-](?:check|scan)(?:[_-]?status)?$"
+)
+_SECURITY_SCAN_STATUS_VALUE = frozenset({"pass", "passed", "fail", "failed"})
 _EXECUTION_BOUNDARY_KEY = re.compile(
     r"(?i)(?:execution[_-]?boundary|credential[_-]?bearing[_-]?http[_-]?location|"
     r"controller[_-]?(?:role|location|boundary)|trust[_-]?boundary|process[_-]?boundary)"
@@ -152,7 +156,7 @@ def build_security_scan_policy() -> SecurityScanPolicy:
 
     base = {
         "schema_version": "1.0",
-        "policy_id": "context_aware_structured_artifact_secret_scan_v2",
+        "policy_id": "context_aware_structured_artifact_secret_scan_v3",
         "max_files": 100_000,
         "max_file_bytes": 256 * 1024 * 1024,
         "max_total_bytes": 2 * 1024 * 1024 * 1024,
@@ -303,6 +307,13 @@ def classify_structured_field_role(
         return "authentication_mode"
     if key and _AUTHORIZATION_AUDIT_METADATA_KEY.fullmatch(normalized_key):
         return "documentation_text"
+    if (
+        key
+        and isinstance(value, str)
+        and _SECURITY_SCAN_STATUS_KEY.fullmatch(normalized_key)
+        and value.strip().casefold() in _SECURITY_SCAN_STATUS_VALUE
+    ):
+        return "enum_or_identifier"
     if key and _EXECUTION_BOUNDARY_KEY.search(normalized_key):
         return "execution_boundary_enum"
     if key and _BASE_URL_KEY.search(normalized_key):
