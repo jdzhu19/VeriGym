@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import socket
 import stat
 import threading
@@ -35,6 +36,10 @@ _MAX_REQUEST_BYTES = 5 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TOOLS = frozenset({"list_files", "read_file", "apply_patch", "shell", "inspect_diff", "finish"})
 _TERMINAL_STATUS_OPERATION = "verigym_hwe_terminal_status_v1"
+_RAW_HOST_PATH = re.compile(
+    r"/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\\\",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -238,6 +243,17 @@ class DeepSeekHarnessHweBroker:
             return self._reject("episode_finished", "no tool calls are accepted after finish")
         if duplicate:
             return self._reject("duplicate_call_id", "tool call id was already used")
+        serialized_arguments = json.dumps(
+            arguments,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        if _RAW_HOST_PATH.search(serialized_arguments):
+            return self._reject(
+                "raw_host_path",
+                "tool arguments must use workspace-relative paths",
+            )
         try:
             validated = validate_hwe_action(
                 name,

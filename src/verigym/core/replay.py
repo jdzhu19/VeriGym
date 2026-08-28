@@ -69,10 +69,23 @@ def replay_run(
     *,
     verify: bool = False,
     service: VeriGym | None = None,
+    verification_artifact_root: Path | None = None,
 ) -> ReplaySummary:
     """Validate stored hashes and events; never invoke an agent or model."""
 
     run_dir = run_dir.expanduser().resolve()
+    if verification_artifact_root is not None and not verify:
+        raise ReplayError("a verifier replay artifact root requires verify=True")
+    replay_artifacts = run_dir / "artifacts" / "replay-verification"
+    if verification_artifact_root is not None:
+        requested_root = verification_artifact_root.expanduser()
+        if requested_root.exists() or requested_root.is_symlink():
+            raise ReplayError("verifier replay artifact root must be new")
+        replay_artifacts = requested_root.resolve(strict=False)
+        if replay_artifacts.is_relative_to(run_dir):
+            raise ReplayError("external verifier replay artifacts cannot modify the source run")
+        if not replay_artifacts.parent.is_dir() or replay_artifacts.parent.is_symlink():
+            raise ReplayError("verifier replay artifact parent is unsafe")
     required = [
         "run_manifest.json",
         "task_snapshot.json",
@@ -217,6 +230,8 @@ def replay_run(
     replay_candidate_synthesis: SynthesisMetrics | None = None
     replay_reference_synthesis: SynthesisMetrics | None = None
     if verify:
+        if verification_artifact_root is not None:
+            replay_artifacts.mkdir(mode=0o700)
         service = service or VeriGym()
         suite_id = manifest.task_id.split("/", 1)[0]
         suite = service.registries.suites.get(suite_id)
@@ -269,7 +284,7 @@ def replay_run(
                 assets=assets,
                 runtime=runtime,
                 candidate_dir=run_dir / "candidate",
-                artifact_root=run_dir / "artifacts" / "replay-verification",
+                artifact_root=replay_artifacts,
             )
             if replay_resolved_profile is not None:
                 assert stored_profile is not None
@@ -287,7 +302,7 @@ def replay_run(
                     runtime=runtime,
                     profile=stored_profile,
                     resolved=replay_resolved_profile,
-                    artifact_root=run_dir / "artifacts" / "replay-verification",
+                    artifact_root=replay_artifacts,
                     plugin=synthesis_backend,
                     correctness_passed=correctness_passed,
                 )
@@ -302,11 +317,11 @@ def replay_run(
         finally:
             runtime.close()
         dump_json(
-            run_dir / "artifacts" / "replay-verification" / "runtime_descriptor.json",
+            replay_artifacts / "runtime_descriptor.json",
             runtime.descriptor,
         )
         dump_json(
-            run_dir / "artifacts" / "replay-verification" / "replay_evidence.json",
+            replay_artifacts / "replay_evidence.json",
             ReplayEvidence(
                 run_id=manifest.run_id,
                 created_at_utc=datetime.now(UTC),

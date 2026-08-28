@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the frozen 16/4 OpenHands HWE development-SFT pilot without retries."""
+"""Collect the frozen 16/4 OpenHands HWE development-SFT pilot without provider retries."""
 
 from __future__ import annotations
 
@@ -20,18 +20,19 @@ from verigym_openhands.hwe_sft_pilot import (
     OPENHANDS_BOUNDED_SFT_BASE_URL_ENV,
     OPENHANDS_BOUNDED_SFT_OPT_IN_ENV,
     OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT,
-    OPENHANDS_BOUNDED_SFT_PILOT_FORMAT,
+    OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT,
     OPENHANDS_BOUNDED_SFT_TRAINING_TASKS,
     OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS,
     build_bounded_sft_agent_options,
     build_bounded_sft_agent_version,
     evaluate_bounded_sft_data_gate,
-    load_bounded_sft_pilot_contract,
-    validate_bounded_sft_source,
+    load_bounded_sft_pilot_contract_v2,
+    validate_bounded_sft_source_v2,
 )
 from verigym_openhands.trajectory import (
     OpenHandsTrajectoryError,
     materialize_openhands_decisions,
+    set_openhands_verifier_result,
     validate_openhands_training_trajectory,
     write_openhands_decision_dataset,
 )
@@ -39,7 +40,9 @@ from verigym_openhands.trajectory import (
 from verigym.api import VeriGym, build_registries
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
+from verigym.core.replay import replay_run
 from verigym.core.security_scanner import require_security_scan_pass, scan_artifact_roots
+from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.evolution.splits import validate_task_split
 from verigym.experiments.state import atomic_dump_json
 from verigym.hwe.qwen_action_tokenizer import (
@@ -71,7 +74,7 @@ _clean_source_commit = _legacy._clean_source_commit
 _new_output = _legacy._new_output
 _nonpositive_outcome = _legacy._nonpositive_outcome
 
-_REPORT_FORMAT = "verigym_openhands_hwe_bounded_sft_collection_report_v1"
+_REPORT_FORMAT = "verigym_openhands_hwe_bounded_sft_collection_report_v2"
 _DRY_RUN_FORMAT = "verigym_openhands_hwe_bounded_sft_loader_dry_run_v1"
 _MODEL = "openai/deepseek-v4-flash"
 _MODEL_IDENTITY = "deepseek-v4-flash"
@@ -116,14 +119,14 @@ def collect(
     _require_runtime_opt_in(campaign_id)
     source_commit = _clean_source_commit()
     _require_baseline_ancestor(source_commit)
-    contract = load_bounded_sft_pilot_contract(contract_path.resolve(strict=True))
+    contract = load_bounded_sft_pilot_contract_v2(contract_path.resolve(strict=True))
     qualification = qualification_root.resolve(strict=True)
     tokenizer_directory = tokenizer_root.resolve(strict=True)
     split = validate_task_split(
         TaskSplitManifest.model_validate(_json(qualification / "task-split.json"))
     )
     try:
-        validate_bounded_sft_source(
+        validate_bounded_sft_source_v2(
             contract,
             split=split,
             task_split_path=qualification / "task-split.json",
@@ -188,8 +191,10 @@ def collect(
     root = _new_output(output)
     runs = root / "runs"
     records_root = root / "trajectory-records"
+    verifier_replays = root / "verifier-replays"
     runs.mkdir(mode=0o700)
     records_root.mkdir(mode=0o700)
+    verifier_replays.mkdir(mode=0o700)
     atomic_dump_json(root / "agent-version.json", agent_version)
     image_receipt = {
         "schema_version": "1.0",
@@ -262,7 +267,7 @@ def collect(
     base_report = {
         "schema_version": "1.0",
         "format_id": _REPORT_FORMAT,
-        "pilot_format": OPENHANDS_BOUNDED_SFT_PILOT_FORMAT,
+        "pilot_format": OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT,
         "contract_hash": contract["contract_hash"],
         "campaign_id": campaign_id,
         "status": "collection_running",
@@ -279,6 +284,10 @@ def collect(
         "predecessor_resampled": False,
         "whole_episode_retries": 0,
         "provider_request_retries": 0,
+        "verifier_replay_policy_id": contract["verifier_replay"]["policy_id"],
+        "verifier_replay_budget_per_episode": 1,
+        "verifier_replay_model_calls": 0,
+        "source_run_mutated_by_verifier_replay": False,
         "best_of_k": False,
         "model_substitution": False,
         "model_transport_id": _MODEL,
@@ -340,6 +349,7 @@ def collect(
             lock=locks[str(episode["task_id"])],
             runs=runs,
             records_root=records_root,
+            verifier_replays=verifier_replays,
             exact_tokenizer=exact_tokenizer,
             agent_version=agent_version,
             source_commit=source_commit,
@@ -362,6 +372,7 @@ def collect(
         role="training",
         qualification=qualification,
         tokenizer_directory=tokenizer_directory,
+        dataset_contract=contract["dataset"],
     )
     validation_manifest: dict[str, Any] | None = None
     validation_security: Any | None = None
@@ -374,6 +385,7 @@ def collect(
             role="validation",
             qualification=qualification,
             tokenizer_directory=tokenizer_directory,
+            dataset_contract=contract["dataset"],
         )
     _assert_provider_secret_absent(root)
     ordered_attempts = _ordered_attempts(attempts, training_schedule, validation_schedule)
@@ -401,6 +413,9 @@ def collect(
         "attempts": ordered_attempts,
         "attempt_count": len(ordered_attempts),
         "new_provider_episode_count": len(ordered_attempts) - 1,
+        "verifier_only_replay_count": sum(
+            item.get("verifier_replay_hash") is not None for item in ordered_attempts
+        ),
         "infrastructure_valid_attempt_count": sum(
             bool(item["infrastructure_valid"]) for item in ordered_attempts
         ),
@@ -457,6 +472,7 @@ def _run_episode(
     lock: Any,
     runs: Path,
     records_root: Path,
+    verifier_replays: Path,
     exact_tokenizer: QwenDecisionExampleTokenizer,
     agent_version: AgentVersionManifest,
     source_commit: str,
@@ -502,7 +518,7 @@ def _run_episode(
         run_id=run_id,
         experiment_id=campaign_id,
         plan_item_id=episode_id,
-        system_id="openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v1",
+        system_id="openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v2",
         base_seed=seed,
     )
     try:
@@ -520,6 +536,8 @@ def _run_episode(
         ) from exc
     scorecard = result.scorecard
     run_hash = content_hash({"run_id": run_id, "scorecard": scorecard.model_dump(mode="json")})
+    verifier_replay: dict[str, Any] | None = None
+    effective_verifier_resolved = scorecard.resolved
     if _infrastructure_invalid(scorecard):
         failure = scorecard.failure
         reason = (
@@ -527,26 +545,105 @@ def _run_episode(
             if failure is not None
             else "scorecard_infrastructure_invalid"
         )
-        attempt = _infrastructure_attempt(
-            episode,
-            run_id,
-            str(reason),
-            source_commit=source_commit,
-            run_hash=run_hash,
-        )
-        _stop(root, base_report, [*attempts, attempt], str(reason))
-        raise ConfigurationError(
-            f"bounded SFT collection stopped on infrastructure-invalid {episode_id}"
-        )
+        if failure is not None and failure.infrastructure:
+            attempt = _infrastructure_attempt(
+                episode,
+                run_id,
+                str(reason),
+                source_commit=source_commit,
+                run_hash=run_hash,
+            )
+            _stop(root, base_report, [*attempts, attempt], str(reason))
+            raise ConfigurationError(
+                f"bounded SFT collection stopped on infrastructure-invalid {episode_id}"
+            )
+        run_directory = Path(result.run_dir).resolve(strict=True)
+        replay_root = verifier_replays / episode_id
+        try:
+            replay = replay_run(
+                run_directory,
+                verify=True,
+                service=service,
+                verification_artifact_root=replay_root,
+            )
+        except Exception as exc:
+            replay_reason = f"verifier_replay_{type(exc).__name__}"
+            attempt = _infrastructure_attempt(
+                episode,
+                run_id,
+                replay_reason,
+                source_commit=source_commit,
+                run_hash=run_hash,
+            )
+            _stop(root, base_report, [*attempts, attempt], replay_reason)
+            raise ConfigurationError(
+                f"bounded SFT verifier replay failed for {episode_id}"
+            ) from exc
+        replay_results = replay.reverified_results
+        if replay_results is None:
+            replay_reason = "verifier_replay_results_missing"
+            attempt = _infrastructure_attempt(
+                episode,
+                run_id,
+                replay_reason,
+                source_commit=source_commit,
+                run_hash=run_hash,
+            )
+            _stop(root, base_report, [*attempts, attempt], replay_reason)
+            raise ConfigurationError("bounded SFT verifier replay returned no results")
+        verifier_replay_base = {
+            "schema_version": "1.0",
+            "format_id": "verigym_openhands_hwe_verifier_only_replay_v1",
+            "episode_id": episode_id,
+            "source_run_id": run_id,
+            "source_run_hash": run_hash,
+            "candidate_hash": scorecard.reproducibility.candidate_hash,
+            "verifier_hash": scorecard.reproducibility.verifier_hash,
+            "original_failure_reason": str(reason),
+            "zero_model_replay": True,
+            "provider_calls": 0,
+            "whole_episode_retries": 0,
+            "result_hash": content_hash(replay_results),
+            "result_statuses": [result.status for result in replay_results],
+            "infrastructure_valid": not has_infrastructure_error(replay_results),
+            "ordinary_verifier_resolved": replay.reverified_resolved,
+        }
+        verifier_replay = {
+            **verifier_replay_base,
+            "verifier_replay_hash": content_hash(verifier_replay_base),
+        }
+        atomic_dump_json(replay_root / "continuation-receipt.json", verifier_replay)
+        if has_infrastructure_error(replay_results):
+            attempt = {
+                **_infrastructure_attempt(
+                    episode,
+                    run_id,
+                    str(reason),
+                    source_commit=source_commit,
+                    run_hash=run_hash,
+                ),
+                "verifier_replay_hash": verifier_replay["verifier_replay_hash"],
+                "verifier_replay_infrastructure_valid": False,
+            }
+            _stop(root, base_report, [*attempts, attempt], "verifier_replay_infrastructure_invalid")
+            raise ConfigurationError(
+                f"bounded SFT collection stopped after verifier replay for {episode_id}"
+            )
+        effective_verifier_resolved = replay.reverified_resolved is True
 
     run_directory = Path(result.run_dir).resolve(strict=True)
     trajectory_path = run_directory / "artifacts" / "openhands_sdk" / "training-trajectory.json"
+    replay_candidate_path = (
+        run_directory / "private-audit" / "openhands-training-trajectory-candidate.json"
+    )
     trajectory: dict[str, Any] | None = None
     records: list[dict[str, Any]] = []
     dry_runs: list[dict[str, Any]] = []
     status, rejection_reason = _nonpositive_outcome(scorecard)
-    if scorecard.resolved:
-        if trajectory_path.is_symlink() or not trajectory_path.is_file():
+    trajectory_recovered_by_verifier_replay = False
+    if effective_verifier_resolved:
+        selected_trajectory_path = trajectory_path if scorecard.resolved else replay_candidate_path
+        if selected_trajectory_path.is_symlink() or not selected_trajectory_path.is_file():
             attempt = _infrastructure_attempt(
                 episode,
                 run_id,
@@ -556,7 +653,12 @@ def _run_episode(
             )
             _stop(root, base_report, [*attempts, attempt], "resolved_trajectory_missing")
             raise ConfigurationError(f"bounded SFT resolved trajectory missing for {episode_id}")
-        trajectory = validate_openhands_training_trajectory(_json(trajectory_path))
+        trajectory = validate_openhands_training_trajectory(_json(selected_trajectory_path))
+        if not scorecard.resolved:
+            if verifier_replay is None or trajectory.get("verifier_resolved") is not False:
+                raise ConfigurationError("bounded SFT replay trajectory binding changed")
+            trajectory = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+            trajectory_recovered_by_verifier_replay = True
         if trajectory.get("task_id") != task_id:
             raise ConfigurationError("bounded SFT trajectory task identity changed")
         reproducibility = scorecard.reproducibility
@@ -655,7 +757,7 @@ def _run_episode(
         "historical_predecessor": False,
         "source_commit": source_commit,
         "infrastructure_valid": True,
-        "ordinary_verifier_resolved": scorecard.resolved,
+        "ordinary_verifier_resolved": effective_verifier_resolved,
         "exact_64k_eligible": bool(records),
         "truncation_applied": False,
         "transcript_hash": trajectory.get("transcript_hash") if trajectory else None,
@@ -668,6 +770,14 @@ def _run_episode(
         "accounting_available": accounting_available,
         "rejection_reason": rejection_reason,
         "whole_episode_retries": 0,
+        "verifier_replay_hash": (
+            verifier_replay["verifier_replay_hash"] if verifier_replay is not None else None
+        ),
+        "verifier_replay_infrastructure_valid": (
+            verifier_replay["infrastructure_valid"] if verifier_replay is not None else None
+        ),
+        "effective_ordinary_verifier_resolved": effective_verifier_resolved,
+        "trajectory_recovered_by_verifier_replay": trajectory_recovered_by_verifier_replay,
     }
     return attempt, records, dry_runs
 
@@ -811,8 +921,18 @@ def _write_dataset(
     role: str,
     qualification: Path,
     tokenizer_directory: Path,
+    dataset_contract: dict[str, Any],
 ) -> tuple[dict[str, Any], Any]:
     manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    allowed_outputs = dataset_contract.get("allowed_output_formats")
+    allowed_rows = dataset_contract.get("allowed_row_formats")
+    if (
+        not isinstance(allowed_outputs, list)
+        or manifest.get("format_id") not in allowed_outputs
+        or not isinstance(allowed_rows, list)
+        or any(record.get("format_id") not in allowed_rows for record in records)
+    ):
+        raise ConfigurationError("bounded SFT dataset format escaped the v2 contract")
     dry_run_base = {
         "schema_version": "1.0",
         "format_id": _DRY_RUN_FORMAT,

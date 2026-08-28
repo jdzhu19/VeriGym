@@ -6,6 +6,7 @@ import json
 import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,14 @@ OPENHANDS_BOUNDED_SFT_PILOT_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sft_p
 OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH = (
     "882a2bfc9b7d4c0e43bcc9d97724b7dcdd05c6129d63e0ab85461c9d6ab3037d"
 )
+OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT = "verigym_qwen35_hwe_openhands_bounded_sft_pilot_v2"
+OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH = (
+    "4567af055f34b58472e0b915b32efcbb6f26dc6bb40aa48c392b1de0538749c6"
+)
+OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE = "qwen35_hwe_openhands_bounded_sft_pilot_v1.json"
+OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE_SHA256 = (
+    "b75992052e85998a0f7550902302ce9c58f95b423bc821054865ef2ee0c663e8"
+)
 OPENHANDS_BOUNDED_SFT_PILOT_BASELINE_COMMIT = "0ad17bd8259141e63efdfd7914407ed821993b60"
 OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH = (
     "68c76482f81ac4bbbb64a54d0886fda4b1a0b7c38e489916b919f768ec3146e6"
@@ -34,8 +43,8 @@ OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256 = (
 OPENHANDS_BOUNDED_SFT_PILOT_QUALIFICATION_SHA256 = (
     "27980ef9b0537c1a1873ea9ad7894c6e0edd3564b5ac503209703322ab8042a3"
 )
-OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v1"
-OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V1"
+OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-bounded-sft-pilot-v2"
+OPENHANDS_BOUNDED_SFT_OPT_IN_ENV = "VERIGYM_RUN_OPENHANDS_BOUNDED_SFT_PILOT_V2"
 OPENHANDS_BOUNDED_SFT_BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
 OPENHANDS_BOUNDED_SFT_API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 
@@ -164,9 +173,13 @@ def build_bounded_sft_agent_version(
                 "openhands_sdk_version": "1.42.1",
                 "litellm_version": "1.93.0",
                 "tiktoken_version": "0.7.0",
-                "pilot_contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH,
+                "pilot_contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH,
                 "collection_profile_id": "hwe_production_native_shell_v2",
                 "tool_contract_id": "hwe_native_shell_v2",
+                "tool_choice_policy": ("validated_responses_recovery_state_required_tool_v12"),
+                "sdk_stop_continuation_policy": ("openhands_sdk_blocked_stop_continuation_v1"),
+                "sdk_stop_continuation_budget": 1,
+                "sdk_upstream_source_modified": False,
                 "task_image_lock_hashes": lock_receipts,
                 "agent_runtime_network": "none",
                 "whole_episode_retries": 0,
@@ -230,6 +243,7 @@ def build_bounded_sft_agent_options(
         "agent_version_hash": version.version_hash,
         "agent_version_manifest_json": manifest_json,
         "collection_profile_id": "hwe_production_native_shell_v2",
+        "tool_choice_policy": "validated_responses_recovery_state_required_tool_v12",
     }
     return validate_plugin_options(options)
 
@@ -243,6 +257,122 @@ def load_bounded_sft_pilot_contract(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("bounded SFT pilot contract must be a JSON object")
     return validate_bounded_sft_pilot_contract(parsed)
+
+
+def load_bounded_sft_pilot_contract_v2(path: Path) -> dict[str, Any]:
+    """Load the v2 delta and bind it to the byte-exact frozen v1 contract."""
+
+    overlay = _load_small_json_object(path)
+    _validate_bounded_sft_pilot_v2_overlay(overlay)
+    parent_path = path.parent / OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE
+    if hash_bytes(_regular_bytes(parent_path)) != OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE_SHA256:
+        raise ValueError("bounded SFT v1 parent file changed")
+    parent = load_bounded_sft_pilot_contract(parent_path)
+    merged = deepcopy(parent)
+    merged["format_id"] = OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT
+    merged["contract_hash"] = OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH
+    merged["parent"] = deepcopy(overlay["parent"])
+    merged["teacher"].update(deepcopy(overlay["teacher_delta"]))
+    merged["verifier_replay"] = deepcopy(overlay["verifier_replay"])
+    merged["dataset"].update(deepcopy(overlay["dataset_delta"]))
+    return validate_bounded_sft_pilot_contract_v2(merged)
+
+
+def validate_bounded_sft_pilot_contract_v2(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Reject any drift from the exact v2 delta layered on the frozen v1 contract."""
+
+    contract = deepcopy(dict(value))
+    if (
+        contract.get("format_id") != OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT
+        or contract.get("contract_hash") != OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH
+    ):
+        raise ValueError("bounded SFT v2 pilot contract identity changed")
+    overlay = _expected_bounded_sft_pilot_v2_overlay()
+    for key in ("parent", "verifier_replay"):
+        if contract.get(key) != overlay[key]:
+            raise ValueError(f"bounded SFT v2 {key} changed")
+    parent = contract.pop("parent")
+    contract.pop("verifier_replay")
+    teacher_delta = overlay["teacher_delta"]
+    if any(contract["teacher"].get(key) != expected for key, expected in teacher_delta.items()):
+        raise ValueError("bounded SFT v2 teacher policy changed")
+    dataset_delta = overlay["dataset_delta"]
+    if any(contract["dataset"].get(key) != expected for key, expected in dataset_delta.items()):
+        raise ValueError("bounded SFT v2 dataset policy changed")
+
+    contract["format_id"] = OPENHANDS_BOUNDED_SFT_PILOT_FORMAT
+    contract["contract_hash"] = OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH
+    contract["teacher"] = {
+        key: item
+        for key, item in contract["teacher"].items()
+        if key not in teacher_delta or key == "scaffold"
+    }
+    contract["teacher"]["scaffold"] = "openhands-sdk-1.42.1-verigym-broker-v1"
+    contract["dataset"] = {
+        key: item for key, item in contract["dataset"].items() if key not in dataset_delta
+    }
+    contract["dataset"]["format_id"] = "verigym_openhands_decision_sft_dataset_64k_v1"
+    validate_bounded_sft_pilot_contract(contract)
+    if parent != overlay["parent"]:
+        raise ValueError("bounded SFT v2 parent binding changed")
+    return deepcopy(dict(value))
+
+
+def _validate_bounded_sft_pilot_v2_overlay(value: Mapping[str, Any]) -> None:
+    supplied_hash = value.get("contract_hash")
+    base = {key: item for key, item in value.items() if key != "contract_hash"}
+    if (
+        supplied_hash != content_hash(base)
+        or supplied_hash != OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH
+        or dict(value) != _expected_bounded_sft_pilot_v2_overlay()
+    ):
+        raise ValueError("bounded SFT v2 pilot contract identity changed")
+
+
+def _expected_bounded_sft_pilot_v2_overlay() -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "format_id": OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT,
+        "parent": {
+            "file": OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE,
+            "file_sha256": OPENHANDS_BOUNDED_SFT_PILOT_V1_FILE_SHA256,
+            "contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH,
+        },
+        "teacher_delta": {
+            "scaffold": "openhands-sdk-1.42.1-verigym-broker-v2-v5",
+            "tool_choice_policy": "validated_responses_recovery_state_required_tool_v12",
+            "format_recovery_policy_id": "openhands_broker_stop_hook_recovery_v1",
+            "format_recovery_budget": 1,
+            "sdk_stop_continuation_policy_id": "openhands_sdk_blocked_stop_continuation_v1",
+            "sdk_stop_continuation_budget": 1,
+            "raw_host_path_policy": "broker_preexecution_reject_training_ineligible_v1",
+        },
+        "verifier_replay": {
+            "policy_id": "frozen_candidate_external_artifact_verifier_replay_v1",
+            "budget_per_episode": 1,
+            "model_calls": 0,
+            "source_run_mutated": False,
+            "continue_only_after_infrastructure_valid_result": True,
+        },
+        "dataset_delta": {
+            "format_family_id": "verigym_openhands_decision_sft_dataset_64k_v1_through_v5",
+            "allowed_output_formats": [
+                "verigym_openhands_decision_sft_dataset_64k_v1",
+                "verigym_openhands_decision_sft_dataset_64k_v2",
+                "verigym_openhands_decision_sft_dataset_64k_v3",
+                "verigym_openhands_decision_sft_dataset_64k_v4",
+                "verigym_openhands_decision_sft_dataset_64k_v5",
+            ],
+            "allowed_row_formats": [
+                "verigym_openhands_decision_sft_64k_v1",
+                "verigym_openhands_decision_sft_64k_v2",
+                "verigym_openhands_decision_sft_64k_v3",
+                "verigym_openhands_decision_sft_64k_v4",
+                "verigym_openhands_decision_sft_64k_v5",
+            ],
+        },
+        "contract_hash": OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH,
+    }
 
 
 def validate_bounded_sft_pilot_contract(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -413,6 +543,39 @@ def validate_bounded_sft_source(
     """Bind the contract to the exact completed qualification split and files."""
 
     validate_bounded_sft_pilot_contract(contract)
+    _validate_bounded_sft_source_files(
+        contract,
+        split=split,
+        task_split_path=task_split_path,
+        qualification_progress_path=qualification_progress_path,
+    )
+
+
+def validate_bounded_sft_source_v2(
+    contract: Mapping[str, Any],
+    *,
+    split: TaskSplitManifest,
+    task_split_path: Path,
+    qualification_progress_path: Path,
+) -> None:
+    """Bind the derived v2 contract to the same frozen qualification evidence."""
+
+    validate_bounded_sft_pilot_contract_v2(contract)
+    _validate_bounded_sft_source_files(
+        contract,
+        split=split,
+        task_split_path=task_split_path,
+        qualification_progress_path=qualification_progress_path,
+    )
+
+
+def _validate_bounded_sft_source_files(
+    contract: Mapping[str, Any],
+    *,
+    split: TaskSplitManifest,
+    task_split_path: Path,
+    qualification_progress_path: Path,
+) -> None:
     if split.manifest_hash != OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_HASH:
         raise ValueError("bounded SFT task split manifest changed")
     if hash_bytes(_regular_bytes(task_split_path)) != OPENHANDS_BOUNDED_SFT_PILOT_SPLIT_SHA256:
@@ -559,6 +722,15 @@ def _regular_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
+def _load_small_json_object(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 1024 * 1024:
+        raise ValueError("bounded SFT pilot contract must be a small regular file")
+    parsed = json.loads(path.read_bytes())
+    if not isinstance(parsed, dict):
+        raise ValueError("bounded SFT pilot contract must be a JSON object")
+    return parsed
+
+
 __all__ = [
     "OPENHANDS_BOUNDED_SFT_AGENT_VERSION_ID",
     "OPENHANDS_BOUNDED_SFT_API_KEY_ENV",
@@ -566,6 +738,8 @@ __all__ = [
     "OPENHANDS_BOUNDED_SFT_HELDOUT_TASKS",
     "OPENHANDS_BOUNDED_SFT_PILOT_CONTRACT_HASH",
     "OPENHANDS_BOUNDED_SFT_PILOT_FORMAT",
+    "OPENHANDS_BOUNDED_SFT_PILOT_V2_CONTRACT_HASH",
+    "OPENHANDS_BOUNDED_SFT_PILOT_V2_FORMAT",
     "OPENHANDS_BOUNDED_SFT_OPT_IN_ENV",
     "OPENHANDS_BOUNDED_SFT_TRAINING_TASKS",
     "OPENHANDS_BOUNDED_SFT_VALIDATION_TASKS",
@@ -574,6 +748,9 @@ __all__ = [
     "build_bounded_sft_agent_version",
     "evaluate_bounded_sft_data_gate",
     "load_bounded_sft_pilot_contract",
+    "load_bounded_sft_pilot_contract_v2",
     "validate_bounded_sft_pilot_contract",
+    "validate_bounded_sft_pilot_contract_v2",
     "validate_bounded_sft_source",
+    "validate_bounded_sft_source_v2",
 ]
