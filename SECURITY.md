@@ -441,6 +441,15 @@ five are no longer possible. Transfer, infrastructure, security, cleanup, or bin
 the stage immediately with no retry. Provider canary, agent-image build, collection, training, and
 held-out access remain separately gated.
 
+The v25 identity is sealed after its first digest-qualified `crane pull` returned zero but emitted
+bounded diagnostic output. Its local empty-stderr rule stopped before Docker load or verification.
+The v26 successor keeps stdout empty as a semantic requirement, permits stderr only after the
+controlled command has exited zero and the existing byte bound has been enforced, and never
+persists raw output. Before applying that policy it atomically records a content-free receipt with
+stream byte counts and digests, so a later stop remains diagnosable. Tar inventory, remote config,
+loaded image ID, manifest binding, network isolation, cleanup, capacity, and no-retry controls are
+unchanged; bounded diagnostics cannot substitute for any integrity check.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
