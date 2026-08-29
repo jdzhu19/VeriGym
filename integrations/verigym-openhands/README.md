@@ -289,6 +289,11 @@ That preflight passed the registered version smoke and stopped at the final publ
 because its Debian slim execution image had no CA trust store. See the
 [v23 stopped audit](../../docs/audits/2026-08-29_openhands-v23-daemonless-prewarm-stopped.md).
 
+The v24 successor uses the already locked CA-bearing Python slim image for crane execution and adds
+a `network=none` CA-bundle precheck before any crane command. It neither disables TLS nor installs
+packages at runtime. See the
+[v24 CA-precheck authorization](../../docs/audits/2026-08-29_openhands-v24-ca-precheck-fix-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
