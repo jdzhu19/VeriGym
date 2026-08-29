@@ -599,6 +599,23 @@ Neither a recovered sample nor a completed continuation authorizes GPU work by i
 allowed only after the continuation emits its independent final report and the original exact-64K
 distinct-task gate is satisfied. Historical incomplete roots remain immutable audit evidence.
 
+### Public qualification continuation and safe diagnostics
+
+A stopped public qualification is never retried under its frozen identity. A successor may import
+qualified evidence only after binding the complete predecessor progress hash, file hash, task and
+source hashes, image and manifest identities, transfer receipts, terminal diagnostic receipt, and
+audit commit. Every previously attempted task remains single-use; continuation starts at the next
+distinct frozen candidate. Imported evidence is identified as predecessor evidence and is not
+relabelled as a new execution.
+
+Raw registry, transport, cache, archive, and container diagnostics may contain endpoints,
+credentials, or host paths and must not be persisted. A bounded diagnostic may be inspected only
+in memory and mapped to a closed, non-content-bearing error category. Receipts retain byte counts,
+SHA-256 values, exit state, the allowlisted category, and cleanup state. Unknown or over-bound
+output, a nonzero command, invalid classification, or a cleanup failure remains fail closed. Error
+classification does not authorize an automatic retry or convert an infrastructure failure into a
+verifier result.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
