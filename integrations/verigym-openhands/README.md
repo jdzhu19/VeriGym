@@ -293,6 +293,19 @@ The v24 successor uses the already locked CA-bearing Python slim image for crane
 a `network=none` CA-bundle precheck before any crane command. It neither disables TLS nor installs
 packages at runtime. See the
 [v24 CA-precheck authorization](../../docs/audits/2026-08-29_openhands-v24-ca-precheck-fix-authorization.md).
+Its single authorized preflight passed SLSA bootstrap, CA, exact-version, and registered public
+digest checks with zero candidates and zero provider calls; see the
+[v24 passed audit](../../docs/audits/2026-08-29_openhands-v24-daemonless-prewarm-passed.md).
+
+The separately versioned v25 qualification removes the old bulk-prewarm shape. It revalidates the
+passed v24 public-tool cache, then streams candidates in the frozen order: resolve manifest,
+digest-qualified `crane pull`, verify remote-config hash against the loaded local image ID, prepare
+one source, and run its networkless base-FAIL/reference-PASS smoke. A run-local content-addressed
+layer cache reuses common layers, and the runner stops as soon as five tasks qualify or as soon as
+remaining distinct capacity cannot reach five. This avoids downloading unused fallbacks and
+detects transfer defects before another task is touched. The authorization permits zero-model
+qualification only; provider canary, agent-image construction, collection, SFT, GPU work, and
+held-out access remain forbidden.
 
 ## Five-task HWE collection pilot
 

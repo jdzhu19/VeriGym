@@ -417,6 +417,30 @@ non-root, read-only-root controls. Success must emit no output, and the content-
 included in the final report. Runtime package installation, TLS disabling, `--insecure`, old-cache
 reuse, credentials, and proxy forwarding remain forbidden.
 
+The separately authorized v25 qualification reuses only the eight exact, hash-checked public files
+from the passed v24 tool cache. Candidate transfers run one at a time through `crane` on
+`verigym-hwe-net`; the container has a read-only tool mount and one writable transfer/cache mount,
+but remains non-root, read-only-root, capability-free, non-privileged, port-free, and socket-free.
+The host Docker daemon receives only the completed, bounded tarball through `docker image load`.
+No nested daemon or TCP API is started.
+
+The go-containerregistry tarball format is loadable by Docker but does not preserve a registry
+manifest digest across a tarball round trip. v25 therefore resolves the public tag once, pulls the
+digest-qualified reference, hashes the exact remote config bytes, requires that hash to equal the
+loaded Docker image ID, validates the bounded tar member inventory and generated digest-sentinel
+tag, and only then applies the frozen candidate tag. The separately recorded remote manifest
+digest and local config/image identity become the preparation override; any existing Docker
+`RepoDigests` must either be empty or agree. An override cannot accompany an implicit Docker pull
+or cover a task other than the explicitly selected source.
+
+Qualification stays on `network=none`, makes zero model calls, and runs immediately after each
+successful transfer. A content-addressed layer cache is shared only inside this one v25 run. The
+runner atomically recomputes qualified count plus remaining distinct capacity after every outcome,
+stops before transferring an unnecessary fallback once five tasks qualify, and stops early when
+five are no longer possible. Transfer, infrastructure, security, cleanup, or binding errors stop
+the stage immediately with no retry. Provider canary, agent-image build, collection, training, and
+held-out access remain separately gated.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
