@@ -400,6 +400,15 @@ qualified path to the subprocess. The exact path is also bound into the atomic h
 final receipt. v22 retains v21's download, network, output, diagnostic, cleanup, and no-candidate
 boundaries; it authorizes one new preflight only after its distinct authorization merges.
 
+The v22 identity is likewise sealed after its verified `crane version` command returned a
+successful seven-byte output that differed from an eight-byte value derived from the release tag.
+The v23 successor treats the Git release tag and CLI build-version output as independent bindings.
+It registers the exact output observed from the SHA-256-bound public binary, validates that this
+value is not `release_tag + newline`, compares exact bytes under `network=none`, and persists only
+the byte count and SHA-256 in the outer report. A future binary update must register its own output;
+it cannot inherit or infer the value from a tag. v23 uses a new cache and does not reuse v22's
+promoted public-tool evidence.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered

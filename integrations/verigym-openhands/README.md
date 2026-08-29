@@ -281,6 +281,11 @@ That preflight proved the SLSA and absolute-path repair, then stopped at a separ
 assumption before the non-candidate registry probe. The identity is sealed; see the
 [v22 stopped audit](../../docs/audits/2026-08-29_openhands-v22-daemonless-prewarm-stopped.md).
 
+The v23 successor independently registers the exact `crane version` bytes for the pinned binary
+instead of deriving them from the release tag. It retains the v22 SLSA and absolute-path controls,
+uses a new cache, and still authorizes only one no-candidate preflight after merge. See the
+[v23 version-contract authorization](../../docs/audits/2026-08-29_openhands-v23-version-contract-fix-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
