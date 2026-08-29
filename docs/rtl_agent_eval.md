@@ -170,11 +170,15 @@ stops before any Codex process is authorized.
 Smoke-v7 preflight exposed and fixed two no-model integration defects: qualification candidates
 were staged under an extra repository directory, and the already-validated outer release binding
 was incorrectly forwarded to the inner local synthesis service. The rebuilt release passes the
-complete disposable-worker lifecycle and commercial synthesis qualification. The full plan-only
-preflight is nevertheless incomplete because the host root filesystem is full and the container
-runtime cannot create its control-plane shim directory. No smoke-v7 experiment directory or Codex
-process was created, and the model-call count remains zero. Smoke-v7 therefore does not yet
-authorize a formal four-run smoke, a pilot, or a benchmark score.
+complete disposable-worker lifecycle and commercial synthesis qualification. After host capacity
+was restored, the full plan-only pass completed with zero model calls and the formal smoke started
+four frozen Codex processes with zero retries. All four produced one valid identity observation,
+resolved through typed `finish`, and passed replay and leakage scanning; both RTLLM tasks contain
+legal current-candidate PPA feedback. The first post-run replay exposed and fixed a composite
+Yosys/OpenSTA script-identity validator defect without rerunning a model. Smoke-v7 now authorizes
+the separately gated 14-run pilot, which has not started, and remains a qualification rather than a
+benchmark score. The complete result is recorded in the
+[smoke-v7 audit](audits/2026-08-29_rtl-agenteval-codex-gpt54-xhigh-smoke-v7-result.md).
 
 ## Design choices informed by POSTEDA-Bench
 

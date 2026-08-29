@@ -61,6 +61,59 @@ def test_replay_resolves_tool_neutral_synthesis_artifact_namespace(tmp_path) -> 
         _validate_stored_synthesis_artifacts(tmp_path, manifest, scorecard)
 
 
+def test_replay_validates_composite_yosys_opensta_script_identity(tmp_path) -> None:
+    backend = tmp_path / "artifacts" / "yosys_opensta"
+    candidate_root = backend / "candidate"
+    candidate_root.mkdir(parents=True)
+    synthesis = b"synth -top dut\n"
+    opensta = b"report_checks\n"
+    (candidate_root / "synthesis.ys").write_bytes(synthesis)
+    (candidate_root / "flow.tcl").write_bytes(opensta)
+    flow_hash = hash_bytes(synthesis + b"\n--- opensta.tcl ---\n" + opensta)
+    candidate = SynthesisMetrics(
+        status="passed",
+        synthesis_ok=True,
+        role="candidate",
+        top="dut",
+        generated_script_hash=flow_hash,
+        artifacts=[
+            SynthesisArtifactRef(
+                path="synthesis.ys",
+                content_hash=hash_bytes(synthesis),
+                size_bytes=len(synthesis),
+                role="generated_script",
+                visibility="public",
+            ),
+            SynthesisArtifactRef(
+                path="flow.tcl",
+                content_hash=hash_bytes(opensta),
+                size_bytes=len(opensta),
+                role="generated_script",
+                visibility="public",
+            ),
+        ],
+    )
+    manifest = SimpleNamespace(
+        synthesis_flow_script_hash=flow_hash,
+        reference_summary_hash=None,
+    )
+    scorecard = SimpleNamespace(
+        quality=SimpleNamespace(synthesis=candidate, reference_synthesis=None)
+    )
+
+    _validate_stored_synthesis_artifacts(tmp_path, manifest, scorecard)
+
+    scorecard.quality.synthesis = candidate.model_copy(update={"generated_script_hash": "0" * 64})
+    with pytest.raises(ReplayError, match="stored candidate synthesis script identity"):
+        _validate_stored_synthesis_artifacts(tmp_path, manifest, scorecard)
+
+    scorecard.quality.synthesis = candidate.model_copy(
+        update={"generated_script_hash": None, "artifacts": []}
+    )
+    with pytest.raises(ReplayError, match="stored candidate synthesis script identity"):
+        _validate_stored_synthesis_artifacts(tmp_path, manifest, scorecard)
+
+
 def test_replay_accepts_profile_run_quarantined_before_synthesis(tmp_path) -> None:
     manifest = SimpleNamespace(reference_summary_hash=None)
     scorecard = SimpleNamespace(

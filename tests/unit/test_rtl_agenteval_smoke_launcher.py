@@ -409,6 +409,79 @@ def test_launcher_does_not_claim_a_process_started_during_preflight_failure(
     assert record["retry_count"] == 0
 
 
+def test_existing_finalizer_validates_frozen_plan_and_process_ledger(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    plan = {
+        "campaign_id": launcher._CAMPAIGN_ID,  # noqa: SLF001
+        "tasks": list(launcher._TASKS),  # noqa: SLF001
+        "model": "gpt-5.4",
+        "reasoning_effort": "xhigh",
+        "seed": 0,
+        "samples_per_task": 1,
+        "planned_codex_processes": 4,
+        "automatic_retries": 0,
+        "run_config_hashes": [str(index) * 64 for index in range(1, 5)],
+        "codex": {
+            "agent_version_id": launcher.AGENTEVAL_AGENT_VERSION_ID,
+            "agent_version_hash": launcher.AGENTEVAL_AGENT_VERSION_HASH,
+            "prompt_hash": launcher.AGENTEVAL_PROMPT_HASH,
+            "tool_policy_fingerprint": launcher.AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+        },
+    }
+    launcher._validate_existing_plan(plan)  # noqa: SLF001
+
+    output = tmp_path / "campaign"
+    (output / "evidence").mkdir(parents=True)
+    records = []
+    results = []
+    for ordinal, (run_id, task_id) in enumerate(
+        zip(launcher._RUN_IDS, launcher._TASKS, strict=True),  # noqa: SLF001
+        start=1,
+    ):
+        evidence = output / "runs" / run_id / "artifacts" / "codex_cli"
+        evidence.mkdir(parents=True)
+        (evidence / "process.json").write_text("{}", encoding="utf-8")
+        (evidence / "identity.json").write_text("{}", encoding="utf-8")
+        results.append(
+            SimpleNamespace(
+                run_dir=output / "runs" / run_id,
+                manifest=SimpleNamespace(
+                    run_id=run_id,
+                    task_id=task_id,
+                    run_config_hash=plan["run_config_hashes"][ordinal - 1],
+                    external_agent_observations=[object()],
+                ),
+            )
+        )
+        records.append(
+            {
+                "ordinal": ordinal,
+                "run_id": run_id,
+                "task_id": task_id,
+                "authorization_granted": True,
+                "process_started": True,
+                "provider_observation_recorded": True,
+                "retry_count": 0,
+                "status": "completed",
+            }
+        )
+    ledger_path = output / "evidence" / "process-authorizations.json"
+    ledger_path.write_text(json.dumps({"records": records}), encoding="utf-8")
+
+    launcher._validate_existing_results_against_plan(plan, results)  # noqa: SLF001
+    launcher._validate_existing_ledger(output, results)  # noqa: SLF001
+
+    results[0].manifest.run_config_hash = "f" * 64
+    with pytest.raises(Exception, match="configuration hashes differ"):
+        launcher._validate_existing_results_against_plan(plan, results)  # noqa: SLF001
+    results[0].manifest.run_config_hash = plan["run_config_hashes"][0]
+
+    records[0]["retry_count"] = 1
+    ledger_path.write_text(json.dumps({"records": records}), encoding="utf-8")
+    with pytest.raises(Exception, match="ledger differs"):
+        launcher._validate_existing_ledger(output, results)  # noqa: SLF001
+
+
 def test_smoke_v7_identity_and_release_preconditions_are_frozen(tmp_path: Path) -> None:
     launcher = _launcher_module()
     release_hash = "a" * 64

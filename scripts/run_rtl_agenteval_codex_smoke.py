@@ -37,6 +37,7 @@ from verigym.core.agent_feedback import (
 )
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
+from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
 from verigym.core.repository_observation import (
@@ -67,12 +68,13 @@ from verigym.protocols.repository_action import resolve_repository_action_protoc
 from verigym.registry.base import PluginOrigin
 from verigym.registry.collections import Registries, build_registries
 from verigym.schemas.common import InteractionMode, ToolchainProfile
-from verigym.schemas.run import RunConfig, RunResult
+from verigym.schemas.run import RunConfig, RunManifest, RunResult
 from verigym.schemas.runtime import (
     DockerExternalAgentRuntimeConfig,
     DockerRuntimeConfig,
     SessionSpec,
 )
+from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
@@ -100,6 +102,7 @@ _TASKS = (
     "verilog-eval/v2-spec-to-rtl-agent-eval-v1/Prob001_zero",
     "rtl-repo/official-parquet-v1-agent-eval-v1/test-000000",
 )
+_RUN_IDS = ("01-counter-open", "02-up-down-dc", "03-verilog-eval", "04-rtl-repo")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _COMMERCIAL_DIAGNOSTIC = re.compile(
     rb"(?i)(license[_ -]?server|lsf|mcp[_ -]?server(?:_[a-z0-9_]+|\b)|\.db\b)"
@@ -118,7 +121,9 @@ class CampaignInfrastructureError(ConfigurationError):
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--execute", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--execute", action="store_true")
+    mode.add_argument("--finalize-existing", action="store_true")
     parser.add_argument("--output", type=Path, default=_OUTPUT)
     parser.add_argument("--smoke-v2-plan", type=Path, default=_SMOKE_V2_PLAN)
     parser.add_argument("--site-work", type=Path, required=True)
@@ -142,6 +147,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = _parser().parse_args()
+    if arguments.finalize_existing:
+        return _finalize_existing(arguments)
     site_work = _new_path(arguments.site_work, "site-profile work directory")
     inputs = {
         "rtllm": _directory(arguments.rtllm_source),
@@ -259,6 +266,154 @@ def main() -> int:
     atomic_dump_json(output / "summary.json", summary)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0 if summary["fully_successful"] else 2
+
+
+def _finalize_existing(arguments: argparse.Namespace) -> int:
+    """Finalize one fully materialized campaign without invoking an agent or model."""
+
+    output = _directory(arguments.output)
+    site_work = _directory(arguments.site_work)
+    broker_root = _directory(arguments.broker_root)
+    inputs = {
+        "rtllm": _directory(arguments.rtllm_source),
+        "verilog_eval": _directory(arguments.verilog_eval_source),
+        "rtl_repo": _directory(arguments.rtl_repo_source),
+        "pdk": _directory(arguments.pdk_root),
+    }
+    profile_paths = {
+        "dc_counter": _regular_file(arguments.dc_counter_profile),
+        "dc_up_down": _regular_file(arguments.dc_up_down_profile),
+        "vcs_counter": _regular_file(arguments.vcs_counter_profile),
+        "vcs_up_down": _regular_file(arguments.vcs_up_down_profile),
+    }
+    smoke_v2_plan = _regular_file(arguments.smoke_v2_plan, "smoke-v2 plan")
+    plan_path = _regular_file(output / "plan.json", "formal campaign plan")
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("formal campaign plan is not valid JSON") from exc
+    _validate_existing_plan(plan)
+
+    service = VeriGym(_registries())
+    source_configs = _source_configs(inputs)
+    _validate_sources(service, source_configs)
+    results = _load_existing_results(output)
+    _validate_existing_results_against_plan(plan, results)
+    _validate_existing_ledger(output, results)
+    replay = _offline_replay(results)
+    scan = _scan_outputs(
+        results,
+        service,
+        source_configs,
+        profile_paths,
+        inputs,
+        site_paths=(site_work, broker_root, output, smoke_v2_plan),
+    )
+    summary = _campaign_summary(results, replay, scan)
+    atomic_dump_json(output / "replay.json", replay)
+    atomic_dump_json(output / "security-scan.json", scan)
+    atomic_dump_json(output / "summary.json", summary)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if summary["fully_successful"] else 2
+
+
+def _validate_existing_plan(plan: Any) -> None:
+    expected = {
+        "campaign_id": _CAMPAIGN_ID,
+        "tasks": list(_TASKS),
+        "model": "gpt-5.4",
+        "reasoning_effort": "xhigh",
+        "seed": 0,
+        "samples_per_task": 1,
+        "planned_codex_processes": 4,
+        "automatic_retries": 0,
+    }
+    if not isinstance(plan, dict) or any(plan.get(key) != value for key, value in expected.items()):
+        raise ConfigurationError("existing campaign plan differs from the frozen smoke-v7 plan")
+    codex = plan.get("codex")
+    expected_codex = {
+        "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
+        "agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+        "prompt_hash": AGENTEVAL_PROMPT_HASH,
+        "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+    }
+    if not isinstance(codex, dict) or any(
+        codex.get(key) != value for key, value in expected_codex.items()
+    ):
+        raise ConfigurationError("existing campaign plan has a different Codex agent identity")
+    hashes = plan.get("run_config_hashes")
+    if (
+        not isinstance(hashes, list)
+        or len(hashes) != 4
+        or not all(isinstance(item, str) and _SHA256.fullmatch(item) for item in hashes)
+    ):
+        raise ConfigurationError("existing campaign plan has invalid run configuration hashes")
+
+
+def _load_existing_results(output: Path) -> list[RunResult]:
+    runs_root = output / "runs"
+    if runs_root.is_symlink() or not runs_root.is_dir():
+        raise ConfigurationError("existing campaign has no real runs directory")
+    entries = sorted(entry.name for entry in runs_root.iterdir())
+    if entries != list(_RUN_IDS):
+        raise ConfigurationError("existing campaign does not contain exactly four frozen runs")
+    results: list[RunResult] = []
+    for run_id, task_id in zip(_RUN_IDS, _TASKS, strict=True):
+        run_dir = runs_root / run_id
+        if run_dir.is_symlink() or not run_dir.is_dir():
+            raise ConfigurationError("existing campaign run directory is invalid")
+        manifest = load_model(run_dir / "run_manifest.json", RunManifest)
+        scorecard = load_model(run_dir / "scorecard.json", ScoreCard)
+        if (
+            manifest.run_id != run_id
+            or manifest.task_id != task_id
+            or scorecard.run_id != run_id
+            or scorecard.task_id != task_id
+        ):
+            raise ConfigurationError("existing campaign run identity differs from its frozen slot")
+        results.append(RunResult(run_dir=run_dir, manifest=manifest, scorecard=scorecard))
+    return results
+
+
+def _validate_existing_results_against_plan(plan: dict[str, Any], results: list[RunResult]) -> None:
+    planned_hashes = plan["run_config_hashes"]
+    observed_hashes = [result.manifest.run_config_hash for result in results]
+    if planned_hashes != observed_hashes:
+        raise ConfigurationError("existing run configuration hashes differ from the frozen plan")
+
+
+def _validate_existing_ledger(output: Path, results: list[RunResult]) -> None:
+    ledger_path = _regular_file(
+        output / "evidence" / "process-authorizations.json",
+        "process authorization ledger",
+    )
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("process authorization ledger is not valid JSON") from exc
+    records = ledger.get("records") if isinstance(ledger, dict) else None
+    if not isinstance(records, list) or len(records) != 4 or len(results) != 4:
+        raise ConfigurationError("process authorization ledger must contain exactly four records")
+    for ordinal, (record, result) in enumerate(zip(records, results, strict=True), start=1):
+        evidence_root = result.run_dir / "artifacts" / "codex_cli"
+        process_started = (evidence_root / "process.json").is_file()
+        provider_recorded = (
+            len(result.manifest.external_agent_observations) == 1
+            and (evidence_root / "identity.json").is_file()
+        )
+        expected = {
+            "ordinal": ordinal,
+            "run_id": result.manifest.run_id,
+            "task_id": result.manifest.task_id,
+            "authorization_granted": True,
+            "process_started": process_started,
+            "provider_observation_recorded": provider_recorded,
+            "retry_count": 0,
+        }
+        if not isinstance(record, dict) or any(
+            record.get(key) != value for key, value in expected.items()
+        ):
+            raise ConfigurationError("process authorization ledger differs from run evidence")
 
 
 def _new_path(path: Path, label: str) -> Path:
@@ -1014,10 +1169,10 @@ def _frozen_run_configs(
     output: Path,
 ) -> list[RunConfig]:
     specifications = (
-        (_TASKS[0], source_configs["counter"], "counter_open", True, "01-counter-open"),
-        (_TASKS[1], source_configs["up_down"], "up_down_dc", True, "02-up-down-dc"),
-        (_TASKS[2], source_configs["verilog_eval"], None, False, "03-verilog-eval"),
-        (_TASKS[3], source_configs["rtl_repo"], None, False, "04-rtl-repo"),
+        (_TASKS[0], source_configs["counter"], "counter_open", True, _RUN_IDS[0]),
+        (_TASKS[1], source_configs["up_down"], "up_down_dc", True, _RUN_IDS[1]),
+        (_TASKS[2], source_configs["verilog_eval"], None, False, _RUN_IDS[2]),
+        (_TASKS[3], source_configs["rtl_repo"], None, False, _RUN_IDS[3]),
     )
     result = []
     for task_id, source, profile_name, ppa, run_id in specifications:

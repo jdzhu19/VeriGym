@@ -798,6 +798,7 @@ def _validate_stored_synthesis_artifacts(
         raise ReplayError("profile-enabled scorecard has no candidate synthesis record")
     backend_root = _resolve_synthesis_backend_artifact_root(run_dir, manifest, candidate)
     artifact_root = backend_root / "candidate" if backend_root is not None else None
+    generated_scripts: dict[str, bytes] = {}
     for artifact in candidate.artifacts:
         if artifact.visibility != "public":
             raise ReplayError("candidate synthesis artifact has an invalid visibility")
@@ -810,12 +811,23 @@ def _validate_stored_synthesis_artifacts(
         payload = path.read_bytes()
         if len(payload) != artifact.size_bytes or hash_bytes(payload) != artifact.content_hash:
             raise ReplayError(f"stored candidate synthesis artifact changed: {relative}")
-    flow = next(
-        (artifact for artifact in candidate.artifacts if artifact.role == "generated_script"),
-        None,
-    )
+        if artifact.role == "generated_script":
+            if relative in generated_scripts:
+                raise ReplayError("stored candidate synthesis script path is duplicated")
+            generated_scripts[relative] = payload
     if candidate.synthesis_ok:
-        if flow is None or flow.content_hash != candidate.generated_script_hash:
+        if candidate.generated_script_hash is None or not generated_scripts:
+            raise ReplayError("stored candidate synthesis script identity is inconsistent")
+        stored_script_hash: str | None = None
+        if len(generated_scripts) == 1:
+            stored_script_hash = hash_bytes(next(iter(generated_scripts.values())))
+        elif set(generated_scripts) == {"synthesis.ys", "flow.tcl"}:
+            stored_script_hash = hash_bytes(
+                generated_scripts["synthesis.ys"]
+                + b"\n--- opensta.tcl ---\n"
+                + generated_scripts["flow.tcl"]
+            )
+        if stored_script_hash != candidate.generated_script_hash:
             raise ReplayError("stored candidate synthesis script identity is inconsistent")
         if manifest.synthesis_flow_script_hash != candidate.generated_script_hash:
             raise ReplayError("manifest and candidate synthesis script hashes differ")
