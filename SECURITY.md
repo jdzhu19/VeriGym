@@ -438,6 +438,27 @@ interrupt, additional conversation error, persisted message content, or missing 
 scan remains fail closed. Historical reports retain their original classification; a newer policy
 identity cannot relabel a prior canary or authorize downstream collection retroactively.
 
+### OpenHands formal-collection continuation
+
+An OpenHands formal collection may continue after a collector-side persistence failure only through
+a new, reviewed continuation contract. The continuation must bind the exact prior contract, agent
+version, agent source commit, task and image locks, run and trajectory hashes, security scan,
+accounting evidence, materialized decision rows, and observed crash boundary. It must rebuild the
+same provider-visible agent identity and must not replay the completed provider episode. A changed,
+missing, symlinked, or newly finalized recovery artifact fails closed.
+
+Recovery imports are deterministic re-materializations, not reconstructed or relabeled samples.
+The imported records must exactly equal the already persisted partial JSONL, remain below the
+frozen token limit, and pass the original runtime-evidence and secret-scan gates. The continuation
+uses a new collector identity and output root, starts at the next distinct preregistered task, keeps
+provider and whole-episode retries at zero, and loads no held-out task. Per-episode trajectory,
+manifest, progress, and gate persistence errors are terminal collection failures and cannot be
+treated as verifier rejection or authorization to resample.
+
+Neither a recovered sample nor a completed continuation authorizes GPU work by itself. Training is
+allowed only after the continuation emits its independent final report and the original exact-64K
+distinct-task gate is satisfied. Historical incomplete roots remain immutable audit evidence.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

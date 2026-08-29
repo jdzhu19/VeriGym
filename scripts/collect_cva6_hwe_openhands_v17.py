@@ -259,6 +259,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
             raise ConfigurationError(f"OpenHands v17 formal capacity failed: {gate.reason}")
         if gate.next_role != episode["role"]:
             continue
+        failure_stage = "episode_execution"
         try:
             attempt = _run_validated_episode(
                 service=service,
@@ -286,9 +287,22 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
                 contract=contract,
                 tokenizer=exact_tokenizer,
             )
+            failure_stage = "trajectory_record_persistence"
+            if records:
+                _write_trajectory_records(
+                    records_root / f"{attempt['episode_id']}.jsonl",
+                    records,
+                    attempt=attempt,
+                )
+            prospective_attempts = [*attempts, attempt]
+            failure_stage = "campaign_progress_persistence"
+            _write_progress(root, base_report, prospective_attempts)
+            failure_stage = "collection_gate_persistence"
+            _write_gate(root, prospective_attempts)
         except Exception as exc:
-            invalid = _invalid_attempt(episode, type(exc).__name__)
-            _stop(root, base_report, [*attempts, invalid], type(exc).__name__)
+            reason = f"{failure_stage}:{type(exc).__name__}"
+            invalid = _invalid_attempt(episode, reason)
+            _stop(root, base_report, [*attempts, invalid], reason)
             if isinstance(exc, ConfigurationError):
                 raise
             raise ConfigurationError(
@@ -298,14 +312,6 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
         role = str(episode["role"])
         records_by_role[role].extend(records)
         dry_runs_by_role[role].extend(dry_runs)
-        if records:
-            _write_trajectory_records(
-                records_root / f"{attempt['episode_id']}.jsonl",
-                records,
-                attempt=attempt,
-            )
-        _write_gate(root, attempts)
-        _write_progress(root, base_report, attempts)
 
     gate = evaluate_v17_collection_gate(attempts)
     _write_gate(root, attempts)
@@ -332,7 +338,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
         tokenizer_directory=tokenizer_directory,
     )
     provider_scan = _canary_runner._scan_provider_values(root)
-    final = seal_v17_collection_report(
+    final: dict[str, Any] = seal_v17_collection_report(
         {
             **base_report,
             "status": "formal_collection_completed_data_gate_passed",
@@ -488,6 +494,7 @@ def _materialize_fresh_attempt(
             **attempt,
             "imported_canary": False,
             "exact_64k_eligible": True,
+            "transcript_hash": trajectory["transcript_hash"],
             "decision_record_count": len(records),
             "max_decision_record_tokens": max(int(record["token_count"]) for record in records),
         },
@@ -585,27 +592,33 @@ def _write_sampler_manifest(
 def _write_trajectory_records(
     path: Path, records: list[dict[str, Any]], *, attempt: dict[str, Any]
 ) -> None:
-    _atomic_jsonl(path, records)
-    base = {
-        "schema_version": "1.0",
-        "format_id": _RECORDS_FORMAT,
-        "episode_id": attempt["episode_id"],
-        "role": attempt["role"],
-        "task_id": attempt["task_id"],
-        "transcript_hash": attempt["transcript_hash"],
-        "run_hash": attempt["run_hash"],
-        "record_count": len(records),
-        "record_hashes": [record["record_hash"] for record in records],
-        "max_token_count": max(int(record["token_count"]) for record in records),
-        "records_file": path.name,
-        "records_sha256": hash_bytes(path.read_bytes()),
-        "truncation_applied": False,
-        "production_training_ready": False,
-    }
-    atomic_dump_json(
-        path.with_suffix(".manifest.json"),
-        {**base, "manifest_hash": content_hash(base)},
-    )
+    manifest_path = path.with_suffix(".manifest.json")
+    try:
+        _atomic_jsonl(path, records)
+        base = {
+            "schema_version": "1.0",
+            "format_id": _RECORDS_FORMAT,
+            "episode_id": attempt["episode_id"],
+            "role": attempt["role"],
+            "task_id": attempt["task_id"],
+            "transcript_hash": attempt["transcript_hash"],
+            "run_hash": attempt["run_hash"],
+            "record_count": len(records),
+            "record_hashes": [record["record_hash"] for record in records],
+            "max_token_count": max(int(record["token_count"]) for record in records),
+            "records_file": path.name,
+            "records_sha256": hash_bytes(path.read_bytes()),
+            "truncation_applied": False,
+            "production_training_ready": False,
+        }
+        atomic_dump_json(
+            manifest_path,
+            {**base, "manifest_hash": content_hash(base)},
+        )
+    except BaseException:
+        path.unlink(missing_ok=True)
+        manifest_path.unlink(missing_ok=True)
+        raise
 
 
 def _atomic_jsonl(path: Path, values: list[dict[str, Any]]) -> None:
