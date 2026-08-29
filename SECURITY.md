@@ -196,6 +196,30 @@ source label such as `CSR_MCOUNTINHIBIT:` into the drive-like byte sequence `T:\
 JSON uses a separate escape-aware expression, while decoded `path`, `cwd`, command, patch, and
 summary values retain the ordinary POSIX and Windows host-path rejection boundary.
 
+The independent v19 HWE profile sends `tool_choice=required` on every active synchronous,
+asynchronous, Chat Completions, and Responses request. It accepts exactly one content-free
+canonical call from the six-tool contract. A provider may instead emit one content-only response;
+the trusted Stop hook retains that public response, injects the existing canonical
+`source=environment` feedback in the same session, and permits one later canonical provider tool
+decision. A second content-only response, mixed text and tools, multiple or foreign tools,
+non-canonical arguments or `finish`, weakened tool choice, missing token accounting, or recovery
+counter drift fails before the response can enter the broker. The installed SDK remains unchanged
+and the adapter never synthesizes a tool call. v19 freezes 64 provider calls, 1,000,000 cumulative
+provider tokens, a 65,536-token context, and 2,048 output tokens. The cumulative token check runs
+after SDK accounting but before agent or broker dispatch, so an over-budget response is accounted
+and rejected. Successful protocol receipts bind request, canonical response, content-only,
+recovery, call, token, and broker-decision identities.
+
+v19 does not change the compatibility meaning of `ScoreCard.resolved`. Campaign classification
+derives `benchmark_verifier_pass` directly from the actual verifier result nodes and records it
+independently from agent-protocol validity, trajectory eligibility, infrastructure validity,
+security validity, and SFT admission. Only evidence satisfying all admission planes may receive a
+v19 trajectory and exact-decision sidecar. Those sidecars retain abnormal assistant text and
+environment recovery feedback only in the masked input prefix; the complete later canonical tool
+decision is the sole supervised target. Historical attempts and identities remain immutable, and
+sealed historical scorecards may be used only for offline classification regressions, never to
+reconstruct or retroactively admit a trajectory.
+
 Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
 events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
 event and broker-owned canonical arguments or compact-observation hash. The exact effective
