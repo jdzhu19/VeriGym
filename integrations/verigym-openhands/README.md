@@ -277,6 +277,9 @@ writable download directory to `PATH`: it validates and invokes the fully qualif
 verifier file, binds the path into both progress and final receipts, and adds a restricted-`PATH`
 regression. It still authorizes only one no-candidate preflight after merge. See the
 [v22 path-fix authorization](../../docs/audits/2026-08-29_openhands-v22-daemonless-path-fix-authorization.md).
+That preflight proved the SLSA and absolute-path repair, then stopped at a separate version-output
+assumption before the non-candidate registry probe. The identity is sealed; see the
+[v22 stopped audit](../../docs/audits/2026-08-29_openhands-v22-daemonless-prewarm-stopped.md).
 
 ## Five-task HWE collection pilot
 
