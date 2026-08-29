@@ -61,6 +61,12 @@ def _tcl_float(value: float | None, name: str) -> str:
     return f"{value:.12g}"
 
 
+def opensta_power_activity_identity(*, mode: str, activity: float, duty: float) -> str:
+    if not mode or not math.isfinite(activity) or not math.isfinite(duty):
+        raise ValueError("OpenSTA power activity contract is incomplete")
+    return f"opensta_{mode}:activity={activity:.12g}:duty={duty:.12g}"
+
+
 def power_activity_identity(request: YosysSynthesisRequest) -> str:
     if (
         request.power_activity_mode is None
@@ -68,9 +74,10 @@ def power_activity_identity(request: YosysSynthesisRequest) -> str:
         or request.power_duty is None
     ):
         raise ValueError("OpenSTA power activity contract is incomplete")
-    return (
-        f"opensta_{request.power_activity_mode}:"
-        f"activity={request.power_activity:.12g}:duty={request.power_duty:.12g}"
+    return opensta_power_activity_identity(
+        mode=request.power_activity_mode,
+        activity=request.power_activity,
+        duty=request.power_duty,
     )
 
 
@@ -214,6 +221,7 @@ __all__ = [
     "LEGACY_FLOW_TEMPLATE_ID",
     "OpenSTAFlowTemplateId",
     "build_opensta_script",
+    "opensta_power_activity_identity",
     "parse_opensta_metrics",
     "parse_opensta_power_json",
     "power_activity_identity",

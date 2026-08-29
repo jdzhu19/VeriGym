@@ -44,6 +44,7 @@ from verigym.core.repository_observation import (
     BOUNDED_REPOSITORY_OBSERVATION_POLICY,
     bounded_read_view,
 )
+from verigym.core.scoring import _expected_power_activity_identity
 from verigym.core.synthesis import (
     execute_candidate_synthesis_feedback,
     execute_synthesis_quality,
@@ -855,7 +856,7 @@ def _no_model_qualification(
             prepared=resolved_items,
             scratch=scratch / "agent-ppa-feedback",
         )
-        _qualify_vcs(
+        functional["vcs_mcp"] = _qualify_vcs(
             service,
             rtllm_source=source_configs["counter"].source_root,
             profile_paths=(vcs_paths["vcs_counter"], vcs_paths["vcs_up_down"]),
@@ -1065,6 +1066,15 @@ def _qualify_synthesis(
         raise ConfigurationError("reference synthesis qualification failed")
     if not evaluation.candidate.synthesis_ok or not evaluation.reference.synthesis_ok:
         raise ConfigurationError("reference synthesis returned no eligible metrics")
+    activity_identity_matches = _synthesis_activity_identity_matches(
+        resolved,
+        evaluation.candidate,
+        evaluation.reference,
+    )
+    if not activity_identity_matches:
+        raise ConfigurationError(
+            "reference synthesis power activity identity differs from the resolved profile"
+        )
     skipped = execute_synthesis_quality(
         suite=suite,
         task=task,
@@ -1082,9 +1092,24 @@ def _qualify_synthesis(
         "passed": True,
         "candidate_metrics_valid": evaluation.candidate.synthesis_ok,
         "reference_metrics_valid": evaluation.reference.synthesis_ok,
+        "power_activity_identity_matches": activity_identity_matches,
         "known_bad_synthesis_skipped": True,
         "consecutive_resolution": comparison.model_dump(mode="json"),
     }
+
+
+def _synthesis_activity_identity_matches(
+    resolved: Any,
+    candidate: Any,
+    reference: Any,
+) -> bool:
+    if resolved.metric_scope != "synthesis_area_timing_power":
+        return True
+    expected_activity_identity = _expected_power_activity_identity(resolved)
+    return expected_activity_identity is not None and all(
+        metrics.power_activity_mode == expected_activity_identity
+        for metrics in (candidate, reference)
+    )
 
 
 def _qualify_vcs(
@@ -1093,11 +1118,12 @@ def _qualify_vcs(
     rtllm_source: Path | None,
     profile_paths: tuple[Path, Path],
     scratch: Path,
-) -> None:
+) -> dict[str, Any]:
     if rtllm_source is None:
         raise ConfigurationError("RTLLM source is unavailable for VCS qualification")
     runtime = service.registries.runtimes.get("local").configure(None)
     runtime.prepare("rtl-agenteval-vcs-preflight")
+    records: list[dict[str, Any]] = []
     try:
         for variant, profile_path in zip(
             ("counter_12", "up_down_counter"), profile_paths, strict=True
@@ -1131,8 +1157,16 @@ def _qualify_vcs(
                 observed = all(item.status == VerifierStatus.PASSED for item in results)
                 if observed is not case.expected_resolved:
                     raise ConfigurationError("VCS/MCP reference/known-bad qualification failed")
+                records.append(
+                    {
+                        "variant": variant,
+                        "case": case.name,
+                        "resolved": observed,
+                    }
+                )
     finally:
         runtime.close()
+    return {"passed": True, "model_calls": 0, "records": records}
 
 
 def _agent_options(capability: Any, auth: Any) -> dict[str, Any]:

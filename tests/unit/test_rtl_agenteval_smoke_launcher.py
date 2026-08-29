@@ -266,6 +266,28 @@ def test_no_model_qualification_executes_open_and_commercial_ppa_feedback(
     assert len(calls) == 2
 
 
+def test_no_model_qualification_rejects_power_activity_parameter_drift() -> None:
+    launcher = _launcher_module()
+    resolved = SimpleNamespace(
+        metric_scope="synthesis_area_timing_power",
+        flow_template_id="verigym-yosys-opensta-atp-v2",
+        metadata={
+            "power_activity_mode": "global_clock_relative",
+            "power_activity": 0.1,
+            "power_duty": 0.5,
+        },
+    )
+    matching = SimpleNamespace(
+        power_activity_mode="opensta_global_clock_relative:activity=0.1:duty=0.5"
+    )
+    drifted = SimpleNamespace(
+        power_activity_mode="opensta_global_clock_relative:activity=0.2:duty=0.5"
+    )
+
+    assert launcher._synthesis_activity_identity_matches(resolved, matching, matching)
+    assert not launcher._synthesis_activity_identity_matches(resolved, drifted, matching)
+
+
 def _configs(output: Path) -> list[RunConfig]:
     return [
         RunConfig(task_id=f"fake/task-{index}", output=output / "runs", run_id=f"run-{index}")
