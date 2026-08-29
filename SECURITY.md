@@ -409,6 +409,14 @@ the byte count and SHA-256 in the outer report. A future binary update must regi
 it cannot inherit or infer the value from a tag. v23 uses a new cache and does not reuse v22's
 promoted public-tool evidence.
 
+The v23 identity is sealed after its final public registry probe used a CA-less Debian slim image.
+The v24 successor reuses the already digest-locked, CA-bearing Python slim image for execution and
+requires it to equal the bootstrap image binding. Before any crane command, v24 runs the fixed
+`/usr/bin/test -s /etc/ssl/certs/ca-certificates.crt` argv under `network=none` and the same
+non-root, read-only-root controls. Success must emit no output, and the content-free receipt is
+included in the final report. Runtime package installation, TLS disabling, `--insecure`, old-cache
+reuse, credentials, and proxy forwarding remain forbidden.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
