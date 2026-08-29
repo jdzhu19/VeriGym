@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -225,3 +226,23 @@ def test_formal_runner_exposes_the_provider_scan_to_the_continuation(
 
     assert formal._scan_provider_values(tmp_path) == expected
     assert inspect.getsource(continuation.collect).count("_v1._scan_provider_values(") == 2
+
+
+def test_fail_closed_stop_overwrites_a_stale_continue_gate(tmp_path: Path) -> None:
+    from scripts import collect_cva6_hwe_openhands_v17 as formal
+    from scripts import collect_cva6_hwe_openhands_v17_continuation_v2 as continuation
+
+    for name, runner in (("formal", formal), ("continuation", continuation)):
+        root = tmp_path / name
+        root.mkdir()
+        runner._write_gate(root, [])
+        previous = json.loads((root / "data-gate.json").read_bytes())
+        runner._stop(root, {}, [], "episode_execution:ConfigurationError")
+        gate = json.loads((root / "data-gate.json").read_bytes())
+
+        assert gate["satisfied"] is False
+        assert gate["possible"] is False
+        assert gate["next_role"] is None
+        assert gate["reason"] == "campaign_stopped_fail_closed"
+        assert gate["capacity_reason"] == previous["reason"]
+        assert gate["stop_reason"] == "episode_execution:ConfigurationError"

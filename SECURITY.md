@@ -455,6 +455,11 @@ provider and whole-episode retries at zero, and loads no held-out task. Per-epis
 manifest, progress, and gate persistence errors are terminal collection failures and cannot be
 treated as verifier rejection or authorization to resample.
 
+A fail-closed stop must overwrite any earlier capacity gate with a terminal gate whose `possible`
+and `satisfied` fields are false and whose next role is absent. Offline consumers must require that
+terminal gate and the stopped campaign report to agree; an older pre-attempt gate cannot authorize
+resume, collection, or training.
+
 Neither a recovered sample nor a completed continuation authorizes GPU work by itself. Training is
 allowed only after the continuation emits its independent final report and the original exact-64K
 distinct-task gate is satisfied. Historical incomplete roots remain immutable audit evidence.
