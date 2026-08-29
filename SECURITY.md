@@ -375,6 +375,22 @@ The downloaded SLSA envelope is hash- and subject-checked but its DSSE signature
 verified in this preflight; the pinned GitHub release digests and reviewed authorization remain part
 of the trusted supply-chain input.
 
+The v20 identity is historical and remains subject to that residual risk. Its v21 successor adds a
+separately pinned `slsa-verifier` v2.7.1 binary and follows the producer's release-workflow command
+to verify the Sigstore bundle signature, artifact digest, source repository, release tag, builder,
+and source commit. The helper also validates the exact Sigstore bundle media type, nested DSSE
+payload, unique artifact subject, SLSA predicate, build type, workflow entry point, and material
+binding before extraction. Both tool binaries and all public release inputs remain size- and
+SHA-256-bound in the reviewed authorization.
+
+v21 command success is determined by a zero exit code and role-specific exact stdout; stderr is a
+bounded attached stream, not independently a failure. Reports retain only the stage, exit code,
+stdout/stderr byte counts, stderr-presence bit, effective-control hash, and cleanup state. The
+bootstrap helper atomically updates a similarly content-free receipt before and after each download,
+validation, signature-verification, extraction, and receipt stage. Output bodies and exception
+messages are not persisted. Candidate access and every later campaign stage remain outside this
+authorization.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
