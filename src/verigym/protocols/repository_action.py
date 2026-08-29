@@ -292,6 +292,8 @@ def canonical_tool_observation(
 
 def prompt_contract(
     state_machine_id: RepositoryActionStateMachine = "repository_action_state_machine_v2",
+    *,
+    prompt_contract_id: str | None = None,
 ) -> dict[str, Any]:
     """Return the deterministic action prompt contract derived from the registry."""
 
@@ -305,14 +307,20 @@ def prompt_contract(
         if state_machine_id == "repository_action_state_machine_v1"
         else content_hash(registry)
     )
-    prompt_contract_id = {
+    default_prompt_contract_id = {
         "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
         "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
         "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
     }[state_machine_id]
+    selected_prompt_contract_id = prompt_contract_id or default_prompt_contract_id
+    compatible_prompt_contracts = {default_prompt_contract_id}
+    if state_machine_id == "repository_action_state_machine_v3":
+        compatible_prompt_contracts.add("repository_action_v2_prompt_v4")
+    if selected_prompt_contract_id not in compatible_prompt_contracts:
+        raise ValueError("repository action prompt is incompatible with its state machine")
     contract: dict[str, Any] = {
         "schema_version": "1.0",
-        "prompt_contract_id": prompt_contract_id,
+        "prompt_contract_id": selected_prompt_contract_id,
         "protocol": "repository_action.v2",
         "required_response": {
             "protocol": "repository_action.v2",
@@ -357,6 +365,15 @@ def prompt_contract(
                 "diff.",
             ]
         )
+    if selected_prompt_contract_id == "repository_action_v2_prompt_v4":
+        contract["rules"].extend(
+            [
+                "Use repository-relative editable paths exactly as supplied by the task.",
+                "Track the broker-reported elapsed and remaining wall time and reserve the "
+                "final minute for validation and typed finish.",
+                "Treat tool-call and patch-call limits as hard episode budgets.",
+            ]
+        )
     return contract
 
 
@@ -380,11 +397,17 @@ def resolve_repository_action_protocol(
         if isinstance(feedback, dict)
         else protocol_spec.state_machine_id
     )
-    effective_prompt_contract_id = {
+    default_prompt_contract_id = {
         "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
         "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
         "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
     }[effective_state_machine]
+    effective_prompt_contract_id = (
+        "repository_action_v2_prompt_v4"
+        if effective_state_machine == "repository_action_state_machine_v3"
+        and protocol_spec.prompt_contract_id == "repository_action_v2_prompt_v4"
+        else default_prompt_contract_id
+    )
     if raw_observation_policy is None and effective_state_machine in {
         "repository_action_state_machine_v2",
         "repository_action_state_machine_v3",
@@ -417,7 +440,12 @@ def resolve_repository_action_protocol(
         if effective_state_machine == "repository_action_state_machine_v1"
         else content_hash(action_registry())
     )
-    contract_hash = content_hash(prompt_contract(effective_state_machine))
+    contract_hash = content_hash(
+        prompt_contract(
+            effective_state_machine,
+            prompt_contract_id=effective_prompt_contract_id,
+        )
+    )
     public_ids = _public_test_ids(task)
     task_tool_contract: dict[str, Any] = {
         "allowed_tools": sorted(task.interaction.allowed_tools),

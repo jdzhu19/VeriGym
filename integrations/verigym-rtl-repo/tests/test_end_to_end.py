@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from verigym.agents.base import AgentAdapter, AgentContext
 from verigym.api import ReportService, RunConfig, VeriGym, build_registries
 from verigym.core.replay import replay_run
@@ -22,7 +23,7 @@ from verigym.plugin_api import (
 )
 
 from verigym_rtl_repo import RtlRepoScoreTool, RtlRepoSuite
-from verigym_rtl_repo.dataset import AGENT_EVAL_VARIANT, VARIANT
+from verigym_rtl_repo.dataset import AGENT_EVAL_V2_VARIANT, AGENT_EVAL_VARIANT, VARIANT
 
 
 class _RtlRepoAgentEvalFixtureAgent(AgentAdapter):
@@ -159,9 +160,11 @@ def test_instructional_line_completion_is_explicit_and_keeps_raw_user_prompt(
     assert messages[1]["content"].startswith("// Repo Name: verigym/synthetic-rtl\n")
 
 
+@pytest.mark.parametrize("variant", [AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT])
 def test_agent_eval_projection_multiturn_hidden_score_and_replay(
     synthetic_source: Path,
     tmp_path: Path,
+    variant: str,
 ) -> None:
     registries = build_registries(discover_external=False)
     registries.suites.register(RtlRepoSuite())
@@ -170,12 +173,12 @@ def test_agent_eval_projection_multiturn_hidden_score_and_replay(
     service = VeriGym(registries)
     result = service.run(
         RunConfig(
-            task_id=f"rtl-repo/{AGENT_EVAL_VARIANT}/test-000000",
+            task_id=f"rtl-repo/{variant}/test-000000",
             mode=InteractionMode.AGENT,
             agent="rtl-repo-agent-eval-fixture",
             suite_source=SuiteSourceConfig(
                 source_root=synthetic_source,
-                variant=AGENT_EVAL_VARIANT,
+                variant=variant,
             ),
             runtime="local",
             output=tmp_path / "agent-eval",

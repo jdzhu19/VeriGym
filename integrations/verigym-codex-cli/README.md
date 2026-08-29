@@ -14,10 +14,13 @@ This package provides three ordinary evaluation plugins plus an opt-in training-
   tool-call counters.
 - `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
   0.147.0, GPT-5.4, `xhigh`, and agent version
-  `codex-cli-agenteval-gpt54-xhigh-v4`. One ephemeral, read-only
+  `codex-cli-agenteval-gpt54-xhigh-v5`. One ephemeral, read-only
   `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
   Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
-  disabled. Its limits are 40 tool calls, 20 patch calls, and three consecutive rejections.
+  disabled. Its prompt and broker observations expose the task/process wall-time, rounded elapsed
+  and remaining time, and the static limits of 40 tool calls, 20 patch calls, and three
+  consecutive rejections. The prompt reserves the final 60 seconds for final patching,
+  compile/PPA, diff inspection, and typed `finish`.
 - `codex-cli-mcp-teacher` is available only to captured training campaigns. It fixes GPT-5.4 with
   `xhigh` reasoning, disables shell and web search, and exposes only the required VeriGym MCP
   repository tools.
@@ -87,6 +90,9 @@ event_policy.json (read-only track)
 The scoring-only AgentEval track instead stores only sanitized capability, invocation, identity,
 usage/accounting, broker counters, content-free event statistics, and summary documents. It does
 not store raw stdout/stderr, parsed event text, prompts, responses, or a training transcript.
+Recoverable patch failures use fixed format/header/body/context/count/range/empty/rename
+categories. Terminal path failures expose only the allowlisted tool name and a bounded path
+category; request arguments, paths, and raw exceptions are never returned or persisted.
 
 After every returned Codex process, the adapter tolerantly parses the event stream before applying
 broker/process failure precedence. It emits exactly one external-agent identity: a complete

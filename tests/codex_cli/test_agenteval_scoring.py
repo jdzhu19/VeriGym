@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from verigym_codex_cli.agenteval_agent import (
     CodexCliAgentEvalAdapter,
     _accounting,
+    _agenteval_prompt,
     _identity,
     _parse_returned_event_stream,
     _preparse_process_failure,
@@ -317,6 +319,8 @@ def test_scoring_evidence_persists_only_bounded_broker_failure_subcategory(
         policy_failure="absolute path rejected at /private/site/path",
         infrastructure_failure=None,
         policy_failure_subcategory="workspace_path_policy",
+        terminal_tool_name="read_file",
+        terminal_path_category="absolute",
     )
     root = tmp_path / "evidence"
     root.mkdir()
@@ -338,7 +342,60 @@ def test_scoring_evidence_persists_only_bounded_broker_failure_subcategory(
     persisted = "\n".join(path.read_text(encoding="utf-8") for path in root.iterdir())
     assert persisted_broker["policy_failure"] is True
     assert persisted_broker["policy_failure_subcategory"] == "workspace_path_policy"
+    assert persisted_broker["terminal_tool_name"] == "read_file"
+    assert persisted_broker["terminal_path_category"] == "absolute"
     assert persisted_summary["failure_subcategory"] == "workspace_path_policy"
+    assert "/private/site/path" not in persisted
+
+
+def test_scoring_evidence_drops_unbounded_terminal_tool_metadata(
+    fake_codex: tuple[Path, Path, object],
+    tmp_path: Path,
+) -> None:
+    settings, capabilities = _settings(fake_codex)
+    process = CodexProcessResult(
+        arguments=("codex",),
+        exit_code=1,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        process_group_cleaned=True,
+    )
+    broker = RepositoryToolBrokerStats(
+        tool_calls=1,
+        command_calls=0,
+        public_test_calls=0,
+        file_reads=1,
+        file_writes=0,
+        patches=0,
+        policy_failure="private diagnostic at /private/site/path",
+        infrastructure_failure=None,
+        policy_failure_subcategory="workspace_path_policy",
+        terminal_tool_name="private-tool-/private/site/path",
+        terminal_path_category="private-path-/private/site/path",
+    )
+    root = tmp_path / "evidence"
+    root.mkdir()
+
+    _write_scoring_evidence(
+        root,
+        capabilities=capabilities,
+        invocation={"training_mode": False, "agent_version_id": settings.agent_version_id},
+        process=process,
+        broker=broker,
+        identity=None,
+        accounting=ExternalAgentAccounting(process_wall_time_s=1.0, cli_event_count=0),
+        parsed=None,
+        failure_category="workspace_policy",
+    )
+
+    persisted = "\n".join(path.read_text(encoding="utf-8") for path in root.iterdir())
+    persisted_broker = json.loads((root / "broker.json").read_text())
+    assert persisted_broker["terminal_tool_name"] is None
+    assert persisted_broker["terminal_path_category"] is None
     assert "/private/site/path" not in persisted
 
 
@@ -468,13 +525,58 @@ def test_complete_terminal_usage_is_recorded_without_estimation(
     assert accounting.total_tokens == 14
 
 
-def test_v3_prompt_requires_relative_paths_recovery_compile_ppa_diff_and_finish() -> None:
+def test_v4_prompt_exposes_paths_budgets_compile_ppa_diff_and_finish() -> None:
     instructions = " ".join(AGENTEVAL_PROMPT_INSTRUCTIONS)
 
     assert "repository-relative paths" in instructions
-    assert "patch_rejected" in instructions
+    assert "editable_globs" in instructions
+    assert "recoverable patch category" in instructions
     assert "empty editable file" in instructions
     assert "After every successful patch, compile" in instructions
     assert "PPA is available" in instructions
+    assert "40 tool calls" in instructions
+    assert "20 patch calls" in instructions
+    assert "remaining_wall_time_s" in instructions
+    assert "final 60 seconds" in instructions
     assert "inspect the latest diff" in instructions
     assert "typed finish" in instructions
+
+
+def test_v4_prompt_preserves_exact_editable_paths_and_both_wall_time_limits() -> None:
+    contract = SimpleNamespace(
+        compile_test_id="compile",
+        ppa_enabled=True,
+        model_dump=lambda **_kwargs: {"compile_test_id": "compile", "ppa_enabled": True},
+    )
+    context = SimpleNamespace(
+        agent_feedback_contract=contract,
+        task=SimpleNamespace(
+            id="suite/task",
+            title="Task",
+            description="Description",
+            workspace=SimpleNamespace(entrypoints=["repository/rtl/counter.v"]),
+        ),
+    )
+    bridge = SimpleNamespace(
+        editable_globs=("repository/rtl/counter.v",),
+        readonly_globs=("TASK.md",),
+    )
+    settings = SimpleNamespace(
+        execution=SimpleNamespace(task_wall_time_s=300.0, effective_process_timeout_s=240.0),
+        max_tool_calls=40,
+        max_patch_calls=20,
+        max_consecutive_rejected_calls=3,
+    )
+
+    prompt = json.loads(_agenteval_prompt(context, bridge, settings))
+
+    assert prompt["workspace_policy"]["editable_globs"] == ["repository/rtl/counter.v"]
+    assert prompt["workspace_policy"]["editable_paths_must_be_copied_verbatim"] is True
+    assert prompt["budgets"] == {
+        "task_wall_time_s": 300,
+        "process_wall_time_s": 240,
+        "max_tool_calls": 40,
+        "max_patch_calls": 20,
+        "max_consecutive_rejected_calls": 3,
+        "finalization_reserve_s": 60,
+    }

@@ -11,7 +11,9 @@ from typing import Any, Literal
 
 VARIANT = "official-parquet-v1"
 AGENT_EVAL_VARIANT = "official-parquet-v1-agent-eval-v1"
+AGENT_EVAL_V2_VARIANT = "official-parquet-v1-agent-eval-v2"
 NATIVE_LAYOUT = "huggingface-parquet-rtl-repo-v1"
+CONTEXT_CLASSIFICATION_RULE = "rtl_repo_path_components_source_generated_v1"
 EXPECTED_SPLIT_COUNTS = {"train": 2_924, "test": 1_174}
 MAX_PARQUET_BYTES = 512 * 1024 * 1024
 MAX_TASK_BYTES = 16 * 1024 * 1024
@@ -84,8 +86,9 @@ class Catalog:
 
 
 def resolve_layout(raw_root: Path, variant: str | None) -> Layout:
-    if variant not in {None, VARIANT, AGENT_EVAL_VARIANT}:
-        raise ValueError(f"suite supports variants {VARIANT!r} and {AGENT_EVAL_VARIANT!r}")
+    supported = (VARIANT, AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT)
+    if variant is not None and variant not in supported:
+        raise ValueError("suite supports variants " + ", ".join(repr(item) for item in supported))
     expanded = raw_root.expanduser()
     if expanded.is_symlink():
         raise ValueError("source root must not be a symlink")
@@ -316,6 +319,19 @@ def build_official_prompt(
     return re.sub(r"\n{4,}", "\n\n", prompt)
 
 
+def classify_context_path(path: str) -> Literal["source", "generated"]:
+    """Classify context using only a frozen, case-insensitive path-component rule."""
+
+    pure = PurePosixPath(path)
+    components = tuple(component.casefold() for component in pure.parts)
+    generated_component = any(
+        component.endswith(".sim") or component in {"impl", "synth", "xsim"}
+        for component in components
+    )
+    generated_file = pure.stem.casefold() == "glbl"
+    return "generated" if generated_component or generated_file else "source"
+
+
 def file_state(root: Path, paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
     state: list[tuple[str, int, int]] = []
     for path in sorted(set(paths), key=lambda item: item.relative_to(root).as_posix()):
@@ -424,6 +440,9 @@ def _level(value: object) -> str | int | None:
 
 
 __all__ = [
+    "AGENT_EVAL_VARIANT",
+    "AGENT_EVAL_V2_VARIANT",
+    "CONTEXT_CLASSIFICATION_RULE",
     "NATIVE_LAYOUT",
     "VARIANT",
     "Catalog",
@@ -432,6 +451,7 @@ __all__ = [
     "Problem",
     "RowRef",
     "build_official_prompt",
+    "classify_context_path",
     "current_file_state",
     "inspect_layout",
     "load_problem",

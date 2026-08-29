@@ -11,12 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import run_rtl_agenteval_codex_smoke as smoke
-from verigym_codex_cli.agenteval_config import (
-    AGENTEVAL_AGENT_VERSION_HASH,
-    AGENTEVAL_AGENT_VERSION_ID,
-    AGENTEVAL_PROMPT_HASH,
-    AGENTEVAL_TOOL_POLICY_FINGERPRINT,
-)
 
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
@@ -35,6 +29,12 @@ _PREDECESSOR_SUMMARY = Path(
     "/data/jzhu484/Agent/experiments/rtl-agenteval-codex-gpt54-xhigh-smoke-v7/summary.json"
 )
 _PROCESS_COUNT = 14
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v4"
+AGENTEVAL_AGENT_VERSION_HASH = "3013e36846e016c6b57b9d28c811317718902e89b40fd522e4f49de3c93dd040"
+AGENTEVAL_PROMPT_HASH = "607e0c73bd6fdead39fb63916cfb24eb5929c17a9e801309d1d8c100da1a6141"
+AGENTEVAL_TOOL_POLICY_FINGERPRINT = (
+    "115a39244d7f64c63fe8b5b2628cb829aafc1429e6d1d5acb22abdbe0ce7c052"
+)
 
 
 @dataclass(frozen=True)
@@ -164,6 +164,10 @@ def main() -> int:
     arguments = _parser().parse_args()
     if arguments.finalize_existing:
         return _finalize_existing(arguments)
+    if arguments.execute:
+        raise ConfigurationError(
+            "completed pilot-v1 is read-only; use the separately versioned diagnostic launcher"
+        )
 
     site_work = smoke._new_path(arguments.site_work, "site-profile work directory")
     inputs = _inputs(arguments)

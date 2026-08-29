@@ -12,24 +12,29 @@ from .config import CodexSettings, readonly_agent_settings
 from .util import stable_hash
 
 AGENTEVAL_PROMPT_INSTRUCTIONS = (
-    "Use only repository-relative paths accepted by the VeriGym MCP repository tools.",
+    "Use only repository-relative paths and copy editable paths verbatim from editable_globs.",
     "Use exactly one MCP tool per turn and no built-in tools.",
     "Start with a shallow list_files view and use bounded read_file views for large files.",
     "Read visible task files before editing.",
     "Use only the typed apply_patch action with canonical unified-diff paths and hunks.",
-    "If apply_patch returns patch_rejected, refresh exact lines and submit a corrected diff.",
+    "If apply_patch returns a recoverable patch category, refresh exact lines and correct it.",
     "For an empty editable file, add content with a numbered @@ -0,0 +1,count @@ hunk.",
     "After every successful patch, compile the current revision again before relying on it.",
     "When PPA is available, call it at least once for the latest compiled revision.",
+    "Treat 40 tool calls and 20 patch calls as hard limits for the entire episode.",
+    "Track broker elapsed_wall_time_s and remaining_wall_time_s after every tool response.",
+    "Reserve the final 60 seconds for patch completion, compile/PPA, diff, and typed finish.",
     "Before finishing, inspect the latest diff and call the typed finish action exactly once.",
     "Do not access shell, network, host files, hidden assets, or reference solutions.",
 )
 AGENTEVAL_PROMPT_HASH = stable_hash(
     {
-        "prompt_contract_id": "repository_action_v2_prompt_v3",
-        "prompt_contract_version": "3.0.0",
+        "prompt_contract_id": "repository_action_v2_prompt_v4",
+        "prompt_contract_version": "4.0.0",
         "instructions": AGENTEVAL_PROMPT_INSTRUCTIONS,
-        "workspace_path_format": "repository_relative_only",
+        "workspace_path_format": "editable_globs_verbatim_repository_relative_only",
+        "budget_visibility": "task_process_static_and_dynamic_wall_time_v1",
+        "finalization_reserve_s": 60,
         "conditional_compile": True,
         "conditional_ppa": True,
     }
@@ -48,6 +53,28 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
         ],
         "terminal_path_violations": True,
         "malformed_patch_recoverable": True,
+        "recoverable_patch_categories": [
+            "patch_body",
+            "patch_context",
+            "patch_count",
+            "patch_empty",
+            "patch_format",
+            "patch_header",
+            "patch_range",
+            "patch_rename",
+        ],
+        "terminal_path_categories": [
+            "absolute",
+            "hardlink",
+            "hidden_or_protected",
+            "outside_editable",
+            "readonly",
+            "symlink",
+            "traversal",
+            "unspecified",
+        ],
+        "terminal_tool_name": "allowlisted_only",
+        "wall_time_state": "rounded_elapsed_and_remaining_without_deadline",
         "bounded_terminal_failure_subcategory": True,
         "commercial_feedback_failure_subcategories": [
             "agent_feedback_dispatch_internal",
@@ -64,7 +91,7 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
         ],
     }
 )
-AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v4"
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v5"
 AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
     {
         "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
@@ -79,7 +106,8 @@ AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
         "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v2",
         "event_processing": "tolerant_parse_before_failure_precedence_v4",
         "returned_process_identity": "exactly_one_requested_or_observed_v4",
-        "broker_error_contract": "recoverable_patch_and_bounded_terminal_subtype_v2",
+        "broker_error_contract": "typed_patch_and_sanitized_terminal_path_v3",
+        "broker_budget_contract": "rounded_wall_time_and_static_limits_v1",
         "commercial_feedback_error_contract": "allowlisted_worker_subcategory_v1",
         "empty_file_observation": "bounded_zero_line_view_v1",
         "max_tool_calls": 40,
@@ -93,7 +121,7 @@ _EXPECTED_MODEL = "gpt-5.4"
 _EXPECTED_REASONING = "xhigh"
 _EXPECTED_CLI_VERSION = "codex-cli 0.147.0"
 _EXPECTED_EXECUTABLE_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
-_PROMPT_CONTRACT_ID = "repository_action_v2_prompt_v3"
+_PROMPT_CONTRACT_ID = "repository_action_v2_prompt_v4"
 _BROKER_LIMITS = (40, 20, 3)
 _OPTIONS = {
     "model_id",
@@ -178,7 +206,7 @@ def agenteval_settings(
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
     if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v4")
+        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v5")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",

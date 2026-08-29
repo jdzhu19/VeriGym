@@ -37,7 +37,8 @@
       "enum": [
         "repository_action_v2_prompt_v1",
         "repository_action_v2_prompt_v2",
-        "repository_action_v2_prompt_v3"
+        "repository_action_v2_prompt_v3",
+        "repository_action_v2_prompt_v4"
       ],
       "title": "Prompt Contract Id",
       "type": "string"

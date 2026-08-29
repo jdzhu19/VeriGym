@@ -19,7 +19,8 @@ pilot 使用 GPT-5.4、`xhigh` reasoning、seed 0、每个任务/profile 组合�
 
 - `pilot_complete=true`，`infrastructure_complete=true`；
 - 14/14 进程已启动，14/14 各有且仅有一个 external-agent identity observation；
-- 14 条 identity 均为 `requested_only`，`observed_model_id=null`；没有持久化或推测 token usage；
+- 14 条 identity 均为 `requested_only`，`observed_model_id=null`；13/14 run 持久化了完整的
+  provider terminal usage，只有超时的 `14-rtl-repo-test-000005` usage 不完整；没有估算或推测 token；
 - 14/14 `retry_count=0`，没有模型替换；
 - 10/14 candidates resolved，12/14 由 typed `finish` 结束；
 - 1 个 `workspace_path_policy`，2 个 verifier rejection，1 个 contained model failure；
@@ -127,13 +128,13 @@ OpenSTA scoring 修复使用完整活动身份（mode、activity、duty），而
 
 ### E-006
 
-- title: Requested-only identity confidence audit
+- title: Requested-only identity and provider usage completeness audit
 - observed_at: 2026-08-29
 - source_type: command
-- source_ref: 14 个 `<campaign>/runs/*/artifacts/codex_cli/identity.json`
+- source_ref: 14 个 `<campaign>/runs/*/artifacts/codex_cli/{identity,provider-usage,process}.json`
 - content_hash: n/a
-- repro_command: `rg -l '"identity_confidence": "requested_only"' "$VERIGYM_PILOT_ROOT/runs" -g identity.json | wc -l`
-- raw_excerpt: 14/14 identity confidence 为 requested only；observed model 为空；每项 invocation count 为 1
+- repro_command: `rg -l '"usage_complete": true' "$VERIGYM_PILOT_ROOT/runs" -g provider-usage.json | wc -l`
+- raw_excerpt: 14/14 identity confidence 为 requested only；observed model 为空；每项 invocation count 为 1；13/14 usage complete；唯一 incomplete 项的 process timed_out 为 true
 - linked_workitem: n/a
 - supersedes: none
 
@@ -191,16 +192,16 @@ OpenSTA scoring 修复使用完整活动身份（mode、activity、duty），而
 
 ### F-005
 
-- title: Provider 终止身份与 usage 未被观测
+- title: Provider 身份仍为 requested-only，terminal usage 除超时项外完整
 - severity: info
 - category: design
 - status: validated
 - evidence_ids: [E-002, E-006]
 - location: `<campaign>/runs/*/artifacts/codex_cli/identity.json`
-- impact: 每个真实 Codex 进程都有唯一、绑定 requested model/reasoning 和 agent fingerprint 的 identity evidence，但不能声称 provider-confirmed observed model 或完整 token usage。
+- impact: 每个真实 Codex 进程都有唯一、绑定 requested model/reasoning 和 agent fingerprint 的 identity evidence，但不能声称 provider-confirmed observed model。13 个正常终止进程的 token usage 来自完整 terminal event；超时项保持 null，未做估算。
 - confidence: high
-- repro_steps: 统计 14 个 identity 文件的 `identity_confidence`、`observed_model_id` 与 `invocation_count`；确认 run manifest 未包含 usage 字段。
-- remediation: 若后续 Codex JSONL 暴露稳定的模型终止与 usage 事件，在新 agent version 中记录 observed identity；继续禁止推测 token。
+- repro_steps: 统计 14 个 identity 文件的 `identity_confidence`、`observed_model_id` 与 `invocation_count`；统计 provider-usage 的 `usage_complete`，并核对唯一 incomplete 项的 process `timed_out=true`。
+- remediation: 后续仍只从完整 terminal event 记录 usage，并继续禁止为超时或不完整事件推测 token；observed model 身份需等待稳定的 provider 事件字段。
 
 ### P-001
 

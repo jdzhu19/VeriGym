@@ -9,7 +9,8 @@ contract before any model lookup.
 
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
-- RTL-Repo: `official-parquet-v1-agent-eval-v1`.
+- RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
+  source-priority projection is `official-parquet-v1-agent-eval-v2`.
 
 Every successful patch invalidates compile, PPA, and diff evidence. `ppa` is accepted only after
 `compile` passes for the exact current candidate hash. Finish requires a current diff and, when
@@ -179,6 +180,33 @@ Yosys/OpenSTA script-identity validator defect without rerunning a model. Smoke-
 the separately gated 14-run pilot, which has not started, and remains a qualification rather than a
 benchmark score. The complete result is recorded in the
 [smoke-v7 audit](audits/2026-08-29_rtl-agenteval-codex-gpt54-xhigh-smoke-v7-result.md).
+
+The completed read-only pilot-v1 then recorded 10/14 resolved candidates and 12/14 typed finishes;
+it did not claim a benchmark score. Its successor freezes Agent
+`codex-cli-agenteval-gpt54-xhigh-v5`, adapter `5.0.0`, prompt v4, and the v2 RTL-Repo projection.
+The prompt exposes both task and effective process wall-time, hard tool/patch limits, exact
+editable paths, and a final 60-second completion reserve. Broker responses expose rounded elapsed
+and remaining wall-time without an absolute deadline. Recoverable patch diagnostics and terminal
+path diagnostics are bounded enums; path termination cancels the process and persists neither the
+requested path nor raw exception text.
+
+The guarded six-process diagnostic is implemented by
+`scripts/run_rtl_agenteval_codex_gymfix_diagnostic.py`. It runs counter/OpenSTA,
+counter/DC, RTL-Repo v2 tests 000002/000003/000005, and test 000004 as a success control, exactly
+once each with zero retry. Model failure and verifier rejection are recorded before continuing;
+identity drift, policy failure, Docker/tool infrastructure failure, or commercial control-plane
+failure stops later authorization. Replay, exact leakage scanning, and a separate redaction audit
+are finalized offline. Every plan and summary remains `diagnostic_only=true` and
+`benchmark_score_claimed=false`; success does not automatically launch a new pilot.
+
+The completed diagnostic launched all six frozen processes once with six requested-only identity
+observations, complete provider usage, and no timeout, policy, or infrastructure failure. It did
+not meet the all-success gate: 5/6 runs used typed `finish` and 1/6 resolved. Both RTL-Repo
+test-000003 and the test-000004 control passed native Exact Match, but their episodes failed closed
+on a non-canonical MCP machine-event stream; the DC candidate similarly compiled and produced
+legal candidate PPA before that event-stream classification made final PPA ineligible. The
+campaign remains read-only and does not authorize pilot-v2. See the
+[gym-fix diagnostic audit](audits/2026-08-29_rtl-agenteval-gymfix-diagnostic-v1-report.md).
 
 ## Design choices informed by POSTEDA-Bench
 

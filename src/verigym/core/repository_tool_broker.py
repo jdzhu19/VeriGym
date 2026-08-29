@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import socket
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,16 +35,30 @@ _TOOL_NAMES = frozenset(
     definition["name"] for definition in repository_tool_definitions(dialect="mcp")
 )
 _RECOVERABLE_PATCH_ERRORS = (
-    "invalid unified patch:",
-    "invalid unified patch hunk header",
-    "invalid unified patch hunk body",
-    "patch context does not match the workspace",
-    "patch hunk is out of range or overlaps a prior hunk",
-    "patch hunk line counts do not match its header",
-    "patch cannot have both paths set to /dev/null",
-    "renames are not supported by file.apply_patch",
-    "patch file has no hunks",
-    "patch is empty",
+    ("invalid unified patch hunk header", "patch_header"),
+    ("invalid unified patch hunk body", "patch_body"),
+    ("invalid unified patch: expected hunk header", "patch_header"),
+    ("invalid unified patch: missing '+++' header", "patch_header"),
+    ("invalid unified patch:", "patch_format"),
+    ("patch context does not match the workspace", "patch_context"),
+    ("patch hunk is out of range or overlaps a prior hunk", "patch_range"),
+    ("patch hunk line counts do not match its header", "patch_count"),
+    ("patch cannot have both paths set to /dev/null", "patch_format"),
+    ("renames are not supported by file.apply_patch", "patch_rename"),
+    ("patch file has no hunks", "patch_empty"),
+    ("patch is empty", "patch_empty"),
+)
+_PATH_VIOLATION_CATEGORIES = frozenset(
+    {
+        "absolute",
+        "traversal",
+        "outside_editable",
+        "readonly",
+        "symlink",
+        "hardlink",
+        "hidden_or_protected",
+        "unspecified",
+    }
 )
 
 
@@ -70,6 +86,11 @@ class RepositoryToolBrokerStats:
     max_tool_calls: int | None = None
     max_patch_calls: int | None = None
     max_consecutive_rejected_calls: int | None = None
+    wall_time_s: int | None = None
+    elapsed_wall_time_s: int | None = None
+    remaining_wall_time_s: int | None = None
+    terminal_tool_name: str | None = None
+    terminal_path_category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,9 +135,17 @@ class RepositoryToolBroker:
         campaign_role: str | None = None,
         limits: RepositoryToolBrokerLimits | None = None,
         agent_feedback_contract: AgentFeedbackContract | None = None,
+        wall_time_s: float | None = None,
     ) -> None:
         if capture_training_transcript and campaign_role != "training":
             raise ValueError("repository broker transcript capture is training-only")
+        if wall_time_s is not None and (
+            isinstance(wall_time_s, bool)
+            or not isinstance(wall_time_s, (int, float))
+            or not math.isfinite(wall_time_s)
+            or wall_time_s <= 0
+        ):
+            raise ValueError("repository broker wall time must be a positive finite number")
         self._bridge = bridge
         self.socket_path = socket_path
         self._public_test_ids = frozenset(public_test_ids)
@@ -151,6 +180,10 @@ class RepositoryToolBroker:
         self._infrastructure_failure_subcategory: str | None = None
         self._limit_failure: str | None = None
         self._limits = limits
+        self._wall_time_s = float(wall_time_s) if wall_time_s is not None else None
+        self._started_monotonic_s = time.monotonic()
+        self._terminal_tool_name: str | None = None
+        self._terminal_path_category: str | None = None
         self._cancellation = threading.Event()
         self._capture_training_transcript = capture_training_transcript
         self._training_turns: list[RepositoryToolBrokerTurn] = []
@@ -190,6 +223,7 @@ class RepositoryToolBroker:
 
     def stats(self) -> RepositoryToolBrokerStats:
         with self._lock:
+            elapsed_wall_time_s, remaining_wall_time_s = self._wall_time_state_locked()
             return RepositoryToolBrokerStats(
                 tool_calls=self._tool_calls,
                 command_calls=0,
@@ -213,6 +247,13 @@ class RepositoryToolBroker:
                 max_consecutive_rejected_calls=(
                     self._limits.max_consecutive_rejected_calls if self._limits else None
                 ),
+                wall_time_s=(
+                    int(round(self._wall_time_s)) if self._wall_time_s is not None else None
+                ),
+                elapsed_wall_time_s=elapsed_wall_time_s,
+                remaining_wall_time_s=remaining_wall_time_s,
+                terminal_tool_name=self._terminal_tool_name,
+                terminal_path_category=self._terminal_path_category,
             )
 
     @property
@@ -378,16 +419,30 @@ class RepositoryToolBroker:
                 )
                 return self._capture_response(name, canonical_arguments, response)
         except PathPolicyError as exc:
-            message = _safe_error(str(exc)) or type(exc).__name__
+            path_category = _path_violation_category(str(exc))
             with self._lock:
-                self._set_policy_failure_locked(message, "workspace_path_policy")
-            response = self._error_result(name, message)
+                self._set_policy_failure_locked(
+                    "repository workspace path policy violation",
+                    "workspace_path_policy",
+                    terminal_tool_name=name,
+                    terminal_path_category=path_category,
+                )
+            response = self._error_result(
+                name,
+                "repository workspace path policy violation",
+                error_subcategory="workspace_path_policy",
+                terminal_tool_name=name,
+                path_violation_category=path_category,
+            )
             return self._capture_response(name, canonical_arguments, response)
-        except Exception as exc:
-            message = _safe_error(str(exc)) or type(exc).__name__
+        except Exception:
             with self._lock:
-                self._set_infrastructure_failure_locked(message, "broker_dispatch_internal_error")
-            response = self._error_result(name, message)
+                self._set_infrastructure_failure_locked(
+                    "repository broker dispatch failed",
+                    "broker_dispatch_internal_error",
+                    terminal_tool_name=name,
+                )
+            response = self._error_result(name, "repository broker internal error")
             return self._capture_response(name, canonical_arguments, response)
         response = self._error_result(name, "unknown tool request")
         return self._capture_response(name, canonical_arguments, response)
@@ -410,6 +465,7 @@ class RepositoryToolBroker:
                     self._set_infrastructure_failure_locked(
                         "canonical training observation was unavailable",
                         "training_observation_internal_error",
+                        terminal_tool_name=name,
                     )
                     self._finalize_call_locked()
                 return response
@@ -419,6 +475,7 @@ class RepositoryToolBroker:
                     self._set_infrastructure_failure_locked(
                         "canonical training capture exceeded its bound",
                         "training_capture_limit",
+                        terminal_tool_name=name,
                     )
                     self._finalize_call_locked()
                     return response
@@ -460,13 +517,43 @@ class RepositoryToolBroker:
             self._limit_failure = reason
             self._cancellation.set()
 
-    def _set_policy_failure_locked(self, message: str, subcategory: str) -> None:
+    def _set_policy_failure_locked(
+        self,
+        message: str,
+        subcategory: str,
+        *,
+        terminal_tool_name: str | None = None,
+        terminal_path_category: str | None = None,
+    ) -> None:
         self._policy_failure = message
         self._policy_failure_subcategory = subcategory
+        self._set_terminal_metadata_locked(terminal_tool_name, terminal_path_category)
+        self._cancellation.set()
 
-    def _set_infrastructure_failure_locked(self, message: str, subcategory: str) -> None:
+    def _set_infrastructure_failure_locked(
+        self,
+        message: str,
+        subcategory: str,
+        *,
+        terminal_tool_name: str | None = None,
+    ) -> None:
         self._infrastructure_failure = message
         self._infrastructure_failure_subcategory = subcategory
+        self._set_terminal_metadata_locked(terminal_tool_name, None)
+        self._cancellation.set()
+
+    def _set_terminal_metadata_locked(
+        self,
+        terminal_tool_name: str | None,
+        terminal_path_category: str | None,
+    ) -> None:
+        if self._terminal_tool_name is None and terminal_tool_name in _TOOL_NAMES:
+            self._terminal_tool_name = terminal_tool_name
+        if (
+            self._terminal_path_category is None
+            and terminal_path_category in _PATH_VIOLATION_CATEGORIES
+        ):
+            self._terminal_path_category = terminal_path_category
 
     def _workspace_result(
         self, name: str, tool_name: str, arguments: dict[str, Any]
@@ -480,24 +567,43 @@ class RepositoryToolBroker:
         result = self._bridge.invoke_workspace_tool(tool_name, _json_arguments(arguments))
         payload = result.model_dump(mode="json")
         failure_message = result.message or result.stderr or result.category.value
+        error_subcategory: str | None = None
+        path_violation_category: str | None = None
         if not result.success and result.category.value in {
             "permission_denied",
             "policy_denied",
             "sandbox_error",
         }:
             with self._lock:
-                if name == "apply_patch" and failure_message.startswith(_RECOVERABLE_PATCH_ERRORS):
+                patch_category = (
+                    _recoverable_patch_category(failure_message) if name == "apply_patch" else None
+                )
+                if patch_category is not None:
                     self._record_rejection_locked()
+                    error_subcategory = patch_category
                 else:
-                    self._set_policy_failure_locked(
+                    error_subcategory = _workspace_policy_subcategory(
+                        name,
+                        result.category.value,
                         failure_message,
-                        _workspace_policy_subcategory(name, result.category.value, failure_message),
+                    )
+                    path_violation_category = (
+                        _path_violation_category(failure_message)
+                        if error_subcategory == "workspace_path_policy"
+                        else None
+                    )
+                    self._set_policy_failure_locked(
+                        "repository workspace policy violation",
+                        error_subcategory,
+                        terminal_tool_name=name,
+                        terminal_path_category=path_violation_category,
                     )
         elif not result.success and result.category.value == "internal_error":
             with self._lock:
                 self._set_infrastructure_failure_locked(
-                    result.message or "workspace tool internal error",
+                    "workspace tool internal error",
                     "workspace_tool_internal_error",
+                    terminal_tool_name=name,
                 )
         elif result.success:
             with self._lock:
@@ -510,7 +616,16 @@ class RepositoryToolBroker:
                 elif name == "inspect_diff":
                     self._diff_observed = True
         if not result.success:
-            return self._error_result(name, failure_message), False
+            return (
+                self._error_result(
+                    name,
+                    failure_message,
+                    error_subcategory=error_subcategory,
+                    terminal_tool_name=(name if path_violation_category is not None else None),
+                    path_violation_category=path_violation_category,
+                ),
+                False,
+            )
         return self._payload_result(name, payload, is_error=not result.success), result.success
 
     def _run_public_test(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -535,8 +650,9 @@ class RepositoryToolBroker:
             )
             with self._lock:
                 self._set_infrastructure_failure_locked(
-                    completed.failure_reason or "public-test failure",
+                    "public-test control-plane failure",
                     subcategory,
+                    terminal_tool_name=name,
                 )
         payload = {
             "test_id": test_id,
@@ -589,11 +705,26 @@ class RepositoryToolBroker:
         text = canonical_tool_observation(name, enriched, is_error=is_error)
         return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
-    def _error_result(self, name: str, message: str) -> dict[str, Any]:
+    def _error_result(
+        self,
+        name: str,
+        message: str,
+        *,
+        error_subcategory: str | None = None,
+        terminal_tool_name: str | None = None,
+        path_violation_category: str | None = None,
+    ) -> dict[str, Any]:
         tool_name = name if name in _TOOL_NAMES else "list_files"
+        payload: dict[str, Any] = {
+            "error_subcategory": error_subcategory or _safe_error_subcategory(message)
+        }
+        if terminal_tool_name in _TOOL_NAMES:
+            payload["terminal_tool_name"] = terminal_tool_name
+        if path_violation_category in _PATH_VIOLATION_CATEGORIES:
+            payload["path_violation_category"] = path_violation_category
         return self._payload_result(
             tool_name,
-            {"error_subcategory": _safe_error_subcategory(message)},
+            payload,
             is_error=True,
         )
 
@@ -619,7 +750,7 @@ class RepositoryToolBroker:
             phase = "current_revision_needs_diff"
         else:
             phase = "working"
-        return {
+        state: dict[str, Any] = {
             "phase": phase,
             "patch_applied": self._patch_applied,
             "compile_passed": self._compile_passed,
@@ -627,6 +758,30 @@ class RepositoryToolBroker:
             "latest_diff_observed": self._diff_observed,
             "finished": self._finished,
         }
+        if self._limits is not None:
+            state.update(
+                {
+                    "max_tool_calls": self._limits.max_tool_calls,
+                    "max_patch_calls": self._limits.max_patch_calls,
+                    "max_consecutive_rejected_calls": (self._limits.max_consecutive_rejected_calls),
+                }
+            )
+        elapsed_wall_time_s, remaining_wall_time_s = self._wall_time_state_locked()
+        if elapsed_wall_time_s is not None and remaining_wall_time_s is not None:
+            state.update(
+                {
+                    "elapsed_wall_time_s": elapsed_wall_time_s,
+                    "remaining_wall_time_s": remaining_wall_time_s,
+                }
+            )
+        return state
+
+    def _wall_time_state_locked(self) -> tuple[int | None, int | None]:
+        if self._wall_time_s is None:
+            return None, None
+        elapsed = max(0.0, time.monotonic() - self._started_monotonic_s)
+        remaining = max(0.0, self._wall_time_s - elapsed)
+        return int(round(elapsed)), int(round(remaining))
 
     def _next_allowed_actions_locked(self) -> list[str]:
         if (
@@ -695,8 +850,9 @@ def _safe_error_subcategory(message: str) -> str:
     """Map caller-controlled diagnostics to a bounded, path-free category."""
 
     normalized = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_")
-    if message.startswith(_RECOVERABLE_PATCH_ERRORS):
-        return "patch_rejected"
+    patch_category = _recoverable_patch_category(message)
+    if patch_category is not None:
+        return patch_category
     if any(
         marker in normalized
         for marker in (
@@ -738,6 +894,42 @@ def _workspace_policy_subcategory(name: str, category: str, message: str) -> str
     if name == "apply_patch":
         return "workspace_patch_policy"
     return "workspace_access_policy"
+
+
+def _recoverable_patch_category(message: str) -> str | None:
+    for prefix, category in _RECOVERABLE_PATCH_ERRORS:
+        if message.startswith(prefix):
+            return category
+    return None
+
+
+def _path_violation_category(message: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_")
+    if "absolute" in normalized:
+        return "absolute"
+    if "traversal" in normalized or "parent_path" in normalized:
+        return "traversal"
+    if "hardlink" in normalized or "hard_link" in normalized:
+        return "hardlink"
+    if "symlink" in normalized or "symbolic_link" in normalized:
+        return "symlink"
+    if "read_only" in normalized or "readonly" in normalized:
+        return "readonly"
+    if any(
+        marker in normalized
+        for marker in (
+            "hidden",
+            "protected",
+            "credential",
+            "not_available",
+            "excluded",
+            "internal",
+        )
+    ):
+        return "hidden_or_protected"
+    if "outside_editable" in normalized or "not_editable" in normalized:
+        return "outside_editable"
+    return "unspecified"
 
 
 __all__ = [

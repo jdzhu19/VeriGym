@@ -90,18 +90,43 @@ _INFRASTRUCTURE_FAILURE_SUBCATEGORIES = frozenset(
         "workspace_tool_internal_error",
     }
 )
+_ALLOWLISTED_TOOL_NAMES = frozenset(
+    {
+        "list_files",
+        "read_file",
+        "apply_patch",
+        "run_public_test",
+        "inspect_diff",
+        "finish",
+    }
+)
+_PATH_VIOLATION_CATEGORIES = frozenset(
+    {
+        "absolute",
+        "traversal",
+        "outside_editable",
+        "readonly",
+        "symlink",
+        "hardlink",
+        "hidden_or_protected",
+        "unspecified",
+    }
+)
 
 
 class CodexCliAgentEvalAdapter(AgentAdapter):
     """Run one gpt-5.4/xhigh MCP-only scoring episode without transcript capture."""
 
     requires_model = False
-    action_protocol_spec = RepositoryActionProtocolSpec()
+    action_protocol_spec = RepositoryActionProtocolSpec(
+        prompt_contract_id="repository_action_v2_prompt_v4",
+        state_machine_id="repository_action_state_machine_v3",
+    )
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="repository_action_v2_prompt_v3",
-        prompt_contract_version="3.0.0",
+        prompt_contract_id="repository_action_v2_prompt_v4",
+        prompt_contract_version="4.0.0",
         task_context_policy="revision_bound_agent_feedback_v1",
-        base_instruction_policy="generated_repository_action_registry_v3",
+        base_instruction_policy="generated_repository_action_registry_v4",
         content_visibility_policy="visible_assets_and_revision_bound_feedback_v1",
         max_prompt_bytes=2 * 1024 * 1024,
         max_task_context_bytes=1024 * 1024,
@@ -111,7 +136,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="codex-cli-agenteval-agent",
-        version="4.0.0",
+        version="5.0.0",
         api_version=PLUGIN_API_VERSION,
         provider="openai-codex-cli",
         capabilities=[
@@ -149,7 +174,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             raise ValueError("Codex AgentEval requires the frozen repository action protocol")
         if (
             context.prompt_policy is None
-            or context.prompt_policy.id != "repository_action_v2_prompt_v3"
+            or context.prompt_policy.id != "repository_action_v2_prompt_v4"
         ):
             raise ValueError("Codex AgentEval prompt contract is not frozen")
         executable, capabilities = runtime_capabilities()
@@ -158,7 +183,10 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             capabilities,
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
-        prompt = validate_prompt_text(_agenteval_prompt(context, bridge), context.prompt_policy)
+        prompt = validate_prompt_text(
+            _agenteval_prompt(context, bridge, settings),
+            context.prompt_policy,
+        )
         self._context = context
         self._bridge = bridge
         self._executable = executable
@@ -193,6 +221,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                         max_patch_calls=settings.max_patch_calls,
                         max_consecutive_rejected_calls=(settings.max_consecutive_rejected_calls),
                     ),
+                    wall_time_s=settings.execution.effective_process_timeout_s,
                 )
                 arguments = build_agenteval_arguments(
                     capabilities,
@@ -293,7 +322,11 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
         return values  # type: ignore[return-value]
 
 
-def _agenteval_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
+def _agenteval_prompt(
+    context: AgentContext,
+    bridge: ExternalAgentBridge,
+    settings: CodexAgentEvalSettings,
+) -> str:
     contract = context.agent_feedback_contract
     assert contract is not None
     instructions = list(AGENTEVAL_PROMPT_INSTRUCTIONS)
@@ -302,6 +335,10 @@ def _agenteval_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str
         "use *** Update File syntax."
     )
     instructions.append("Every successful patch invalidates prior compile, PPA, and diff evidence.")
+    instructions.append(
+        "Use each repository-relative editable_globs value exactly as written; do not add or "
+        "remove a repository/ prefix."
+    )
     if contract.compile_test_id is not None:
         instructions.append(
             "Run compile for the current revision and require it to pass before finish."
@@ -323,6 +360,15 @@ def _agenteval_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str
             "editable_globs": sorted(bridge.editable_globs),
             "readonly_globs": sorted(bridge.readonly_globs),
             "path_format": "relative_only",
+            "editable_paths_must_be_copied_verbatim": True,
+        },
+        "budgets": {
+            "task_wall_time_s": int(settings.execution.task_wall_time_s),
+            "process_wall_time_s": int(settings.execution.effective_process_timeout_s),
+            "max_tool_calls": settings.max_tool_calls,
+            "max_patch_calls": settings.max_patch_calls,
+            "max_consecutive_rejected_calls": settings.max_consecutive_rejected_calls,
+            "finalization_reserve_s": 60,
         },
         "agent_feedback_contract": contract.model_dump(mode="json"),
         "instructions": instructions,
@@ -412,7 +458,7 @@ def _identity(
     )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agenteval-agent",
-        adapter_version="4.0.0",
+        adapter_version="5.0.0",
         harness_name="verigym-codex-agenteval-scoring",
         requested_model_id="gpt-5.4",
         observed_model_id=observed_model_id,
@@ -579,6 +625,11 @@ def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
         "max_tool_calls": stats.max_tool_calls,
         "max_patch_calls": stats.max_patch_calls,
         "max_consecutive_rejected_calls": stats.max_consecutive_rejected_calls,
+        "wall_time_s": stats.wall_time_s,
+        "elapsed_wall_time_s": stats.elapsed_wall_time_s,
+        "remaining_wall_time_s": stats.remaining_wall_time_s,
+        "terminal_tool_name": _bounded_terminal_tool_name(stats),
+        "terminal_path_category": _bounded_terminal_path_category(stats),
     }
 
 
@@ -647,6 +698,18 @@ def _bounded_infrastructure_failure_subcategory(
     if broker.infrastructure_failure_subcategory in _INFRASTRUCTURE_FAILURE_SUBCATEGORIES:
         return broker.infrastructure_failure_subcategory
     return "tool_infrastructure_unspecified"
+
+
+def _bounded_terminal_tool_name(broker: RepositoryToolBrokerStats) -> str | None:
+    if broker.terminal_tool_name in _ALLOWLISTED_TOOL_NAMES:
+        return broker.terminal_tool_name
+    return None
+
+
+def _bounded_terminal_path_category(broker: RepositoryToolBrokerStats) -> str | None:
+    if broker.terminal_path_category in _PATH_VIOLATION_CATEGORIES:
+        return broker.terminal_path_category
+    return None
 
 
 def _termination(

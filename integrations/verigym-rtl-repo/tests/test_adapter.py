@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from pathlib import Path
 
 import pytest
 from verigym.plugin_api import ConfigurationError, InteractionMode, SuiteSourceConfig
 
-from verigym_rtl_repo import RtlRepoSuite
-from verigym_rtl_repo.dataset import AGENT_EVAL_VARIANT, VARIANT, build_official_prompt
+from verigym_rtl_repo import AGENT_EVAL_V2_SUITE_VERSION, RtlRepoSuite
+from verigym_rtl_repo.dataset import (
+    AGENT_EVAL_V2_VARIANT,
+    AGENT_EVAL_VARIANT,
+    CONTEXT_CLASSIFICATION_RULE,
+    VARIANT,
+    build_official_prompt,
+    classify_context_path,
+)
 
 
 def configured(source: Path) -> RtlRepoSuite:
@@ -18,6 +26,12 @@ def configured(source: Path) -> RtlRepoSuite:
 def configured_agent_eval(source: Path) -> RtlRepoSuite:
     return RtlRepoSuite().with_source(
         SuiteSourceConfig(source_root=source, variant=AGENT_EVAL_VARIANT)
+    )
+
+
+def configured_agent_eval_v2(source: Path) -> RtlRepoSuite:
+    return RtlRepoSuite().with_source(
+        SuiteSourceConfig(source_root=source, variant=AGENT_EVAL_V2_VARIANT)
     )
 
 
@@ -89,6 +103,80 @@ def test_agent_eval_is_an_official_context_projection_without_target_leaks(
     assert "assign y = a & b;" not in "\n".join(visible_files.values())
     assert "all_code" not in "\n".join(visible_files.values())
     assert assets.hidden_assets[0].content == "assign y = a & b;"
+
+
+def test_agent_eval_v2_has_independent_identity_and_preserves_official_context(
+    synthetic_source: Path,
+) -> None:
+    v1 = configured_agent_eval(synthetic_source)
+    v2 = configured_agent_eval_v2(synthetic_source)
+    v1_ref = next(ref for ref in v1.discover() if ref.native_id == "test-000000")
+    v2_ref = next(ref for ref in v2.discover() if ref.native_id == "test-000000")
+    v1_task = v1.load_task(v1_ref)
+    v2_task = v2.load_task(v2_ref)
+    v1_assets = v1.resolve_assets(v1_task)
+    v2_assets = v2.resolve_assets(v2_task)
+    v1_root = Path(v1_assets.visible_root) / "repository"
+    v2_root = Path(v2_assets.visible_root) / "repository"
+    v1_index = json.loads((v1_root / "context" / "index.json").read_text(encoding="utf-8"))
+    v2_index = json.loads((v2_root / "context" / "index.json").read_text(encoding="utf-8"))
+    v1_snapshot = v1.source_snapshot()
+    v2_snapshot = v2.source_snapshot()
+
+    assert v2_task.id.startswith(f"rtl-repo/{AGENT_EVAL_V2_VARIANT}/")
+    assert v2_task.suite_version == AGENT_EVAL_V2_SUITE_VERSION
+    assert v2_task.source.revision == AGENT_EVAL_V2_SUITE_VERSION
+    assert v2_task.source.content_hash != v1_task.source.content_hash
+    assert v2_task.metadata["task_content_hash"] != v1_task.metadata["task_content_hash"]
+    assert v1_snapshot is not None and v2_snapshot is not None
+    assert v2_snapshot.configuration_fingerprint != v1_snapshot.configuration_fingerprint
+    assert v2_task.description.startswith("Complete exactly the next line")
+    assert "First read the tail" in v2_task.description
+    assert "source-priority context" in v2_task.description
+    assert "exact match" in v2_task.description
+    assert v2_task.workspace.editable_globs == ["repository/completion.txt"]
+    assert v1_index["items"] == [{"file": "0000.txt", "path": "rtl/helper.v"}]
+    assert v2_index["context_classification_rule"] == CONTEXT_CLASSIFICATION_RULE
+    assert v2_index["read_priority_order"] == ["source", "generated"]
+    assert v2_index["source_utf8_bytes"] == len((v2_root / "context" / "0000.txt").read_bytes())
+    assert v2_index["generated_utf8_bytes"] == 0
+    assert v2_index["items"] == [
+        {
+            "classification": "source",
+            "file": "0000.txt",
+            "path": "rtl/helper.v",
+            "read_priority": 0,
+            "utf8_bytes": len((v2_root / "context" / "0000.txt").read_bytes()),
+        }
+    ]
+    assert (v2_root / "context" / "0000.txt").read_bytes() == (
+        v1_root / "context" / "0000.txt"
+    ).read_bytes()
+    assert (v2_root / "target" / "cropped_target.sv").read_bytes() == (
+        v1_root / "target" / "cropped_target.sv"
+    ).read_bytes()
+    assert v2_assets.hidden_assets[0].content == v1_assets.hidden_assets[0].content
+    visible = b"\n".join(path.read_bytes() for path in v2_root.rglob("*") if path.is_file())
+    assert b"assign y = a & b;" not in visible
+
+
+@pytest.mark.parametrize(
+    ("path", "classification"),
+    [
+        ("rtl/source.v", "source"),
+        ("HW2.srcs/sim_1/new/tb_uart_rx.v", "source"),
+        ("HW2.sim/sim_1/behav/xsim/glbl.v", "generated"),
+        ("build/impl/func/result.v", "generated"),
+        ("build/synth/func/result.v", "generated"),
+        ("build/XSIM/result.v", "generated"),
+        ("rtl/GLBL.sv", "generated"),
+    ],
+)
+def test_agent_eval_v2_context_classification_is_path_only_and_stable(
+    path: str,
+    classification: str,
+) -> None:
+    assert classify_context_path(path) == classification
 
 
 def test_source_mutation_is_detected_after_task_freeze(synthetic_source: Path) -> None:
