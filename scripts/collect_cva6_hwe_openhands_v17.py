@@ -337,7 +337,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
         qualification=qualification,
         tokenizer_directory=tokenizer_directory,
     )
-    provider_scan = _canary_runner._scan_provider_values(root)
+    provider_scan = _scan_provider_values(root)
     final: dict[str, Any] = seal_v17_collection_report(
         {
             **base_report,
@@ -647,6 +647,13 @@ def _load_locks(*, training_dir: Path, validation_dir: Path) -> dict[str, Any]:
         **_image_locks(training_dir, training_tasks),
         **_image_locks(validation_dir, validation_tasks),
     }
+
+
+def _scan_provider_values(root: Path) -> dict[str, Any]:
+    """Expose the frozen private-artifact scan to formal continuation entrypoints."""
+
+    report: dict[str, Any] = _canary_runner._scan_provider_values(root)
+    return report
 
 
 def _zero_call_preflight(locks: dict[str, Any]) -> None:

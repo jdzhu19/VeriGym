@@ -72,3 +72,16 @@ Continuation 仍使用原 exact-64K gate：8 个 distinct training verifier-pass
 dataset manifests、equal-trajectory sampler manifests 与 security scans 全部完成后，才允许
 进入 SFT 预注册；此前 `production_training_ready=false`、`benchmark_score_claimed=false`、
 `gpu_submission_allowed=false`。完整 run 与 trajectory 仅留在 experiments，不提交 Git。
+
+## 合并后零调用 dry launch
+
+PR #8 merge commit `0cb1c80a66694069b5b50a01e9599ad7dace4af4` 通过 push 与 PR event
+各 8 项检查。其后 8-task Docker zero-call preflight 通过；首次 runner dry launch 在创建输出
+root 和 provider service 之前因 formal runner 未公开 private-artifact scan wrapper 而以
+`AttributeError` 停止。该 launcher 没有 task/provider attempt，concrete provider-value scan 为
+零命中，日志 SHA-256 为
+`73bc5c0d026d672e8be036f94913c879d6bd4e003167cb3baa336d35e73c61c0`。
+
+修复只公开原 canary scanner 的同一 fail-closed wrapper，并增加 continuation 调用面回归；不改变
+agent package、provider-visible options、合约、任务顺序、sample identity 或历史输出。下一次真实
+执行必须使用新的输出与 launcher log 名称，不能覆盖该 dry-launch evidence。

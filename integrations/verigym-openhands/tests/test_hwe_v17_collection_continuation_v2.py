@@ -212,3 +212,16 @@ def test_continuation_persists_the_import_gate_before_docker_or_provider_calls()
 
     assert initialization < source.index("_write_gate(root, attempts)", initialization) < preflight
     assert preflight < provider
+
+
+def test_formal_runner_exposes_the_provider_scan_to_the_continuation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import collect_cva6_hwe_openhands_v17 as formal
+    from scripts import collect_cva6_hwe_openhands_v17_continuation_v2 as continuation
+
+    expected = {"passed": True, "provider_value_hit_count": 0}
+    monkeypatch.setattr(formal._canary_runner, "_scan_provider_values", lambda root: expected)
+
+    assert formal._scan_provider_values(tmp_path) == expected
+    assert inspect.getsource(continuation.collect).count("_v1._scan_provider_values(") == 2
