@@ -285,6 +285,9 @@ The v23 successor independently registers the exact `crane version` bytes for th
 instead of deriving them from the release tag. It retains the v22 SLSA and absolute-path controls,
 uses a new cache, and still authorizes only one no-candidate preflight after merge. See the
 [v23 version-contract authorization](../../docs/audits/2026-08-29_openhands-v23-version-contract-fix-authorization.md).
+That preflight passed the registered version smoke and stopped at the final public registry probe
+because its Debian slim execution image had no CA trust store. See the
+[v23 stopped audit](../../docs/audits/2026-08-29_openhands-v23-daemonless-prewarm-stopped.md).
 
 ## Five-task HWE collection pilot
 
