@@ -264,6 +264,20 @@ qualification task, provider call, or held-out task was touched. The v20 identit
 candidate-transfer authorization exists. See the
 [v20 stopped audit](../../docs/audits/2026-08-29_openhands-v20-daemonless-prewarm-stopped.md).
 
+The v21 successor follows the producer's official release workflow: it understands the Sigstore
+bundle wrapper, pins `slsa-verifier` v2.7.1, cryptographically verifies the archive provenance, and
+records bounded content-free stage receipts. Its single authorized preflight proved that all public
+inputs and structural checks passed, then stopped before the verifier process started because an
+unqualified executable name was absent from the restricted `PATH`. See the
+[v21 repair authorization](../../docs/audits/2026-08-29_openhands-v21-daemonless-bootstrap-fix-authorization.md)
+and [v21 stopped audit](../../docs/audits/2026-08-29_openhands-v21-daemonless-prewarm-stopped.md).
+
+The distinct v22 authorization resolves that exact process-launch defect without adding the
+writable download directory to `PATH`: it validates and invokes the fully qualified registered
+verifier file, binds the path into both progress and final receipts, and adds a restricted-`PATH`
+regression. It still authorizes only one no-candidate preflight after merge. See the
+[v22 path-fix authorization](../../docs/audits/2026-08-29_openhands-v22-daemonless-path-fix-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

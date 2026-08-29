@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v22_daemonless_preflight_authorization_v1",
+  "status": "authorized_pending_preflight",
+  "identity": "openhands-hwe-v22-daemonless-prewarm-preflight-v1",
+  "predecessor": {
+    "v21_status": "stopped_security_or_infrastructure_invalid",
+    "v21_report_hash": "5134b3adbc8747691516041acb3ce87524ff221b7bbcc68c4a168dd3c9c3837e",
+    "v21_report_file_sha256": "c0ad1a9755d9e5769d770b6784d257ba16e629b43e396dcc58104c6a10fc7748",
+    "v21_audit_commit": "62d07e94294dc9c4cb84658d7c2bef0a4765ca7d"
+  },
+  "crane_release": {
+    "release_tag": "v0.22.0",
+    "bootstrap_script_sha256": "e40169628f22edda5f1070baa120e70746fe11f92ae769a8853a6dbc85fe82d9",
+    "asset_name": "go-containerregistry_Linux_x86_64.tar.gz",
+    "asset_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/go-containerregistry_Linux_x86_64.tar.gz",
+    "asset_sha256": "edb74d53fad9a596860f59d1c5d04a43dfb5f441dc71f57060dd0bf39483c833",
+    "asset_size": 16075919,
+    "checksums_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/checksums.txt",
+    "checksums_sha256": "32cb629713e7a5d32274a218f76edef00113a4ff34593199449045d13e98be7a",
+    "checksums_size": 1387,
+    "provenance_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/multiple.intoto.jsonl",
+    "provenance_sha256": "0294f0af185efac8b6053d5793a7a5bae90d8b8f989892f363e5e9124667344c",
+    "provenance_size": 25735,
+    "source_uri": "github.com/google/go-containerregistry",
+    "source_commit": "3f4ff3ca60f51c876ac4bd89e9a787157aaa4f15",
+    "builder_id": "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.1.0",
+    "build_type": "https://github.com/slsa-framework/slsa-github-generator/generic@v1",
+    "workflow_entrypoint": ".github/workflows/release.yml"
+  },
+  "slsa_verifier": {
+    "release_tag": "v2.7.1",
+    "asset_name": "slsa-verifier-linux-amd64",
+    "asset_url": "https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.1/slsa-verifier-linux-amd64",
+    "asset_sha256": "946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339",
+    "asset_size": 33291668,
+    "sigstore_tuf_repository": "https://tuf-repo-cdn.sigstore.dev"
+  },
+  "bootstrap_image": {
+    "reference": "python:3.11.9-slim-bookworm",
+    "image_id": "sha256:65a6ce634d975b67ee77c8d0f59248cbcb9d8b8f229d584c3cf5d624038bf963",
+    "manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+  },
+  "execution_image": {
+    "reference": "debian:bookworm-slim",
+    "image_id": "sha256:9fff73c337b947e6e3120b8ce929c92a7c5820228fda7c163145954c31cd32ba",
+    "manifest_digest": "sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241"
+  },
+  "network": "verigym-hwe-net",
+  "probe": {
+    "reference": "docker.io/library/python:3.11.9-slim-bookworm",
+    "expected_manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+  },
+  "required_controls": {
+    "privileged": false,
+    "docker_socket_mount": false,
+    "docker_daemon_process": false,
+    "tcp_api_listener": false,
+    "read_only_rootfs": true,
+    "non_root_user": true,
+    "cap_drop_all": true,
+    "no_new_privileges": true,
+    "single_scratch_mount": true,
+    "default_bridge_used": false,
+    "provider_or_registry_credentials_present": false,
+    "proxy_values_forwarded": false,
+    "cryptographic_slsa_verification": true,
+    "bounded_content_free_diagnostics": true,
+    "stderr_requires_nonzero_exit_to_fail": true,
+    "fully_qualified_verifier_executable": true
+  },
+  "authorized_actions": {
+    "download_pinned_crane_release": true,
+    "download_pinned_slsa_verifier": true,
+    "verify_crane_slsa_provenance": true,
+    "refresh_sigstore_tuf_trust_metadata": true,
+    "resolve_registered_verifier_absolute_path": true,
+    "run_crane_version_network_none": true,
+    "probe_registered_non_candidate_digest": true,
+    "download_candidate_images": false,
+    "load_candidate_images": false,
+    "start_qualification": false,
+    "invoke_provider": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "6eebf2cce2283d27ae51d4286110ae5b720a092b14f8ff560f8e5cfbfc69d203"
+}

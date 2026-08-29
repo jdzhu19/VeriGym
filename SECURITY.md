@@ -391,6 +391,15 @@ validation, signature-verification, extraction, and receipt stage. Output bodies
 messages are not persisted. Candidate access and every later campaign stage remain outside this
 authorization.
 
+The v21 identity is sealed after its verifier process did not start: its restricted subprocess
+`PATH` intentionally excluded the writable download mount, while argv item zero contained only a
+filename. The v22 successor does not add that mount to `PATH`. It resolves the registered verifier
+to the exact ordinary, executable, single-link file
+`/download/slsa-verifier-linux-amd64`, rejects a symlink or path escape, and passes that fully
+qualified path to the subprocess. The exact path is also bound into the atomic helper progress and
+final receipt. v22 retains v21's download, network, output, diagnostic, cleanup, and no-candidate
+boundaries; it authorizes one new preflight only after its distinct authorization merges.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
