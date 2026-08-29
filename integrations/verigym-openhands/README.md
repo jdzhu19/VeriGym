@@ -258,6 +258,12 @@ scratch mount. Its initial authorization explicitly forbids candidate downloads,
 qualification and provider calls. See the
 [v20 authorization audit](../../docs/audits/2026-08-29_openhands-v20-daemonless-prewarm-authorization.md).
 
+That authorized preflight ran once and stopped fail closed inside the controlled tool-bootstrap
+command. Its temporary container and partial tool directory were removed; no candidate image,
+qualification task, provider call, or held-out task was touched. The v20 identity is sealed and no
+candidate-transfer authorization exists. See the
+[v20 stopped audit](../../docs/audits/2026-08-29_openhands-v20-daemonless-prewarm-stopped.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
