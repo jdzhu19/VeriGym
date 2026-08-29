@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from .models import (
 )
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _has_symlink_component(root: Path, relative: str) -> bool:
@@ -152,6 +154,44 @@ def _inspect_image(reference: str, *, pull: bool) -> dict[str, Any]:
     if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
         raise ConfigurationError("Docker image inspection did not return one image")
     return payload[0]
+
+
+def _resolve_image_identity(
+    *,
+    reference: str,
+    image: Mapping[str, Any],
+    imported_binding: Mapping[str, str] | None,
+) -> tuple[str, str]:
+    """Resolve a registry or independently verified daemonless-import identity."""
+
+    image_id = image.get("Id")
+    repo_digests = image.get("RepoDigests")
+    if not isinstance(image_id, str) or not isinstance(repo_digests, list):
+        raise ConfigurationError("selected image lacks immutable Docker identities")
+    digest_values = {
+        str(value).rsplit("@", 1)[1]
+        for value in repo_digests
+        if isinstance(value, str) and "@sha256:" in value
+    }
+    if imported_binding is None:
+        if len(digest_values) != 1:
+            raise ConfigurationError("selected image does not resolve to one manifest digest")
+        return image_id, next(iter(digest_values))
+    if set(imported_binding) != {"image_id", "manifest_digest"}:
+        raise ConfigurationError("imported image binding is malformed")
+    expected_id = imported_binding.get("image_id")
+    expected_manifest = imported_binding.get("manifest_digest")
+    if (
+        not isinstance(expected_id, str)
+        or not _SHA256_DIGEST.fullmatch(expected_id)
+        or not isinstance(expected_manifest, str)
+        or not _SHA256_DIGEST.fullmatch(expected_manifest)
+        or image_id != expected_id
+    ):
+        raise ConfigurationError("imported image binding changed")
+    if digest_values and digest_values != {expected_manifest}:
+        raise ConfigurationError("imported image registry digest conflicts with its binding")
+    return image_id, expected_manifest
 
 
 def _extract_repository(
@@ -325,6 +365,7 @@ def prepare_source(
     official_dataset_revision: str | None = None,
     official_source_commit: str | None = None,
     verifier_cache: Path | None = None,
+    imported_image_bindings: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Path:
     """Prepare only explicitly selected tasks; never infer or pull a full repository set."""
 
@@ -338,6 +379,15 @@ def prepare_source(
     output.parent.mkdir(parents=True, exist_ok=True)
     dataset = dataset.expanduser().resolve(strict=True)
     instances = _official_instances(dataset, set(selected_tasks))
+    expected_image_references = {
+        (f"ghcr.io/pku-liang/{instance.org.lower()}_m_{instance.repo.lower()}:pr-{instance.number}")
+        for instance in instances
+    }
+    if imported_image_bindings is not None:
+        if pull:
+            raise ConfigurationError("imported image bindings cannot accompany Docker pulls")
+        if set(imported_image_bindings) != expected_image_references:
+            raise ConfigurationError("imported image bindings do not match selected tasks")
     resolved_verifier_cache: Path | None = None
     if verifier_cache is not None:
         if verifier_cache.is_symlink():
@@ -360,18 +410,15 @@ def prepare_source(
                 f"pr-{instance.number}"
             )
             image = _inspect_image(reference, pull=pull)
-            image_id = image.get("Id")
-            repo_digests = image.get("RepoDigests")
-            if not isinstance(image_id, str) or not isinstance(repo_digests, list):
-                raise ConfigurationError("selected image lacks immutable Docker identities")
-            digest_values = [
-                str(value).rsplit("@", 1)[1]
-                for value in repo_digests
-                if isinstance(value, str) and "@sha256:" in value
-            ]
-            if len(set(digest_values)) != 1:
-                raise ConfigurationError("selected image does not resolve to one manifest digest")
-            manifest_digest = digest_values[0]
+            image_id, manifest_digest = _resolve_image_identity(
+                reference=reference,
+                image=image,
+                imported_binding=(
+                    imported_image_bindings.get(reference)
+                    if imported_image_bindings is not None
+                    else None
+                ),
+            )
             runtime_base_commit = _image_baseline(
                 image_id=image_id,
                 repository_home=repository_home,

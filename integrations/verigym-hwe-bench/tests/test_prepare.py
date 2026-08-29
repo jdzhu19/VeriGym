@@ -14,6 +14,7 @@ from verigym_hwe_bench.prepare import (
     _image_baseline,
     _materialize_internal_file_symlinks,
     _prepare_verifier_dependencies,
+    _resolve_image_identity,
 )
 
 
@@ -103,6 +104,37 @@ def test_profile_workspace_exclusion_rejects_existing_regular_file(tmp_path: Pat
         _apply_workspace_exclusions(repository, ["build"])
 
     assert build.is_file()
+
+
+def test_daemonless_import_binding_recovers_manifest_identity() -> None:
+    image_id = "sha256:" + "1" * 64
+    manifest = "sha256:" + "2" * 64
+
+    assert _resolve_image_identity(
+        reference="ghcr.io/example/image:task",
+        image={"Id": image_id, "RepoDigests": []},
+        imported_binding={"image_id": image_id, "manifest_digest": manifest},
+    ) == (image_id, manifest)
+
+
+def test_daemonless_import_binding_rejects_local_or_registry_drift() -> None:
+    image_id = "sha256:" + "1" * 64
+    manifest = "sha256:" + "2" * 64
+    with pytest.raises(ConfigurationError, match="binding changed"):
+        _resolve_image_identity(
+            reference="ghcr.io/example/image:task",
+            image={"Id": "sha256:" + "3" * 64, "RepoDigests": []},
+            imported_binding={"image_id": image_id, "manifest_digest": manifest},
+        )
+    with pytest.raises(ConfigurationError, match="registry digest conflicts"):
+        _resolve_image_identity(
+            reference="ghcr.io/example/image:task",
+            image={
+                "Id": image_id,
+                "RepoDigests": ["ghcr.io/example/image@sha256:" + "4" * 64],
+            },
+            imported_binding={"image_id": image_id, "manifest_digest": manifest},
+        )
 
 
 def test_synthetic_runtime_baseline_is_bound_to_official_base(

@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v25_streamed_qualification_authorization_v1",
+  "status": "authorized_pending_qualification",
+  "identity": "openhands-hwe-v25-streamed-public-qualification-v1",
+  "predecessor": {
+    "v24_status": "preflight_passed",
+    "v24_report_hash": "71e315de5eda2fb7bd3bbc2fb4f6b38405b33a47a028bc22191eaa5f306a1b35",
+    "v24_report_file_sha256": "569e9d62b71632d2e80cea09152e0cc6debb3085d18698fc00f0bb17e30949c0",
+    "v24_audit_commit": "3671d34ca16f87ee21ba51c37bbc1b454d826b76"
+  },
+  "dataset": {
+    "sha256": "732c5dac910815c1c7ac72c8ccca88f66dbb7ed5d097806a5ddea611102f60f1",
+    "revision": "1403afb57ce056c659c82b35e39c38c6a21ee635",
+    "source_commit": "10c78a87e1f92695d78d15b1464a6107dcac8837"
+  },
+  "candidate_inventory": [
+    {
+      "number": 2330,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "instance_id": "openhwgroup/cva6:pr-2330",
+      "changed_line_count": 4,
+      "modified_file_count": 2
+    },
+    {
+      "number": 3226,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "instance_id": "openhwgroup/cva6:pr-3226",
+      "changed_line_count": 6,
+      "modified_file_count": 2
+    },
+    {
+      "number": 2844,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2844",
+      "instance_id": "openhwgroup/cva6:pr-2844",
+      "changed_line_count": 7,
+      "modified_file_count": 2
+    },
+    {
+      "number": 3231,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3231",
+      "instance_id": "openhwgroup/cva6:pr-3231",
+      "changed_line_count": 7,
+      "modified_file_count": 2
+    },
+    {
+      "number": 2989,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2989",
+      "instance_id": "openhwgroup/cva6:pr-2989",
+      "changed_line_count": 8,
+      "modified_file_count": 2
+    },
+    {
+      "number": 1482,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-1482",
+      "instance_id": "openhwgroup/cva6:pr-1482",
+      "changed_line_count": 14,
+      "modified_file_count": 2
+    },
+    {
+      "number": 3059,
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3059",
+      "instance_id": "openhwgroup/cva6:pr-3059",
+      "changed_line_count": 15,
+      "modified_file_count": 2
+    }
+  ],
+  "tool_cache": {
+    "source_identity": "openhands-hwe-v24-daemonless-prewarm-preflight-v1",
+    "crane_release_tag": "v0.22.0",
+    "crane_sha256": "771ced475a87b8b2314b9f9de267264789b3297f34a6d5d8ab601e8482db4d94",
+    "bootstrap_receipt_hash": "b44ecb1ceb8d750d6fb2b8ea32c82a1efc3aa437e274b022f660b332ca51407a",
+    "bootstrap_progress_hash": "1ae3817dc084d06330dac5402ac8c64c8a5d27f33c8e5bea338eeb4e719cd8f6",
+    "files": {
+      "bootstrap-progress.json": {
+        "size": 777,
+        "sha256": "c653f92a4279541ece41bb62d06c81c06acd3472386e8e283f2ee43582df6d55"
+      },
+      "bootstrap-receipt.json": {
+        "size": 1333,
+        "sha256": "271f6ccfbe5886d6fd557e40e1a557446ab1127d37edd290fefccc9bbac5495d"
+      },
+      "checksums.txt": {
+        "size": 1387,
+        "sha256": "32cb629713e7a5d32274a218f76edef00113a4ff34593199449045d13e98be7a"
+      },
+      "crane": {
+        "size": 11550904,
+        "sha256": "771ced475a87b8b2314b9f9de267264789b3297f34a6d5d8ab601e8482db4d94"
+      },
+      "fetch_pinned_crane_release_v24.py": {
+        "size": 21101,
+        "sha256": "26979a11103afd81ac6e50d86127787cb61dad7fb4ffc0030a9ef2bf7f64bc69"
+      },
+      "go-containerregistry_Linux_x86_64.tar.gz": {
+        "size": 16075919,
+        "sha256": "edb74d53fad9a596860f59d1c5d04a43dfb5f441dc71f57060dd0bf39483c833"
+      },
+      "multiple.intoto.jsonl": {
+        "size": 25735,
+        "sha256": "0294f0af185efac8b6053d5793a7a5bae90d8b8f989892f363e5e9124667344c"
+      },
+      "slsa-verifier-linux-amd64": {
+        "size": 33291668,
+        "sha256": "946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
+      }
+    }
+  },
+  "execution_image": {
+    "reference": "python:3.11.9-slim-bookworm",
+    "image_id": "sha256:65a6ce634d975b67ee77c8d0f59248cbcb9d8b8f229d584c3cf5d624038bf963",
+    "manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+  },
+  "network": "verigym-hwe-net",
+  "qualification_target": 5,
+  "training_reserve_count": 3,
+  "validation_reserve_count": 2,
+  "required_controls": {
+    "privileged": false,
+    "docker_socket_mount": false,
+    "docker_daemon_process": false,
+    "tcp_api_listener": false,
+    "read_only_rootfs": true,
+    "non_root_user": true,
+    "cap_drop_all": true,
+    "no_new_privileges": true,
+    "two_exact_mounts": true,
+    "default_bridge_used": false,
+    "provider_or_registry_credentials_present": false,
+    "proxy_values_forwarded": false,
+    "tls_verification_disabled": false,
+    "networkless_verifier": true,
+    "digest_qualified_candidate_pull": true,
+    "remote_config_to_local_image_id_binding": true,
+    "tarball_inventory_validation": true,
+    "atomic_progress": true,
+    "shared_content_addressed_layer_cache": true,
+    "streamed_capacity_recomputation": true,
+    "automatic_retry": false
+  },
+  "authorized_actions": {
+    "resolve_candidate_digests": true,
+    "download_candidate_images": true,
+    "load_candidate_images": true,
+    "run_zero_model_qualification": true,
+    "invoke_provider": false,
+    "build_agent_images": false,
+    "materialize_canary_contract": false,
+    "start_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "8d4836d05cec9188b00330ee6074bcff247e733a7a8a2da2ca7f74151bb612be"
+}

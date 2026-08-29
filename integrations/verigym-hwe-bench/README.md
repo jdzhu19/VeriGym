@@ -36,6 +36,14 @@ initialized from the official image cache, receives those files, stays on `--net
 removes the volume afterward. The smoke runs exactly one no-op probe (expected FAIL) and the
 official reference candidate (expected PASS); it is not a full benchmark campaign.
 
+Trusted campaign runners that import a digest-qualified image through a reviewed daemonless
+tarball path may pass an exact `imported_image_bindings` mapping to `prepare_source`. This narrow
+programmatic interface exists because Docker-loadable tarballs do not retain registry
+`RepoDigests`. It requires an exact selected-task reference set, forbids simultaneous pulls,
+requires the local image ID to match the independently verified binding, and rejects any nonempty
+Docker digest inventory that disagrees with the bound remote manifest. Ordinary CLI preparation
+retains its original registry-digest behavior.
+
 Run that zero-model smoke on the same Docker daemon that will execute the campaign. A PASS from a
 different host does not qualify a compute-node daemon. The verifier supplies Git's
 `safe.directory` explicitly for the immutable in-image repository and emits only a bounded setup
