@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v20_daemonless_preflight_authorization_v1",
+  "status": "authorized_pending_preflight",
+  "identity": "openhands-hwe-v20-daemonless-prewarm-preflight-v1",
+  "predecessor": {
+    "v19_audit_hash": "5a2c440cad385afd5e9bf4eb6f0abb4aa251690e8d6c3c1198c86cbe20984698",
+    "v19_progress_hash": "57c67665465b1730a4457505741212d6d63da96f58d51eb6019d65b6056f4b29",
+    "v19_status": "stopped_security_invalid"
+  },
+  "crane_release": {
+    "release_tag": "v0.22.0",
+    "bootstrap_script_sha256": "c9f49649023b616f426dcddf22bf3390c6a9c4324ada2bb3368e50a15a220eed",
+    "asset_name": "go-containerregistry_Linux_x86_64.tar.gz",
+    "asset_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/go-containerregistry_Linux_x86_64.tar.gz",
+    "asset_sha256": "edb74d53fad9a596860f59d1c5d04a43dfb5f441dc71f57060dd0bf39483c833",
+    "asset_size": 16075919,
+    "checksums_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/checksums.txt",
+    "checksums_sha256": "32cb629713e7a5d32274a218f76edef00113a4ff34593199449045d13e98be7a",
+    "checksums_size": 1387,
+    "provenance_url": "https://github.com/google/go-containerregistry/releases/download/v0.22.0/multiple.intoto.jsonl",
+    "provenance_sha256": "0294f0af185efac8b6053d5793a7a5bae90d8b8f989892f363e5e9124667344c",
+    "provenance_size": 25735
+  },
+  "bootstrap_image": {
+    "reference": "python:3.11.9-slim-bookworm",
+    "image_id": "sha256:65a6ce634d975b67ee77c8d0f59248cbcb9d8b8f229d584c3cf5d624038bf963",
+    "manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+  },
+  "execution_image": {
+    "reference": "debian:bookworm-slim",
+    "image_id": "sha256:9fff73c337b947e6e3120b8ce929c92a7c5820228fda7c163145954c31cd32ba",
+    "manifest_digest": "sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241"
+  },
+  "network": "verigym-hwe-net",
+  "probe": {
+    "reference": "docker.io/library/python:3.11.9-slim-bookworm",
+    "expected_manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+  },
+  "required_controls": {
+    "privileged": false,
+    "docker_socket_mount": false,
+    "docker_daemon_process": false,
+    "tcp_api_listener": false,
+    "read_only_rootfs": true,
+    "non_root_user": true,
+    "cap_drop_all": true,
+    "no_new_privileges": true,
+    "single_scratch_mount": true,
+    "default_bridge_used": false,
+    "provider_or_registry_credentials_present": false,
+    "proxy_values_forwarded": false
+  },
+  "authorized_actions": {
+    "download_pinned_crane_release": true,
+    "run_crane_version_network_none": true,
+    "probe_registered_non_candidate_digest": true,
+    "download_candidate_images": false,
+    "load_candidate_images": false,
+    "start_qualification": false,
+    "invoke_provider": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "1741352e5a2664191f594d975c798279e4bb19b4ef0c9f1815e2e2a6e17b9898"
+}

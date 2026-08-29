@@ -249,6 +249,15 @@ start. The runner now requires a Unix-only nested daemon and validates its effec
 but the stopped stage is not retried and no reserve split or canary contract exists. See the
 [qualification audit](../../docs/audits/2026-08-29_openhands-v19-public-qualification-stopped.md).
 
+The separately authorized v20 daemonless prewarm preflight does not retry or modify that v19
+stage. It bootstraps the SHA-256-pinned official `crane` v0.22.0 release in a non-privileged,
+non-root container on `verigym-hwe-net`, then runs `crane version` with `network=none` and one
+registered non-candidate digest probe on the dedicated bridge. Every container has a read-only
+root, cap-drop `ALL`, no-new-privileges, bounded resources, no ports, no Docker socket, and only one
+scratch mount. Its initial authorization explicitly forbids candidate downloads, image loading,
+qualification and provider calls. See the
+[v20 authorization audit](../../docs/audits/2026-08-29_openhands-v20-daemonless-prewarm-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

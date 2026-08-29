@@ -345,6 +345,36 @@ narrow mounts, and a dedicated data volume; they must not mount the host home, r
 credentials, hidden assets, or unrelated experiments. A nonempty inner runtime inventory or failed
 cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](docs/hwe_dind_runtime.md).
 
+### Daemonless registry prewarm boundary
+
+The separately authorized OpenHands v20 prewarm preflight replaces the networked privileged DinD
+downloader with a pinned `crane` release running as a single-purpose process in an ordinary Docker
+container. A digest-locked Python bootstrap image may download only the registered GitHub release
+asset, checksum list, and provenance envelope through the dedicated `verigym-hwe-net` bridge. The
+bootstrap validates exact byte sizes and SHA-256 values, confirms that the checksum and provenance
+payload bind the registered Linux x86-64 asset, and extracts only one bounded regular `crane`
+binary. The committed authorization binds the helper script and all three upstream artifacts.
+
+Both the bootstrap and `crane` execution containers run as the invoking non-root UID/GID with a
+read-only root filesystem, private IPC and PID namespaces, cap-drop `ALL`, no-new-privileges,
+bounded memory, CPU and PIDs, a bounded `/tmp`, no published or exposed ports, and one narrow
+scratch mount. They receive no Docker socket, Docker or registry authentication, provider
+credential, proxy value, host home, repository checkout, task source, hidden verifier, or reference
+patch. The bootstrap mount is writable only for the registered public tool files; later `crane`
+checks mount it read-only. Effective image, path, argv, environment, network, mount and resource
+controls are inspected before each container starts, and cleanup is verified afterward. No
+`dockerd` process or TCP Docker API is started.
+
+The first authorization permits only the pinned release bootstrap, a network-none `crane version`
+check, and one digest lookup for a registered non-candidate public image. It explicitly forbids
+candidate image download or load, qualification, provider calls, training and held-out access.
+Passing this preflight is evidence about downloader controls only; it is not a benchmark result and
+does not authorize the next stage. A failed command, identity mismatch, unexpected output,
+candidate image presence or cleanup failure stops the stage as infrastructure/security invalid.
+The downloaded SLSA envelope is hash- and subject-checked but its DSSE signature is not independently
+verified in this preflight; the pinned GitHub release digests and reviewed authorization remain part
+of the trusted supply-chain input.
+
 ### Verifier-only Synopsys MCP transport
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
