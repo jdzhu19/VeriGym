@@ -616,6 +616,30 @@ output, a nonzero command, invalid classification, or a cleanup failure remains 
 classification does not authorize an automatic retry or convert an infrastructure failure into a
 verifier result.
 
+### HWE reference-patch compatibility preflight
+
+Official HWE-Bench fixes may contain ordinary text edits, file creation or patch shapes that a
+VeriGym `Candidate` overlay cannot reproduce, including deletion, rename, copy, mode-only and
+binary changes. Before Docker inspection, image transfer, source extraction or verification, the
+HWE integration classifies each selected reference patch with Git's metadata-only `apply
+--numstat -z` and `apply --summary` modes. The patch is supplied on standard input; the command
+does not receive a repository and has no Docker or network access.
+
+Only regular UTF-8 edits and regular mode-100644 text-file additions are representable. The
+preflight requires the machine-readable patch paths to match the official `modified_files`
+manifest exactly and rejects unsafe or non-UTF-8 paths, malformed or over-bound metadata, binary
+patches, deletions, renames, copies, mode changes, non-regular creations and unknown summary
+records. A compatible addition is materialized from the fully patched reference tree as an
+ordinary Candidate file. Missing, symlinked or non-UTF-8 reference outputs still fail closed.
+
+Raw patch metadata output and paths remain in memory and are not written to a campaign receipt.
+Campaign receipts may retain only the classifier version, compatibility reason, bounded counts,
+booleans establishing that raw output was not persisted and that network and Docker were not
+accessed, and a hash of that content-free receipt. Compatibility is an adapter capability result,
+not a benchmark verifier result or an infrastructure result. A successor campaign may use the
+preflight to avoid work on an unrepresentable never-attempted candidate, but it may not retry,
+reconstruct or relabel a sealed historical attempt.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

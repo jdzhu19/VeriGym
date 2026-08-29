@@ -322,6 +322,21 @@ DNS/TLS/transport, cache, archive, resource, or unknown category; only the categ
 stream hashes, and cleanup state are persisted. Current infrastructure failures still stop
 immediately, and provider, canary, collection, training, and held-out actions remain forbidden.
 
+The one v27 continuation then qualified PR-3231 and PR-2989 and stopped during PR-1482 source
+preparation. PR-1482's official patch creates one regular text file, but the installed HWE adapter
+accepted only in-place reference files. That is an adapter-version incompatibility, not a verifier
+result; v27 and its six attempted task identities remain sealed.
+
+The v28 successor adds a content-free reference-patch preflight based on Git's metadata-only
+`apply --numstat -z` and `apply --summary` modes. It runs before image or network access, supports
+regular UTF-8 text additions, and rejects deletions, renames, copies, mode changes, binary patches,
+unsafe paths and unknown metadata before Docker. The raw patch metadata and paths are not
+persisted. v28 binds and imports the four qualified v27 tasks, records PR-1482 only as immutable
+predecessor evidence, and is authorized to transfer and zero-model qualify exactly the sole
+never-attempted PR-3059. It still forbids provider calls, canary, collection, training and held-out
+access. See the
+[v28 authorization audit](../../docs/audits/2026-08-30_openhands-v28-reference-patch-preflight-resume-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

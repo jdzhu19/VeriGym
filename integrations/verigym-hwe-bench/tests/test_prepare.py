@@ -14,8 +14,174 @@ from verigym_hwe_bench.prepare import (
     _image_baseline,
     _materialize_internal_file_symlinks,
     _prepare_verifier_dependencies,
+    _reference_candidate_files,
     _resolve_image_identity,
+    reference_patch_compatibility,
 )
+
+
+def _patch_instance(*, patch: str, modified_files: list[str]) -> HweInstance:
+    return HweInstance(
+        org="openhwgroup",
+        repo="cva6",
+        number=1,
+        title="fixture",
+        problem_statement="fixture",
+        base_commit="1" * 40,
+        fix_patch=patch,
+        tb_script="echo test\n",
+        modified_files=modified_files,
+        expected_test_ids=["test"],
+        language="SystemVerilog",
+        license_id="SHL-0.51",
+    )
+
+
+_TEXT_EDIT_PATCH = """diff --git a/rtl/a.sv b/rtl/a.sv
+index 7898192..422c2b7 100644
+--- a/rtl/a.sv
++++ b/rtl/a.sv
+@@ -1 +1 @@
+-a
++b
+"""
+
+_TEXT_ADD_PATCH = """diff --git a/rtl/new.sv b/rtl/new.sv
+new file mode 100644
+index 0000000..6178079
+--- /dev/null
++++ b/rtl/new.sv
+@@ -0,0 +1 @@
++new
+"""
+
+_TEXT_DELETE_PATCH = """diff --git a/rtl/old.sv b/rtl/old.sv
+deleted file mode 100644
+index 3367afd..0000000
+--- a/rtl/old.sv
++++ /dev/null
+@@ -1 +0,0 @@
+-old
+"""
+
+
+def test_reference_patch_preflight_accepts_text_edits_and_additions() -> None:
+    edit = reference_patch_compatibility(
+        _patch_instance(patch=_TEXT_EDIT_PATCH, modified_files=["rtl/a.sv"])
+    )
+    addition = reference_patch_compatibility(
+        _patch_instance(patch=_TEXT_ADD_PATCH, modified_files=["rtl/new.sv"])
+    )
+
+    assert edit.compatible is True
+    assert edit.reason == "compatible"
+    assert edit.created_file_count == 0
+    assert addition.compatible is True
+    assert addition.created_file_count == 1
+    assert addition.raw_output_persisted is False
+    assert addition.network_accessed is False
+    assert addition.docker_accessed is False
+
+
+@pytest.mark.parametrize(
+    ("patch", "modified_files", "reason"),
+    [
+        (_TEXT_DELETE_PATCH, ["rtl/old.sv"], "deleted_file"),
+        (
+            """diff --git a/rtl/a.sv b/rtl/b.sv
+similarity index 100%
+rename from rtl/a.sv
+rename to rtl/b.sv
+""",
+            ["rtl/b.sv"],
+            "renamed_file",
+        ),
+        (
+            """diff --git a/rtl/a.sv b/rtl/a.sv
+old mode 100644
+new mode 100755
+""",
+            ["rtl/a.sv"],
+            "mode_change",
+        ),
+        (
+            """diff --git a/rtl/a.sv b/rtl/b.sv
+similarity index 100%
+copy from rtl/a.sv
+copy to rtl/b.sv
+""",
+            ["rtl/b.sv"],
+            "copied_file",
+        ),
+        (
+            """diff --git a/rtl/link.sv b/rtl/link.sv
+new file mode 120000
+index 0000000..945c9b4
+--- /dev/null
++++ b/rtl/link.sv
+@@ -0,0 +1 @@
++target.sv
+\\ No newline at end of file
+""",
+            ["rtl/link.sv"],
+            "non_regular_file_creation",
+        ),
+        (
+            """diff --git a/rtl/blob b/rtl/blob
+new file mode 100644
+index 0000000..e69de29
+Binary files /dev/null and b/rtl/blob differ
+""",
+            ["rtl/blob"],
+            "binary_patch",
+        ),
+        (_TEXT_EDIT_PATCH, ["rtl/not-a.sv"], "modified_file_manifest_mismatch"),
+        ("not a unified patch\n", ["rtl/a.sv"], "malformed_patch_metadata"),
+    ],
+)
+def test_reference_patch_preflight_rejects_unrepresentable_shapes(
+    patch: str, modified_files: list[str], reason: str
+) -> None:
+    result = reference_patch_compatibility(
+        _patch_instance(patch=patch, modified_files=modified_files)
+    )
+
+    assert result.compatible is False
+    assert result.reason == reason
+
+
+def test_reference_candidate_files_materializes_text_addition(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    added = repository / "rtl" / "new.sv"
+    added.parent.mkdir(parents=True)
+    added.write_text("module new; endmodule\n", encoding="utf-8")
+
+    assert _reference_candidate_files(repository, ["rtl/new.sv"]) == {
+        "repository/rtl/new.sv": "module new; endmodule\n"
+    }
+
+
+def test_prepare_source_rejects_incompatible_patch_before_docker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset = tmp_path / "dataset.jsonl"
+    dataset.write_text("{}\n", encoding="utf-8")
+    instance = _patch_instance(patch=_TEXT_DELETE_PATCH, modified_files=["rtl/old.sv"])
+    monkeypatch.setattr(prepare, "_official_instances", lambda _dataset, _selected: [instance])
+    monkeypatch.setattr(
+        prepare,
+        "_inspect_image",
+        lambda *_args, **_kwargs: pytest.fail("Docker must not run before patch preflight"),
+    )
+
+    with pytest.raises(ConfigurationError, match="deleted_file"):
+        prepare.prepare_source(
+            dataset=dataset,
+            output=tmp_path / "prepared",
+            selected_tasks=[instance.instance_id],
+        )
+
+    assert not (tmp_path / "prepared").exists()
 
 
 def test_materialize_internal_file_symlink(tmp_path: Path) -> None:
