@@ -21,27 +21,32 @@ AGENTEVAL_PROMPT_INSTRUCTIONS = (
     "For an empty editable file, add content with a numbered @@ -0,0 +1,count @@ hunk.",
     "After every successful patch, compile the current revision again before relying on it.",
     "When PPA is available, call it at least once for the latest compiled revision.",
-    "Treat 40 tool calls and 20 patch calls as hard limits for the entire episode.",
+    "Treat 40 tool calls, 20 patch calls, and 12 exploratory file calls as hard limits.",
     "Track broker elapsed_wall_time_s and remaining_wall_time_s after every tool response.",
-    "Reserve the final 60 seconds for patch completion, compile/PPA, diff, and typed finish.",
+    "Reserve the final 90 seconds for patch completion, compile/PPA, diff, and typed finish.",
+    "When finalization_required is true, use only next_allowed_actions and finalize immediately.",
     "Before finishing, inspect the latest diff and call the typed finish action exactly once.",
+    "Never end the turn with assistant text before typed finish; typed finish is the only "
+    "accepted completion.",
     "Do not access shell, network, host files, hidden assets, or reference solutions.",
 )
 AGENTEVAL_PROMPT_HASH = stable_hash(
     {
-        "prompt_contract_id": "repository_action_v2_prompt_v4",
-        "prompt_contract_version": "4.0.0",
+        "prompt_contract_id": "repository_action_v2_prompt_v6",
+        "prompt_contract_version": "6.0.0",
         "instructions": AGENTEVAL_PROMPT_INSTRUCTIONS,
         "workspace_path_format": "editable_globs_verbatim_repository_relative_only",
         "budget_visibility": "task_process_static_and_dynamic_wall_time_v1",
-        "finalization_reserve_s": 60,
+        "finalization_reserve_s": 90,
+        "max_exploratory_calls": 12,
         "conditional_compile": True,
         "conditional_ppa": True,
     }
 )
 AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
     {
-        "availability": "verigym_required_allowlisted_mcp_only_v2",
+        "availability": "verigym_direct_allowlisted_mcp_broker_attested_v5",
+        "codex_apps_disabled": True,
         "state_machine": "repository_action_state_machine_v3",
         "tools": [
             "list_files",
@@ -75,6 +80,27 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
         ],
         "terminal_tool_name": "allowlisted_only",
         "wall_time_state": "rounded_elapsed_and_remaining_without_deadline",
+        "broker_finalization_guard": "reserve_90s_or_12_exploratory_calls_v1",
+        "scoring_event_contract": "broker_sequence_attested_mcp_with_optional_final_message_v3",
+        "broker_tool_sequence": "exact_completed_event_sequence_v1",
+        "mcp_server_label": "bounded_advisory_category_only_v1",
+        "mcp_tool_exposure": "direct_only_by_omitting_deferred_v1",
+        "accepted_finish_authority": "broker_call_index_v1",
+        "scoring_event_failure_categories": [
+            "blank_line",
+            "invalid_event",
+            "malformed_item",
+            "malformed_json",
+            "mcp_tool",
+            "missing_finish",
+            "missing_observation",
+            "multiple_post_finish_messages",
+            "non_mcp_tool",
+            "post_finish_tool",
+            "unsupported_event",
+            "unsupported_item",
+            "tool_sequence_mismatch",
+        ],
         "bounded_terminal_failure_subcategory": True,
         "commercial_feedback_failure_subcategories": [
             "agent_feedback_dispatch_internal",
@@ -91,7 +117,7 @@ AGENTEVAL_TOOL_POLICY_FINGERPRINT = stable_hash(
         ],
     }
 )
-AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v5"
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v10"
 AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
     {
         "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
@@ -103,16 +129,19 @@ AGENTEVAL_AGENT_VERSION_HASH = stable_hash(
         "state_machine": "repository_action_state_machine_v3",
         "prompt_hash": AGENTEVAL_PROMPT_HASH,
         "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
-        "tool_availability_policy": "verigym_required_allowlisted_mcp_only_v2",
-        "event_processing": "tolerant_parse_before_failure_precedence_v4",
+        "tool_availability_policy": "verigym_direct_allowlisted_mcp_broker_attested_v5",
+        "event_processing": "broker_sequence_and_finish_index_attested_direct_mcp_v9",
+        "scoring_event_contract": ("broker_sequence_attested_mcp_with_optional_final_message_v3"),
         "returned_process_identity": "exactly_one_requested_or_observed_v4",
         "broker_error_contract": "typed_patch_and_sanitized_terminal_path_v3",
-        "broker_budget_contract": "rounded_wall_time_and_static_limits_v1",
+        "broker_budget_contract": "rounded_wall_time_static_limits_and_finalization_guard_v2",
         "commercial_feedback_error_contract": "allowlisted_worker_subcategory_v1",
         "empty_file_observation": "bounded_zero_line_view_v1",
         "max_tool_calls": 40,
         "max_patch_calls": 20,
         "max_consecutive_rejected_calls": 3,
+        "max_exploratory_calls": 12,
+        "finalization_reserve_s": 90,
         "training": False,
     }
 )
@@ -121,8 +150,10 @@ _EXPECTED_MODEL = "gpt-5.4"
 _EXPECTED_REASONING = "xhigh"
 _EXPECTED_CLI_VERSION = "codex-cli 0.147.0"
 _EXPECTED_EXECUTABLE_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
-_PROMPT_CONTRACT_ID = "repository_action_v2_prompt_v4"
+_PROMPT_CONTRACT_ID = "repository_action_v2_prompt_v6"
 _BROKER_LIMITS = (40, 20, 3)
+_MAX_EXPLORATORY_CALLS = 12
+_FINALIZATION_RESERVE_S = 90
 _OPTIONS = {
     "model_id",
     "reasoning_effort",
@@ -173,6 +204,8 @@ class CodexAgentEvalSettings:
     max_tool_calls: int
     max_patch_calls: int
     max_consecutive_rejected_calls: int
+    max_exploratory_calls: int
+    finalization_reserve_s: int
 
 
 def agenteval_settings(
@@ -206,7 +239,7 @@ def agenteval_settings(
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
     if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v5")
+        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v10")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",
@@ -230,6 +263,8 @@ def agenteval_settings(
             "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
             "capability_fingerprint": capabilities.capability_fingerprint,
             "broker_limits": _BROKER_LIMITS,
+            "max_exploratory_calls": _MAX_EXPLORATORY_CALLS,
+            "finalization_reserve_s": _FINALIZATION_RESERVE_S,
             "training": False,
         }
     )
@@ -237,7 +272,7 @@ def agenteval_settings(
         base,
         integration_track="codex_cli_agenteval_scoring",
         prompt_contract_id=_PROMPT_CONTRACT_ID,
-        tool_availability_policy="verigym_required_allowlisted_mcp_only_v2",
+        tool_availability_policy="verigym_direct_allowlisted_mcp_broker_attested_v5",
         tool_use_policy="repository_action_state_machine_v3",
         configuration_fingerprint=fingerprint,
     )
@@ -251,6 +286,8 @@ def agenteval_settings(
         max_tool_calls=_BROKER_LIMITS[0],
         max_patch_calls=_BROKER_LIMITS[1],
         max_consecutive_rejected_calls=_BROKER_LIMITS[2],
+        max_exploratory_calls=_MAX_EXPLORATORY_CALLS,
+        finalization_reserve_s=_FINALIZATION_RESERVE_S,
     )
 
 

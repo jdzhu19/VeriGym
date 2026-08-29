@@ -14,13 +14,17 @@ This package provides three ordinary evaluation plugins plus an opt-in training-
   tool-call counters.
 - `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
   0.147.0, GPT-5.4, `xhigh`, and agent version
-  `codex-cli-agenteval-gpt54-xhigh-v5`. One ephemeral, read-only
+  `codex-cli-agenteval-gpt54-xhigh-v10`. One ephemeral, read-only
   `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
   Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
   disabled. Its prompt and broker observations expose the task/process wall-time, rounded elapsed
   and remaining time, and the static limits of 40 tool calls, 20 patch calls, and three
   consecutive rejections. The prompt reserves the final 60 seconds for final patching,
-  compile/PPA, diff inspection, and typed `finish`.
+  compile/PPA, diff inspection, and typed `finish`. Codex CLI's post-finish assistant message is
+  optional; completion still requires the broker-owned `finish`, a terminal machine event, exact
+  broker/event tool-sequence accounting, and a successful process. The MCP server omits tools from
+  Codex's deferred surface so the six broker tools are exposed directly; bounded server labels are
+  advisory, while canonical tool names and the broker's accepted-finish index are authoritative.
 - `codex-cli-mcp-teacher` is available only to captured training campaigns. It fixes GPT-5.4 with
   `xhigh` reasoning, disables shell and web search, and exposes only the required VeriGym MCP
   repository tools.

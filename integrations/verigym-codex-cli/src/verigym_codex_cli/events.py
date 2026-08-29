@@ -32,6 +32,14 @@ class EventParseError(RuntimeError):
     """Machine-readable CLI output is malformed or ambiguous."""
 
 
+class ScoringEventError(EventParseError):
+    """Bounded scoring-stream failure safe to retain without raw event content."""
+
+    def __init__(self, category: str, message: str) -> None:
+        super().__init__(message)
+        self.category = category
+
+
 @dataclass(frozen=True)
 class NormalizedEvent:
     sequence: int
@@ -444,11 +452,23 @@ def normalize_training_messages(
 
 
 def validate_scoring_mcp_stream(stdout: str) -> tuple[str, ...]:
-    """Validate completed MCP-only scoring events without building or retaining a transcript."""
+    """Validate completed MCP-only scoring events without retaining a transcript.
+
+    A completed post-finish assistant message is optional. Codex CLI 0.147.0 represents the
+    final message as optional and can emit ``turn.completed`` immediately after the completed
+    MCP item. The broker-owned typed ``finish`` remains the completion authority.
+
+    Codex's frozen JSONL schema deliberately types MCP ``arguments`` as arbitrary JSON and the
+    item ``id`` is transport metadata. Repository-action arguments and call accounting are
+    validated independently by the private broker, so this projection checks only the trusted
+    CLI's server/tool identity and public observation instead of imposing a second, narrower
+    transport schema. The private broker is the execution authority, so callers must compare
+    this completed tool sequence with the broker-owned sequence. The upstream ``server`` label
+    is retained only as bounded diagnostic metadata because it is not an authorization record.
+    """
 
     completed_tools: list[str] = []
     final_message_seen = False
-    finish_seen = False
     canonical_tools = {
         "list_files",
         "read_file",
@@ -459,47 +479,59 @@ def validate_scoring_mcp_stream(stdout: str) -> tuple[str, ...]:
     }
     for line in stdout.splitlines():
         if not line.strip():
-            raise EventParseError("Codex scoring stream contains a blank line")
+            raise ScoringEventError("blank_line", "Codex scoring stream contains a blank line")
         try:
             event = json.loads(line, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, ValueError) as exc:
-            raise EventParseError("Codex scoring stream is malformed") from exc
+            raise ScoringEventError("malformed_json", "Codex scoring stream is malformed") from exc
         if not isinstance(event, dict):
-            raise EventParseError("Codex scoring event must be an object")
+            raise ScoringEventError("invalid_event", "Codex scoring event must be an object")
         event_type = event.get("type")
         if event_type in {"item.started", "item.updated", "item.completed"}:
             item = event.get("item")
             if not isinstance(item, dict):
-                raise EventParseError("Codex scoring item is malformed")
+                raise ScoringEventError("malformed_item", "Codex scoring item is malformed")
             item_type = str(item.get("type", "")).lower().replace(".", "_")
             if item_type in {"reasoning", "reasoning_summary"}:
                 continue
             if item_type in {"agent_message", "message"}:
-                if event_type == "item.completed" and finish_seen and _item_text(item).strip():
+                if (
+                    event_type == "item.completed"
+                    and completed_tools
+                    and completed_tools[-1] == "finish"
+                    and _item_text(item).strip()
+                ):
                     if final_message_seen:
-                        raise EventParseError("Codex emitted multiple post-finish messages")
+                        raise ScoringEventError(
+                            "multiple_post_finish_messages",
+                            "Codex emitted multiple post-finish messages",
+                        )
                     final_message_seen = True
                 continue
             if item_type == "mcp_tool_call":
                 if event_type != "item.completed":
                     continue
-                server = _first_string(item, ("server", "server_name"))
                 raw_name = _first_string(item, ("tool", "name"))
                 if raw_name is not None and raw_name.startswith("mcp__verigym__"):
                     raw_name = raw_name.removeprefix("mcp__verigym__")
-                if (
-                    server not in {None, "verigym"}
-                    or raw_name not in canonical_tools
-                    or not isinstance(item.get("arguments"), dict)
-                    or _first_string(item, ("id", "call_id")) is None
-                ):
-                    raise EventParseError("Codex scoring MCP call is outside VeriGym")
-                if finish_seen:
-                    raise EventParseError("Codex scoring stream contains a post-finish tool call")
-                canonical_action_json(raw_name, item["arguments"])
-                _codex_mcp_result_text(item)
+                if raw_name not in canonical_tools:
+                    raise ScoringEventError(
+                        "mcp_tool",
+                        "Codex scoring MCP call names a non-canonical tool",
+                    )
+                if final_message_seen:
+                    raise ScoringEventError(
+                        "post_finish_tool",
+                        "Codex scoring stream contains a tool call after its final message",
+                    )
+                try:
+                    _codex_mcp_result_text(item)
+                except EventParseError as exc:
+                    raise ScoringEventError(
+                        "missing_observation",
+                        "Codex scoring MCP call omits one public observation",
+                    ) from exc
                 completed_tools.append(raw_name)
-                finish_seen = raw_name == "finish"
                 continue
             if item_type in {
                 "command_execution",
@@ -517,8 +549,10 @@ def validate_scoring_mcp_stream(stdout: str) -> tuple[str, ...]:
                 "plan_update",
                 "update_plan",
             }:
-                raise EventParseError("Codex used a non-MCP tool in scoring mode")
-            raise EventParseError("Codex scoring stream contains an unsupported item type")
+                raise ScoringEventError("non_mcp_tool", "Codex used a non-MCP tool in scoring mode")
+            raise ScoringEventError(
+                "unsupported_item", "Codex scoring stream contains an unsupported item type"
+            )
         if event_type in {
             "command_started",
             "command_completed",
@@ -530,14 +564,54 @@ def validate_scoring_mcp_stream(stdout: str) -> tuple[str, ...]:
             "plan_update",
             "update_plan",
         }:
-            raise EventParseError("Codex used a non-MCP tool in scoring mode")
+            raise ScoringEventError("non_mcp_tool", "Codex used a non-MCP tool in scoring mode")
         if event_type not in {"thread.started", "turn.started", "turn.completed"}:
-            raise EventParseError("Codex scoring stream contains an unsupported event type")
+            raise ScoringEventError(
+                "unsupported_event", "Codex scoring stream contains an unsupported event type"
+            )
     if not completed_tools or completed_tools[-1] != "finish":
-        raise EventParseError("Codex scoring stream has no terminal finish call")
-    if not final_message_seen:
-        raise EventParseError("Codex scoring stream has no final assistant message")
+        raise ScoringEventError(
+            "missing_finish", "Codex scoring stream has no terminal finish call"
+        )
     return tuple(completed_tools)
+
+
+def scoring_mcp_server_category_counts(stdout: str) -> dict[str, int]:
+    """Return only fixed MCP server-label categories from machine events."""
+
+    counts = {
+        "codex_apps": 0,
+        "exact_verigym": 0,
+        "missing": 0,
+        "other": 0,
+        "other_namespaced": 0,
+        "verigym_alias": 0,
+    }
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(event, dict) or event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "mcp_tool_call":
+            continue
+        raw = item.get("server", item.get("server_name"))
+        if raw == "verigym":
+            category = "exact_verigym"
+        elif raw == "codex_apps":
+            category = "codex_apps"
+        elif raw is None:
+            category = "missing"
+        elif isinstance(raw, str) and "verigym" in raw.lower():
+            category = "verigym_alias"
+        elif isinstance(raw, str) and raw.startswith("mcp__"):
+            category = "other_namespaced"
+        else:
+            category = "other"
+        counts[category] += 1
+    return counts
 
 
 def _codex_mcp_result_text(item: dict[str, Any]) -> str:
@@ -865,9 +939,11 @@ __all__ = [
     "EventParseError",
     "NormalizedEvent",
     "ParsedEventStream",
+    "ScoringEventError",
     "parse_event_stream",
     "parse_partial_event_stream",
     "raw_event_records",
     "normalize_training_messages",
+    "scoring_mcp_server_category_counts",
     "validate_scoring_mcp_stream",
 ]

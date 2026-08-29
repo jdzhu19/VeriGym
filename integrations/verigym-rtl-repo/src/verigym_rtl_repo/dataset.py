@@ -12,6 +12,7 @@ from typing import Any, Literal
 VARIANT = "official-parquet-v1"
 AGENT_EVAL_VARIANT = "official-parquet-v1-agent-eval-v1"
 AGENT_EVAL_V2_VARIANT = "official-parquet-v1-agent-eval-v2"
+AGENT_EVAL_V3_VARIANT = "official-parquet-v1-agent-eval-v3"
 NATIVE_LAYOUT = "huggingface-parquet-rtl-repo-v1"
 CONTEXT_CLASSIFICATION_RULE = "rtl_repo_path_components_source_generated_v1"
 EXPECTED_SPLIT_COUNTS = {"train": 2_924, "test": 1_174}
@@ -86,7 +87,7 @@ class Catalog:
 
 
 def resolve_layout(raw_root: Path, variant: str | None) -> Layout:
-    supported = (VARIANT, AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT)
+    supported = (VARIANT, AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT, AGENT_EVAL_V3_VARIANT)
     if variant is not None and variant not in supported:
         raise ValueError("suite supports variants " + ", ".join(repr(item) for item in supported))
     expanded = raw_root.expanduser()
@@ -442,6 +443,7 @@ def _level(value: object) -> str | int | None:
 __all__ = [
     "AGENT_EVAL_VARIANT",
     "AGENT_EVAL_V2_VARIANT",
+    "AGENT_EVAL_V3_VARIANT",
     "CONTEXT_CLASSIFICATION_RULE",
     "NATIVE_LAYOUT",
     "VARIANT",

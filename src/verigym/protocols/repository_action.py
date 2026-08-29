@@ -315,7 +315,13 @@ def prompt_contract(
     selected_prompt_contract_id = prompt_contract_id or default_prompt_contract_id
     compatible_prompt_contracts = {default_prompt_contract_id}
     if state_machine_id == "repository_action_state_machine_v3":
-        compatible_prompt_contracts.add("repository_action_v2_prompt_v4")
+        compatible_prompt_contracts.update(
+            {
+                "repository_action_v2_prompt_v4",
+                "repository_action_v2_prompt_v5",
+                "repository_action_v2_prompt_v6",
+            }
+        )
     if selected_prompt_contract_id not in compatible_prompt_contracts:
         raise ValueError("repository action prompt is incompatible with its state machine")
     contract: dict[str, Any] = {
@@ -365,13 +371,39 @@ def prompt_contract(
                 "diff.",
             ]
         )
-    if selected_prompt_contract_id == "repository_action_v2_prompt_v4":
+    if selected_prompt_contract_id in {
+        "repository_action_v2_prompt_v4",
+        "repository_action_v2_prompt_v5",
+    }:
         contract["rules"].extend(
             [
                 "Use repository-relative editable paths exactly as supplied by the task.",
                 "Track the broker-reported elapsed and remaining wall time and reserve the "
                 "final minute for validation and typed finish.",
                 "Treat tool-call and patch-call limits as hard episode budgets.",
+            ]
+        )
+    if selected_prompt_contract_id in {
+        "repository_action_v2_prompt_v5",
+    }:
+        contract["rules"].extend(
+            [
+                "When remaining wall time is at most one minute, stop optional reading and "
+                "finalize immediately.",
+                "Do not end with assistant text before the typed finish action.",
+            ]
+        )
+    if selected_prompt_contract_id == "repository_action_v2_prompt_v6":
+        contract["rules"].extend(
+            [
+                "Use repository-relative editable paths exactly as supplied by the task.",
+                "Track broker-reported elapsed and remaining wall time without relying on an "
+                "absolute deadline.",
+                "Treat tool-call, patch-call, and exploratory-call limits as hard episode budgets.",
+                "The broker stops optional exploration after twelve file calls or when the "
+                "final ninety-second reserve begins.",
+                "Do not end with assistant text before the typed finish action.",
+                "When finalization is required, use only broker-advertised next actions.",
             ]
         )
     return contract
@@ -403,9 +435,14 @@ def resolve_repository_action_protocol(
         "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
     }[effective_state_machine]
     effective_prompt_contract_id = (
-        "repository_action_v2_prompt_v4"
+        protocol_spec.prompt_contract_id
         if effective_state_machine == "repository_action_state_machine_v3"
-        and protocol_spec.prompt_contract_id == "repository_action_v2_prompt_v4"
+        and protocol_spec.prompt_contract_id
+        in {
+            "repository_action_v2_prompt_v4",
+            "repository_action_v2_prompt_v5",
+            "repository_action_v2_prompt_v6",
+        }
         else default_prompt_contract_id
     )
     if raw_observation_policy is None and effective_state_machine in {

@@ -23,7 +23,12 @@ from verigym.plugin_api import (
 )
 
 from verigym_rtl_repo import RtlRepoScoreTool, RtlRepoSuite
-from verigym_rtl_repo.dataset import AGENT_EVAL_V2_VARIANT, AGENT_EVAL_VARIANT, VARIANT
+from verigym_rtl_repo.dataset import (
+    AGENT_EVAL_V2_VARIANT,
+    AGENT_EVAL_V3_VARIANT,
+    AGENT_EVAL_VARIANT,
+    VARIANT,
+)
 
 
 class _RtlRepoAgentEvalFixtureAgent(AgentAdapter):
@@ -160,7 +165,9 @@ def test_instructional_line_completion_is_explicit_and_keeps_raw_user_prompt(
     assert messages[1]["content"].startswith("// Repo Name: verigym/synthetic-rtl\n")
 
 
-@pytest.mark.parametrize("variant", [AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT])
+@pytest.mark.parametrize(
+    "variant", [AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT, AGENT_EVAL_V3_VARIANT]
+)
 def test_agent_eval_projection_multiturn_hidden_score_and_replay(
     synthetic_source: Path,
     tmp_path: Path,

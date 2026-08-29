@@ -46,18 +46,32 @@ def resolve_prompt_policy(
         return None
     agent_feedback = task.metadata.get("agent_feedback_contract")
     is_agent_eval = isinstance(agent_feedback, dict)
+    agent_eval_prompt_v6 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v6"
+    )
+    agent_eval_prompt_v5 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v5"
+    )
     agent_eval_prompt_v4 = is_agent_eval and (
         spec.prompt_contract_id == "repository_action_v2_prompt_v4"
     )
     prompt_contract_id = (
-        "repository_action_v2_prompt_v4"
+        "repository_action_v2_prompt_v6"
+        if agent_eval_prompt_v6
+        else "repository_action_v2_prompt_v5"
+        if agent_eval_prompt_v5
+        else "repository_action_v2_prompt_v4"
         if agent_eval_prompt_v4
         else "repository_action_v2_prompt_v3"
         if is_agent_eval
         else spec.prompt_contract_id
     )
     prompt_contract_version = (
-        "4.0.0"
+        "6.0.0"
+        if agent_eval_prompt_v6
+        else "5.0.0"
+        if agent_eval_prompt_v5
+        else "4.0.0"
         if agent_eval_prompt_v4
         else "3.0.0"
         if is_agent_eval
@@ -67,7 +81,11 @@ def resolve_prompt_policy(
         "revision_bound_agent_feedback_v1" if is_agent_eval else spec.task_context_policy
     )
     base_instruction_policy = (
-        "generated_repository_action_registry_v4"
+        "generated_repository_action_registry_v6"
+        if agent_eval_prompt_v6
+        else "generated_repository_action_registry_v5"
+        if agent_eval_prompt_v5
+        else "generated_repository_action_registry_v4"
         if agent_eval_prompt_v4
         else "generated_repository_action_registry_v3"
         if is_agent_eval

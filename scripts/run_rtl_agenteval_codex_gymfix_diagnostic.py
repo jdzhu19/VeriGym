@@ -11,12 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import run_rtl_agenteval_codex_smoke as smoke
-from verigym_codex_cli.agenteval_config import (
-    AGENTEVAL_AGENT_VERSION_HASH,
-    AGENTEVAL_AGENT_VERSION_ID,
-    AGENTEVAL_PROMPT_HASH,
-    AGENTEVAL_TOOL_POLICY_FINGERPRINT,
-)
 from verigym_rtl_repo import AGENT_EVAL_V2_SUITE_VERSION
 from verigym_rtl_repo.dataset import (
     AGENT_EVAL_V2_VARIANT,
@@ -46,6 +40,12 @@ _PILOT_SUMMARY = Path(
 )
 _PROCESS_COUNT = 6
 _OPT_IN = "VERIGYM_RUN_RTL_AGENT_EVAL_GYMFIX_DIAGNOSTIC"
+AGENTEVAL_AGENT_VERSION_ID = "codex-cli-agenteval-gpt54-xhigh-v5"
+AGENTEVAL_AGENT_VERSION_HASH = "18e69a46fb8ecca8c1000cfb7997d17c27b572be1940e94a2dd26ced796945e8"
+AGENTEVAL_PROMPT_HASH = "bd96dbf5defd6203d4939873f92817817bd5593750cd6e292a4c0240135edc5c"
+AGENTEVAL_TOOL_POLICY_FINGERPRINT = (
+    "424e9d022ef0c9fb891260698f130d865e19dfcaa2a7bfe4ff818a410823340a"
+)
 _PATH_CATEGORIES = frozenset(
     {
         "absolute",

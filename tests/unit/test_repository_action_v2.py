@@ -300,6 +300,37 @@ def test_protocol_spec_rejects_mixed_prompt_and_state_machine_versions() -> None
         )
 
 
+def test_v5_prompt_contract_extends_v4_finalization_budget_rules() -> None:
+    spec = RepositoryActionProtocolSpec(
+        prompt_contract_id="repository_action_v2_prompt_v5",
+        state_machine_id="repository_action_state_machine_v3",
+    )
+    contract = prompt_contract(
+        "repository_action_state_machine_v3",
+        prompt_contract_id=spec.prompt_contract_id,
+    )
+
+    assert contract["prompt_contract_id"] == "repository_action_v2_prompt_v5"
+    assert any("remaining wall time" in rule for rule in contract["rules"])
+    assert any("typed finish" in rule for rule in contract["rules"])
+
+
+def test_v6_prompt_contract_adds_broker_enforced_finalization_guard() -> None:
+    spec = RepositoryActionProtocolSpec(
+        prompt_contract_id="repository_action_v2_prompt_v6",
+        state_machine_id="repository_action_state_machine_v3",
+    )
+    contract = prompt_contract(
+        "repository_action_state_machine_v3",
+        prompt_contract_id=spec.prompt_contract_id,
+    )
+
+    assert contract["prompt_contract_id"] == "repository_action_v2_prompt_v6"
+    assert any("twelve file calls" in rule for rule in contract["rules"])
+    assert any("ninety-second reserve" in rule for rule in contract["rules"])
+    assert any("broker-advertised next actions" in rule for rule in contract["rules"])
+
+
 @pytest.mark.parametrize("case", range(5))
 def test_five_historical_v1_shapes_counterfactually_reject_multiple_actions(case: int) -> None:
     del case

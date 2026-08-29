@@ -16,6 +16,11 @@ classification to `repository/context/index.json`. The task directs the agent to
 target tail and source-priority context first. It retains the same hidden target and official
 scorer, but has distinct suite, source, task, and configuration identities.
 
+`official-parquet-v1-agent-eval-v3` preserves the complete v2 context projection and freezes the
+task as `immediate_next_physical_line_v1`: write only the first missing physical source line, with
+one terminating newline, and never flatten or append later source lines. v1 and v2 remain
+unchanged. v3 has another independent suite revision and source/task/configuration identities.
+
 Install from the VeriGym checkout:
 
 ```bash

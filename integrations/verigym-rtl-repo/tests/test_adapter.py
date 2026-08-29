@@ -8,9 +8,15 @@ from pathlib import Path
 import pytest
 from verigym.plugin_api import ConfigurationError, InteractionMode, SuiteSourceConfig
 
-from verigym_rtl_repo import AGENT_EVAL_V2_SUITE_VERSION, RtlRepoSuite
+from verigym_rtl_repo import (
+    AGENT_EVAL_V2_SUITE_VERSION,
+    AGENT_EVAL_V3_COMPLETION_CONTRACT,
+    AGENT_EVAL_V3_SUITE_VERSION,
+    RtlRepoSuite,
+)
 from verigym_rtl_repo.dataset import (
     AGENT_EVAL_V2_VARIANT,
+    AGENT_EVAL_V3_VARIANT,
     AGENT_EVAL_VARIANT,
     CONTEXT_CLASSIFICATION_RULE,
     VARIANT,
@@ -32,6 +38,12 @@ def configured_agent_eval(source: Path) -> RtlRepoSuite:
 def configured_agent_eval_v2(source: Path) -> RtlRepoSuite:
     return RtlRepoSuite().with_source(
         SuiteSourceConfig(source_root=source, variant=AGENT_EVAL_V2_VARIANT)
+    )
+
+
+def configured_agent_eval_v3(source: Path) -> RtlRepoSuite:
+    return RtlRepoSuite().with_source(
+        SuiteSourceConfig(source_root=source, variant=AGENT_EVAL_V3_VARIANT)
     )
 
 
@@ -157,6 +169,51 @@ def test_agent_eval_v2_has_independent_identity_and_preserves_official_context(
     ).read_bytes()
     assert v2_assets.hidden_assets[0].content == v1_assets.hidden_assets[0].content
     visible = b"\n".join(path.read_bytes() for path in v2_root.rglob("*") if path.is_file())
+    assert b"assign y = a & b;" not in visible
+
+
+def test_agent_eval_v3_freezes_immediate_physical_line_contract_without_changing_v2(
+    synthetic_source: Path,
+) -> None:
+    v2 = configured_agent_eval_v2(synthetic_source)
+    v3 = configured_agent_eval_v3(synthetic_source)
+    v2_ref = next(ref for ref in v2.discover() if ref.native_id == "test-000000")
+    v3_ref = next(ref for ref in v3.discover() if ref.native_id == "test-000000")
+    v2_task = v2.load_task(v2_ref)
+    v3_task = v3.load_task(v3_ref)
+    v2_assets = v2.resolve_assets(v2_task)
+    v3_assets = v3.resolve_assets(v3_task)
+    v2_root = Path(v2_assets.visible_root) / "repository"
+    v3_root = Path(v3_assets.visible_root) / "repository"
+    v2_index = json.loads((v2_root / "context" / "index.json").read_text(encoding="utf-8"))
+    v3_index = json.loads((v3_root / "context" / "index.json").read_text(encoding="utf-8"))
+    v2_snapshot = v2.source_snapshot()
+    v3_snapshot = v3.source_snapshot()
+
+    assert v3_task.id.startswith(f"rtl-repo/{AGENT_EVAL_V3_VARIANT}/")
+    assert v3_task.suite_version == AGENT_EVAL_V3_SUITE_VERSION
+    assert v3_task.source.revision == AGENT_EVAL_V3_SUITE_VERSION
+    assert v3_task.source.content_hash != v2_task.source.content_hash
+    assert v3_task.metadata["task_content_hash"] != v2_task.metadata["task_content_hash"]
+    assert v3_task.metadata["projection_version"] == "v3"
+    assert v3_task.metadata["completion_contract"] == AGENT_EVAL_V3_COMPLETION_CONTRACT
+    assert v2_snapshot is not None and v3_snapshot is not None
+    assert v3_snapshot.configuration_fingerprint != v2_snapshot.configuration_fingerprint
+    assert "immediate next physical source-code line" in v3_task.description
+    assert "Do not concatenate, flatten" in v3_task.description
+    assert "one newline-terminated line" in v3_task.description
+    assert v3_task.workspace.editable_globs == ["repository/completion.txt"]
+    assert "completion_contract" not in v2_index
+    assert v3_index["completion_contract"] == AGENT_EVAL_V3_COMPLETION_CONTRACT
+    assert v3_index["items"] == v2_index["items"]
+    assert (v3_root / "context" / "0000.txt").read_bytes() == (
+        v2_root / "context" / "0000.txt"
+    ).read_bytes()
+    assert (v3_root / "target" / "cropped_target.sv").read_bytes() == (
+        v2_root / "target" / "cropped_target.sv"
+    ).read_bytes()
+    assert v3_assets.hidden_assets[0].content == v2_assets.hidden_assets[0].content
+    visible = b"\n".join(path.read_bytes() for path in v3_root.rglob("*") if path.is_file())
     assert b"assign y = a & b;" not in visible
 
 

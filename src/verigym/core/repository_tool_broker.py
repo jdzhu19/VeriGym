@@ -89,8 +89,16 @@ class RepositoryToolBrokerStats:
     wall_time_s: int | None = None
     elapsed_wall_time_s: int | None = None
     remaining_wall_time_s: int | None = None
+    finalization_reserve_s: int | None = None
+    max_exploratory_calls: int | None = None
+    exploratory_calls: int = 0
+    exploration_guard_calls: int = 0
+    finalization_required: bool = False
+    finalization_reason: str | None = None
     terminal_tool_name: str | None = None
     terminal_path_category: str | None = None
+    tool_call_sequence: tuple[str, ...] = ()
+    accepted_finish_call_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +144,8 @@ class RepositoryToolBroker:
         limits: RepositoryToolBrokerLimits | None = None,
         agent_feedback_contract: AgentFeedbackContract | None = None,
         wall_time_s: float | None = None,
+        finalization_reserve_s: float | None = None,
+        max_exploratory_calls: int | None = None,
     ) -> None:
         if capture_training_transcript and campaign_role != "training":
             raise ValueError("repository broker transcript capture is training-only")
@@ -146,6 +156,23 @@ class RepositoryToolBroker:
             or wall_time_s <= 0
         ):
             raise ValueError("repository broker wall time must be a positive finite number")
+        if finalization_reserve_s is not None and (
+            wall_time_s is None
+            or isinstance(finalization_reserve_s, bool)
+            or not isinstance(finalization_reserve_s, (int, float))
+            or not math.isfinite(finalization_reserve_s)
+            or finalization_reserve_s <= 0
+            or finalization_reserve_s >= wall_time_s
+        ):
+            raise ValueError(
+                "repository broker finalization reserve must be positive and below wall time"
+            )
+        if max_exploratory_calls is not None and (
+            isinstance(max_exploratory_calls, bool)
+            or not isinstance(max_exploratory_calls, int)
+            or not 1 <= max_exploratory_calls <= 4096
+        ):
+            raise ValueError("repository broker exploratory-call limit must be in [1, 4096]")
         self._bridge = bridge
         self.socket_path = socket_path
         self._public_test_ids = frozenset(public_test_ids)
@@ -160,11 +187,15 @@ class RepositoryToolBroker:
         self._stopping = threading.Event()
         self._lock = threading.RLock()
         self._tool_calls = 0
+        self._tool_call_sequence: list[str] = []
         self._public_test_calls = 0
         self._file_reads = 0
+        self._exploratory_calls = 0
+        self._exploration_guard_calls = 0
         self._patches = 0
         self._diff_inspections = 0
         self._finish_calls = 0
+        self._accepted_finish_call_index: int | None = None
         self._rejected_calls = 0
         self._consecutive_rejected_calls = 0
         self._maximum_consecutive_rejected_calls = 0
@@ -181,6 +212,10 @@ class RepositoryToolBroker:
         self._limit_failure: str | None = None
         self._limits = limits
         self._wall_time_s = float(wall_time_s) if wall_time_s is not None else None
+        self._finalization_reserve_s = (
+            float(finalization_reserve_s) if finalization_reserve_s is not None else None
+        )
+        self._max_exploratory_calls = max_exploratory_calls
         self._started_monotonic_s = time.monotonic()
         self._terminal_tool_name: str | None = None
         self._terminal_path_category: str | None = None
@@ -224,6 +259,7 @@ class RepositoryToolBroker:
     def stats(self) -> RepositoryToolBrokerStats:
         with self._lock:
             elapsed_wall_time_s, remaining_wall_time_s = self._wall_time_state_locked()
+            finalization_reason = self._finalization_reason_locked()
             return RepositoryToolBrokerStats(
                 tool_calls=self._tool_calls,
                 command_calls=0,
@@ -252,8 +288,20 @@ class RepositoryToolBroker:
                 ),
                 elapsed_wall_time_s=elapsed_wall_time_s,
                 remaining_wall_time_s=remaining_wall_time_s,
+                finalization_reserve_s=(
+                    int(round(self._finalization_reserve_s))
+                    if self._finalization_reserve_s is not None
+                    else None
+                ),
+                max_exploratory_calls=self._max_exploratory_calls,
+                exploratory_calls=self._exploratory_calls,
+                exploration_guard_calls=self._exploration_guard_calls,
+                finalization_required=finalization_reason is not None,
+                finalization_reason=finalization_reason,
                 terminal_tool_name=self._terminal_tool_name,
                 terminal_path_category=self._terminal_path_category,
+                tool_call_sequence=tuple(self._tool_call_sequence),
+                accepted_finish_call_index=self._accepted_finish_call_index,
             )
 
     @property
@@ -332,6 +380,7 @@ class RepositoryToolBroker:
                     name, "tool broker stopped after a terminal safety failure"
                 )
             self._tool_calls += 1
+            self._tool_call_sequence.append(name)
             self._current_call_rejected = False
             if (
                 name == "apply_patch"
@@ -354,32 +403,47 @@ class RepositoryToolBroker:
                 separators=(",", ":"),
                 ensure_ascii=False,
             )
-            state_failure = repository_action_state_failure(
-                name,
-                state_machine_id=self._state_machine_id,
-                public_test_required=bool(self._public_test_ids),
-                patch_applied=self._patch_applied,
-                public_observed=self._public_observed,
-                diff_observed=self._diff_observed,
-                finished=self._finished,
-                public_test_id=(arguments.get("test_id") if name == "run_public_test" else None),
-                compile_test_id=(
-                    self._feedback_contract.compile_test_id
-                    if self._feedback_contract is not None
-                    else None
-                ),
-                compile_passed=self._compile_passed,
-                compile_required_for_finish=(
-                    self._feedback_contract.compile_required_for_finish
-                    if self._feedback_contract is not None
-                    else False
-                ),
+            guard_reason = (
+                self._finalization_reason_locked() if name in {"list_files", "read_file"} else None
             )
-            if state_failure is not None:
-                self._record_rejection_locked()
-                state_response = self._error_result(name, state_failure)
+            if guard_reason is not None:
+                self._exploration_guard_calls += 1
+                state_response = self._error_result(
+                    name,
+                    guard_reason,
+                    error_subcategory=guard_reason,
+                )
             else:
-                state_response = None
+                if name in {"list_files", "read_file"}:
+                    self._exploratory_calls += 1
+                state_failure = repository_action_state_failure(
+                    name,
+                    state_machine_id=self._state_machine_id,
+                    public_test_required=bool(self._public_test_ids),
+                    patch_applied=self._patch_applied,
+                    public_observed=self._public_observed,
+                    diff_observed=self._diff_observed,
+                    finished=self._finished,
+                    public_test_id=(
+                        arguments.get("test_id") if name == "run_public_test" else None
+                    ),
+                    compile_test_id=(
+                        self._feedback_contract.compile_test_id
+                        if self._feedback_contract is not None
+                        else None
+                    ),
+                    compile_passed=self._compile_passed,
+                    compile_required_for_finish=(
+                        self._feedback_contract.compile_required_for_finish
+                        if self._feedback_contract is not None
+                        else False
+                    ),
+                )
+                if state_failure is not None:
+                    self._record_rejection_locked()
+                    state_response = self._error_result(name, state_failure)
+                else:
+                    state_response = None
         if state_response is not None:
             return self._capture_response(name, canonical_arguments, state_response)
         try:
@@ -414,6 +478,7 @@ class RepositoryToolBroker:
                 with self._lock:
                     self._finish_calls += 1
                     self._finished = True
+                    self._accepted_finish_call_index = len(self._tool_call_sequence) - 1
                 response = self._payload_result(
                     name, {"accepted": True, "terminal": True}, is_error=False
                 )
@@ -740,10 +805,13 @@ class RepositoryToolBroker:
             )
             or self._pending_limit_locked()
         )
+        finalization_reason = self._finalization_reason_locked()
         if terminal:
             phase = "terminal_failure"
         elif self._finished:
             phase = "finished"
+        elif finalization_reason is not None:
+            phase = "finalization_required"
         elif self._patch_applied and not self._compile_passed:
             phase = "current_revision_needs_compile"
         elif self._patch_applied and not self._diff_observed:
@@ -758,6 +826,13 @@ class RepositoryToolBroker:
             "latest_diff_observed": self._diff_observed,
             "finished": self._finished,
         }
+        if self._finalization_reserve_s is not None or self._max_exploratory_calls is not None:
+            state.update(
+                {
+                    "finalization_required": finalization_reason is not None,
+                    "finalization_reason": finalization_reason,
+                }
+            )
         if self._limits is not None:
             state.update(
                 {
@@ -774,6 +849,15 @@ class RepositoryToolBroker:
                     "remaining_wall_time_s": remaining_wall_time_s,
                 }
             )
+        if self._finalization_reserve_s is not None:
+            state["finalization_reserve_s"] = int(round(self._finalization_reserve_s))
+        if self._max_exploratory_calls is not None:
+            state.update(
+                {
+                    "max_exploratory_calls": self._max_exploratory_calls,
+                    "exploratory_calls": self._exploratory_calls,
+                }
+            )
         return state
 
     def _wall_time_state_locked(self) -> tuple[int | None, int | None]:
@@ -782,6 +866,25 @@ class RepositoryToolBroker:
         elapsed = max(0.0, time.monotonic() - self._started_monotonic_s)
         remaining = max(0.0, self._wall_time_s - elapsed)
         return int(round(elapsed)), int(round(remaining))
+
+    def _finalization_reason_locked(self) -> str | None:
+        if self._finished:
+            return None
+        if self._finalization_reserve_s is None and self._max_exploratory_calls is None:
+            return None
+        _elapsed, remaining = self._wall_time_state_locked()
+        if (
+            remaining is not None
+            and self._finalization_reserve_s is not None
+            and remaining <= int(round(self._finalization_reserve_s))
+        ):
+            return "finalization_reserve"
+        if (
+            self._max_exploratory_calls is not None
+            and self._exploratory_calls >= self._max_exploratory_calls
+        ):
+            return "exploration_call_limit"
+        return None
 
     def _next_allowed_actions_locked(self) -> list[str]:
         if (
@@ -792,7 +895,9 @@ class RepositoryToolBroker:
             or self._finished
         ):
             return []
-        actions = ["list_files", "read_file"]
+        actions = (
+            [] if self._finalization_reason_locked() is not None else ["list_files", "read_file"]
+        )
         if self._limits is None or self._patches < self._limits.max_patch_calls:
             actions.append("apply_patch")
         if self._public_test_ids:

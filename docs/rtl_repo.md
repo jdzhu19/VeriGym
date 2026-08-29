@@ -96,6 +96,20 @@ write exactly one line because punctuation and spacing affect Exact Match. v1 re
 v2 has its own suite revision and source/task/configuration hashes. Both retain the same hidden
 `next_line` and official scorer.
 
+`official-parquet-v1-agent-eval-v3` is another separately frozen projection. It preserves all v2
+context files byte-for-byte and in the original order, but removes an ambiguity exposed by a real
+AgentEval qualification run. The completion contract is `immediate_next_physical_line_v1`: infer
+only the immediate next physical source-code line after the cropped prefix, write exactly that one
+newline-terminated line, and do not concatenate later lines or the remainder of the file even when
+the cropped prefix is displayed as one long physical line. The contract is present in the task
+metadata and context index and participates in the v3 source, task, and configuration identities.
+The hidden target and official scorer are unchanged; v1 and v2 remain immutable.
+
+This interpretation follows the upstream [RTL-Repo paper](https://arxiv.org/abs/2405.17378), which
+formulates each sample as prediction of the target line from repository and in-file context, and
+the [TuRTLe integration](https://github.com/HPAI-BSC/TuRTLe), which classifies RTL-Repo as
+single-line completion.
+
 No RTL-Repo variant requires Icarus, VCS, or synthesis. Final correctness remains the native
 next-line Exact Match/Edit Similarity contract, so changing the host Icarus version does not change
 this benchmark's verifier identity.

@@ -49,6 +49,7 @@ def build_agenteval_arguments(
         "project_doc_max_bytes=0",
         'web_search="disabled"',
         "features.shell_tool=false",
+        "features.apps=false",
         "features.plugins=false",
         "features.multi_agent=false",
         "features.hooks=false",
@@ -60,6 +61,7 @@ def build_agenteval_arguments(
         'mcp_servers.verigym.command="/usr/bin/env"',
         f"mcp_servers.verigym.args={json.dumps(child_args, separators=(',', ':'))}",
         f"mcp_servers.verigym.enabled_tools={json.dumps(tool_names, separators=(',', ':'))}",
+        'mcp_servers.verigym.omit_tools_from=["deferred"]',
         "mcp_servers.verigym.enabled=true",
         "mcp_servers.verigym.required=true",
         'mcp_servers.verigym.default_tools_approval_mode="approve"',
@@ -105,9 +107,12 @@ def sanitized_agenteval_invocation(
         "mcp_servers_enabled": True,
         "required_mcp_servers": ["verigym"],
         "mcp_tool_names": tool_names(),
+        "mcp_tool_exposure": "direct_only_deferred_omitted",
         "broker_max_tool_calls": settings.max_tool_calls,
         "broker_max_patch_calls": settings.max_patch_calls,
         "broker_max_consecutive_rejected_calls": settings.max_consecutive_rejected_calls,
+        "broker_max_exploratory_calls": settings.max_exploratory_calls,
+        "broker_finalization_reserve_s": settings.finalization_reserve_s,
         "agent_version_id": settings.agent_version_id,
         "agent_version_hash": settings.agent_version_hash,
         "prompt_hash": settings.prompt_hash,
@@ -126,9 +131,11 @@ def _validate_arguments(
 ) -> None:
     required = {
         "features.shell_tool=false",
+        "features.apps=false",
         'web_search="disabled"',
         "mcp_servers.verigym.required=true",
         "mcp_servers.verigym.enabled=true",
+        'mcp_servers.verigym.omit_tools_from=["deferred"]',
     }
     if not required.issubset(arguments):
         raise ValueError("Codex AgentEval invocation omits a required isolation override")

@@ -50,8 +50,10 @@ from .capabilities import CapabilityReport, runtime_capabilities
 from .events import (
     EventParseError,
     ParsedEventStream,
+    ScoringEventError,
     parse_event_stream,
     parse_partial_event_stream,
+    scoring_mcp_server_category_counts,
     validate_scoring_mcp_stream,
 )
 from .process import (
@@ -112,6 +114,32 @@ _PATH_VIOLATION_CATEGORIES = frozenset(
         "unspecified",
     }
 )
+_SCORING_EVENT_FAILURE_SUBCATEGORIES = frozenset(
+    {
+        "scoring_event_blank_line",
+        "scoring_event_broker_not_finished",
+        "scoring_event_finish_count",
+        "scoring_event_invalid_event",
+        "scoring_event_malformed_item",
+        "scoring_event_malformed_json",
+        "scoring_event_mcp_server",
+        "scoring_event_mcp_tool",
+        "scoring_event_missing_finish",
+        "scoring_event_missing_observation",
+        "scoring_event_multiple_post_finish_messages",
+        "scoring_event_non_mcp_tool",
+        "scoring_event_parse_incomplete",
+        "scoring_event_post_finish_tool",
+        "scoring_event_process_exit",
+        "scoring_event_provider_error",
+        "scoring_event_terminal_missing",
+        "scoring_event_tool_count_mismatch",
+        "scoring_event_tool_sequence_mismatch",
+        "scoring_event_unsupported_event",
+        "scoring_event_unsupported_item",
+        "scoring_event_unspecified",
+    }
+)
 
 
 class CodexCliAgentEvalAdapter(AgentAdapter):
@@ -119,14 +147,14 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
 
     requires_model = False
     action_protocol_spec = RepositoryActionProtocolSpec(
-        prompt_contract_id="repository_action_v2_prompt_v4",
+        prompt_contract_id="repository_action_v2_prompt_v6",
         state_machine_id="repository_action_state_machine_v3",
     )
     prompt_policy_spec = AgentPromptPolicySpec(
-        prompt_contract_id="repository_action_v2_prompt_v4",
-        prompt_contract_version="4.0.0",
+        prompt_contract_id="repository_action_v2_prompt_v6",
+        prompt_contract_version="6.0.0",
         task_context_policy="revision_bound_agent_feedback_v1",
-        base_instruction_policy="generated_repository_action_registry_v4",
+        base_instruction_policy="generated_repository_action_registry_v6",
         content_visibility_policy="visible_assets_and_revision_bound_feedback_v1",
         max_prompt_bytes=2 * 1024 * 1024,
         max_task_context_bytes=1024 * 1024,
@@ -136,7 +164,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="codex-cli-agenteval-agent",
-        version="5.0.0",
+        version="10.0.0",
         api_version=PLUGIN_API_VERSION,
         provider="openai-codex-cli",
         capabilities=[
@@ -174,7 +202,7 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             raise ValueError("Codex AgentEval requires the frozen repository action protocol")
         if (
             context.prompt_policy is None
-            or context.prompt_policy.id != "repository_action_v2_prompt_v4"
+            or context.prompt_policy.id != "repository_action_v2_prompt_v6"
         ):
             raise ValueError("Codex AgentEval prompt contract is not frozen")
         executable, capabilities = runtime_capabilities()
@@ -222,6 +250,8 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                         max_consecutive_rejected_calls=(settings.max_consecutive_rejected_calls),
                     ),
                     wall_time_s=settings.execution.effective_process_timeout_s,
+                    finalization_reserve_s=settings.finalization_reserve_s,
+                    max_exploratory_calls=settings.max_exploratory_calls,
                 )
                 arguments = build_agenteval_arguments(
                     capabilities,
@@ -280,6 +310,11 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             parsed=parsed,
             failure_category=(
                 scoring_failure.failure.category if scoring_failure is not None else None
+            ),
+            failure_subcategory=(
+                scoring_failure.failure.protocol_error_subcategory
+                if scoring_failure is not None
+                else None
             ),
         )
         if scoring_failure is not None:
@@ -368,7 +403,8 @@ def _agenteval_prompt(
             "max_tool_calls": settings.max_tool_calls,
             "max_patch_calls": settings.max_patch_calls,
             "max_consecutive_rejected_calls": settings.max_consecutive_rejected_calls,
-            "finalization_reserve_s": 60,
+            "finalization_reserve_s": settings.finalization_reserve_s,
+            "max_exploratory_calls": settings.max_exploratory_calls,
         },
         "agent_feedback_contract": contract.model_dump(mode="json"),
         "instructions": instructions,
@@ -413,27 +449,50 @@ def _postparse_scoring_failure(
         return _termination(
             "scoring_event_ineligible",
             "Codex AgentEval returned an incomplete machine-event stream",
+            protocol_error_subcategory="scoring_event_parse_incomplete",
         )
     try:
         completed_tools = validate_scoring_mcp_stream(process.stdout)
+    except ScoringEventError as exc:
+        subcategory = f"scoring_event_{exc.category}"
+        if subcategory not in _SCORING_EVENT_FAILURE_SUBCATEGORIES:
+            subcategory = "scoring_event_unspecified"
+        return _termination(
+            "scoring_event_ineligible",
+            "Codex AgentEval returned a non-canonical MCP event stream",
+            protocol_error_subcategory=subcategory,
+        )
     except (EventParseError, ValueError):
         return _termination(
             "scoring_event_ineligible",
             "Codex AgentEval returned a non-canonical MCP event stream",
+            protocol_error_subcategory="scoring_event_unspecified",
         )
     canonical_finish = bool(completed_tools) and completed_tools[-1] == "finish"
-    if (
-        process.exit_code != 0
-        or not parsed.terminal_event_seen
-        or parsed.error_messages
-        or len(completed_tools) != broker.tool_calls
-        or not broker.finished
-        or broker.finish_calls != 1
-        or not canonical_finish
-    ):
+    event_failure: str | None = None
+    if process.exit_code != 0:
+        event_failure = "scoring_event_process_exit"
+    elif not parsed.terminal_event_seen:
+        event_failure = "scoring_event_terminal_missing"
+    elif parsed.error_messages:
+        event_failure = "scoring_event_provider_error"
+    elif len(completed_tools) != broker.tool_calls:
+        event_failure = "scoring_event_tool_count_mismatch"
+    elif completed_tools != broker.tool_call_sequence:
+        event_failure = "scoring_event_tool_sequence_mismatch"
+    elif broker.accepted_finish_call_index != len(completed_tools) - 1:
+        event_failure = "scoring_event_post_finish_tool"
+    elif not broker.finished:
+        event_failure = "scoring_event_broker_not_finished"
+    elif broker.finish_calls != 1:
+        event_failure = "scoring_event_finish_count"
+    elif not canonical_finish:
+        event_failure = "scoring_event_missing_finish"
+    if event_failure is not None:
         return _termination(
             "scoring_event_ineligible",
             "Codex AgentEval did not finish through canonical MCP",
+            protocol_error_subcategory=event_failure,
         )
     if parsed.input_tokens is None or parsed.output_tokens is None:
         return _termination(
@@ -458,7 +517,7 @@ def _identity(
     )
     return ExternalAgentCallIdentity(
         adapter_name="codex-cli-agenteval-agent",
-        adapter_version="5.0.0",
+        adapter_version="10.0.0",
         harness_name="verigym-codex-agenteval-scoring",
         requested_model_id="gpt-5.4",
         observed_model_id=observed_model_id,
@@ -481,7 +540,7 @@ def _identity(
         tool_policy_fingerprint=settings.tool_policy_fingerprint,
         model_client_kind="cli_agent_mediated",
         agent_harness_kind="codex_cli",
-        tool_availability_policy="verigym_required_allowlisted_mcp_only_v2",
+        tool_availability_policy="verigym_direct_allowlisted_mcp_broker_attested_v5",
         tool_use_policy="repository_action_state_machine_v3",
         tool_event_count=calls,
         side_effecting_tool_event_count=0,
@@ -544,6 +603,7 @@ def _write_scoring_evidence(
     accounting: ExternalAgentAccounting,
     parsed: ParsedEventStream | None,
     failure_category: str | None = None,
+    failure_subcategory: str | None = None,
 ) -> None:
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", invocation)
@@ -596,11 +656,16 @@ def _write_scoring_evidence(
             "raw_event_stream_persisted": False,
             "private_reasoning_persisted": False,
             "provider_observation_recorded": identity is not None,
+            "mcp_server_category_counts": scoring_mcp_server_category_counts(process.stdout),
             "failure_category": failure_category,
             "failure_subcategory": (
                 _bounded_policy_failure_subcategory(broker)
                 if broker.policy_failure is not None
-                else _bounded_infrastructure_failure_subcategory(broker)
+                else (
+                    _bounded_infrastructure_failure_subcategory(broker)
+                    if broker.infrastructure_failure is not None
+                    else _bounded_scoring_event_failure_subcategory(failure_subcategory)
+                )
             ),
         },
     )
@@ -628,8 +693,16 @@ def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
         "wall_time_s": stats.wall_time_s,
         "elapsed_wall_time_s": stats.elapsed_wall_time_s,
         "remaining_wall_time_s": stats.remaining_wall_time_s,
+        "finalization_reserve_s": stats.finalization_reserve_s,
+        "max_exploratory_calls": stats.max_exploratory_calls,
+        "exploratory_calls": stats.exploratory_calls,
+        "exploration_guard_calls": stats.exploration_guard_calls,
+        "finalization_required": stats.finalization_required,
+        "finalization_reason": stats.finalization_reason,
         "terminal_tool_name": _bounded_terminal_tool_name(stats),
         "terminal_path_category": _bounded_terminal_path_category(stats),
+        "tool_call_sequence": list(stats.tool_call_sequence),
+        "accepted_finish_call_index": stats.accepted_finish_call_index,
     }
 
 
@@ -709,6 +782,12 @@ def _bounded_terminal_tool_name(broker: RepositoryToolBrokerStats) -> str | None
 def _bounded_terminal_path_category(broker: RepositoryToolBrokerStats) -> str | None:
     if broker.terminal_path_category in _PATH_VIOLATION_CATEGORIES:
         return broker.terminal_path_category
+    return None
+
+
+def _bounded_scoring_event_failure_subcategory(value: str | None) -> str | None:
+    if value in _SCORING_EVENT_FAILURE_SUBCATEGORIES:
+        return value
     return None
 
 

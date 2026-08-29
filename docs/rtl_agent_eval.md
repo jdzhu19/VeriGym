@@ -10,7 +10,8 @@ contract before any model lookup.
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
-  source-priority projection is `official-parquet-v1-agent-eval-v2`.
+  source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
+  immediate-physical-line projection is `official-parquet-v1-agent-eval-v3`.
 
 Every successful patch invalidates compile, PPA, and diff evidence. `ppa` is accepted only after
 `compile` passes for the exact current candidate hash. Finish requires a current diff and, when
@@ -207,6 +208,19 @@ on a non-canonical MCP machine-event stream; the DC candidate similarly compiled
 legal candidate PPA before that event-stream classification made final PPA ineligible. The
 campaign remains read-only and does not authorize pilot-v2. See the
 [gym-fix diagnostic audit](audits/2026-08-29_rtl-agenteval-gymfix-diagnostic-v1-report.md).
+
+Agent `codex-cli-agenteval-gpt54-xhigh-v6` preserves prompt v4 and the six-tool broker but fixes
+the scoring event contract to match Codex CLI 0.147.0: a completed assistant message after typed
+`finish` is optional. The adapter still requires a successful process, a terminal event, exact
+broker/event tool accounting, one broker-accepted `finish`, and no post-finish tool call. Bounded
+event failure subcategories are retained without raw stdout, message content, arguments, or paths.
+
+The current `codex-cli-agenteval-gpt54-xhigh-v10` keeps prompt v6 and the same six canonical tools.
+It attests the exact broker tool sequence and accepted `finish` index, treats the JSONL MCP server
+label as bounded advisory metadata, and configures the VeriGym server with
+`omit_tools_from=["deferred"]` so Codex 0.147.0 exposes the tools directly instead of routing them
+through deferred tool search. See the
+[qualification v6 and pilot v7 audit](audits/2026-08-30_rtl-agenteval-codex-gpt54-xhigh-pilot-v7-report.md).
 
 ## Design choices informed by POSTEDA-Bench
 
