@@ -18,6 +18,11 @@ from verigym_openhands._recovery import (
     OPENHANDS_FORMAT_RECOVERY_BUDGET,
     OPENHANDS_FORMAT_RECOVERY_POLICY,
 )
+from verigym_openhands.hwe_v19_protocol import (
+    OPENHANDS_V19_MAX_PROVIDER_CALLS,
+    OPENHANDS_V19_MAX_PROVIDER_TOKENS,
+    OPENHANDS_V19_TOOL_CHOICE_POLICY,
+)
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -29,6 +34,7 @@ _OPTIONS = {
     "max_process_time_s",
     "max_output_tokens",
     "max_context_tokens",
+    "max_provider_tokens",
     "seed",
     "temperature",
     "top_p",
@@ -60,9 +66,10 @@ class OpenHandsHweSettings:
     agent_version_id: str | None
     agent_version_hash: str | None
     configuration_fingerprint: str
+    max_provider_tokens: int | None = None
 
     def safe_dict(self) -> dict[str, JsonValue]:
-        return {
+        result: dict[str, JsonValue] = {
             "model_id": self.model_id,
             "base_url_env": self.base_url_env,
             "api_key_env": self.api_key_env,
@@ -74,6 +81,7 @@ class OpenHandsHweSettings:
                 in {
                     "validated_responses_recovery_state_required_tool_v17",
                     "validated_responses_recovery_state_required_tool_v18",
+                    OPENHANDS_V19_TOOL_CHOICE_POLICY,
                 }
                 else "adapter_attempt_counter_v1"
             ),
@@ -100,6 +108,10 @@ class OpenHandsHweSettings:
             "tool_contract": "hwe_native_shell_v2",
             "configuration_fingerprint": self.configuration_fingerprint,
         }
+        if self.tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
+            result["max_provider_tokens"] = self.max_provider_tokens
+            result["provider_token_accounting"] = "post_response_pre_dispatch_v19"
+        return result
 
 
 def resolve_hwe_settings(
@@ -166,8 +178,23 @@ def resolve_hwe_settings(
         "validated_responses_recovery_state_required_tool_v16",
         "validated_responses_recovery_state_required_tool_v17",
         "validated_responses_recovery_state_required_tool_v18",
+        OPENHANDS_V19_TOOL_CHOICE_POLICY,
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
+    max_provider_tokens: int | None = None
+    if tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
+        if max_iterations != OPENHANDS_V19_MAX_PROVIDER_CALLS:
+            raise ValueError("OpenHands HWE v19 freezes exactly 64 provider calls")
+        if max_output_tokens != 2_048:
+            raise ValueError("OpenHands HWE v19 freezes exactly 2048 output tokens")
+        max_provider_tokens = _integer(
+            options.get("max_provider_tokens", OPENHANDS_V19_MAX_PROVIDER_TOKENS),
+            "max_provider_tokens",
+        )
+        if max_provider_tokens != OPENHANDS_V19_MAX_PROVIDER_TOKENS:
+            raise ValueError("OpenHands HWE v19 freezes a 1000000-token provider budget")
+    elif "max_provider_tokens" in options:
+        raise ValueError("OpenHands HWE provider token budget is v19-only")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
         raise ValueError("OpenHands HWE campaign role is unsupported")
@@ -197,6 +224,7 @@ def resolve_hwe_settings(
             in {
                 "validated_responses_recovery_state_required_tool_v17",
                 "validated_responses_recovery_state_required_tool_v18",
+                OPENHANDS_V19_TOOL_CHOICE_POLICY,
             }
             else "adapter_attempt_counter_v1"
         ),
@@ -222,6 +250,9 @@ def resolve_hwe_settings(
         "collection_profile_id": "hwe_production_native_shell_v2",
         "tool_contract": "hwe_native_shell_v2",
     }
+    if tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
+        safe["max_provider_tokens"] = max_provider_tokens
+        safe["provider_token_accounting"] = "post_response_pre_dispatch_v19"
     return OpenHandsHweSettings(
         model_id=model_id,
         base_url_env=base_url_env,
@@ -230,6 +261,7 @@ def resolve_hwe_settings(
         process_timeout_s=process_timeout_s,
         max_output_tokens=max_output_tokens,
         max_context_tokens=max_context_tokens,
+        max_provider_tokens=max_provider_tokens,
         seed=seed,
         campaign_role=role,
         capture_training_transcript=capture,

@@ -211,6 +211,37 @@ the current adapter boundary, but it does not qualify PR-2032 or justify a retry
 [v17 audit](../../docs/audits/2026-08-28_openhands-hwe-typed-continuation-v17.md) for the complete
 sanitized counts and frozen identities.
 
+## v19 required-tool collection protocol
+
+The independent v19 policy uses `tool_choice=required` for every active provider request and
+accepts exactly one canonical call from the six metadata-free, workspace-relative HWE tools. One
+provider content-only response may enter the same OpenHands session so the trusted Stop hook can
+retain it and add the canonical environment recovery feedback. The content and feedback remain
+complete model input but are loss-masked; only later canonical tool decisions are supervised. A
+second content-only response, prose mixed with tools, multiple or foreign tools, pseudo-`finish`,
+counter drift, or unavailable token accounting fails closed before broker dispatch.
+
+v19 freezes 64 provider calls, 1,000,000 cumulative provider tokens, 65,536 context tokens, 2,048
+output tokens, temperature zero, and no provider or episode retries. A response crossing the
+cumulative token cap remains in SDK accounting but cannot enter OpenHands or the broker. The
+protocol receipt records required requests, canonical tools, content-only responses, recovery
+counts, token usage, call usage, and broker decisions. Separate campaign results record actual
+verifier pass, protocol validity, trajectory eligibility, infrastructure validity, security
+validity, and SFT admission without changing `ScoreCard.resolved`.
+
+The frozen v19 public qualification order is CVA6 PR-2330, 3226, 2844, 3231, 2989, 1482, and 3059,
+ordered by changed lines and PR number. Qualification is zero-model base-FAIL/reference-PASS and
+must produce five tasks before any provider canary is allowed. It excludes every historical
+attempt, existing train/validation task, PR-2170, and all six held-out tasks. The source implements
+the 3-training/2-validation reserve assignment and fail-closed canary/collection capacity gates;
+it does not implicitly load a corpus, invoke a model, or authorize training.
+
+The sealed PR-2469 scorecard regression is intentionally classification-only: its actual hidden
+verifier result is one of one passing even though top-level `resolved` is false because the agent
+protocol and trajectory gate failed. v19 therefore classifies it as verifier-pass and
+trajectory-ineligible, without reconstructing, importing, rerunning, or relabeling the historical
+episode.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It

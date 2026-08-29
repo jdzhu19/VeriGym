@@ -1,0 +1,29 @@
+{
+  "correctness": {
+    "hidden_regression_status": "passed",
+    "infrastructure_error": false,
+    "resolved": false,
+    "tests_passed": 1,
+    "tests_total": 1
+  },
+  "failure": {
+    "category": "openhands_hwe_training_ineligible",
+    "infrastructure": false,
+    "kind": "model"
+  },
+  "resolved": false,
+  "run_id": "training-pr2469-s488",
+  "source_scorecard_sha256": "603186963396d0306b63e4cc87838ab3ba591b55c85df69b9b0e4ed85adef729",
+  "status": "failed",
+  "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2469",
+  "termination_reason": "policy_violation",
+  "verifier_results": [
+    {
+      "error_category": "success",
+      "node_id": "run_hidden_regression",
+      "status": "passed",
+      "tests_passed": 1,
+      "tests_total": 1
+    }
+  ]
+}
