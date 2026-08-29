@@ -337,6 +337,12 @@ never-attempted PR-3059. It still forbids provider calls, canary, collection, tr
 access. See the
 [v28 authorization audit](../../docs/audits/2026-08-30_openhands-v28-reference-patch-preflight-resume-authorization.md).
 
+The single v28 run then imported the four sealed passes, did not retry PR-1482, and qualified only
+the never-attempted PR-3059. The frozen public reserve is now training PR-2330/3226/3231 and
+validation PR-2989/3059. Provider calls and model processes remained zero. This five-task result
+still requires a separate merged canary authorization; see the
+[v28 result audit](../../docs/audits/2026-08-30_openhands-v28-reference-patch-preflight-resume-passed.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
