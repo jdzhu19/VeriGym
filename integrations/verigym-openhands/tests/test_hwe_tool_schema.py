@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from copy import deepcopy
 from types import SimpleNamespace
@@ -147,6 +148,8 @@ def test_workspace_constraints_bind_exact_six_tools_without_mutating_input() -> 
     assert re.fullmatch(no_host_pattern, "inspect repository/core/decoder.sv")
     assert not re.fullmatch(no_host_pattern, "inspect /data/private/decoder.sv")
     assert not re.fullmatch(no_host_pattern, "line one\n/home/user/decoder.sv")
+    assert re.fullmatch(no_host_pattern, "riscv::CSR_MCOUNTINHIBIT:\nnext line")
+    assert not re.fullmatch(no_host_pattern, r"inspect C:\private\decoder.sv")
     assert (
         "workspace-relative"
         in (by_name["shell"]["parameters"]["properties"]["command"]["description"])
@@ -295,6 +298,118 @@ def test_metadata_free_llm_keeps_semantic_finish_summary() -> None:
         return_value=response,
     ):
         assert llm.completion(messages=[], tools=[]) is response
+
+
+def test_metadata_free_llm_accepts_colon_terminated_rtl_labels_in_patch() -> None:
+    llm = _metadata_free_llm()
+    patch_text = """*** Begin Patch
+*** Update File: core/csr_regfile.sv
+@@
+-        riscv::CSR_MCOUNTINHIBIT:
++        riscv::CSR_MCOUNTINHIBIT: begin
+*** End Patch
+"""
+    response = SimpleNamespace(
+        message=SimpleNamespace(
+            tool_calls=[
+                SimpleNamespace(
+                    name="apply_patch",
+                    arguments=json.dumps({"patch": patch_text}),
+                )
+            ]
+        )
+    )
+    with patch.object(
+        ValidatedResponsesRecoveryStateRequiredToolLLM,
+        "completion",
+        autospec=True,
+        return_value=response,
+    ):
+        assert llm.completion(messages=[], tools=[]) is response
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/private/top.sv",
+        "/data/private/top.sv",
+        "/hpc/private/top.sv",
+        r"C:\private\top.sv",
+    ],
+)
+def test_metadata_free_llm_rejects_decoded_absolute_paths(path: str) -> None:
+    llm = _metadata_free_llm()
+    response = SimpleNamespace(
+        message=SimpleNamespace(
+            tool_calls=[
+                SimpleNamespace(
+                    name="read_file",
+                    arguments=json.dumps({"path": path}),
+                )
+            ]
+        )
+    )
+    with (
+        patch.object(
+            ValidatedResponsesRecoveryStateRequiredToolLLM,
+            "completion",
+            autospec=True,
+            return_value=response,
+        ),
+        pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path") as caught,
+    ):
+        llm.completion(messages=[], tools=[])
+
+    assert caught.value.argument_field == "path"
+    assert caught.value.violation_kind == "raw_host_path"
+
+
+def test_metadata_free_llm_does_not_treat_json_newline_escape_as_drive_path() -> None:
+    llm = _metadata_free_llm()
+    response = SimpleNamespace(
+        message=SimpleNamespace(
+            tool_calls=[
+                SimpleNamespace(
+                    name="apply_patch",
+                    arguments='{"patch":"riscv::CSR_MCOUNTINHIBIT:\\n"',
+                )
+            ]
+        )
+    )
+    with patch.object(
+        ValidatedResponsesRecoveryStateRequiredToolLLM,
+        "completion",
+        autospec=True,
+        return_value=response,
+    ):
+        assert llm.completion(messages=[], tools=[]) is response
+
+
+def test_metadata_free_llm_rejects_escaped_windows_path_in_malformed_json() -> None:
+    llm = _metadata_free_llm()
+    response = SimpleNamespace(
+        message=SimpleNamespace(
+            tool_calls=[
+                SimpleNamespace(
+                    name="read_file",
+                    arguments=r'{"path":"C:\\private\\top.sv"',
+                )
+            ]
+        )
+    )
+    with (
+        patch.object(
+            ValidatedResponsesRecoveryStateRequiredToolLLM,
+            "completion",
+            autospec=True,
+            return_value=response,
+        ),
+        pytest.raises(ProviderToolArgumentsPolicyError, match="raw host path") as caught,
+    ):
+        llm.completion(messages=[], tools=[])
+
+    assert caught.value.argument_field == "unparsed"
+    assert caught.value.violation_kind == "raw_host_path"
 
 
 def test_snapshot_uses_the_same_metadata_free_provider_schema() -> None:

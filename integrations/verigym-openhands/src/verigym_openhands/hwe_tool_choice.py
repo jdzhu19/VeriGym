@@ -76,6 +76,22 @@ _RAW_HOST_PATH = re.compile(
     r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\",
     re.IGNORECASE,
 )
+_RAW_JSON_ARGUMENT_HOST_PATH = re.compile(
+    r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\\\",
+    re.IGNORECASE,
+)
+
+
+def _contains_raw_host_path(value: Any) -> bool:
+    """Inspect decoded JSON values without mistaking escape syntax for path syntax."""
+
+    if isinstance(value, str):
+        return _RAW_HOST_PATH.search(value) is not None
+    if isinstance(value, dict):
+        return any(_contains_raw_host_path(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_raw_host_path(item) for item in value)
+    return False
 
 
 class BoundedProviderCallLLM(LLM):
@@ -844,7 +860,10 @@ class MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
             try:
                 parsed = json.loads(arguments)
             except json.JSONDecodeError:
-                if _RAW_HOST_PATH.search(arguments):
+                # Provider arguments are still JSON-escaped here. Require two
+                # backslashes for a Windows path so a normal ``T:\n`` escape
+                # after a source-code label cannot be mistaken for ``T:\...``.
+                if _RAW_JSON_ARGUMENT_HOST_PATH.search(arguments):
                     raise ProviderToolArgumentsPolicyError(
                         "OpenHands HWE provider tool arguments contain a raw host path",
                         tool_name=call.name,
@@ -855,8 +874,7 @@ class MetadataFreeValidatedResponsesRecoveryStateRequiredToolLLM(
             if not isinstance(parsed, dict):
                 continue
             for field, value in parsed.items():
-                encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-                if _RAW_HOST_PATH.search(encoded):
+                if _contains_raw_host_path(value):
                     raise ProviderToolArgumentsPolicyError(
                         "OpenHands HWE provider tool arguments contain a raw host path",
                         tool_name=call.name,

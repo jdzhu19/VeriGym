@@ -4,6 +4,11 @@
 剩余 provider tasks、32-step SFT、GPU 作业或 held-out A/B；`production_training_ready=false`、
 `benchmark_score_claimed=false`。
 
+> 后续根因更正：历史 scorecard 的 model/policy 分类忠实记录了当时 validator 的输出，但该
+> validator 随后被证明会把 JSON 转义后的合法 RTL case-label 换行误判为 Windows 盘符路径。
+> PR-2468 正好需要修改 `CSR_MCOUNTINHIBIT:` case。历史 attempt 与 output 仍保持不可变，且
+> 不允许重跑；代码层根因与修复证据记录在同日的 provider path-validator 审计中。
+
 ## 冻结执行身份
 
 - continuation contract hash：
