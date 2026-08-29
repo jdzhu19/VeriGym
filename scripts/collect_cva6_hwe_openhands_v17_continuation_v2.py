@@ -512,6 +512,25 @@ def _write_gate(root: Path, attempts: list[dict[str, Any]]) -> None:
     atomic_dump_json(root / "data-gate.json", {**base, "gate_hash": content_hash(base)})
 
 
+def _write_stopped_gate(root: Path, attempts: list[dict[str, Any]], *, stop_reason: str) -> None:
+    gate = evaluate_v17_continuation_gate(attempts)
+    base = {
+        "schema_version": "1.0",
+        "format_id": OPENHANDS_V17_CONTINUATION_GATE_FORMAT,
+        **asdict(gate),
+        "satisfied": False,
+        "possible": False,
+        "next_role": None,
+        "reason": "campaign_stopped_fail_closed",
+        "capacity_reason": gate.reason,
+        "stop_reason": stop_reason,
+        "attempt_count": len(attempts),
+        "heldout_episodes_collected": 0,
+        "recovery_task_reexecuted": False,
+    }
+    atomic_dump_json(root / "data-gate.json", {**base, "gate_hash": content_hash(base)})
+
+
 def _write_progress(
     root: Path, base_report: dict[str, Any], attempts: list[dict[str, Any]]
 ) -> None:
@@ -527,6 +546,7 @@ def _stop(
     attempts: list[dict[str, Any]],
     reason: str,
 ) -> None:
+    _write_stopped_gate(root, attempts, stop_reason=reason)
     stopped = _seal(
         {
             **base_report,
