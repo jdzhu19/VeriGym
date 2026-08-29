@@ -67,6 +67,10 @@ _clean_source_commit = _recovery._clean_source_commit
 _json = _recovery._json
 _new_output = _recovery._new_output
 
+OPENHANDS_V17_CANARY_IMAGE_LOCK_RECEIPT_FORMAT = "verigym_openhands_hwe_v17_canary_image_locks_v3"
+OPENHANDS_V17_CANARY_SECURITY_REPORT_PREFIX = "openhands-hwe-v17-canary-v3"
+OPENHANDS_V17_CANARY_PREFLIGHT_PREFIX = "openhands-v17-canary-v3-preflight"
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -80,7 +84,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def collect(arguments: argparse.Namespace) -> dict[str, Any]:
-    """Execute exactly three frozen episodes and stop on invalid infrastructure or evidence."""
+    """Execute the frozen schedule and stop on invalid infrastructure or evidence."""
 
     _require_opt_in(arguments.campaign_id)
     source_commit = _clean_source_commit()
@@ -130,7 +134,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
     atomic_dump_json(root / "agent-version.json", agent_version)
     image_receipt = {
         "schema_version": "1.0",
-        "format_id": "verigym_openhands_hwe_v17_canary_image_locks_v3",
+        "format_id": OPENHANDS_V17_CANARY_IMAGE_LOCK_RECEIPT_FORMAT,
         "locks": {
             task_id: {
                 "lock_hash": lock.lock_hash,
@@ -209,7 +213,7 @@ def collect(arguments: argparse.Namespace) -> dict[str, Any]:
                 agent_options_builder=build_v17_canary_agent_options,
                 runtime_evidence_validator=validate_v17_runtime_evidence,
                 system_id=OPENHANDS_V17_CANARY_AGENT_VERSION_ID,
-                security_report_prefix="openhands-hwe-v17-canary-v3",
+                security_report_prefix=OPENHANDS_V17_CANARY_SECURITY_REPORT_PREFIX,
             )
         except Exception as exc:
             reason = f"{episode['episode_id']}:{type(exc).__name__}"
@@ -521,7 +525,7 @@ def _zero_call_preflight(locks: dict[str, HweAgentImageLock]) -> None:
     for task_id in OPENHANDS_V17_CANARY_TASKS:
         runtime = DockerRuntime(_docker_config(locks[task_id]))
         try:
-            runtime.prepare(f"openhands-v17-canary-v3-preflight-{task_id.rsplit('-', 1)[-1]}")
+            runtime.prepare(f"{OPENHANDS_V17_CANARY_PREFLIGHT_PREFIX}-{task_id.rsplit('-', 1)[-1]}")
         finally:
             runtime.close()
 

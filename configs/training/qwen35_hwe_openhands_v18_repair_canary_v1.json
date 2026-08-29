@@ -1,0 +1,7 @@
+{
+  "contract_hash": "73841ad308d4db91fbe6c7190a832071bf4b94242bef01f18932e8958f4d3661",
+  "format_id": "verigym_openhands_hwe_v18_repair_canary_v1",
+  "overlay_hash": "817da5a643d675f15476fcdcb9ce6718c1793d53bf163f1f95fdf9733a3b4b4f",
+  "schema_version": "1.0",
+  "scope": "two_task_repaired_validator_capacity_canary"
+}
