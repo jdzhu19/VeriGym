@@ -1,0 +1,10 @@
+{
+  "continuation_contract_hash": "df47b0ca1e3900ad1a82d359bfd1711d35cd4b30ae4fc1b88d966b855513b8f4",
+  "format_id": "verigym_openhands_hwe_v17_formal_continuation_v2",
+  "overlay_hash": "98b590cd743a6548ef002bdb3a92c616be2fc5abb6333b06380ed75d76d6523c",
+  "parent_formal_contract_file": "qwen35_hwe_openhands_v17_collection_v1.json",
+  "parent_formal_contract_file_sha256": "ddcdb4c0181b6af8b2c3623f0337b3f9b784967311f610d4583d1f0e6caa4b12",
+  "parent_formal_contract_hash": "886aefb295c822554eba6fa8efb9e83a8d4da8d6812930843592048a4f2260e4",
+  "schema_version": "1.0",
+  "scope": "exact_64k_development_sft_formal_collection_continuation"
+}
