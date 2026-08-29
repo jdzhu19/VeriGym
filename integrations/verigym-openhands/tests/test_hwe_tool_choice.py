@@ -159,6 +159,10 @@ def _read_file_tool() -> list[ToolDefinition]:
     return cast(list[ToolDefinition], [SimpleNamespace(name="read_file")])
 
 
+def _apply_patch_tool() -> list[ToolDefinition]:
+    return cast(list[ToolDefinition], [SimpleNamespace(name="apply_patch")])
+
+
 def _response(tool_name: str | None) -> SimpleNamespace:
     calls = (
         [
@@ -944,6 +948,40 @@ def test_path_policy_recovery_requires_one_provider_emitted_valid_tool(tmp_path:
     assert llm.path_policy_recovery_forced_request_count == 1
     assert llm.path_policy_recovery_validated_tool_count == 1
     assert llm.provider_call_count == 1
+
+
+def test_path_policy_recovery_accepts_colon_terminated_rtl_labels(tmp_path: Path) -> None:
+    llm = _path_policy_recovery_llm(tmp_path / "recovery.json")
+    patch_text = """*** Begin Patch
+*** Update File: core/csr_regfile.sv
+@@
+-        riscv::CSR_MCOUNTINHIBIT:
++        riscv::CSR_MCOUNTINHIBIT: begin
+*** End Patch
+"""
+    response = SimpleNamespace(
+        message=Message(
+            role="assistant",
+            tool_calls=[
+                MessageToolCall(
+                    id="call-safe-rtl-patch",
+                    name="apply_patch",
+                    arguments=json.dumps({"patch": patch_text}),
+                    origin="responses",
+                )
+            ],
+        )
+    )
+    llm.arm_path_policy_recovery()
+    with patch(
+        "openhands.sdk.llm.llm.LLM.responses",
+        autospec=True,
+        return_value=response,
+    ):
+        assert llm.completion(messages=_messages(), tools=_apply_patch_tool()) is response
+
+    assert llm.path_policy_recovery_forced_request_count == 1
+    assert llm.path_policy_recovery_validated_tool_count == 1
 
 
 def test_path_policy_recovery_completes_a_rejected_sdk_continuation(tmp_path: Path) -> None:

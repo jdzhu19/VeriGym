@@ -190,6 +190,12 @@ synthesized. Exact v6 trajectories hash-bind the sanitized receipt and model-vis
 keep decisions before the feedback unaware of it, and remain ineligible unless the ordinary hidden
 verifier resolves the episode.
 
+The pre-dispatch path validator scans decoded JSON string leaves. It must not re-serialize decoded
+values before applying host-path expressions: JSON newline escapes can otherwise turn a legal
+source label such as `CSR_MCOUNTINHIBIT:` into the drive-like byte sequence `T:\n`. Malformed raw
+JSON uses a separate escape-aware expression, while decoded `path`, `cwd`, command, patch, and
+summary values retain the ordinary POSIX and Windows host-path rejection boundary.
+
 Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
 events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
 event and broker-owned canonical arguments or compact-observation hash. The exact effective
