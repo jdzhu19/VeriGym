@@ -307,6 +307,12 @@ detects transfer defects before another task is touched. The authorization permi
 qualification only; provider canary, agent-image construction, collection, SFT, GPU work, and
 held-out access remain forbidden.
 
+The single v25 run stopped before image load because it treated bounded stderr from a successful
+`crane pull` as an integrity failure. Its identity is sealed. The v26 successor accepts bounded
+pull stderr only for a zero-exit controlled command, still rejects any pull stdout, and writes a
+content-free byte-count/digest receipt before making that decision. It never stores the raw
+diagnostic output and retains all v25 tar, image, manifest, isolation, capacity, and no-retry gates.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
