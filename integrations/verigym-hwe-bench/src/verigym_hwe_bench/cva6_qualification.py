@@ -146,12 +146,12 @@ def qualify_cva6_teacher_pool(
                 official_dataset_revision=official_dataset_revision,
                 official_source_commit=official_source_commit,
             )
-            report = _zero_model_smoke(source=source, output=smoke)
+            report = run_zero_model_smoke(source=source, output=smoke)
         except (ConfigurationError, OSError) as exc:
             report_path = smoke / "smoke-report.json"
             if report_path.is_file() and not report_path.is_symlink():
                 report = json.loads(report_path.read_bytes())
-                if _infrastructure_valid(report):
+                if zero_model_infrastructure_valid(report):
                     outcome.update({"status": "not_qualified", "reason": "fail_pass_mismatch"})
                     atomic_dump_json(root / "qualification-progress.json", progress)
                     continue
@@ -161,7 +161,7 @@ def qualify_cva6_teacher_pool(
             raise ConfigurationError(
                 f"CVA6 qualification stopped on infrastructure-invalid {candidate.instance_id}"
             ) from exc
-        if not _eligible_report(report):
+        if not zero_model_fail_to_pass_eligible(report):
             outcome.update({"status": "not_qualified", "reason": "fail_pass_mismatch"})
             atomic_dump_json(root / "qualification-progress.json", progress)
             continue
@@ -284,7 +284,9 @@ def _combined_heldout(splits: list[TaskSplitManifest]) -> list[TaskSplitEntry]:
     return list(by_id.values())
 
 
-def _infrastructure_valid(report: dict[str, Any]) -> bool:
+def zero_model_infrastructure_valid(report: dict[str, Any]) -> bool:
+    """Return whether both zero-model verifier invocations produced usable results."""
+
     base_results = report.get("base_verifier_results")
     reference_results = report.get("verifier_results")
     return (
@@ -300,9 +302,11 @@ def _infrastructure_valid(report: dict[str, Any]) -> bool:
     )
 
 
-def _eligible_report(report: dict[str, Any]) -> bool:
+def zero_model_fail_to_pass_eligible(report: dict[str, Any]) -> bool:
+    """Return whether a zero-model report proves base-FAIL/reference-PASS."""
+
     return (
-        _infrastructure_valid(report)
+        zero_model_infrastructure_valid(report)
         and report.get("base_failed") is True
         and report.get("base_resolved") is False
         and report.get("reference_passed") is True
@@ -320,7 +324,7 @@ def _new_directory(path: Path) -> Path:
     return expanded.resolve(strict=True)
 
 
-def _zero_model_smoke(*, source: Path, output: Path) -> dict[str, Any]:
+def run_zero_model_smoke(*, source: Path, output: Path) -> dict[str, Any]:
     """Verify base and reference candidates without opening an untrusted LocalRuntime."""
 
     if output.exists() or output.is_symlink():
@@ -399,8 +403,17 @@ def _verifier_summary(result: VerifierResult) -> dict[str, Any]:
     }
 
 
+# Retain the private spellings for older callers while exposing descriptive public helpers.
+_infrastructure_valid = zero_model_infrastructure_valid
+_eligible_report = zero_model_fail_to_pass_eligible
+_zero_model_smoke = run_zero_model_smoke
+
+
 __all__ = [
     "Cva6Candidate",
     "qualify_cva6_teacher_pool",
+    "run_zero_model_smoke",
     "select_cva6_candidates",
+    "zero_model_fail_to_pass_eligible",
+    "zero_model_infrastructure_valid",
 ]

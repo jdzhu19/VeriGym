@@ -12,6 +12,7 @@ from verigym_openhands.hwe_v19 import (
     seal_v19_trajectory_receipt,
 )
 from verigym_openhands.hwe_v19_campaign import (
+    OPENHANDS_V19_CANARY_VALIDATION_BINDING,
     OPENHANDS_V19_CANARY_VALIDATION_TASK,
     OPENHANDS_V19_FIXED_TRAINING_ORDER,
     OPENHANDS_V19_FIXED_VALIDATION_ORDER,
@@ -230,13 +231,7 @@ def test_v19_qualification_receipt_builds_static_canary_contract() -> None:
     receipt = seal_v19_qualification_receipt(outcomes, bindings=bindings)
     contract = build_v19_canary_contract(
         receipt,
-        validation_binding={
-            "task_hash": "1" * 64,
-            "source_hash": "2" * 64,
-            "image_lock_hash": "3" * 64,
-            "agent_image": "sha256:" + "5" * 64,
-            "verifier_image": "sha256:" + "4" * 64,
-        },
+        validation_binding=OPENHANDS_V19_CANARY_VALIDATION_BINDING,
     )
 
     assert contract["schedule"][0]["task_id"] == receipt["training_reserve_task_ids"][0]
@@ -250,6 +245,11 @@ def test_v19_qualification_receipt_builds_static_canary_contract() -> None:
     changed["qualification_receipt_hash"] = "0" * 64
     with pytest.raises(ValueError, match="identity changed"):
         validate_v19_canary_contract(changed)
+
+    substituted = dict(OPENHANDS_V19_CANARY_VALIDATION_BINDING)
+    substituted["source_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="PR-3204 validation binding changed"):
+        build_v19_canary_contract(receipt, validation_binding=substituted)
 
 
 def test_v19_canary_has_zero_automatic_fallback() -> None:

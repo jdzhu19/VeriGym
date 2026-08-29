@@ -70,6 +70,13 @@ OPENHANDS_V19_HELDOUT_TASKS = (
 OPENHANDS_V19_FIXED_TRAINING_ORDER = tuple(_task(number) for number in (2549, 2589, 2802, 2916))
 OPENHANDS_V19_FIXED_VALIDATION_ORDER = (_task(3168),)
 OPENHANDS_V19_CANARY_VALIDATION_TASK = _task(3204)
+OPENHANDS_V19_CANARY_VALIDATION_BINDING = {
+    "task_hash": "9322fa0b8455126e5c5f2e68ae02c47484935d5ea84bf69b9e6494658e229e86",
+    "source_hash": "15861c5f52071656a4ac8dbe7f96df49c974d24c2e3f53f9e449eba12794f02f",
+    "image_lock_hash": "b3fe6732fe4d9b52a6444cda90b25add311665af537acf6b389ad1fdafa1933b",
+    "agent_image": "sha256:2713ee1efe1d83a655b5dbee775b8c59b3af3614b4233346b779df3a63f5e276",
+    "verifier_image": "sha256:459deab1a9b65a25be4583087238308dd12e773b818e720299cc8cafe55f4f64",
+}
 
 
 @dataclass(frozen=True)
@@ -325,6 +332,8 @@ def build_v19_canary_contract(
     training = sealed["training_reserve_task_ids"]
     selected = next(item for item in sealed["tasks"] if item["task_id"] == training[0])
     validation = _validated_qualification_binding(validation_binding)
+    if validation != OPENHANDS_V19_CANARY_VALIDATION_BINDING:
+        raise ValueError("OpenHands v19 PR-3204 validation binding changed")
     base = {
         "schema_version": "1.0",
         "format_id": OPENHANDS_V19_CANARY_CONTRACT_FORMAT,

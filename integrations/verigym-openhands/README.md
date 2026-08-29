@@ -242,6 +242,13 @@ protocol and trajectory gate failed. v19 therefore classifies it as verifier-pas
 trajectory-ineligible, without reconstructing, importing, rerunning, or relabeling the historical
 episode.
 
+The first v19 public-task stage stopped before task execution. The controlled image downloader's
+effective process unexpectedly exposed an unauthenticated TCP Docker API on the dedicated bridge;
+the container and scratch state were removed, zero images were imported, and qualification did not
+start. The runner now requires a Unix-only nested daemon and validates its effective arguments,
+but the stopped stage is not retried and no reserve split or canary contract exists. See the
+[qualification audit](../../docs/audits/2026-08-29_openhands-v19-public-qualification-stopped.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
