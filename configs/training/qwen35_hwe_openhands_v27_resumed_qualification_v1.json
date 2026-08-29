@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v27_resumed_qualification_authorization_v1",
+  "status": "authorized_pending_qualification",
+  "identity": "openhands-hwe-v27-resumed-public-qualification-v1",
+  "predecessor": {
+    "identity": "openhands-hwe-v26-streamed-public-qualification-v1",
+    "progress_file_sha256": "751ad6ced84f445794bf3cf23ed300170f0dcdbd657789cf8340a1a891f411b5",
+    "progress_hash": "386941d45755c3c023c7a075b0ef0441437bdd823bc886ad33d7711a67006a76",
+    "authorization_hash": "570ac67b7c348a943030bea2e415a0aecc63cda31fe95465a4e913230ab501b8",
+    "status": "stopped_security_or_infrastructure_invalid",
+    "audit_commit": "f9d25e52724506b575b3f9d71f3aaae63be27df4",
+    "imported_qualified_task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226"
+    ],
+    "attempted_task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2844"
+    ],
+    "failure_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2844",
+    "failure_diagnostic_hash": "0b856e05a7b778fb264a65545c19d77b4f0805eab58889b346df2bc2b43a9327"
+  },
+  "continuation_candidate_numbers": [3231, 2989, 1482, 3059],
+  "network": "verigym-hwe-net",
+  "qualification_target": 5,
+  "training_reserve_count": 3,
+  "validation_reserve_count": 2,
+  "safe_error_categories": [
+    "archive_writer",
+    "cache_filesystem",
+    "dns_resolution",
+    "registry_http_4xx",
+    "registry_http_5xx",
+    "resource_exhaustion",
+    "tls_verification",
+    "transport_connection",
+    "transport_timeout",
+    "unknown"
+  ],
+  "required_controls": {
+    "exact_predecessor_hash": true,
+    "historical_attempts_retried": false,
+    "historical_qualified_bindings_relabelled": false,
+    "raw_command_output_persisted": false,
+    "allowlisted_error_category_only": true,
+    "automatic_retry": false,
+    "privileged": false,
+    "docker_socket_mount": false,
+    "read_only_rootfs": true,
+    "non_root_user": true,
+    "cap_drop_all": true,
+    "no_new_privileges": true,
+    "default_bridge_used": false,
+    "proxy_values_forwarded": false,
+    "tls_verification_disabled": false,
+    "networkless_verifier": true,
+    "digest_qualified_candidate_pull": true,
+    "tarball_inventory_validation": true,
+    "atomic_progress": true,
+    "streamed_capacity_recomputation": true
+  },
+  "authorized_actions": {
+    "import_sealed_v26_qualified_evidence": true,
+    "continue_unattempted_public_candidates": true,
+    "resolve_candidate_digests": true,
+    "download_candidate_images": true,
+    "load_candidate_images": true,
+    "run_zero_model_qualification": true,
+    "invoke_provider": false,
+    "build_agent_images": false,
+    "materialize_canary_contract": false,
+    "start_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately_no_retry",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "627d4debd68503ab879c2478d50d875871d00a88465f8d87086a90b825295626"
+}

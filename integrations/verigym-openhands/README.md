@@ -313,6 +313,15 @@ pull stderr only for a zero-exit controlled command, still rejects any pull stdo
 content-free byte-count/digest receipt before making that decision. It never stores the raw
 diagnostic output and retains all v25 tar, image, manifest, isolation, capacity, and no-retry gates.
 
+The v26 run qualified PR-2330 and PR-3226, then stopped when PR-2844's pull exited 1. Its raw stderr
+was intentionally discarded, so the exact subsystem cannot be inferred. The independent v27
+successor binds that full result, imports only the two complete qualified bindings, records
+PR-2844 as predecessor terminal evidence, and continues from PR-3231 without retrying any of the
+three attempted tasks. New bounded stderr is classified in memory into a closed registry,
+DNS/TLS/transport, cache, archive, resource, or unknown category; only the category, byte counts,
+stream hashes, and cleanup state are persisted. Current infrastructure failures still stop
+immediately, and provider, canary, collection, training, and held-out actions remain forbidden.
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
