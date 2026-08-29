@@ -48,6 +48,7 @@ from verigym.plugin_api import (
 from .dataset import VARIANT, Catalog, load_catalog
 from .docker_verifier import DockerHweVerifier
 from .models import HweInstance, ImageLockEntry, ImageLockEntryType, ImageLockEntryV2, ImageLockV2
+from .prepare import _reference_candidate_files, reference_patch_compatibility
 
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "hwe-bench-official-repo-repair-v1"
@@ -214,6 +215,12 @@ class HweBenchSuite(SuiteAdapter):
 
     def reference_solution(self, task: VeriTask) -> Candidate | None:
         instance, entry = self._for_task(task)
+        compatibility = reference_patch_compatibility(instance)
+        if not compatibility.compatible:
+            raise ConfigurationError(
+                "HWE-Bench reference patch is incompatible with Candidate materialization: "
+                f"{compatibility.reason}"
+            )
         base = self._base_repository(entry)
         with tempfile.TemporaryDirectory(prefix="verigym-hwe-reference-") as temporary:
             repository = Path(temporary) / "repository"
@@ -231,11 +238,7 @@ class HweBenchSuite(SuiteAdapter):
                 raise ConfigurationError("could not apply the official reference patch") from exc
             if applied.returncode != 0:
                 raise ConfigurationError("official HWE-Bench reference patch no longer applies")
-            files = {
-                f"repository/{relative}": (repository / relative).read_text(encoding="utf-8")
-                for relative in instance.modified_files
-                if (repository / relative).is_file()
-            }
+            files = _reference_candidate_files(repository, instance.modified_files)
         candidate = Candidate(files=files, label="official-reference-conformance-only")
         if content_hash(candidate) != entry.reference_candidate_hash:
             raise ConfigurationError("official HWE-Bench reference candidate identity changed")

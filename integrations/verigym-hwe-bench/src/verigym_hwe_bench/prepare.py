@@ -10,6 +10,7 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,28 @@ from .models import (
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_PATCH_SUMMARY_CREATE = re.compile(rb"^create mode ([0-7]{6}) ")
+_MAX_PATCH_METADATA_BYTES = 8 * 1024 * 1024
+_MAX_PATCH_PATH_BYTES = 4096
+
+
+@dataclass(frozen=True)
+class ReferencePatchCompatibility:
+    """Content-free compatibility result for Candidate reference materialization."""
+
+    classifier: str
+    compatible: bool
+    reason: str
+    patch_file_count: int
+    created_file_count: int
+    deleted_file_count: int
+    renamed_file_count: int
+    copied_file_count: int
+    mode_changed_file_count: int
+    binary_file_count: int
+    raw_output_persisted: bool
+    network_accessed: bool
+    docker_accessed: bool
 
 
 def _has_symlink_component(root: Path, relative: str) -> bool:
@@ -73,6 +96,163 @@ def _command(
         raise ConfigurationError(f"required executable is unavailable: {argv[0]}") from exc
     except subprocess.TimeoutExpired as exc:
         raise ConfigurationError(f"command timed out: {argv[0]}") from exc
+
+
+def _patch_compatibility_result(
+    *,
+    reason: str,
+    patch_file_count: int = 0,
+    created_file_count: int = 0,
+    deleted_file_count: int = 0,
+    renamed_file_count: int = 0,
+    copied_file_count: int = 0,
+    mode_changed_file_count: int = 0,
+    binary_file_count: int = 0,
+) -> ReferencePatchCompatibility:
+    return ReferencePatchCompatibility(
+        classifier="git-apply-metadata-v1",
+        compatible=reason == "compatible",
+        reason=reason,
+        patch_file_count=patch_file_count,
+        created_file_count=created_file_count,
+        deleted_file_count=deleted_file_count,
+        renamed_file_count=renamed_file_count,
+        copied_file_count=copied_file_count,
+        mode_changed_file_count=mode_changed_file_count,
+        binary_file_count=binary_file_count,
+        raw_output_persisted=False,
+        network_accessed=False,
+        docker_accessed=False,
+    )
+
+
+def _safe_patch_path(value: str) -> bool:
+    encoded = value.encode("utf-8")
+    return (
+        bool(value)
+        and len(encoded) <= _MAX_PATCH_PATH_BYTES
+        and not value.startswith("/")
+        and "\\" not in value
+        and ".." not in value.split("/")
+        and not any(character in value for character in ("\x00", "\n", "\r", "\t"))
+    )
+
+
+def reference_patch_compatibility(instance: HweInstance) -> ReferencePatchCompatibility:
+    """Classify reference-patch shape without touching Docker, a repository, or the network."""
+
+    if any(not _safe_patch_path(path) for path in instance.modified_files):
+        return _patch_compatibility_result(reason="unsafe_modified_file_path")
+    patch = instance.fix_patch.encode("utf-8")
+    numstat = _command(
+        ["git", "apply", "--numstat", "-z", "-"],
+        timeout_s=60,
+        input_bytes=patch,
+    )
+    summary = _command(
+        ["git", "apply", "--summary", "-"],
+        timeout_s=60,
+        input_bytes=patch,
+    )
+    if (
+        numstat.returncode != 0
+        or summary.returncode != 0
+        or len(numstat.stdout) > _MAX_PATCH_METADATA_BYTES
+        or len(numstat.stderr) > _MAX_PATCH_METADATA_BYTES
+        or len(summary.stdout) > _MAX_PATCH_METADATA_BYTES
+        or len(summary.stderr) > _MAX_PATCH_METADATA_BYTES
+    ):
+        return _patch_compatibility_result(reason="malformed_patch_metadata")
+
+    records = numstat.stdout.split(b"\0")
+    if not records or records[-1] != b"":
+        return _patch_compatibility_result(reason="malformed_patch_metadata")
+    paths: list[str] = []
+    binary_file_count = 0
+    for record in records[:-1]:
+        fields = record.split(b"\t", 2)
+        if len(fields) != 3:
+            return _patch_compatibility_result(reason="malformed_patch_metadata")
+        added, deleted, raw_path = fields
+        if added == b"-" or deleted == b"-":
+            binary_file_count += 1
+        elif not added.isdigit() or not deleted.isdigit():
+            return _patch_compatibility_result(reason="malformed_patch_metadata")
+        try:
+            path = raw_path.decode("utf-8", errors="strict")
+        except UnicodeError:
+            return _patch_compatibility_result(reason="non_utf8_patch_path")
+        if not _safe_patch_path(path):
+            return _patch_compatibility_result(reason="unsafe_patch_path")
+        paths.append(path)
+
+    created_file_count = 0
+    deleted_file_count = 0
+    renamed_file_count = 0
+    copied_file_count = 0
+    mode_changed_file_count = 0
+    non_regular_creation_count = 0
+    for raw_line in summary.stdout.splitlines():
+        line = raw_line.lstrip()
+        create = _PATCH_SUMMARY_CREATE.match(line)
+        if create is not None:
+            created_file_count += 1
+            if create.group(1) != b"100644":
+                non_regular_creation_count += 1
+        elif line.startswith(b"delete mode "):
+            deleted_file_count += 1
+        elif line.startswith(b"rename "):
+            renamed_file_count += 1
+        elif line.startswith(b"copy "):
+            copied_file_count += 1
+        elif line.startswith(b"mode change "):
+            mode_changed_file_count += 1
+        else:
+            return _patch_compatibility_result(reason="unknown_patch_metadata")
+
+    counts = {
+        "patch_file_count": len(paths),
+        "created_file_count": created_file_count,
+        "deleted_file_count": deleted_file_count,
+        "renamed_file_count": renamed_file_count,
+        "copied_file_count": copied_file_count,
+        "mode_changed_file_count": mode_changed_file_count,
+        "binary_file_count": binary_file_count,
+    }
+    if len(paths) != len(set(paths)) or sorted(paths) != instance.modified_files:
+        return _patch_compatibility_result(reason="modified_file_manifest_mismatch", **counts)
+    if binary_file_count:
+        return _patch_compatibility_result(reason="binary_patch", **counts)
+    if deleted_file_count:
+        return _patch_compatibility_result(reason="deleted_file", **counts)
+    if renamed_file_count:
+        return _patch_compatibility_result(reason="renamed_file", **counts)
+    if copied_file_count:
+        return _patch_compatibility_result(reason="copied_file", **counts)
+    if mode_changed_file_count:
+        return _patch_compatibility_result(reason="mode_change", **counts)
+    if non_regular_creation_count:
+        return _patch_compatibility_result(reason="non_regular_file_creation", **counts)
+    return _patch_compatibility_result(reason="compatible", **counts)
+
+
+def _reference_candidate_files(
+    reference_repository: Path, modified_files: list[str]
+) -> dict[str, str]:
+    files: dict[str, str] = {}
+    for relative in modified_files:
+        path = reference_repository / relative
+        if not path.is_file() or path.is_symlink():
+            raise ConfigurationError(
+                "HWE-Bench Candidate reference accepts only regular UTF-8 output files"
+            )
+        try:
+            files[f"repository/{relative}"] = path.read_text(encoding="utf-8")
+        except UnicodeError as exc:
+            raise ConfigurationError(
+                "HWE-Bench Candidate reference accepts only regular UTF-8 output files"
+            ) from exc
+    return files
 
 
 def _official_instances(dataset: Path, selected: set[str]) -> list[HweInstance]:
@@ -376,9 +556,16 @@ def prepare_source(
     output = output.expanduser().resolve(strict=False)
     if output.exists() or output.is_symlink():
         raise ConfigurationError("prepare-source output already exists")
-    output.parent.mkdir(parents=True, exist_ok=True)
     dataset = dataset.expanduser().resolve(strict=True)
     instances = _official_instances(dataset, set(selected_tasks))
+    for instance in instances:
+        compatibility = reference_patch_compatibility(instance)
+        if not compatibility.compatible:
+            raise ConfigurationError(
+                "HWE-Bench reference patch is incompatible with Candidate materialization: "
+                f"{compatibility.reason}"
+            )
+    output.parent.mkdir(parents=True, exist_ok=True)
     expected_image_references = {
         (f"ghcr.io/pku-liang/{instance.org.lower()}_m_{instance.repo.lower()}:pr-{instance.number}")
         for instance in instances
@@ -472,22 +659,8 @@ def prepare_source(
                     ) from exc
                 if applied.returncode != 0:
                     raise ConfigurationError("official HWE-Bench reference patch does not apply")
-                for path in instance.modified_files:
-                    if (
-                        not (repository / path).is_file()
-                        or not (reference_repository / path).is_file()
-                    ):
-                        raise ConfigurationError(
-                            "HWE-Bench profile accepts only in-place UTF-8 text reference edits"
-                        )
                 reference_candidate = Candidate(
-                    files={
-                        f"repository/{path}": (reference_repository / path).read_text(
-                            encoding="utf-8"
-                        )
-                        for path in instance.modified_files
-                        if (reference_repository / path).is_file()
-                    },
+                    files=_reference_candidate_files(reference_repository, instance.modified_files),
                     label="official-reference-conformance-only",
                 )
                 reference_repository_hash = hash_directory(reference_repository)
