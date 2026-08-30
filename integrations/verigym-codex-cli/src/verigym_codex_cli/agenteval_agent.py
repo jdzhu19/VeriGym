@@ -37,6 +37,7 @@ from verigym.plugin_api import (
 from verigym.schemas.action_protocol import RepositoryActionProtocolSpec
 
 from .agenteval_config import (
+    AGENTEVAL_AGENT_VERSION_ID,
     AGENTEVAL_PROMPT_INSTRUCTIONS,
     CodexAgentEvalSettings,
     agenteval_settings,
@@ -177,6 +178,10 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
             "single_external_episode",
         ],
     )
+    settings_resolver: Any = staticmethod(agenteval_settings)
+    prompt_instructions: tuple[str, ...] = AGENTEVAL_PROMPT_INSTRUCTIONS
+    required_prompt_contract_id = "repository_action_v2_prompt_v6"
+    required_state_machine_id = "repository_action_state_machine_v3"
 
     def __init__(self) -> None:
         self._context: AgentContext | None = None
@@ -197,22 +202,27 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
         if (
             context.action_protocol is None
             or context.action_protocol.protocol_id != "repository_action.v2"
-            or context.action_protocol.state_machine_id != "repository_action_state_machine_v3"
+            or context.action_protocol.state_machine_id != self.required_state_machine_id
         ):
             raise ValueError("Codex AgentEval requires the frozen repository action protocol")
         if (
             context.prompt_policy is None
-            or context.prompt_policy.id != "repository_action_v2_prompt_v6"
+            or context.prompt_policy.id != self.required_prompt_contract_id
         ):
             raise ValueError("Codex AgentEval prompt contract is not frozen")
         executable, capabilities = runtime_capabilities()
-        settings = agenteval_settings(
+        settings = self.settings_resolver(
             context.agent_options,
             capabilities,
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
         prompt = validate_prompt_text(
-            _agenteval_prompt(context, bridge, settings),
+            _agenteval_prompt(
+                context,
+                bridge,
+                settings,
+                instructions=self.prompt_instructions,
+            ),
             context.prompt_policy,
         )
         self._context = context
@@ -295,7 +305,13 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                 expected_model_id=settings.execution.model_id,
             )
 
-        identity = _identity(settings, capabilities, parsed, broker_stats)
+        identity = _identity(
+            settings,
+            capabilities,
+            parsed,
+            broker_stats,
+            adapter_descriptor=self.descriptor,
+        )
         accounting = _accounting(process, broker_stats, parsed)
         bridge.emit_event("codex_cli_identity_observed", identity.model_dump(mode="json"))
         bridge.record_accounting(accounting)
@@ -316,6 +332,8 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                 if scoring_failure is not None
                 else None
             ),
+            agent_version_id=settings.agent_version_id,
+            integration_track=settings.execution.integration_track,
         )
         if scoring_failure is not None:
             raise scoring_failure
@@ -361,30 +379,38 @@ def _agenteval_prompt(
     context: AgentContext,
     bridge: ExternalAgentBridge,
     settings: CodexAgentEvalSettings,
+    *,
+    instructions: tuple[str, ...] = AGENTEVAL_PROMPT_INSTRUCTIONS,
 ) -> str:
     contract = context.agent_feedback_contract
     assert contract is not None
-    instructions = list(AGENTEVAL_PROMPT_INSTRUCTIONS)
-    instructions.append(
+    resolved_instructions = list(instructions)
+    resolved_instructions.append(
         "apply_patch requires --- a/path and +++ b/path headers plus numbered @@ hunks; never "
         "use *** Update File syntax."
     )
-    instructions.append("Every successful patch invalidates prior compile, PPA, and diff evidence.")
-    instructions.append(
+    resolved_instructions.append(
+        "Every successful patch invalidates prior compile, PPA, and diff evidence."
+    )
+    resolved_instructions.append(
         "Use each repository-relative editable_globs value exactly as written; do not add or "
         "remove a repository/ prefix."
     )
     if contract.compile_test_id is not None:
-        instructions.append(
+        resolved_instructions.append(
             "Run compile for the current revision and require it to pass before finish."
         )
     if contract.ppa_enabled:
-        instructions.append(
+        resolved_instructions.append(
             "After compile passes for the current revision, call ppa at least once before finish."
         )
     payload: dict[str, Any] = {
         "schema_version": "1.0",
-        "agent_version_id": settings_version_id(),
+        "agent_version_id": getattr(
+            settings,
+            "agent_version_id",
+            AGENTEVAL_AGENT_VERSION_ID,
+        ),
         "task": {
             "id": context.task.id,
             "title": context.task.title,
@@ -407,7 +433,7 @@ def _agenteval_prompt(
             "max_exploratory_calls": settings.max_exploratory_calls,
         },
         "agent_feedback_contract": contract.model_dump(mode="json"),
-        "instructions": instructions,
+        "instructions": resolved_instructions,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -507,6 +533,8 @@ def _identity(
     capabilities: CapabilityReport,
     parsed: ParsedEventStream | None,
     broker: RepositoryToolBrokerStats,
+    *,
+    adapter_descriptor: AgentDescriptor | None = None,
 ) -> ExternalAgentCallIdentity:
     calls = broker.tool_calls
     complete_terminal = bool(
@@ -515,14 +543,15 @@ def _identity(
     observed_model_id = (
         parsed.observed_model_id if complete_terminal and parsed is not None else None
     )
+    descriptor = adapter_descriptor or CodexCliAgentEvalAdapter.descriptor
     return ExternalAgentCallIdentity(
-        adapter_name="codex-cli-agenteval-agent",
-        adapter_version="10.0.0",
-        harness_name="verigym-codex-agenteval-scoring",
-        requested_model_id="gpt-5.4",
+        adapter_name=descriptor.name,
+        adapter_version=descriptor.version,
+        harness_name=settings.execution.integration_track,
+        requested_model_id=settings.execution.model_id,
         observed_model_id=observed_model_id,
-        requested_reasoning_effort="xhigh",
-        effective_reasoning_effort="xhigh",
+        requested_reasoning_effort=settings.execution.requested_reasoning_effort,
+        effective_reasoning_effort=settings.execution.effective_reasoning_effort,
         reasoning_effort_source="verigym_explicit_cli_override",
         inherited_reasoning_effort_allowed=False,
         executable_name=capabilities.executable_name,
@@ -540,8 +569,8 @@ def _identity(
         tool_policy_fingerprint=settings.tool_policy_fingerprint,
         model_client_kind="cli_agent_mediated",
         agent_harness_kind="codex_cli",
-        tool_availability_policy="verigym_direct_allowlisted_mcp_broker_attested_v5",
-        tool_use_policy="repository_action_state_machine_v3",
+        tool_availability_policy=settings.execution.tool_availability_policy,
+        tool_use_policy=settings.execution.tool_use_policy,
         tool_event_count=calls,
         side_effecting_tool_event_count=0,
         read_only_tool_event_count=0,
@@ -604,6 +633,8 @@ def _write_scoring_evidence(
     parsed: ParsedEventStream | None,
     failure_category: str | None = None,
     failure_subcategory: str | None = None,
+    agent_version_id: str | None = None,
+    integration_track: str = "codex_cli_agenteval_scoring",
 ) -> None:
     atomic_json(root / "capabilities.json", capabilities.safe_dict())
     atomic_json(root / "invocation.json", invocation)
@@ -649,8 +680,8 @@ def _write_scoring_evidence(
         root / "summary.json",
         {
             "schema_version": "1.0",
-            "integration_track": "codex_cli_agenteval_scoring",
-            "agent_version_id": settings_version_id(),
+            "integration_track": integration_track,
+            "agent_version_id": agent_version_id or settings_version_id(),
             "training_mode": False,
             "training_transcript_captured": False,
             "raw_event_stream_persisted": False,
@@ -703,6 +734,17 @@ def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
         "terminal_path_category": _bounded_terminal_path_category(stats),
         "tool_call_sequence": list(stats.tool_call_sequence),
         "accepted_finish_call_index": stats.accepted_finish_call_index,
+        "public_validation_calls": stats.public_validation_calls,
+        "public_validation_passes": stats.public_validation_passes,
+        "public_validation_failures": stats.public_validation_failures,
+        "first_public_validation_passed": stats.first_public_validation_passed,
+        "repair_patches_after_public_validation_failure": (
+            stats.repair_patches_after_public_validation_failure
+        ),
+        "public_validation_rechecks_after_repair_patch": (
+            stats.public_validation_rechecks_after_repair_patch
+        ),
+        "public_validation_failed_then_passed": stats.public_validation_failed_then_passed,
     }
 
 

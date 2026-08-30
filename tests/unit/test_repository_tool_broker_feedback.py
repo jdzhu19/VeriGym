@@ -11,6 +11,7 @@ from verigym.core.repository_tool_broker import (
     RepositoryToolBroker,
     RepositoryToolBrokerLimits,
 )
+from verigym.schemas.agent_feedback import AgentFeedbackContract
 from verigym.schemas.common import ErrorCategory
 from verigym.schemas.tool import CompletedCommand, ToolResult
 
@@ -222,6 +223,56 @@ def test_commercial_feedback_worker_subcategory_reaches_broker_stats(tmp_path: P
 
     assert stats.infrastructure_failure_subcategory == "agent_worker_scheduler"
     assert "/" not in (stats.infrastructure_failure or "")
+
+
+def test_broker_records_public_validation_repair_without_content(tmp_path: Path) -> None:
+    bridge = _Bridge(
+        public_result=CompletedCommand(
+            argv=["verigym-public-test", "compile"],
+            cwd=".",
+            exit_code=1,
+        )
+    )
+    contract = AgentFeedbackContract(
+        task_id="fixture",
+        benchmark_variant="functional-v1",
+        compile_test_id="compile",
+        public_test_ids=["compile"],
+        compile_required_for_finish=True,
+        ppa_supported=False,
+        ppa_enabled=False,
+        configuration_fingerprint="a" * 64,
+    )
+    broker = RepositoryToolBroker(
+        bridge=bridge,  # type: ignore[arg-type]
+        socket_path=tmp_path / "broker" / "mcp.sock",
+        public_test_ids=("compile",),
+        agent_feedback_contract=contract,
+    )
+    patch = "--- a/rtl/a.sv\n+++ b/rtl/a.sv\n@@ -1 +1 @@\n-old\n+new\n"
+
+    broker._dispatch({"name": "apply_patch", "arguments": {"patch": patch}})  # noqa: SLF001
+    broker._dispatch(  # noqa: SLF001
+        {"name": "run_public_test", "arguments": {"test_id": "compile"}}
+    )
+    broker._dispatch({"name": "apply_patch", "arguments": {"patch": patch}})  # noqa: SLF001
+    bridge.public_result = CompletedCommand(
+        argv=["verigym-public-test", "compile"],
+        cwd=".",
+        exit_code=0,
+    )
+    broker._dispatch(  # noqa: SLF001
+        {"name": "run_public_test", "arguments": {"test_id": "compile"}}
+    )
+
+    stats = broker.stats()
+    assert stats.public_validation_calls == 2
+    assert stats.public_validation_passes == 1
+    assert stats.public_validation_failures == 1
+    assert stats.first_public_validation_passed is False
+    assert stats.repair_patches_after_public_validation_failure == 1
+    assert stats.public_validation_rechecks_after_repair_patch == 1
+    assert stats.public_validation_failed_then_passed is True
 
 
 def test_successful_broker_result_includes_current_minimal_state(tmp_path: Path) -> None:

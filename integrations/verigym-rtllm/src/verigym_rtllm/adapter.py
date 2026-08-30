@@ -45,6 +45,7 @@ from verigym.plugin_api import (
     VeriTask,
     WorkspaceSpec,
     compile_feedback_contract,
+    compile_smoke_feedback_contract,
     content_hash,
     materialize_agent_eval_workspace,
 )
@@ -54,6 +55,8 @@ SUITE_VERSION = "rtllm-41b2689-counter12-v1"
 UP_DOWN_SUITE_VERSION = "rtllm-41b2689-up-down-counter-v1"
 UP_DOWN_ICARUS_TRAINING_SUITE_VERSION = "rtllm-41b2689-up-down-counter-icarus-training-v1"
 AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-agent-eval-v1"
+FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-agent-eval-functional-v1"
+FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.4.0"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 TASK_ROOT = Path("Control/Counter/counter_12")
@@ -97,8 +100,20 @@ _UP_DOWN_EXPECTED_HASHES = {
 }
 _UP_DOWN_ICARUS_TRAINING_VARIANT = "up_down_counter_iverilog_training"
 _AGENT_EVAL_VARIANTS = frozenset({"counter_12_agent_eval_v1", "up_down_counter_agent_eval_v1"})
+_FUNCTIONAL_AGENT_EVAL_VARIANTS = frozenset(
+    {
+        "counter_12_agent_eval_functional_v1",
+        "up_down_counter_agent_eval_functional_v1",
+    }
+)
 _SUPPORTED_VARIANTS = frozenset(
-    {"counter_12", "up_down_counter", _UP_DOWN_ICARUS_TRAINING_VARIANT, *_AGENT_EVAL_VARIANTS}
+    {
+        "counter_12",
+        "up_down_counter",
+        _UP_DOWN_ICARUS_TRAINING_VARIANT,
+        *_AGENT_EVAL_VARIANTS,
+        *_FUNCTIONAL_AGENT_EVAL_VARIANTS,
+    }
 )
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
@@ -191,11 +206,14 @@ class RTLLMSuite(SuiteAdapter):
         base_variant = self._base_variant()
         up_down = base_variant == "up_down_counter"
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
-        agent_eval = variant in _AGENT_EVAL_VARIANTS
+        agent_eval = variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        functional_agent_eval = variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
         suite_version = (
-            AGENT_EVAL_SUITE_VERSION
+            FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
+            if functional_agent_eval
+            else AGENT_EVAL_SUITE_VERSION
             if agent_eval
             else UP_DOWN_ICARUS_TRAINING_SUITE_VERSION
             if icarus_training
@@ -363,10 +381,16 @@ class RTLLMSuite(SuiteAdapter):
                 "testbench_top": testbench_top,
                 "language": "verilog-2005",
                 "dataset_content_hash": snapshot.dataset_content_hash,
-                "adapter_version": ADAPTER_VERSION,
+                "adapter_version": (
+                    FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
+                    if functional_agent_eval
+                    else ADAPTER_VERSION
+                ),
                 "pinned_commit": PINNED_COMMIT,
                 "evaluation_profile": (
-                    "icarus12-agent-eval-v1"
+                    "icarus12-agent-eval-functional-v1"
+                    if functional_agent_eval
+                    else "icarus12-agent-eval-v1"
                     if agent_eval
                     else "icarus-training-long-context-v1"
                     if icarus_training
@@ -382,13 +406,25 @@ class RTLLMSuite(SuiteAdapter):
                             "compile_test_id": "compile",
                             "ppa_supported": True,
                             "public_test_contract_hash": content_hash(
-                                compile_feedback_contract(
+                                compile_smoke_feedback_contract(
+                                    source_paths=[f"rtl/{base_variant}.v"],
+                                    top_module=candidate_top,
+                                    language="2005",
+                                    public_testbench=self._public_smoke(base_variant),
+                                )
+                                if functional_agent_eval
+                                else compile_feedback_contract(
                                     source_paths=[f"rtl/{base_variant}.v"],
                                     top_module=candidate_top,
                                     language="2005",
                                 )
                             ),
                         },
+                        "public_feedback_semantics": (
+                            "compile_and_independent_functional_smoke_v1"
+                            if functional_agent_eval
+                            else "compile_only_v1"
+                        ),
                     }
                     if agent_eval
                     else {}
@@ -407,12 +443,26 @@ class RTLLMSuite(SuiteAdapter):
         if task.source.content_hash != snapshot.dataset_content_hash:
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
         testbench = _read_exact(root, (task_root / "testbench.v").as_posix())
-        if variant in _AGENT_EVAL_VARIANTS:
+        if variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS:
             base_workspace = self._up_down_workspace_root if up_down else self._workspace_root
-            public_contract = compile_feedback_contract(
-                source_paths=[f"rtl/{self._base_variant()}.v"],
-                top_module="up_down_counter" if up_down else "counter_12",
-                language="2005",
+            public_smoke = (
+                self._public_smoke(self._base_variant())
+                if variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+                else None
+            )
+            public_contract = (
+                compile_smoke_feedback_contract(
+                    source_paths=[f"rtl/{self._base_variant()}.v"],
+                    top_module="up_down_counter" if up_down else "counter_12",
+                    language="2005",
+                    public_testbench=public_smoke,
+                )
+                if public_smoke is not None
+                else compile_feedback_contract(
+                    source_paths=[f"rtl/{self._base_variant()}.v"],
+                    top_module="up_down_counter" if up_down else "counter_12",
+                    language="2005",
+                )
             )
             materialized = materialize_agent_eval_workspace(
                 task_description=task.description,
@@ -424,6 +474,9 @@ class RTLLMSuite(SuiteAdapter):
                 },
                 compile_contract=public_contract,
                 ppa_available=True,
+                public_asset_files=(
+                    {"assets/public-smoke.sv": public_smoke} if public_smoke is not None else None
+                ),
             )
             self._agent_workspaces.append(materialized)
             visible_root = str(materialized.visible_root)
@@ -520,7 +573,7 @@ class RTLLMSuite(SuiteAdapter):
             raise ConfigurationError("RTLLM reference module normalization is no longer exact")
         candidate_path = (
             f"repository/rtl/{base_variant}.v"
-            if variant in _AGENT_EVAL_VARIANTS
+            if variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
             else f"rtl/{base_variant}.v"
         )
         return Candidate(
@@ -568,8 +621,9 @@ class RTLLMSuite(SuiteAdapter):
         return self._snapshot().model_copy(deep=True)
 
     def toolchain_profile(self, runtime: Runtime, tools: Any) -> ToolchainProfile | None:
+        agent_eval_variants = _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT or self._variant() in (
-            _AGENT_EVAL_VARIANTS
+            agent_eval_variants
         ):
             image = runtime.descriptor.image
             if image is None:
@@ -584,24 +638,24 @@ class RTLLMSuite(SuiteAdapter):
                 compiler_version = image.iverilog_version
                 runner_version = image.vvp_version
                 compatibility = image.compatibility_status or "unverified_tool_version"
-            if self._variant() in _AGENT_EVAL_VARIANTS and not all(
+            if self._variant() in agent_eval_variants and not all(
                 _is_icarus12_version(version) for version in (compiler_version, runner_version)
             ):
                 raise ConfigurationError(
                     "RTLLM AgentEval requires qualified Icarus and vvp major version 12"
                 )
-            if self._variant() in _AGENT_EVAL_VARIANTS:
+            if self._variant() in agent_eval_variants:
                 compatibility = "reference_compatible"
             return ToolchainProfile(
                 id=(
                     "rtllm-icarus12-agent-eval-v1"
-                    if self._variant() in _AGENT_EVAL_VARIANTS
+                    if self._variant() in agent_eval_variants
                     else "rtllm-icarus-training-v1"
                 ),
                 version="1.0.0",
                 description=(
                     "Pinned Icarus functional verifier for an RTLLM AgentEval partition."
-                    if self._variant() in _AGENT_EVAL_VARIANTS
+                    if self._variant() in agent_eval_variants
                     else "Pinned Icarus training verifier for RTLLM sampling; scores are not "
                     "VCS benchmark results."
                 ),
@@ -656,9 +710,20 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if variant == _UP_DOWN_ICARUS_TRAINING_VARIANT:
             return "up_down_counter"
+        if variant.endswith("_agent_eval_functional_v1"):
+            return variant.removesuffix("_agent_eval_functional_v1")
         if variant.endswith("_agent_eval_v1"):
             return variant.removesuffix("_agent_eval_v1")
         return variant
+
+    @staticmethod
+    def _public_smoke(base_variant: str) -> str:
+        if base_variant not in {"counter_12", "up_down_counter"}:
+            raise ConfigurationError("RTLLM functional AgentEval public smoke is not declared")
+        path = Path(__file__).parent / "assets" / "public_smoke" / f"{base_variant}.sv"
+        if path.is_symlink() or not path.is_file():
+            raise ConfigurationError("RTLLM public smoke asset is unavailable")
+        return path.read_text(encoding="utf-8")
 
     def _source_root(self) -> Path:
         if self._config is None:

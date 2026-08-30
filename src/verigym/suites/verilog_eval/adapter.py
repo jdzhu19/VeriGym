@@ -9,6 +9,7 @@ from typing import Any
 from verigym.core.agent_feedback_assets import (
     AgentEvalWorkspace,
     compile_feedback_contract,
+    compile_smoke_feedback_contract,
     materialize_agent_eval_workspace,
 )
 from verigym.core.errors import ConfigurationError
@@ -59,6 +60,22 @@ from verigym.suites.verilog_eval.toolchain import detect_icarus
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "v2-spec-to-rtl-compat-1"
 AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
+FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v1"
+FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.2.0"
+_FUNCTIONAL_SMOKE_TASKS = frozenset(
+    {
+        "Prob038_count15",
+        "Prob067_countslow",
+        "Prob096_review2015_fsmseq",
+        "Prob100_fsm3comb",
+        "Prob107_fsm1s",
+        "Prob118_history_shift",
+        "Prob124_rule110",
+        "Prob128_fsm_ps2",
+        "Prob137_fsm_serial",
+        "Prob150_review2015_fsmonehot",
+    }
+)
 
 
 class VerilogEvalSuite(SuiteAdapter):
@@ -96,13 +113,22 @@ class VerilogEvalSuite(SuiteAdapter):
     def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
         adapter = self._adapter_for_optional_root(source_root)
         catalog = adapter._valid_catalog()
+        problems = (
+            [
+                problem
+                for problem in catalog.problems
+                if problem.native_id in _FUNCTIONAL_SMOKE_TASKS
+            ]
+            if adapter._is_functional_agent_eval()
+            else catalog.problems
+        )
         return [
             TaskRef(
                 id=f"verilog-eval/{catalog.layout.variant.value}/{problem.native_id}",
                 suite="verilog-eval",
                 native_id=problem.native_id,
             )
-            for problem in catalog.problems
+            for problem in problems
         ]
 
     def load_task(self, ref: TaskRef) -> VeriTask:
@@ -113,6 +139,10 @@ class VerilogEvalSuite(SuiteAdapter):
         )
         if problem is None:
             raise ConfigurationError(f"unknown VerilogEval task: {ref.native_id}")
+        if self._is_functional_agent_eval() and problem.native_id not in _FUNCTIONAL_SMOKE_TASKS:
+            raise ConfigurationError(
+                f"VerilogEval functional AgentEval has no frozen public smoke for {ref.native_id}"
+            )
         snapshot = self._snapshot(catalog)
         return self._normalize_task(problem, snapshot)
 
@@ -142,10 +172,20 @@ class VerilogEvalSuite(SuiteAdapter):
                 "VerilogEval source task content differs from the frozen task snapshot"
             )
         if self._is_agent_eval():
-            contract = compile_feedback_contract(
-                source_paths=["rtl/TopModule.sv"],
-                top_module="TopModule",
-                language="2012",
+            public_smoke = self._public_smoke(problem.native_id)
+            contract = (
+                compile_smoke_feedback_contract(
+                    source_paths=["rtl/TopModule.sv"],
+                    top_module="TopModule",
+                    language="2012",
+                    public_testbench=public_smoke,
+                )
+                if public_smoke is not None
+                else compile_feedback_contract(
+                    source_paths=["rtl/TopModule.sv"],
+                    top_module="TopModule",
+                    language="2012",
+                )
             )
             materialized = materialize_agent_eval_workspace(
                 task_description=task.description,
@@ -157,6 +197,9 @@ class VerilogEvalSuite(SuiteAdapter):
                 },
                 compile_contract=contract,
                 ppa_available=False,
+                public_asset_files=(
+                    {"assets/public-smoke.sv": public_smoke} if public_smoke is not None else None
+                ),
             )
             self._agent_workspaces.append(materialized)
             visible_root = str(materialized.visible_root)
@@ -349,13 +392,36 @@ class VerilogEvalSuite(SuiteAdapter):
         snapshot: SuiteSourceSnapshot,
     ) -> VeriTask:
         variant = snapshot.variant
-        agent_eval = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value
+        agent_eval = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+        }
+        functional_agent_eval = (
+            variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value
+        )
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
         candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
-        compile_contract = compile_feedback_contract(
-            source_paths=["rtl/TopModule.sv"],
-            top_module="TopModule",
-            language="2012",
+        public_smoke = self._public_smoke(problem.native_id) if functional_agent_eval else None
+        compile_contract = (
+            compile_smoke_feedback_contract(
+                source_paths=["rtl/TopModule.sv"],
+                top_module="TopModule",
+                language="2012",
+                public_testbench=public_smoke,
+            )
+            if public_smoke is not None
+            else compile_feedback_contract(
+                source_paths=["rtl/TopModule.sv"],
+                top_module="TopModule",
+                language="2012",
+            )
+        )
+        suite_version = (
+            FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
+            if functional_agent_eval
+            else AGENT_EVAL_SUITE_VERSION
+            if agent_eval
+            else SUITE_VERSION
         )
         hidden_assets = [
             AssetRef(
@@ -372,14 +438,14 @@ class VerilogEvalSuite(SuiteAdapter):
         return VeriTask(
             id=task_id,
             suite="verilog-eval",
-            suite_version=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
+            suite_version=suite_version,
             task_type=TaskType.GENERATION,
             title=f"VerilogEval V2 {problem.native_id}",
             description=problem.prompt,
             source=SourceSpec(
                 kind="synthetic" if snapshot.synthetic_fixture else "benchmark",
                 uri=f"verilog-eval://{variant}/{problem.native_id}",
-                revision=AGENT_EVAL_SUITE_VERSION if agent_eval else SUITE_VERSION,
+                revision=suite_version,
                 commit=snapshot.git_commit,
                 license=snapshot.license_id,
                 attribution=(
@@ -484,8 +550,19 @@ class VerilogEvalSuite(SuiteAdapter):
                 "language": "systemverilog",
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "task_content_hash": problem.content_hash,
-                "adapter_version": ADAPTER_VERSION,
+                "adapter_version": (
+                    FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
+                    if functional_agent_eval
+                    else ADAPTER_VERSION
+                ),
                 "synthetic_fixture": snapshot.synthetic_fixture,
+                "public_feedback_semantics": (
+                    "compile_and_independent_functional_smoke_v1"
+                    if functional_agent_eval
+                    else "compile_only_v1"
+                    if agent_eval
+                    else None
+                ),
                 **(
                     {
                         "agent_eval": {
@@ -504,8 +581,31 @@ class VerilogEvalSuite(SuiteAdapter):
     def _is_agent_eval(self) -> bool:
         return bool(
             self._config is not None
-            and self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value
+            and self._config.variant
+            in {
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+            }
         )
+
+    def _is_functional_agent_eval(self) -> bool:
+        return bool(
+            self._config is not None
+            and self._config.variant
+            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value
+        )
+
+    def _public_smoke(self, native_id: str) -> str | None:
+        if not self._is_functional_agent_eval():
+            return None
+        if native_id not in _FUNCTIONAL_SMOKE_TASKS:
+            raise ConfigurationError(
+                f"VerilogEval functional AgentEval has no frozen public smoke for {native_id}"
+            )
+        path = Path(__file__).parent / "assets" / "public_smoke" / f"{native_id}.sv"
+        if path.is_symlink() or not path.is_file():
+            raise ConfigurationError("VerilogEval public smoke asset is unavailable")
+        return path.read_text(encoding="utf-8")
 
 
 __all__ = ["ADAPTER_VERSION", "SUITE_VERSION", "VerilogEvalSuite"]

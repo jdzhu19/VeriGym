@@ -13,6 +13,7 @@ from .auth import (
     ResolvedAuthMode,
     resolve_auth_mode,
 )
+from .functional_agenteval_agent import CodexCliFunctionalAgentEvalAdapter
 from .preflight import AuthPreflightResult, run_auth_preflight
 from .readonly_agent import CodexCliReadonlyAgentAdapter
 from .teacher_agent import CodexCliMcpTeacherAdapter
@@ -26,6 +27,7 @@ __all__ = [
     "AuthSemanticId",
     "CodexCliAgentAdapter",
     "CodexCliAgentEvalAdapter",
+    "CodexCliFunctionalAgentEvalAdapter",
     "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",

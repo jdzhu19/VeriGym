@@ -75,12 +75,78 @@ def compile_feedback_contract(
     }
 
 
+def compile_smoke_feedback_contract(
+    *,
+    source_paths: list[str],
+    top_module: str,
+    language: str,
+    public_testbench: str,
+    testbench_top: str = "public_smoke",
+) -> dict[str, object]:
+    """Build a deterministic compile plus public functional-smoke contract."""
+
+    contract = compile_feedback_contract(
+        source_paths=source_paths,
+        top_module=top_module,
+        language=language,
+    )
+    if not public_testbench.strip():
+        raise ValueError("agent public smoke testbench cannot be empty")
+    if not testbench_top or any(
+        not (character.isalnum() or character == "_") for character in testbench_top
+    ):
+        raise ValueError("agent public smoke testbench top module is invalid")
+    notice = b"VeriGym AgentEval public compile and functional smoke interface.\n"
+    testbench = public_testbench.rstrip().encode("utf-8") + b"\n"
+    files = {
+        "assets/NOTICE": notice,
+        "assets/public-smoke.sv": testbench,
+    }
+    contract.update(
+        {
+            "public_assets_hash": _public_asset_hash(files),
+            "asset_files": {path: hash_bytes(data) for path, data in sorted(files.items())},
+            "tests": [
+                {
+                    "id": "compile",
+                    "title": "Public compile and bounded functional smoke simulation",
+                    "commands": [
+                        {
+                            "argv": [
+                                "iverilog",
+                                f"-g{language}",
+                                "-s",
+                                testbench_top,
+                                "-o",
+                                "{build}/public-smoke",
+                                *(f"{{repository}}/{path}" for path in source_paths),
+                                "{public}/assets/public-smoke.sv",
+                            ],
+                            "cwd": "repository",
+                            "timeout_s": 30,
+                            "expected_exit_code": 0,
+                        },
+                        {
+                            "argv": ["vvp", "{build}/public-smoke"],
+                            "cwd": "repository",
+                            "timeout_s": 30,
+                            "expected_exit_code": 0,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    return contract
+
+
 def materialize_agent_eval_workspace(
     *,
     task_description: str,
     repository_files: dict[str, str],
     compile_contract: dict[str, object] | None,
     ppa_available: bool,
+    public_asset_files: dict[str, str] | None = None,
 ) -> AgentEvalWorkspace:
     """Create one retained temporary projection with no verifier-only material."""
 
@@ -104,7 +170,13 @@ def materialize_agent_eval_workspace(
                 "",
                 *(f"- `{test_id}`" for test_id in public_ids),
                 "",
-                "`compile` is public syntax/elaboration only and contains no hidden testbench.",
+                (
+                    "`compile` runs the task-declared public validation contract. It contains "
+                    "no hidden testbench."
+                    if public_asset_files
+                    else "`compile` is public syntax/elaboration only and contains no hidden "
+                    "testbench."
+                ),
             ]
         )
     else:
@@ -121,11 +193,26 @@ def materialize_agent_eval_workspace(
     if compile_contract is None:
         return AgentEvalWorkspace(temporary, visible, None, None)
     public = root / "public"
-    (public / "assets").mkdir(parents=True)
-    (public / "assets" / "NOTICE").write_text(
-        "VeriGym AgentEval public compile interface. No hidden testbench is present.\n",
-        encoding="utf-8",
-    )
+    files = {
+        "assets/NOTICE": (
+            "VeriGym AgentEval public compile and functional smoke interface.\n"
+            if public_asset_files
+            else "VeriGym AgentEval public compile interface. No hidden testbench is present.\n"
+        ),
+        **(public_asset_files or {}),
+    }
+    declared = compile_contract.get("asset_files")
+    observed = {
+        path: hash_bytes(text.rstrip().encode("utf-8") + b"\n")
+        for path, text in sorted(files.items())
+    }
+    if declared != observed:
+        raise ValueError("AgentEval public assets differ from the frozen compile contract")
+    for raw_path, text in sorted(files.items()):
+        relative = _safe_repository_path(raw_path)
+        destination = public / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text.rstrip() + "\n", encoding="utf-8")
     (public / "test-contract.json").write_text(
         json.dumps(compile_contract, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -171,5 +258,6 @@ def _public_asset_hash(files: dict[str, bytes]) -> str:
 __all__ = [
     "AgentEvalWorkspace",
     "compile_feedback_contract",
+    "compile_smoke_feedback_contract",
     "materialize_agent_eval_workspace",
 ]

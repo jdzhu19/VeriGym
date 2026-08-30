@@ -331,6 +331,21 @@ def test_v6_prompt_contract_adds_broker_enforced_finalization_guard() -> None:
     assert any("broker-advertised next actions" in rule for rule in contract["rules"])
 
 
+def test_v7_prompt_contract_adds_functional_repair_loop() -> None:
+    spec = RepositoryActionProtocolSpec(
+        prompt_contract_id="repository_action_v2_prompt_v7",
+        state_machine_id="repository_action_state_machine_v3",
+    )
+    contract = prompt_contract(
+        "repository_action_state_machine_v3",
+        prompt_contract_id=spec.prompt_contract_id,
+    )
+
+    assert contract["prompt_contract_id"] == "repository_action_v2_prompt_v7"
+    assert any("functional smoke" in rule for rule in contract["rules"])
+    assert any("repair the current candidate" in rule for rule in contract["rules"])
+
+
 @pytest.mark.parametrize("case", range(5))
 def test_five_historical_v1_shapes_counterfactually_reject_multiple_actions(case: int) -> None:
     del case

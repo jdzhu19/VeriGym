@@ -208,11 +208,42 @@ class CodexAgentEvalSettings:
     finalization_reserve_s: int
 
 
+@dataclass(frozen=True)
+class AgentEvalSettingsProfile:
+    """Frozen identity inputs for one independently registered AgentEval adapter."""
+
+    model_id: str
+    reasoning_effort: str
+    cli_version: str
+    executable_sha256: str
+    prompt_contract_id: str
+    prompt_hash: str
+    tool_policy_fingerprint: str
+    agent_version_id: str
+    agent_version_hash: str
+    integration_track: str = "codex_cli_agenteval_scoring"
+    tool_availability_policy: str = "verigym_direct_allowlisted_mcp_broker_attested_v5"
+
+
+_DEFAULT_PROFILE = AgentEvalSettingsProfile(
+    model_id=_EXPECTED_MODEL,
+    reasoning_effort=_EXPECTED_REASONING,
+    cli_version=_EXPECTED_CLI_VERSION,
+    executable_sha256=_EXPECTED_EXECUTABLE_SHA256,
+    prompt_contract_id=_PROMPT_CONTRACT_ID,
+    prompt_hash=AGENTEVAL_PROMPT_HASH,
+    tool_policy_fingerprint=AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+    agent_version_id=AGENTEVAL_AGENT_VERSION_ID,
+    agent_version_hash=AGENTEVAL_AGENT_VERSION_HASH,
+)
+
+
 def agenteval_settings(
     options: Mapping[str, JsonValue],
     capabilities: CapabilityReport,
     *,
     task_wall_time_s: int,
+    profile: AgentEvalSettingsProfile = _DEFAULT_PROFILE,
 ) -> CodexAgentEvalSettings:
     """Resolve the exact scoring identity without accepting training controls."""
 
@@ -220,26 +251,26 @@ def agenteval_settings(
     if unknown:
         raise ValueError("unsupported Codex AgentEval options: " + ", ".join(unknown))
     required = {
-        "model_id": _EXPECTED_MODEL,
-        "reasoning_effort": _EXPECTED_REASONING,
-        "expected_cli_version": _EXPECTED_CLI_VERSION,
-        "expected_cli_executable_sha256": _EXPECTED_EXECUTABLE_SHA256,
+        "model_id": profile.model_id,
+        "reasoning_effort": profile.reasoning_effort,
+        "expected_cli_version": profile.cli_version,
+        "expected_cli_executable_sha256": profile.executable_sha256,
         "expected_capability_fingerprint": capabilities.capability_fingerprint,
-        "expected_prompt_hash": AGENTEVAL_PROMPT_HASH,
-        "expected_tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
-        "scoring_agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
-        "scoring_agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
+        "expected_prompt_hash": profile.prompt_hash,
+        "expected_tool_policy_fingerprint": profile.tool_policy_fingerprint,
+        "scoring_agent_version_id": profile.agent_version_id,
+        "scoring_agent_version_hash": profile.agent_version_hash,
     }
     for name, expected in required.items():
         if options.get(name) != expected:
             raise ValueError(f"Codex AgentEval requires exact {name}")
-    if capabilities.version_output != _EXPECTED_CLI_VERSION:
-        raise ValueError("Codex AgentEval requires Codex CLI 0.147.0")
-    if capabilities.executable_sha256 != _EXPECTED_EXECUTABLE_SHA256:
+    if capabilities.version_output != profile.cli_version:
+        raise ValueError("Codex AgentEval CLI version differs from the frozen identity")
+    if capabilities.executable_sha256 != profile.executable_sha256:
         raise ValueError("Codex AgentEval executable hash differs from the frozen identity")
     prompt_contract = options.get("prompt_contract_id")
-    if prompt_contract not in {None, _PROMPT_CONTRACT_ID}:
-        raise ValueError("Codex AgentEval prompt contract differs from AgentEval v10")
+    if prompt_contract not in {None, profile.prompt_contract_id}:
+        raise ValueError("Codex AgentEval prompt contract differs from the frozen profile")
     for name in (
         "expected_requested_auth_mode",
         "expected_resolved_auth_mode",
@@ -251,16 +282,18 @@ def agenteval_settings(
         {name: options[name] for name in _PASSTHROUGH if name in options},
         capabilities,
         task_wall_time_s=task_wall_time_s,
+        allowed_reasoning_efforts=frozenset({profile.reasoning_effort}),
+        reasoning_integration="AgentEval frozen profile",
     )
     fingerprint = stable_hash(
         {
             "base_configuration_fingerprint": base.configuration_fingerprint,
-            "integration_track": "codex_cli_agenteval_scoring",
-            "prompt_contract_id": _PROMPT_CONTRACT_ID,
-            "agent_version_id": AGENTEVAL_AGENT_VERSION_ID,
-            "agent_version_hash": AGENTEVAL_AGENT_VERSION_HASH,
-            "prompt_hash": AGENTEVAL_PROMPT_HASH,
-            "tool_policy_fingerprint": AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+            "integration_track": profile.integration_track,
+            "prompt_contract_id": profile.prompt_contract_id,
+            "agent_version_id": profile.agent_version_id,
+            "agent_version_hash": profile.agent_version_hash,
+            "prompt_hash": profile.prompt_hash,
+            "tool_policy_fingerprint": profile.tool_policy_fingerprint,
             "capability_fingerprint": capabilities.capability_fingerprint,
             "broker_limits": _BROKER_LIMITS,
             "max_exploratory_calls": _MAX_EXPLORATORY_CALLS,
@@ -270,18 +303,18 @@ def agenteval_settings(
     )
     execution = replace(
         base,
-        integration_track="codex_cli_agenteval_scoring",
-        prompt_contract_id=_PROMPT_CONTRACT_ID,
-        tool_availability_policy="verigym_direct_allowlisted_mcp_broker_attested_v5",
+        integration_track=profile.integration_track,
+        prompt_contract_id=profile.prompt_contract_id,
+        tool_availability_policy=profile.tool_availability_policy,
         tool_use_policy="repository_action_state_machine_v3",
         configuration_fingerprint=fingerprint,
     )
     return CodexAgentEvalSettings(
         execution=execution,
-        agent_version_id=AGENTEVAL_AGENT_VERSION_ID,
-        agent_version_hash=AGENTEVAL_AGENT_VERSION_HASH,
-        prompt_hash=AGENTEVAL_PROMPT_HASH,
-        tool_policy_fingerprint=AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+        agent_version_id=profile.agent_version_id,
+        agent_version_hash=profile.agent_version_hash,
+        prompt_hash=profile.prompt_hash,
+        tool_policy_fingerprint=profile.tool_policy_fingerprint,
         capability_fingerprint=capabilities.capability_fingerprint,
         max_tool_calls=_BROKER_LIMITS[0],
         max_patch_calls=_BROKER_LIMITS[1],
@@ -297,6 +330,7 @@ __all__ = [
     "AGENTEVAL_PROMPT_HASH",
     "AGENTEVAL_PROMPT_INSTRUCTIONS",
     "AGENTEVAL_TOOL_POLICY_FINGERPRINT",
+    "AgentEvalSettingsProfile",
     "CodexAgentEvalSettings",
     "agenteval_settings",
 ]

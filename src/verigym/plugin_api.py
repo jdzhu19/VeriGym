@@ -5,6 +5,7 @@ from verigym.agents.external import ExternalAgentBridge
 from verigym.core.agent_feedback_assets import (
     AgentEvalWorkspace,
     compile_feedback_contract,
+    compile_smoke_feedback_contract,
     materialize_agent_eval_workspace,
 )
 from verigym.core.episode import TerminationReason
@@ -218,6 +219,7 @@ __all__ = [
     "build_external_process_request",
     "content_hash",
     "compile_feedback_contract",
+    "compile_smoke_feedback_contract",
     "copy_tree_safely",
     "hash_bytes",
     "hash_directory",

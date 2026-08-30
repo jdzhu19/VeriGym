@@ -40,7 +40,8 @@
         "repository_action_v2_prompt_v3",
         "repository_action_v2_prompt_v4",
         "repository_action_v2_prompt_v5",
-        "repository_action_v2_prompt_v6"
+        "repository_action_v2_prompt_v6",
+        "repository_action_v2_prompt_v7"
       ],
       "title": "Prompt Contract Id",
       "type": "string"

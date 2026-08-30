@@ -99,6 +99,13 @@ class RepositoryToolBrokerStats:
     terminal_path_category: str | None = None
     tool_call_sequence: tuple[str, ...] = ()
     accepted_finish_call_index: int | None = None
+    public_validation_calls: int = 0
+    public_validation_passes: int = 0
+    public_validation_failures: int = 0
+    first_public_validation_passed: bool | None = None
+    repair_patches_after_public_validation_failure: int = 0
+    public_validation_rechecks_after_repair_patch: int = 0
+    public_validation_failed_then_passed: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,6 +196,15 @@ class RepositoryToolBroker:
         self._tool_calls = 0
         self._tool_call_sequence: list[str] = []
         self._public_test_calls = 0
+        self._public_validation_calls = 0
+        self._public_validation_passes = 0
+        self._public_validation_failures = 0
+        self._first_public_validation_passed: bool | None = None
+        self._current_revision_public_validation_failed = False
+        self._repair_patch_pending_public_validation = False
+        self._repair_patches_after_public_validation_failure = 0
+        self._public_validation_rechecks_after_repair_patch = 0
+        self._public_validation_failed_then_passed = False
         self._file_reads = 0
         self._exploratory_calls = 0
         self._exploration_guard_calls = 0
@@ -302,6 +318,17 @@ class RepositoryToolBroker:
                 terminal_path_category=self._terminal_path_category,
                 tool_call_sequence=tuple(self._tool_call_sequence),
                 accepted_finish_call_index=self._accepted_finish_call_index,
+                public_validation_calls=self._public_validation_calls,
+                public_validation_passes=self._public_validation_passes,
+                public_validation_failures=self._public_validation_failures,
+                first_public_validation_passed=self._first_public_validation_passed,
+                repair_patches_after_public_validation_failure=(
+                    self._repair_patches_after_public_validation_failure
+                ),
+                public_validation_rechecks_after_repair_patch=(
+                    self._public_validation_rechecks_after_repair_patch
+                ),
+                public_validation_failed_then_passed=(self._public_validation_failed_then_passed),
             )
 
     @property
@@ -673,6 +700,10 @@ class RepositoryToolBroker:
         elif result.success:
             with self._lock:
                 if name == "apply_patch":
+                    if self._current_revision_public_validation_failed:
+                        self._repair_patches_after_public_validation_failure += 1
+                        self._repair_patch_pending_public_validation = True
+                        self._current_revision_public_validation_failed = False
                     self._patch_applied = True
                     if self._feedback_contract is not None:
                         self._public_observed = False
@@ -755,7 +786,22 @@ class RepositoryToolBroker:
                 self._feedback_contract is not None
                 and test_id == self._feedback_contract.compile_test_id
             ):
-                self._compile_passed = completed.exit_code == 0
+                passed = completed.exit_code == 0
+                infrastructure = completed.failure_origin == "control_plane"
+                self._compile_passed = passed
+                self._public_validation_calls += 1
+                if self._first_public_validation_passed is None:
+                    self._first_public_validation_passed = passed
+                if passed:
+                    self._public_validation_passes += 1
+                elif not infrastructure:
+                    self._public_validation_failures += 1
+                    self._current_revision_public_validation_failed = True
+                if self._repair_patch_pending_public_validation:
+                    self._public_validation_rechecks_after_repair_patch += 1
+                    if passed:
+                        self._public_validation_failed_then_passed = True
+                    self._repair_patch_pending_public_validation = False
         return self._payload_result(name, payload, is_error=is_error)
 
     def _payload_result(

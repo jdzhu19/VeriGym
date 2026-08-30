@@ -320,6 +320,7 @@ def prompt_contract(
                 "repository_action_v2_prompt_v4",
                 "repository_action_v2_prompt_v5",
                 "repository_action_v2_prompt_v6",
+                "repository_action_v2_prompt_v7",
             }
         )
     if selected_prompt_contract_id not in compatible_prompt_contracts:
@@ -406,6 +407,20 @@ def prompt_contract(
                 "When finalization is required, use only broker-advertised next actions.",
             ]
         )
+    if selected_prompt_contract_id == "repository_action_v2_prompt_v7":
+        contract["rules"].extend(
+            [
+                "Treat compile as the frozen public validation gate for this task; it may include "
+                "a bounded functional smoke simulation.",
+                "If public validation fails, repair the current candidate and rerun validation "
+                "before PPA, diff finalization, or finish.",
+                "Use repository-relative editable paths exactly as supplied by the task.",
+                "Track broker-reported elapsed and remaining wall time without relying on an "
+                "absolute deadline.",
+                "Treat tool-call, patch-call, and exploratory-call limits as hard episode budgets.",
+                "Do not end with assistant text before the typed finish action.",
+            ]
+        )
     return contract
 
 
@@ -442,6 +457,7 @@ def resolve_repository_action_protocol(
             "repository_action_v2_prompt_v4",
             "repository_action_v2_prompt_v5",
             "repository_action_v2_prompt_v6",
+            "repository_action_v2_prompt_v7",
         }
         else default_prompt_contract_id
     )
