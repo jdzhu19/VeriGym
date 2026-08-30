@@ -11,6 +11,7 @@ from verigym.core.errors import ConfigurationError, MissingDependencyError, Path
 from verigym.core.hashing import hash_directory
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.registry.collections import build_registries
+from verigym.runtimes.docker import runtime as docker_runtime_module
 from verigym.runtimes.docker.engine import EngineResult
 from verigym.runtimes.docker.mounts import MountSpec
 from verigym.runtimes.docker.runtime import DockerRuntime
@@ -152,11 +153,62 @@ class RecordingDockerEngine:
                 "State": {"Status": "created", "OOMKilled": False, "ExitCode": 0},
             },
             "command": command,
+            "image": arguments[image_index],
         }
         return container_id
 
     def inspect_container(self, container_id: str) -> dict[str, Any]:
         return self.containers[container_id]["payload"]
+
+    def start_container(self, container_id: str) -> EngineResult:
+        self.containers[container_id]["payload"]["State"].update({"Status": "running"})
+        return _engine_success()
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult:
+        container = self.containers[container_id]
+        execution = container.get("execution")
+        if execution is None:
+            execution = self.start_attach(
+                container_id,
+                timeout_s=timeout_s,
+                max_output_bytes=1024 * 1024,
+            )
+            container["execution"] = execution
+        state = container["payload"]["State"]
+        if execution.timed_out and state.get("Status") == "running":
+            return EngineResult(
+                argv=["docker", "wait", container_id],
+                exit_code=-9,
+                stdout="",
+                stderr="",
+                duration_s=0.01,
+                timed_out=True,
+            )
+        return EngineResult(
+            argv=["docker", "wait", container_id],
+            exit_code=0,
+            stdout=f"{state['ExitCode']}\n",
+            stderr="",
+            duration_s=0.01,
+        )
+
+    def logs_container(self, container_id: str, *, max_output_bytes: int) -> EngineResult:
+        execution = self.containers[container_id]["execution"]
+        stdout_bytes = execution.stdout.encode()
+        stderr_bytes = execution.stderr.encode()
+        truncated = (
+            execution.output_truncated
+            or len(stdout_bytes) > max_output_bytes
+            or len(stderr_bytes) > max_output_bytes
+        )
+        return EngineResult(
+            argv=["docker", "logs", container_id],
+            exit_code=0,
+            stdout=stdout_bytes[:max_output_bytes].decode(),
+            stderr=stderr_bytes[:max_output_bytes].decode(),
+            duration_s=0.01,
+            output_truncated=truncated,
+        )
 
     def start_attach(
         self, container_id: str, *, timeout_s: int, max_output_bytes: int
@@ -168,7 +220,36 @@ class RecordingDockerEngine:
         exit_code = 0
         timed_out = False
         truncated = False
-        if command and command[0] in self.missing_commands:
+        if command[:2] == ["sh", "-c"] and "__VERIGYM_IMAGE_PROBE_V1__" in command[2]:
+            marker = "__VERIGYM_IMAGE_PROBE_V1__"
+            if "binary_sha256" in command[2]:
+                stdout = (
+                    f"{marker}:uid\n10001\n"
+                    f"{marker}:gid\n10001\n"
+                    f"{marker}:version\ncodex-cli 0.144.6\n"
+                    f"{marker}:binary_sha256\n"
+                    f"{CODEX_SHA256}  ../usr/local/bin/codex\n"
+                )
+                if command[6] == "1":
+                    stdout += (
+                        f"{marker}:iverilog\n"
+                        "Icarus Verilog version 12.0 (stable) (v12_0)\n"
+                        f"{marker}:vvp\n"
+                        "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                        f"{marker}:launcher_sha256\n"
+                        f"{LAUNCHER_SHA256}  ../usr/local/bin/verigym-public-test\n"
+                    )
+            else:
+                stdout = (
+                    f"{marker}:uid\n10001\n"
+                    f"{marker}:gid\n10001\n"
+                    f"{marker}:iverilog\n"
+                    "Icarus Verilog version 12.0 (stable) (v12_0)\n"
+                    f"{marker}:vvp\n"
+                    "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                )
+            state.update({"Status": "exited", "ExitCode": 0})
+        elif command and command[0] in self.missing_commands:
             stderr = f"{command[0]}: not found\n"
             exit_code = 127
             state.update({"Status": "exited", "ExitCode": 127})
@@ -475,6 +556,47 @@ def test_repository_public_test_uses_separate_read_only_mount_and_agent_image(
     assert engine.list_managed_containers() == []
     assert runtime.descriptor.cleanup is not None
     assert runtime.descriptor.cleanup.complete
+
+
+def test_fresh_image_identity_uses_one_combined_container_per_role() -> None:
+    docker_runtime_module._IMAGE_OBSERVATION_CACHE.clear()
+    engine = RecordingDockerEngine()
+    engine.image_labels = {
+        "org.verigym.runtime.role": "repository-agent",
+        "org.verigym.codex.version": "0.144.6",
+        "org.verigym.codex.binary.sha256": CODEX_SHA256,
+        "org.verigym.public_test_launcher.sha256": LAUNCHER_SHA256,
+    }
+    runtime = _prepared_runtime(
+        engine,
+        external_agent=DockerExternalAgentRuntimeConfig(
+            image="example:repository-agent",
+            expected_image_id=AGENT_IMAGE_ID,
+            expected_executable_name="codex",
+            expected_executable_path="/usr/local/bin/codex",
+            expected_executable_version="codex-cli 0.144.6",
+            expected_executable_sha256=CODEX_SHA256,
+            process_argv=["/usr/local/bin/codex", "exec-server", "--listen", "stdio://"],
+            protocol="codex_app_server_remote_environment_v1",
+            required_image_labels=engine.image_labels,
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+        ),
+    )
+    try:
+        assert len(engine.create_arguments) == 2
+        verifier_command = engine.create_arguments[0][
+            engine.create_arguments[0].index(IMAGE_ID) + 1 :
+        ]
+        agent_command = engine.create_arguments[1][
+            engine.create_arguments[1].index(AGENT_IMAGE_ID) + 1 :
+        ]
+        assert verifier_command[:2] == ["sh", "-c"]
+        assert agent_command[:2] == ["sh", "-c"]
+        assert "__VERIGYM_IMAGE_PROBE_V1__" in verifier_command[2]
+        assert "__VERIGYM_IMAGE_PROBE_V1__" in agent_command[2]
+    finally:
+        runtime.close()
+        docker_runtime_module._IMAGE_OBSERVATION_CACHE.clear()
 
 
 def test_external_agent_shell_uses_credential_free_networkless_command_image(

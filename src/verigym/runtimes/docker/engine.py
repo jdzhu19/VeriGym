@@ -9,7 +9,7 @@ import signal
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from verigym.runtimes.docker.errors import (
@@ -32,6 +32,8 @@ class EngineResult:
     duration_s: float
     timed_out: bool = False
     output_truncated: bool = False
+    execution_protocol: str | None = None
+    phase_durations_s: dict[str, float] = field(default_factory=dict)
 
 
 class DockerEngine(Protocol):
@@ -49,9 +51,11 @@ class DockerEngine(Protocol):
 
     def inspect_container(self, container_id: str) -> dict[str, Any]: ...
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
-    ) -> EngineResult: ...
+    def start_container(self, container_id: str) -> EngineResult: ...
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult: ...
+
+    def logs_container(self, container_id: str, *, max_output_bytes: int) -> EngineResult: ...
 
     def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]: ...
 
@@ -64,6 +68,144 @@ class DockerEngine(Protocol):
     def list_managed_volumes(self) -> list[str]: ...
 
     def close(self) -> None: ...
+
+
+_DETACHED_EXECUTION_PROTOCOL = "docker_detached_start_wait_logs_v1"
+
+
+def _require_control_success(
+    result: EngineResult,
+    *,
+    action: str,
+    timeout_subreason: str,
+    failure_subreason: str,
+) -> None:
+    if result.timed_out:
+        raise DockerDaemonError(
+            f"Docker {action} timed out",
+            subreason=timeout_subreason,
+            origin="container_execution",
+            details={
+                "stage": action,
+                "duration_s": result.duration_s,
+                "timed_out": True,
+                "exit_code": result.exit_code,
+            },
+        )
+    if result.exit_code != 0:
+        message = f"Docker {action} failed"
+        raise DockerDaemonError(
+            message,
+            subreason=failure_subreason,
+            origin="container_execution",
+            details={
+                "stage": action,
+                "duration_s": result.duration_s,
+                "timed_out": False,
+                "exit_code": result.exit_code,
+            },
+        )
+
+
+def _waited_exit_code(result: EngineResult) -> int:
+    raw = result.stdout.strip()
+    try:
+        exit_code = int(raw)
+    except ValueError as exc:
+        raise DockerDaemonError(
+            "Docker wait returned an invalid container exit code",
+            subreason="invalid_daemon_response",
+            origin="container_execution",
+            details={"stage": "container wait exit-code validation"},
+        ) from exc
+    if exit_code < 0 or exit_code > 255:
+        raise DockerDaemonError(
+            "Docker wait returned an out-of-range container exit code",
+            subreason="invalid_daemon_response",
+            origin="container_execution",
+            details={"stage": "container wait exit-code validation"},
+        )
+    return exit_code
+
+
+def execute_container(
+    engine: DockerEngine,
+    container_id: str,
+    *,
+    timeout_s: int,
+    max_output_bytes: int,
+) -> EngineResult:
+    """Run a created non-interactive container with phase-specific deadlines.
+
+    Container startup is a bounded control-plane operation. The candidate wall clock starts only
+    after startup succeeds, and output is collected through a separate bounded logs call after the
+    container exits. This avoids coupling command runtime to Docker's attach-stream teardown.
+    """
+
+    started_at = time.monotonic()
+    phase_durations: dict[str, float] = {}
+
+    start = engine.start_container(container_id)
+    phase_durations["start"] = start.duration_s
+    _require_control_success(
+        start,
+        action="container start",
+        timeout_subreason="container_start_timeout",
+        failure_subreason="container_start_failed",
+    )
+
+    wait = engine.wait_container(container_id, timeout_s=timeout_s)
+    phase_durations["wait"] = wait.duration_s
+    timed_out = wait.timed_out
+    if timed_out:
+        kill = engine.kill_container(container_id)
+        phase_durations["kill"] = kill.duration_s
+        _require_control_success(
+            kill,
+            action="container kill after command timeout",
+            timeout_subreason="container_kill_timeout",
+            failure_subreason="container_kill_failed",
+        )
+        settled = engine.wait_container(
+            container_id,
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        phase_durations["post_timeout_wait"] = settled.duration_s
+        _require_control_success(
+            settled,
+            action="container wait after command timeout",
+            timeout_subreason="container_wait_cleanup_timeout",
+            failure_subreason="container_wait_cleanup_failed",
+        )
+        exit_code = _waited_exit_code(settled)
+    else:
+        _require_control_success(
+            wait,
+            action="container wait",
+            timeout_subreason="container_wait_timeout",
+            failure_subreason="container_wait_failed",
+        )
+        exit_code = _waited_exit_code(wait)
+
+    logs = engine.logs_container(container_id, max_output_bytes=max_output_bytes)
+    phase_durations["logs"] = logs.duration_s
+    _require_control_success(
+        logs,
+        action="container logs",
+        timeout_subreason="container_logs_timeout",
+        failure_subreason="container_logs_failed",
+    )
+    return EngineResult(
+        argv=["docker", "start/wait/logs", container_id],
+        exit_code=exit_code,
+        stdout=logs.stdout,
+        stderr=logs.stderr,
+        duration_s=time.monotonic() - started_at,
+        timed_out=timed_out,
+        output_truncated=logs.output_truncated,
+        execution_protocol=_DETACHED_EXECUTION_PROTOCOL,
+        phase_durations_s=phase_durations,
+    )
 
 
 class DockerCliEngine:
@@ -286,12 +428,23 @@ class DockerCliEngine:
             )
         return payload[0]
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
-    ) -> EngineResult:
+    def start_container(self, container_id: str) -> EngineResult:
         return self._invoke(
-            ["start", "--attach", container_id],
+            ["start", container_id],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult:
+        return self._invoke(
+            ["wait", container_id],
             timeout_s=timeout_s,
+            max_output_bytes=64 * 1024,
+        )
+
+    def logs_container(self, container_id: str, *, max_output_bytes: int) -> EngineResult:
+        return self._invoke(
+            ["logs", container_id],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
             max_output_bytes=max_output_bytes,
         )
 
@@ -394,4 +547,4 @@ class DockerCliEngine:
         self._closed = True
 
 
-__all__ = ["DockerCliEngine", "DockerEngine", "EngineResult"]
+__all__ = ["DockerCliEngine", "DockerEngine", "EngineResult", "execute_container"]

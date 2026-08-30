@@ -17,7 +17,7 @@ from verigym.core.hashing import hash_directory
 from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.runtimes.base import RuntimeSession
 from verigym.runtimes.docker.artifacts import collect_declared_artifacts
-from verigym.runtimes.docker.engine import DockerEngine
+from verigym.runtimes.docker.engine import DockerEngine, execute_container
 from verigym.runtimes.docker.errors import (
     DockerContainerError,
     DockerRuntimeError,
@@ -308,13 +308,12 @@ class DockerRuntimeSession(RuntimeSession):
                 expected_environment=environment,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_container(
+                self._engine,
                 container_id,
                 timeout_s=effective_limit,
                 max_output_bytes=self._max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
             state_payload = self._engine.inspect_container(container_id)
             state = state_payload.get("State")
             state = state if isinstance(state, dict) else {}
@@ -355,6 +354,10 @@ class DockerRuntimeSession(RuntimeSession):
                 runtime_role=self.role,
                 metadata={
                     "effective_timeout_s": effective_limit,
+                    "container_execution": {
+                        "protocol": execution.execution_protocol,
+                        "phase_durations_s": dict(execution.phase_durations_s),
+                    },
                     "memory_limit_bytes": self._config.memory_bytes,
                     "resource_limits": resource_summary(
                         self._config,
@@ -383,7 +386,15 @@ class DockerRuntimeSession(RuntimeSession):
                 failure_origin="control_plane",
                 container_id=container_id,
                 runtime_role=self.role,
-                metadata={"origin": exc.origin, "tool_versions": self._tool_versions()},
+                metadata={
+                    "origin": exc.origin,
+                    "tool_versions": self._tool_versions(),
+                    **(
+                        {"container_execution": dict(exc.details)}
+                        if exc.origin == "container_execution"
+                        else {}
+                    ),
+                },
             )
         finally:
             cleanup_warning = self._remove_container(container_id) if container_id else None
@@ -489,13 +500,12 @@ class DockerRuntimeSession(RuntimeSession):
                 expected_environment=_EXTERNAL_AGENT_UTILITY_ENVIRONMENT,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_container(
+                self._engine,
                 container_id,
                 timeout_s=min(60, config.max_command_time_s),
                 max_output_bytes=self._max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
             state_payload = self._engine.inspect_container(container_id)
             state = state_payload.get("State")
             state = state if isinstance(state, dict) else {}
@@ -522,6 +532,10 @@ class DockerRuntimeSession(RuntimeSession):
                     "network_policy": "none",
                     "public_assets_read_only": True,
                     "agent_image_id": self._agent_image.resolved_image_id,
+                    "container_execution": {
+                        "protocol": execution.execution_protocol,
+                        "phase_durations_s": dict(execution.phase_durations_s),
+                    },
                 },
             )
         except DockerRuntimeError as exc:
@@ -541,6 +555,11 @@ class DockerRuntimeSession(RuntimeSession):
                     "network_policy": "none",
                     "public_assets_read_only": True,
                     "agent_image_id": self._agent_image.resolved_image_id,
+                    **(
+                        {"container_execution": dict(exc.details)}
+                        if exc.origin == "container_execution"
+                        else {}
+                    ),
                 },
             )
         finally:
