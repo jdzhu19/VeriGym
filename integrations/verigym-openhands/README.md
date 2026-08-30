@@ -359,6 +359,13 @@ infrastructure, or security failure stops before spending the next episode. It a
 formal collection nor training; see the
 [v30 authorization audit](../../docs/audits/2026-08-30_openhands-v30-v19-provider-canary-authorization.md).
 
+The single authorized v30 execution then stopped during the zero-call PR-2330 Docker preflight.
+Docker's event chain shows that the final agent executable-hash container crossed the 60-second
+`start --attach` timeout before reporting exit zero. No provider episode, task attempt, held-out
+load, collection, or training occurred. The image identity later matched in a separate isolated
+diagnostic, but the stopped canary remains sealed and cannot be retried; see the
+[v30 result audit](../../docs/audits/2026-08-30_openhands-v30-v19-provider-canary-stopped.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
