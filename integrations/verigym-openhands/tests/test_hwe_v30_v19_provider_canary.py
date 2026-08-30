@@ -154,7 +154,7 @@ def test_v19_canary_agent_version_and_options_bind_required_tool_budget() -> Non
     assert version.agent_version_id == OPENHANDS_V19_CANARY_AGENT_VERSION_ID
     assert options["tool_choice_policy"] == OPENHANDS_V19_TOOL_CHOICE_POLICY
     assert options["max_iterations"] == 64
-    assert options["max_provider_tokens"] == 1_000_000
+    assert options["max_provider_billed_units"] == 1_000_000
     assert options["max_context_tokens"] == 65_536
     assert options["max_output_tokens"] == 2_048
     assert options["whole_episode_retries"] == 0

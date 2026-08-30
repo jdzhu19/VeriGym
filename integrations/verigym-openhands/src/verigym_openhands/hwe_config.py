@@ -34,7 +34,7 @@ _OPTIONS = {
     "max_process_time_s",
     "max_output_tokens",
     "max_context_tokens",
-    "max_provider_tokens",
+    "max_provider_billed_units",
     "seed",
     "temperature",
     "top_p",
@@ -109,7 +109,7 @@ class OpenHandsHweSettings:
             "configuration_fingerprint": self.configuration_fingerprint,
         }
         if self.tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
-            result["max_provider_tokens"] = self.max_provider_tokens
+            result["max_provider_billed_units"] = self.max_provider_tokens
             result["provider_token_accounting"] = "post_response_pre_dispatch_v19"
         return result
 
@@ -188,12 +188,12 @@ def resolve_hwe_settings(
         if max_output_tokens != 2_048:
             raise ValueError("OpenHands HWE v19 freezes exactly 2048 output tokens")
         max_provider_tokens = _integer(
-            options.get("max_provider_tokens", OPENHANDS_V19_MAX_PROVIDER_TOKENS),
-            "max_provider_tokens",
+            options.get("max_provider_billed_units", OPENHANDS_V19_MAX_PROVIDER_TOKENS),
+            "max_provider_billed_units",
         )
         if max_provider_tokens != OPENHANDS_V19_MAX_PROVIDER_TOKENS:
             raise ValueError("OpenHands HWE v19 freezes a 1000000-token provider budget")
-    elif "max_provider_tokens" in options:
+    elif "max_provider_billed_units" in options:
         raise ValueError("OpenHands HWE provider token budget is v19-only")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
@@ -251,7 +251,7 @@ def resolve_hwe_settings(
         "tool_contract": "hwe_native_shell_v2",
     }
     if tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
-        safe["max_provider_tokens"] = max_provider_tokens
+        safe["max_provider_billed_units"] = max_provider_tokens
         safe["provider_token_accounting"] = "post_response_pre_dispatch_v19"
     return OpenHandsHweSettings(
         model_id=model_id,

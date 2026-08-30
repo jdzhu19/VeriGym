@@ -270,18 +270,18 @@ def test_v19_settings_freeze_call_token_context_and_output_budgets(
     options = {
         "model_id": "openai/deepseek-v4-flash",
         "max_iterations": 64,
-        "max_provider_tokens": 1_000_000,
+        "max_provider_billed_units": 1_000_000,
         "max_context_tokens": 65_536,
         "max_output_tokens": 2_048,
         "tool_choice_policy": "required_tool_content_recovery_v19",
     }
     settings = resolve_hwe_settings(options, task_wall_time_s=3_600)
-    assert settings.safe_dict()["max_provider_tokens"] == 1_000_000
+    assert settings.safe_dict()["max_provider_billed_units"] == 1_000_000
     assert settings.safe_dict()["provider_token_accounting"] == ("post_response_pre_dispatch_v19")
 
     for changed in (
         {"max_iterations": 63},
-        {"max_provider_tokens": 999_999},
+        {"max_provider_billed_units": 999_999},
         {"max_context_tokens": 65_535},
         {"max_output_tokens": 2_047},
     ):

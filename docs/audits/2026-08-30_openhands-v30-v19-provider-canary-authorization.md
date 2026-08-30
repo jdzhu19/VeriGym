@@ -62,12 +62,15 @@ rejects any row over 65,536 tokens and never truncates.
 
 ## Integration defect fixed before authorization
 
-The v19 protocol and settings parser already froze `max_provider_tokens=1_000_000`, but the generic
-plugin-options sanitizer classified the word `token` in that public integer budget field as a
-credential-bearing key. The real agent options therefore could not cross the execution boundary.
-This change adds only `max_provider_tokens` to the existing narrow list of public token-count
-fields. Actual `token`, `access_token`, and `refresh_token` values remain rejected. A core regression
-and the v30 agent-options test cover the distinction.
+The v19 protocol and settings parser already froze a 1,000,000-token provider budget, but its
+external option was named `max_provider_tokens`. The generic plugin-options sanitizer correctly
+keeps that ambiguous key in the credential-bearing deny set, and an existing training-reference
+contract depends on that protection. The real v19 agent options therefore could not cross the
+execution boundary. This change reuses the repository's established public accounting name
+`max_provider_billed_units` at that boundary and maps it to the internal v19 token budget. The
+global sanitizer is not relaxed: `max_provider_tokens`, `token`, `access_token`, and
+`refresh_token` remain rejected. Core, training-reference, v19 settings and v30 agent-options
+regressions cover the distinction.
 
 ## Security and reporting
 
@@ -87,8 +90,8 @@ and `benchmark_score_claimed=false` remain fixed.
 
 Credential-free checks performed so far:
 
-- v30 and plugin-options regressions: `11 passed`; combined v19/v30 regressions after the final
-  sealing fix: `33 passed`
+- v30 and plugin-options regressions: `12 passed`; combined v19/v30/plugin-options regressions
+  after the final sealing fix: `34 passed`; training-reference suite: `149 passed`, `2 skipped`
 - complete OpenHands Python 3.12 zero-model suite: `306 passed`
 - ordinary credential-free repository suite: `1035 passed`, `10 skipped`, `43 deselected`
 - HWE credential-free suite: `50 passed`

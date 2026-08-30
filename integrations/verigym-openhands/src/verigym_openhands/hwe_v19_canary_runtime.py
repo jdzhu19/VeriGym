@@ -184,7 +184,7 @@ def build_v19_canary_agent_options(
             "base_url_env": OPENHANDS_V19_CANARY_BASE_URL_ENV,
             "api_key_env": OPENHANDS_V19_CANARY_API_KEY_ENV,
             "max_iterations": OPENHANDS_V19_MAX_PROVIDER_CALLS,
-            "max_provider_tokens": OPENHANDS_V19_MAX_PROVIDER_TOKENS,
+            "max_provider_billed_units": OPENHANDS_V19_MAX_PROVIDER_TOKENS,
             "max_process_time_s": 3_600,
             "max_output_tokens": OPENHANDS_V19_MAX_OUTPUT_TOKENS,
             "max_context_tokens": OPENHANDS_V19_MAX_CONTEXT_TOKENS,
