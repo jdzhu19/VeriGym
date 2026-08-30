@@ -21,6 +21,7 @@ _NON_SECRET_AUTH_IDENTITY_KEYS = {
     "expected_auth_semantic_id",
     "max_context_tokens",
     "max_output_tokens",
+    "max_provider_tokens",
 }
 _SECRET_VALUE_PATTERNS = (
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),

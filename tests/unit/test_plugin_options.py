@@ -6,9 +6,16 @@ from verigym.schemas.options import validate_plugin_options
 
 
 def test_public_token_count_limits_are_not_treated_as_credentials() -> None:
-    assert validate_plugin_options({"max_context_tokens": 65_536, "max_output_tokens": 2_048}) == {
+    assert validate_plugin_options(
+        {
+            "max_context_tokens": 65_536,
+            "max_output_tokens": 2_048,
+            "max_provider_tokens": 1_000_000,
+        }
+    ) == {
         "max_context_tokens": 65_536,
         "max_output_tokens": 2_048,
+        "max_provider_tokens": 1_000_000,
     }
 
 

@@ -351,6 +351,14 @@ budgets and fail-closed policy. The run made zero provider calls and did not exe
 see the
 [v29 result audit](../../docs/audits/2026-08-30_openhands-v29-v19-canary-materialization-passed.md).
 
+The v30 successor is the separate provider-canary authorization. It binds the exact v29 receipt,
+catalog, contract, two task sources, two image locks, Qwen tokenizer and model lock, and it preserves
+the v19 campaign and agent identities. It runs PR-2330 only after a zero-call Docker preflight and
+runs PR-3204 only if PR-2330 passes every result plane and exact-64K materialization. Any ordinary,
+infrastructure, or security failure stops before spending the next episode. It authorizes neither
+formal collection nor training; see the
+[v30 authorization audit](../../docs/audits/2026-08-30_openhands-v30-v19-provider-canary-authorization.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
