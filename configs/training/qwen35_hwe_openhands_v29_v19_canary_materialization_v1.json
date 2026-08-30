@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v29_v19_canary_materialization_authorization_v1",
+  "status": "authorized_pending_materialization",
+  "identity": "openhands-hwe-v29-v19-canary-materialization-v1",
+  "qualification_evidence": {
+    "identity": "openhands-hwe-v28-reference-patch-preflight-resume-v1",
+    "format_id": "verigym_openhands_hwe_v28_reference_patch_preflight_resume_progress_v1",
+    "status": "qualified_pending_agent_images",
+    "progress_hash": "c631e93fd7c002dc47aff45894d24701baabbad599da405b57d5516f8d6ce119",
+    "progress_file_sha256": "f44e11ae449d9c6836c3a86b112492a65b03446039a5d8a38c2b9403231abc70",
+    "authorization_hash": "c66ec0393e20b89a7e5e410e527edcfbefeae080b37b21563e95e290cf1c2c2e",
+    "audit_merge_commit": "93881a75d272ce9fcf5dffbe7b7e495b09d6b60a",
+    "qualified_task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3231",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2989",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3059"
+    ],
+    "training_reserve_task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3231"
+    ],
+    "validation_reserve_task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2989",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3059"
+    ]
+  },
+  "image_inputs": {
+    "identity_template_sha256": "e20a122839686607f5a39c1cc422872bd6339bbb59afb5b8c6dc6c00fb546a41",
+    "codex_binary_sha256": "cb0a15567e9a60a5820d54b0f6ae86d504dc3805c1eab21a47f70e3eb7b73a40",
+    "agent_rg_sha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+    "image_count": 5,
+    "build_network": "none",
+    "runtime_network": "none",
+    "tag_namespace": "verigym/cva6-openhands-v19-v29"
+  },
+  "historical_validation": {
+    "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+    "image_lock_file_sha256": "55ff6b4efb9675a0a6d512b32d0b33d7778d93d81159086c7485b9f3ebe92a6b",
+    "image_lock_hash": "b3fe6732fe4d9b52a6444cda90b25add311665af537acf6b389ad1fdafa1933b",
+    "agent_image": "sha256:2713ee1efe1d83a655b5dbee775b8c59b3af3614b4233346b779df3a63f5e276",
+    "verifier_image": "sha256:459deab1a9b65a25be4583087238308dd12e773b818e720299cc8cafe55f4f64"
+  },
+  "canary_contract": {
+    "campaign_id": "openhands-hwe-v19-required-tool-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v19-canary-v1",
+    "training_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+    "validation_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+    "seed": 489,
+    "sample_index": 5,
+    "provider_calls_during_materialization": 0
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "exact_qualification_file": true,
+    "historical_attempts_retried": false,
+    "historical_evidence_relabelled": false,
+    "one_distinct_agent_image_per_reserve": true,
+    "task_source_verifier_binding_exact": true,
+    "build_network_none": true,
+    "runtime_network_none": true,
+    "image_security_scan_required": true,
+    "atomic_progress": true,
+    "provider_credentials_required": false,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "consume_sealed_v28_qualification": true,
+    "build_reserve_agent_images": true,
+    "scan_reserve_agent_images": true,
+    "materialize_v19_qualification_receipt": true,
+    "materialize_v19_canary_contract": true,
+    "invoke_provider": false,
+    "execute_canary": false,
+    "start_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately_no_retry",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "7bc664e303c44cb7bc522c3c3963b4ea0ce2e9fe09b9318dbde19317265ea63a"
+}
