@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v30_v19_provider_canary_authorization_v1",
+  "status": "authorized_pending_provider_canary",
+  "identity": "openhands-hwe-v30-v19-provider-canary-v1",
+  "materialization_evidence": {
+    "audit_merge_commit": "33b30172999ef5b7e99e0df26d709deaf6bcd117",
+    "progress_hash": "42f85402c9e509a687ec32c953b24a026f978b5bf0684eb877f32876d0d302f0",
+    "progress_file_sha256": "f2992d89c13de3ce4a55cb15f4c4985be8c7dd2c0402ea1b675bb793f55b00f2",
+    "contract_hash": "cf6ba5b011f35ec958eaef319ee79ee4f8cd2fcbab77f0dae62f6dbd2c202efc",
+    "contract_file_sha256": "c65e4f10d243c0efb3e56fb2217c4c65f350cd58cd51aa0f69b13b3f12854a8a",
+    "qualification_receipt_hash": "3eea3a1b0fc2bb3d2027c4c9c97549012ce32c484b3b7d07bdb15fc5260e59cb",
+    "qualification_receipt_file_sha256": "c56201069b55e1eb1bf5d7532dbfe891d54aa562c2ee980a83e3340f3b05d9e8",
+    "source_catalog_hash": "7d708bb0c7ac86e0562899e42abce671cde0c9c5b1d96fa21420cfed1fed400f",
+    "source_catalog_file_sha256": "09abccc6d25f20abd9866d9bd8a7004727566a10bf3aa87af02077637931836a"
+  },
+  "input_locks": {
+    "training_image_lock_file_sha256": "38776012996f20a2ac8d34a1bf5c80d77db9303d2132921d6dfcb064386a3f46",
+    "validation_image_lock_file_sha256": "55ff6b4efb9675a0a6d512b32d0b33d7778d93d81159086c7485b9f3ebe92a6b",
+    "training_source_image_lock_sha256": "69ddfef98824cb3cceeaa7bb6996f3dca4477a76a71fa15adbb4964ee699ff6f",
+    "validation_source_image_lock_sha256": "ab23ac165898d66c54fc165de21e3eddfadc732542d5149ad15074c368447fa8",
+    "base_model_lock_file_sha256": "fb91ef923333c0bb251ca20d09801ee66aedf4a693b3adb85bbfb60858d8368b",
+    "base_model_snapshot_hash": "fce78eefb5b60ff95c480d2fb823bb45370a4abc933d6114a84d6a321486b156",
+    "tokenizer_hash": "440110a9c8523a13003af840f2b31ce90709383488fcc7a62cfc19ab8ead6c6e"
+  },
+  "schedule": {
+    "campaign_id": "openhands-hwe-v19-required-tool-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v19-canary-v1",
+    "task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204"
+    ],
+    "roles": ["training", "validation"],
+    "seed": 489,
+    "sample_index": 5,
+    "maximum_provider_episodes": 2
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "exact_materialization_chain": true,
+    "exact_task_source_image_binding": true,
+    "provider_request_retries": 0,
+    "whole_episode_retries": 0,
+    "stop_after_first_failed_gate": true,
+    "runtime_network_none": true,
+    "security_scan_before_admission": true,
+    "exact_64k_no_truncation": true,
+    "atomic_progress": true,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "invoke_provider": true,
+    "execute_fixed_two_task_canary": true,
+    "consume_additional_reserve": false,
+    "create_fallback_identity": false,
+    "start_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_after_first_failed_gate_no_retry",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "3619b56bbaf3dc5577c8511865e6f0a681f9d03a53b80b261d77e359f01994d8"
+}
