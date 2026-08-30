@@ -223,6 +223,7 @@ class RecordingDockerEngine:
         if command[:2] == ["sh", "-c"] and "__VERIGYM_IMAGE_PROBE_V1__" in command[2]:
             marker = "__VERIGYM_IMAGE_PROBE_V1__"
             if "binary_sha256" in command[2]:
+                stderr = "WARNING: proceeding, even though PATH aliases could not be created\n"
                 stdout = (
                     f"{marker}:uid\n10001\n"
                     f"{marker}:gid\n10001\n"

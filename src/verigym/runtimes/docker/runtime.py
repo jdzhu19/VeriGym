@@ -57,7 +57,7 @@ _AGENT_IMAGE_PROBE_SCRIPT = (
     f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:gid'\n"
     "id -g\n"
     f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:version'\n"
-    '"$1" --version 2>&1\n'
+    '"$1" --version\n'
     f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:binary_sha256'\n"
     'sha256sum "$2"\n'
     'if [ "$3" = "1" ]; then\n'
@@ -780,7 +780,6 @@ def _require_image_probe_success(
         or result.oom_killed
         or result.output_truncated
         or result.exit_code != 0
-        or bool(result.stderr)
     ):
         raise DockerImageError(
             f"Docker {role} combined image identity probe failed",
@@ -792,7 +791,6 @@ def _require_image_probe_success(
                 "timed_out": result.timed_out,
                 "oom_killed": result.oom_killed,
                 "output_truncated": result.output_truncated,
-                "stderr_present": bool(result.stderr),
                 "exit_code": result.exit_code,
             },
         )
