@@ -91,6 +91,30 @@ recreate only verifier sessions. The residual trusted computing base includes th
 control-plane binary, reviewed VeriGym/plugin code, Docker daemon, and host kernel; Docker does
 not protect against compromise of those components.
 
+### Credential-free HWE command-image boundary
+
+Successor HWE campaigns may configure a `command_image` instead of `external_agent`. This role
+cannot launch an app server or provider client: its schema has no external executable or process
+argv, and the two roles are mutually exclusive. The task-specific image retains the public
+verifier toolchain, whites out the official task source, and adds only a separately acquired,
+release-archive- and binary-hash-bound ripgrep executable. The image scan requires the Codex
+command and known Codex paths to be absent. It also requires an exact credential-free environment,
+an inert `tail -f /dev/null` default command, the immutable task/verifier labels, and the ordinary
+network-none, non-root, read-only-root, cap-drop, no-new-privileges, private-PID/IPC, bounded
+resource, and single-workspace-mount controls. Historical agent images and locks are not rewritten.
+
+The default command backend remains one short-lived container per command. The opt-in
+`episode_container_exec_v1` backend creates one equally constrained container per runtime session
+and uses argument-array `docker exec` calls for subsequent commands. Startup and every exec are
+bounded separately. A command timeout, OOM, stopped keepalive, Docker control-plane error, process
+inventory error, or container cleanup error invalidates the container and fails closed. After each
+ordinary command, VeriGym compares a bounded `docker top` fingerprint with the startup baseline.
+Any background-process residue destroys the container, records only expected and observed process
+counts (never raw arguments), and poisons the session so no later command can run. Session freeze
+and close retain the ordinary force-removal and cleanup-accounting boundary. This optimization
+does not persist a writable container layer: candidate state remains only in the private workspace
+bind mount and bounded ephemeral `/tmp`.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and

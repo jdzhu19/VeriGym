@@ -163,6 +163,150 @@
       "title": "BudgetSpec",
       "type": "object"
     },
+    "DockerCommandImageRuntimeConfig": {
+      "additionalProperties": false,
+      "description": "Immutable, credential-free image used only for repository shell commands.",
+      "properties": {
+        "cpus": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 16.0,
+          "title": "Cpus",
+          "type": "number"
+        },
+        "execution_backend": {
+          "default": "ephemeral_container_v1",
+          "enum": [
+            "ephemeral_container_v1",
+            "episode_container_exec_v1"
+          ],
+          "title": "Execution Backend",
+          "type": "string"
+        },
+        "expected_image_id": {
+          "title": "Expected Image Id",
+          "type": "string"
+        },
+        "expected_rg_path": {
+          "const": "/usr/local/bin/rg",
+          "default": "/usr/local/bin/rg",
+          "title": "Expected Rg Path",
+          "type": "string"
+        },
+        "expected_rg_sha256": {
+          "title": "Expected Rg Sha256",
+          "type": "string"
+        },
+        "expected_rg_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Expected Rg Version",
+          "type": "string"
+        },
+        "image": {
+          "title": "Image",
+          "type": "string"
+        },
+        "logical_workspace_root": {
+          "const": "/workspace/repository",
+          "default": "/workspace/repository",
+          "title": "Logical Workspace Root",
+          "type": "string"
+        },
+        "max_command_time_s": {
+          "default": 300,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Max Command Time S",
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "default": 8388608,
+          "maximum": 33554432,
+          "minimum": 1024,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "default": 536870912,
+          "maximum": 17179869184,
+          "minimum": 67108864,
+          "title": "Memory Bytes",
+          "type": "integer"
+        },
+        "network_mode": {
+          "const": "none",
+          "default": "none",
+          "title": "Network Mode",
+          "type": "string"
+        },
+        "pids_limit": {
+          "default": 128,
+          "maximum": 4096,
+          "minimum": 16,
+          "title": "Pids Limit",
+          "type": "integer"
+        },
+        "protocol": {
+          "pattern": "^[A-Za-z0-9._-]{1,128}$",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "pull_policy": {
+          "default": "never",
+          "enum": [
+            "never",
+            "if_missing"
+          ],
+          "title": "Pull Policy",
+          "type": "string"
+        },
+        "read_only_rootfs": {
+          "const": true,
+          "default": true,
+          "title": "Read Only Rootfs",
+          "type": "boolean"
+        },
+        "required_image_labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "minProperties": 1,
+          "title": "Required Image Labels",
+          "type": "object"
+        },
+        "run_as_user": {
+          "title": "Run As User",
+          "type": "string"
+        },
+        "stop_timeout_s": {
+          "default": 3,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Stop Timeout S",
+          "type": "integer"
+        },
+        "tmpfs_bytes": {
+          "default": 67108864,
+          "maximum": 536870912,
+          "minimum": 1048576,
+          "title": "Tmpfs Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image",
+        "expected_image_id",
+        "expected_rg_version",
+        "expected_rg_sha256",
+        "protocol",
+        "required_image_labels",
+        "run_as_user"
+      ],
+      "title": "DockerCommandImageRuntimeConfig",
+      "type": "object"
+    },
     "DockerExternalAgentRuntimeConfig": {
       "additionalProperties": false,
       "description": "Immutable image and non-disableable limits for one external-agent episode.",
@@ -326,6 +470,17 @@
       "additionalProperties": false,
       "description": "Fail-closed configuration for the optional Docker CLI runtime.",
       "properties": {
+        "command_image": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DockerCommandImageRuntimeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "cpus": {
           "default": 1.0,
           "exclusiveMinimum": 0.0,

@@ -128,6 +128,89 @@ class DockerExternalAgentRuntimeConfig(StrictModel):
         return self
 
 
+class DockerCommandImageRuntimeConfig(StrictModel):
+    """Immutable, credential-free image used only for repository shell commands."""
+
+    image: str
+    expected_image_id: str
+    expected_rg_path: Literal["/usr/local/bin/rg"] = "/usr/local/bin/rg"
+    expected_rg_version: str = Field(min_length=1, max_length=128)
+    expected_rg_sha256: str
+    protocol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,128}$")
+    execution_backend: Literal[
+        "ephemeral_container_v1",
+        "episode_container_exec_v1",
+    ] = "ephemeral_container_v1"
+    required_image_labels: dict[str, str] = Field(min_length=1, max_length=64)
+    pull_policy: Literal["never", "if_missing"] = "never"
+    run_as_user: str
+    read_only_rootfs: Literal[True] = True
+    network_mode: Literal["none"] = "none"
+    memory_bytes: int = Field(
+        default=512 * 1024 * 1024,
+        ge=64 * 1024 * 1024,
+        le=16 * 1024**3,
+    )
+    cpus: float = Field(default=1.0, gt=0.0, le=16.0)
+    pids_limit: int = Field(default=128, ge=16, le=4096)
+    tmpfs_bytes: int = Field(
+        default=64 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=512 * 1024**2,
+    )
+    stop_timeout_s: int = Field(default=3, ge=1, le=30)
+    max_command_time_s: int = Field(default=300, ge=1, le=3600)
+    max_output_bytes: int = Field(
+        default=8 * 1024 * 1024,
+        ge=1024,
+        le=32 * 1024 * 1024,
+    )
+    logical_workspace_root: Literal["/workspace/repository"] = "/workspace/repository"
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str) -> str:
+        return _validate_image_reference(value)
+
+    @field_validator("run_as_user")
+    @classmethod
+    def validate_run_as_user(cls, value: str) -> str:
+        validated = _validate_non_root_user(value)
+        assert validated is not None
+        return validated
+
+    @field_validator("expected_image_id")
+    @classmethod
+    def validate_expected_image_id(cls, value: str) -> str:
+        if not _IMAGE_ID_PATTERN.fullmatch(value):
+            raise ValueError("command-image expected image ID must be sha256:<64 lowercase hex>")
+        return value
+
+    @field_validator("expected_rg_sha256")
+    @classmethod
+    def validate_rg_sha256(cls, value: str) -> str:
+        if not _SHA256_PATTERN.fullmatch(value):
+            raise ValueError("command-image ripgrep hash must be lowercase SHA-256")
+        return value
+
+    @field_validator("required_image_labels")
+    @classmethod
+    def validate_required_image_labels(cls, values: dict[str, str]) -> dict[str, str]:
+        if len(values) > 64:
+            raise ValueError("command-image label requirements exceed the bound")
+        for key, value in values.items():
+            if (
+                not key
+                or len(key) > 256
+                or not value
+                or len(value) > 1024
+                or "\x00" in key
+                or "\x00" in value
+            ):
+                raise ValueError("command-image label requirement is invalid")
+        return dict(sorted(values.items()))
+
+
 class DockerRuntimeConfig(StrictModel):
     """Fail-closed configuration for the optional Docker CLI runtime."""
 
@@ -155,6 +238,7 @@ class DockerRuntimeConfig(StrictModel):
     )
     environment_allowlist: list[str] = Field(default_factory=list)
     external_agent: DockerExternalAgentRuntimeConfig | None = None
+    command_image: DockerCommandImageRuntimeConfig | None = None
 
     @field_validator("image")
     @classmethod
@@ -192,6 +276,12 @@ class DockerRuntimeConfig(StrictModel):
         if self.external_agent is not None and self.external_agent.image == self.image:
             raise ValueError(
                 "external-agent and verifier roles require separately identified images"
+            )
+        if self.command_image is not None and self.command_image.image == self.image:
+            raise ValueError("command and verifier roles require separately identified images")
+        if self.external_agent is not None and self.command_image is not None:
+            raise ValueError(
+                "external-agent and command-image roles are mutually exclusive in one runtime"
             )
         return self
 
@@ -250,6 +340,7 @@ def _validate_non_root_user(value: str | None) -> str | None:
 
 
 __all__ = [
+    "DockerCommandImageRuntimeConfig",
     "DockerExternalAgentRuntimeConfig",
     "DockerRuntimeConfig",
     "RuntimeDescriptor",

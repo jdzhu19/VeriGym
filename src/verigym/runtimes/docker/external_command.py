@@ -21,17 +21,63 @@ from verigym.runtimes.docker.resources import (
 )
 from verigym.runtimes.docker.security import security_arguments, verify_effective_container
 from verigym.schemas.common import RuntimeImageIdentity
-from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig
+from verigym.schemas.runtime import (
+    DockerCommandImageRuntimeConfig,
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+)
 from verigym.schemas.tool import CommandSpec, CompletedCommand
 
-_ENVIRONMENT = {
+_BASE_ENVIRONMENT = {
     "PATH": "/tools/verilator/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
     "HOME": "/tmp/verigym-home",
-    "CODEX_HOME": "/tmp/verigym-codex-home",
     "LANG": "C.UTF-8",
     "LC_ALL": "C.UTF-8",
     "TMPDIR": "/tmp",
 }
+_LEGACY_EXTERNAL_AGENT_ENVIRONMENT = {
+    **_BASE_ENVIRONMENT,
+    "CODEX_HOME": "/tmp/verigym-codex-home",
+}
+
+CommandImageConfig = DockerCommandImageRuntimeConfig | DockerExternalAgentRuntimeConfig
+
+
+def command_image_runtime_config(config: DockerCommandImageRuntimeConfig) -> DockerRuntimeConfig:
+    """Project command-only limits onto the ordinary immutable-image resolver schema."""
+
+    return DockerRuntimeConfig(
+        image=config.image,
+        expected_image_id=config.expected_image_id,
+        pull_policy=config.pull_policy,
+        network_mode="none",
+        run_as_user=config.run_as_user,
+        read_only_rootfs=True,
+        memory_bytes=config.memory_bytes,
+        cpus=config.cpus,
+        pids_limit=config.pids_limit,
+        tmpfs_bytes=config.tmpfs_bytes,
+        stop_timeout_s=config.stop_timeout_s,
+        max_command_time_s=config.max_command_time_s,
+        max_artifact_file_bytes=16 * 1024 * 1024,
+        max_artifact_bytes=64 * 1024 * 1024,
+    )
+
+
+def command_environment(config: CommandImageConfig) -> dict[str, str]:
+    if isinstance(config, DockerExternalAgentRuntimeConfig):
+        return dict(_LEGACY_EXTERNAL_AGENT_ENVIRONMENT)
+    return dict(_BASE_ENVIRONMENT)
+
+
+def effective_command_runtime_config(config: CommandImageConfig) -> DockerRuntimeConfig:
+    if isinstance(config, DockerExternalAgentRuntimeConfig):
+        return external_agent_runtime_config(config)
+    return command_image_runtime_config(config)
+
+
+def command_max_output_bytes(config: CommandImageConfig) -> int:
+    return config.max_output_bytes
 
 
 class DockerExternalAgentCommandExecutor:
@@ -42,7 +88,7 @@ class DockerExternalAgentCommandExecutor:
         *,
         engine: DockerEngine,
         image: RuntimeImageIdentity,
-        config: DockerExternalAgentRuntimeConfig,
+        config: CommandImageConfig,
         run_id: str,
         session_id: str,
         register_container: Callable[[str], None],
@@ -61,7 +107,13 @@ class DockerExternalAgentCommandExecutor:
             raise ValueError("external-agent command argv is not exact /bin/bash -lc")
         if command.env or command.stdin is not None or command.artifact_globs:
             raise ValueError("external-agent command contains a forbidden side channel")
-        runtime_config = external_agent_runtime_config(self._config)
+        if (
+            isinstance(self._config, DockerCommandImageRuntimeConfig)
+            and self._config.execution_backend != "ephemeral_container_v1"
+        ):
+            raise ValueError("episode command-image config requires the persistent executor")
+        runtime_config = effective_command_runtime_config(self._config)
+        environment = command_environment(self._config)
         logical_cwd = "/workspace/repository" + ("" if command.cwd == "." else f"/{command.cwd}")
         timeout_s = effective_timeout(command.timeout_s, runtime_config.max_command_time_s)
         labels = {
@@ -79,7 +131,7 @@ class DockerExternalAgentCommandExecutor:
                 runtime_config,
                 user=user,
                 cwd=logical_cwd,
-                environment=_ENVIRONMENT,
+                environment=environment,
                 labels=labels,
             ),
             *resource_arguments(runtime_config),
@@ -99,14 +151,14 @@ class DockerExternalAgentCommandExecutor:
                 config=runtime_config,
                 expected_user=user,
                 expected_mounts=mounts,
-                expected_environment=_ENVIRONMENT,
+                expected_environment=environment,
                 expected_labels=labels,
             )
             execution = execute_container(
                 self._engine,
                 container_id,
                 timeout_s=timeout_s,
-                max_output_bytes=self._config.max_output_bytes,
+                max_output_bytes=command_max_output_bytes(self._config),
             )
             state_payload = self._engine.inspect_container(container_id)
             state = state_payload.get("State")
@@ -150,8 +202,10 @@ class DockerExternalAgentCommandExecutor:
                     "network_mode": "none",
                     "resource_limits": resource_summary(
                         runtime_config,
-                        max_output_bytes=self._config.max_output_bytes,
+                        max_output_bytes=command_max_output_bytes(self._config),
                     ).model_dump(mode="json"),
+                    "command_image_protocol": self._config.protocol,
+                    "command_execution_backend": "ephemeral_container_v1",
                 },
             )
         except DockerRuntimeError as exc:
@@ -184,4 +238,10 @@ class DockerExternalAgentCommandExecutor:
         return completed
 
 
-__all__ = ["DockerExternalAgentCommandExecutor"]
+__all__ = [
+    "DockerExternalAgentCommandExecutor",
+    "command_environment",
+    "command_image_runtime_config",
+    "command_max_output_bytes",
+    "effective_command_runtime_config",
+]

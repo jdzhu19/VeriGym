@@ -18,6 +18,7 @@ from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.runtimes.base import RuntimeSession
 from verigym.runtimes.docker.artifacts import collect_declared_artifacts
 from verigym.runtimes.docker.engine import DockerEngine, execute_container
+from verigym.runtimes.docker.episode_command import DockerEpisodeCommandExecutor
 from verigym.runtimes.docker.errors import (
     DockerContainerError,
     DockerRuntimeError,
@@ -52,6 +53,7 @@ from verigym.schemas.external_agent import (
     ExternalReadOnlyMountIdentity,
 )
 from verigym.schemas.runtime import (
+    DockerCommandImageRuntimeConfig,
     DockerExternalAgentRuntimeConfig,
     DockerRuntimeConfig,
     SessionSpec,
@@ -78,7 +80,7 @@ class DockerSessionOwner(Protocol):
 
 
 class DockerRuntimeSession(RuntimeSession):
-    """A private bind-mounted staging tree and short-lived command containers."""
+    """A private bind-mounted staging tree with constrained command containers."""
 
     def __init__(
         self,
@@ -89,6 +91,8 @@ class DockerRuntimeSession(RuntimeSession):
         image: RuntimeImageIdentity,
         agent_config: DockerExternalAgentRuntimeConfig | None = None,
         agent_image: RuntimeImageIdentity | None = None,
+        command_config: DockerCommandImageRuntimeConfig | None = None,
+        command_image: RuntimeImageIdentity | None = None,
         run_id: str,
         owner: DockerSessionOwner,
     ) -> None:
@@ -103,6 +107,8 @@ class DockerRuntimeSession(RuntimeSession):
         self._image = image
         self._agent_config = agent_config
         self._agent_image = agent_image
+        self._command_config = command_config
+        self._command_image = command_image
         self._run_id = run_id
         self._owner = owner
         self._max_output_bytes = spec.max_output_bytes
@@ -112,6 +118,7 @@ class DockerRuntimeSession(RuntimeSession):
         self._public_test_invocation_count = 0
         self._active_containers: set[str] = set()
         self._cleanup_warnings: list[str] = []
+        self._episode_command_executor: DockerEpisodeCommandExecutor | None = None
         copy_tree_safely(Path(spec.source_dir), self._root)
         self._read_only_temporaries: list[tempfile.TemporaryDirectory[str]] = []
         self._read_only_identities: list[ExternalReadOnlyMountIdentity] = []
@@ -211,7 +218,9 @@ class DockerRuntimeSession(RuntimeSession):
             raise PathPolicyError("Docker session is closed")
         if self._frozen:
             raise PathPolicyError("Docker session is frozen")
-        if self.role != "agent" or self._agent_config is None or self._agent_image is None:
+        command_config = self._command_config or self._agent_config
+        command_image = self._command_image or self._agent_image
+        if self.role != "agent" or command_config is None or command_image is None:
             raise PathPolicyError("external-agent command execution is unavailable")
         cwd = self._resolve(command.cwd, allow_root=True)
         if not cwd.is_dir():
@@ -221,18 +230,33 @@ class DockerRuntimeSession(RuntimeSession):
             self._active_containers.add(container_id)
             self._owner.container_registered(self.session_id, container_id)
 
+        mounts = _external_process_mounts(
+            self._external_mounts,
+            logical_workspace_root="/workspace/repository",
+        )
+        if (
+            isinstance(command_config, DockerCommandImageRuntimeConfig)
+            and command_config.execution_backend == "episode_container_exec_v1"
+        ):
+            if self._episode_command_executor is None:
+                self._episode_command_executor = DockerEpisodeCommandExecutor(
+                    engine=self._engine,
+                    image=command_image,
+                    config=command_config,
+                    run_id=self._run_id,
+                    session_id=self.session_id,
+                    register_container=register,
+                    remove_container=self._remove_container,
+                )
+            return self._episode_command_executor.execute(command, mounts=mounts)
         executor = DockerExternalAgentCommandExecutor(
             engine=self._engine,
-            image=self._agent_image,
-            config=self._agent_config,
+            image=command_image,
+            config=command_config,
             run_id=self._run_id,
             session_id=self.session_id,
             register_container=register,
             remove_container=self._remove_container,
-        )
-        mounts = _external_process_mounts(
-            self._external_mounts,
-            logical_workspace_root="/workspace/repository",
         )
         return executor.execute(command, mounts=mounts)
 
@@ -628,12 +652,14 @@ class DockerRuntimeSession(RuntimeSession):
 
     def freeze(self) -> None:
         if not self._frozen:
+            self._close_episode_command_executor()
             self._frozen = True
             self._owner.session_frozen(self.session_id)
 
     def close(self) -> None:
         if self._closed:
             return
+        self._close_episode_command_executor()
         for container_id in sorted(self._active_containers):
             self._remove_container(container_id)
         for temporary in self._read_only_temporaries:
@@ -641,6 +667,13 @@ class DockerRuntimeSession(RuntimeSession):
         self._temporary.cleanup()
         self._closed = True
         self._owner.session_closed(self.session_id, list(self._cleanup_warnings))
+
+    def _close_episode_command_executor(self) -> None:
+        if self._episode_command_executor is None:
+            return
+        warning = self._episode_command_executor.close()
+        if warning is not None and warning not in self._cleanup_warnings:
+            self._cleanup_warnings.append(warning)
 
     def _remove_container(self, container_id: str) -> str | None:
         if container_id not in self._active_containers:

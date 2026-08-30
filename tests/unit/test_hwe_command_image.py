@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from verigym.core.hashing import content_hash
+from verigym.hwe.image_lock import (
+    HweCommandImageLock,
+    build_hwe_command_image_lock,
+)
+
+
+def _values() -> dict[str, object]:
+    return {
+        "task_id": "openhwgroup/cva6:pr-2330",
+        "task_hash": "1" * 64,
+        "source_hash": "2" * 64,
+        "verifier_base_image_id": "sha256:" + "3" * 64,
+        "derived_command_image_id": "sha256:" + "4" * 64,
+        "rg_sha256": "5" * 64,
+        "rg_release_archive_sha256": "6" * 64,
+        "toolchain_profile_id": "cva6-verilator-5.008-container-native-v2",
+        "allowlisted_artifacts": [
+            {"path": "/usr/bin/make", "sha256": "7" * 64, "role": "build_tool"},
+            {
+                "path": "/tools/verilator/bin/verilator",
+                "sha256": "8" * 64,
+                "role": "simulator",
+            },
+        ],
+        "security_scan_id": "9" * 64,
+    }
+
+
+def test_command_image_lock_has_no_codex_executable_identity() -> None:
+    lock = build_hwe_command_image_lock(**_values())
+
+    assert lock.format_id == "verigym_hwe_command_image_lock_v1"
+    assert lock.codex_present is False
+    assert lock.supported_execution_backends == (
+        "ephemeral_container_v1",
+        "episode_container_exec_v1",
+    )
+    assert lock.lock_hash == content_hash(lock.model_dump(mode="json", exclude={"lock_hash"}))
+    payload = lock.model_dump(mode="json")
+    assert "agent_codex_sha256" not in payload
+    assert "host_codex_sha256" not in payload
+    assert all("/codex/" not in item.path for item in lock.allowlisted_artifacts)
+
+
+def test_command_image_lock_tampering_fails_closed() -> None:
+    lock = build_hwe_command_image_lock(**_values())
+    changed = lock.model_dump(mode="json")
+    changed["rg_sha256"] = "a" * 64
+    with pytest.raises(ValidationError, match="identity changed"):
+        HweCommandImageLock.model_validate(changed)
+
+
+def test_command_image_builder_rejects_codex_bundled_rg_and_sanitizes_environment() -> None:
+    script = Path("scripts/build_cva6_hwe_command_image.sh").read_text(encoding="utf-8")
+    dockerfile = Path("docker/cva6-hwe-command/Dockerfile").read_text(encoding="utf-8")
+
+    assert "'/@openai/codex/'" in script
+    assert "'/codex-path/'" in script
+    assert "tar -xOzf" in script
+    assert "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c" in script
+    assert "sanitize_docker_image_environment.py" in script
+    assert "--network none" in script
+    assert "CODEX_HOME" not in script
+    assert 'org.verigym.codex.present="absent"' in dockerfile
+    assert 'CMD ["/usr/bin/tail", "-f", "/dev/null"]' in dockerfile

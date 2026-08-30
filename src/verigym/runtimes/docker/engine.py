@@ -57,6 +57,20 @@ class DockerEngine(Protocol):
 
     def logs_container(self, container_id: str, *, max_output_bytes: int) -> EngineResult: ...
 
+    def exec_container(
+        self,
+        container_id: str,
+        *,
+        argv: list[str],
+        user: str,
+        cwd: str,
+        environment: dict[str, str],
+        timeout_s: int,
+        max_output_bytes: int,
+    ) -> EngineResult: ...
+
+    def top_container(self, container_id: str) -> EngineResult: ...
+
     def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]: ...
 
     def kill_container(self, container_id: str) -> EngineResult: ...
@@ -446,6 +460,34 @@ class DockerCliEngine:
             ["logs", container_id],
             timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
             max_output_bytes=max_output_bytes,
+        )
+
+    def exec_container(
+        self,
+        container_id: str,
+        *,
+        argv: list[str],
+        user: str,
+        cwd: str,
+        environment: dict[str, str],
+        timeout_s: int,
+        max_output_bytes: int,
+    ) -> EngineResult:
+        arguments = ["exec", "--user", user, "--workdir", cwd]
+        for name, value in sorted(environment.items()):
+            arguments.extend(("--env", f"{name}={value}"))
+        arguments.extend((container_id, *argv))
+        return self._invoke(
+            arguments,
+            timeout_s=timeout_s,
+            max_output_bytes=max_output_bytes,
+        )
+
+    def top_container(self, container_id: str) -> EngineResult:
+        return self._invoke(
+            ["top", container_id, "-eo", "pid,ppid,comm"],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+            max_output_bytes=256 * 1024,
         )
 
     def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]:
