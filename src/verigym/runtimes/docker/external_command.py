@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from verigym.runtimes.docker.engine import DockerEngine
+from verigym.runtimes.docker.engine import DockerEngine, execute_container
 from verigym.runtimes.docker.errors import (
     DockerContainerError,
     DockerRuntimeError,
@@ -102,13 +102,12 @@ class DockerExternalAgentCommandExecutor:
                 expected_environment=_ENVIRONMENT,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_container(
+                self._engine,
                 container_id,
                 timeout_s=timeout_s,
                 max_output_bytes=self._config.max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
             state_payload = self._engine.inspect_container(container_id)
             state = state_payload.get("State")
             state = state if isinstance(state, dict) else {}
@@ -143,6 +142,10 @@ class DockerExternalAgentCommandExecutor:
                 runtime_role="external-agent-command",
                 metadata={
                     "effective_timeout_s": timeout_s,
+                    "container_execution": {
+                        "protocol": execution.execution_protocol,
+                        "phase_durations_s": dict(execution.phase_durations_s),
+                    },
                     "credential_environment_names": [],
                     "network_mode": "none",
                     "resource_limits": resource_summary(
@@ -162,7 +165,14 @@ class DockerExternalAgentCommandExecutor:
                 failure_origin="control_plane",
                 container_id=container_id,
                 runtime_role="external-agent-command",
-                metadata={"origin": exc.origin},
+                metadata={
+                    "origin": exc.origin,
+                    **(
+                        {"container_execution": dict(exc.details)}
+                        if exc.origin == "container_execution"
+                        else {}
+                    ),
+                },
             )
         finally:
             cleanup_warning = self._remove_container(container_id) if container_id else None

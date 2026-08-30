@@ -56,6 +56,13 @@ benchmark checkout. Artifact acceptance rejects absolute paths, parent traversal
 components, unverified hard links, devices, sockets, FIFOs, and per-file or aggregate size
 violations.
 
+Non-interactive command containers use separate bounded `start`, runtime `wait`, and output
+`logs` phases. Control-plane startup time is not charged to the candidate wall-time budget. A
+runtime timeout kills the container, waits for its terminal state, and only then reads bounded
+logs. The attached streaming path remains limited to the separately bounded interactive external
+agent protocol. Phase, elapsed time, timeout, exit, truncation, and cleanup state are retained as
+content-free diagnostics; raw daemon output is not promoted into campaign receipts.
+
 ### Runtime-owned Codex external-agent boundary
 
 The Docker-backed Codex CLI integration uses architecture Path A from ADR 0012. The trusted host

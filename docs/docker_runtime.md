@@ -82,6 +82,35 @@ backend, user, and executable identities; the recorded source distinguishes `fre
 `in_process_immutable_cache`. Every episode container still undergoes its own effective-control
 inspection. Aggregate regeneration rejects mixed runtime/image fingerprints as non-homogeneous.
 
+A fresh preparation runs one combined, fixed identity command per role image. The verifier command
+checks UID, GID, Icarus and VVP; the external-agent command checks UID, GID, executable version and
+hash, plus repository-agent tool and launcher identities when required. Fixed section markers and
+an exact section inventory prevent ambiguous parsing. Combining checks reduces a verifier plus
+repository-agent preparation from eleven container lifecycles to two without weakening any
+identity comparison. Cache hits still require the newly inspected immutable image IDs and complete
+cached observations to match.
+
+### Non-interactive execution protocol
+
+Non-interactive containers use three separate Docker operations: detached `start`, runtime-bound
+`wait`, then bounded `logs`. Startup has its own control-plane deadline, so daemon scheduling time
+does not consume the candidate command budget. On runtime timeout VeriGym kills the container,
+waits for a terminal state under a separate cleanup deadline, and then collects bounded partial
+logs. Results retain the protocol ID and per-phase durations. `start --attach --interactive`
+remains only for the separately bounded external-agent stdio broker.
+
+This design follows Docker's documented
+[`start`](https://docs.docker.com/reference/cli/docker/container/start/),
+[`wait`](https://docs.docker.com/reference/cli/docker/container/wait/), and
+[`logs`](https://docs.docker.com/reference/cli/docker/container/logs/) primitives. The attached
+Docker CLI implementation combines attach, start, stream teardown, and exit-status handling in one
+control path, which is why it is not used for non-interactive timing. Related executable-gym
+implementations informed the separation and timeout tests: the
+[`SWE-bench` Docker harness](https://github.com/SWE-bench/SWE-bench/blob/main/swebench/harness/docker_utils.py)
+uses an independently identified and timed exec process, while
+[`R2E-Gym`](https://github.com/R2E-Gym/R2E-Gym/blob/main/src/r2egym/agenthub/runtime/docker.py)
+separates detached container startup from bounded command execution.
+
 ## Isolation topology
 
 DockerRuntime uses a private host-side session workspace and one short-lived constrained container
@@ -157,11 +186,13 @@ names are forbidden, and model credentials stay in the host-side model client.
 
 ## Results and failures
 
-Host-side wall time kills the short-lived command container and preserves bounded partial output.
-A timeout is recorded as `failure_reason=timeout` with `failure_origin=candidate_process` and the
-effective limit. OOM is recorded only when Docker container state reports `OOMKilled=true`; exit
-code 137 alone is not considered proof. The result includes the memory limit, container role, exit
-code, and Docker-state evidence.
+Host-side candidate wall time begins after detached startup succeeds, kills the short-lived command
+container at its deadline, waits for terminal state, and preserves bounded partial output. A
+timeout is recorded as `failure_reason=timeout` with `failure_origin=candidate_process` and the
+effective limit. Startup, wait-cleanup, and log transport failures instead retain structured
+control-plane subreasons. OOM is recorded only when Docker container state reports
+`OOMKilled=true`; exit code 137 alone is not considered proof. The result includes the memory
+limit, container role, exit code, phase timings, protocol ID, and Docker-state evidence.
 
 Deterministic candidate compile, simulation, timeout, OOM, and output-limit outcomes remain
 candidate failures when the tool marks them as candidate-controlled. Missing CLI/daemon/image,

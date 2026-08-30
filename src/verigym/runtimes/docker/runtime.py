@@ -34,10 +34,41 @@ from verigym.schemas.runtime import (
     DockerRuntimeConfig,
     SessionSpec,
 )
-from verigym.schemas.tool import CommandSpec, HealthCheckResult
+from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
 from verigym.suites.verilog_eval.toolchain import classify_icarus_version
 
 _VERSION_LINE = re.compile(r"^Icarus Verilog (?:runtime )?version\b", re.IGNORECASE)
+_PROBE_MARKER_PREFIX = "__VERIGYM_IMAGE_PROBE_V1__"
+_VERIFIER_IMAGE_PROBE_SCRIPT = (
+    "set -eu\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:uid'\n"
+    "id -u\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:gid'\n"
+    "id -g\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:iverilog'\n"
+    "iverilog -V 2>&1\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:vvp'\n"
+    "vvp -V 2>&1\n"
+)
+_AGENT_IMAGE_PROBE_SCRIPT = (
+    "set -eu\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:uid'\n"
+    "id -u\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:gid'\n"
+    "id -g\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:version'\n"
+    '"$1" --version\n'
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:binary_sha256'\n"
+    'sha256sum "$2"\n'
+    'if [ "$3" = "1" ]; then\n'
+    f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:iverilog'\n"
+    "  iverilog -V 2>&1\n"
+    f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:vvp'\n"
+    "  vvp -V 2>&1\n"
+    f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:launcher_sha256'\n"
+    '  sha256sum "$4"\n'
+    "fi\n"
+)
 _IMAGE_OBSERVATION_CACHE_LOCK = threading.Lock()
 _IMAGE_OBSERVATION_CACHE: dict[
     str,
@@ -388,39 +419,24 @@ class DockerRuntime(Runtime):
             )
             self._sessions.append(session)
             try:
-                uid_result = session.execute(
-                    CommandSpec(argv=["id", "-u"], timeout_s=health_timeout_s)
+                probe = session.execute(
+                    CommandSpec(
+                        argv=["sh", "-c", _VERIFIER_IMAGE_PROBE_SCRIPT],
+                        timeout_s=health_timeout_s,
+                    )
                 )
-                gid_result = session.execute(
-                    CommandSpec(argv=["id", "-g"], timeout_s=health_timeout_s)
+                _require_image_probe_success(
+                    probe,
+                    role="verifier",
+                    subreason="image_health_failed",
                 )
-                compiler = session.execute(
-                    CommandSpec(argv=["iverilog", "-V"], timeout_s=health_timeout_s)
+                sections = _parse_image_probe_sections(
+                    probe.stdout,
+                    expected=("uid", "gid", "iverilog", "vvp"),
                 )
-                runner = session.execute(
-                    CommandSpec(argv=["vvp", "-V"], timeout_s=health_timeout_s)
-                )
-                for name, result in (
-                    ("id -u", uid_result),
-                    ("id -g", gid_result),
-                    ("iverilog -V", compiler),
-                    ("vvp -V", runner),
-                ):
-                    if (
-                        result.error
-                        or result.timed_out
-                        or result.oom_killed
-                        or result.output_truncated
-                        or result.exit_code != 0
-                    ):
-                        raise DockerImageError(
-                            f"Docker image health command failed: {name}",
-                            subreason="image_health_failed",
-                            details={"command": name, "failure_reason": result.failure_reason},
-                        )
                 try:
-                    uid = int(uid_result.stdout.strip())
-                    gid = int(gid_result.stdout.strip())
+                    uid = int(sections["uid"])
+                    gid = int(sections["gid"])
                 except ValueError as exc:
                     raise DockerImageError(
                         "Docker image returned an invalid effective user identity",
@@ -431,8 +447,8 @@ class DockerRuntime(Runtime):
                         "Docker image executes as root and is rejected",
                         subreason="root_runtime_user",
                     )
-                iverilog_version = _extract_version(compiler.stdout + "\n" + compiler.stderr)
-                vvp_version = _extract_version(runner.stdout + "\n" + runner.stderr)
+                iverilog_version = _extract_version(sections["iverilog"])
+                vvp_version = _extract_version(sections["vvp"])
                 if iverilog_version is None or vvp_version is None:
                     raise DockerImageError(
                         "Docker image did not report valid Icarus tool versions",
@@ -481,100 +497,51 @@ class DockerRuntime(Runtime):
             )
             self._sessions.append(session)
             try:
-                uid_result = session.execute(
-                    CommandSpec(argv=["id", "-u"], timeout_s=health_timeout_s)
-                )
-                gid_result = session.execute(
-                    CommandSpec(argv=["id", "-g"], timeout_s=health_timeout_s)
-                )
-                version = session.execute(
-                    CommandSpec(
-                        argv=[external.expected_executable_name, "--version"],
-                        timeout_s=health_timeout_s,
-                    )
-                )
-                binary_hash = session.execute(
-                    CommandSpec(
-                        argv=[
-                            "sha256sum",
-                            f"../{external.expected_executable_path.lstrip('/')}",
-                        ],
-                        timeout_s=health_timeout_s,
-                    )
-                )
                 repository_agent = (
                     external.required_image_labels.get("org.verigym.runtime.role")
                     == "repository-agent"
                 )
-                iverilog_result = (
-                    session.execute(
-                        CommandSpec(argv=["iverilog", "-V"], timeout_s=health_timeout_s)
+                probe = session.execute(
+                    CommandSpec(
+                        argv=[
+                            "sh",
+                            "-c",
+                            _AGENT_IMAGE_PROBE_SCRIPT,
+                            "verigym-image-probe",
+                            external.expected_executable_name,
+                            f"../{external.expected_executable_path.lstrip('/')}",
+                            "1" if repository_agent else "0",
+                            "../usr/local/bin/verigym-public-test",
+                        ],
+                        timeout_s=health_timeout_s,
                     )
-                    if repository_agent
-                    else None
                 )
-                vvp_result = (
-                    session.execute(CommandSpec(argv=["vvp", "-V"], timeout_s=health_timeout_s))
-                    if repository_agent
-                    else None
+                _require_image_probe_success(
+                    probe,
+                    role="external_agent",
+                    subreason="agent_image_health_failed",
                 )
-                launcher_hash = (
-                    session.execute(
-                        CommandSpec(
-                            argv=[
-                                "sha256sum",
-                                "../usr/local/bin/verigym-public-test",
-                            ],
-                            timeout_s=health_timeout_s,
-                        )
-                    )
-                    if repository_agent
-                    else None
+                expected_sections = (
+                    "uid",
+                    "gid",
+                    "version",
+                    "binary_sha256",
+                    *(("iverilog", "vvp", "launcher_sha256") if repository_agent else ()),
                 )
-                health_results = [
-                    ("id -u", uid_result),
-                    ("id -g", gid_result),
-                    (f"{external.expected_executable_name} --version", version),
-                    ("external-agent executable SHA-256", binary_hash),
-                ]
-                if repository_agent:
-                    assert (
-                        iverilog_result is not None
-                        and vvp_result is not None
-                        and launcher_hash is not None
-                    )
-                    health_results.extend(
-                        [
-                            ("repository-agent iverilog -V", iverilog_result),
-                            ("repository-agent vvp -V", vvp_result),
-                            ("public-test launcher SHA-256", launcher_hash),
-                        ]
-                    )
-                for name, result in health_results:
-                    if (
-                        result.error
-                        or result.timed_out
-                        or result.oom_killed
-                        or result.output_truncated
-                        or result.exit_code != 0
-                    ):
-                        raise DockerImageError(
-                            f"Docker external-agent image health command failed: {name}",
-                            subreason="agent_image_health_failed",
-                            details={
-                                "command": name,
-                                "failure_reason": result.failure_reason,
-                                "failure_origin": result.failure_origin,
-                                "timed_out": result.timed_out,
-                                "oom_killed": result.oom_killed,
-                                "output_truncated": result.output_truncated,
-                                "exit_code": result.exit_code,
-                            },
-                        )
-                uid = int(uid_result.stdout.strip())
-                gid = int(gid_result.stdout.strip())
-                version_output = version.stdout.strip()
-                observed_binary_hash = binary_hash.stdout.partition(" ")[0].strip()
+                sections = _parse_image_probe_sections(
+                    probe.stdout,
+                    expected=expected_sections,
+                )
+                try:
+                    uid = int(sections["uid"])
+                    gid = int(sections["gid"])
+                except ValueError as exc:
+                    raise DockerImageError(
+                        "Docker external-agent image returned an invalid user identity",
+                        subreason="agent_image_identity_invalid",
+                    ) from exc
+                version_output = sections["version"]
+                observed_binary_hash = sections["binary_sha256"].partition(" ")[0].strip()
                 if (
                     uid == 0
                     or version_output != external.expected_executable_version
@@ -597,21 +564,14 @@ class DockerRuntime(Runtime):
                         subreason="agent_image_labels_invalid",
                     )
                 iverilog_output = (
-                    _extract_version(iverilog_result.stdout + "\n" + iverilog_result.stderr)
-                    if iverilog_result is not None
-                    else None
+                    _extract_version(sections["iverilog"]) if repository_agent else None
                 )
-                vvp_output = (
-                    _extract_version(vvp_result.stdout + "\n" + vvp_result.stderr)
-                    if vvp_result is not None
-                    else None
-                )
+                vvp_output = _extract_version(sections["vvp"]) if repository_agent else None
                 if repository_agent:
-                    assert launcher_hash is not None
                     expected_launcher_hash = external.required_image_labels.get(
                         "org.verigym.public_test_launcher.sha256"
                     )
-                    observed_launcher_hash = launcher_hash.stdout.partition(" ")[0].strip()
+                    observed_launcher_hash = sections["launcher_sha256"].partition(" ")[0].strip()
                     if (
                         expected_launcher_hash is None
                         or observed_launcher_hash != expected_launcher_hash
@@ -806,6 +766,67 @@ def _extract_version(output: str) -> str | None:
         (line.strip() for line in output.splitlines() if _VERSION_LINE.search(line.strip())),
         None,
     )
+
+
+def _require_image_probe_success(
+    result: CompletedCommand,
+    *,
+    role: str,
+    subreason: str,
+) -> None:
+    if (
+        result.error
+        or result.timed_out
+        or result.oom_killed
+        or result.output_truncated
+        or result.exit_code != 0
+    ):
+        raise DockerImageError(
+            f"Docker {role} combined image identity probe failed",
+            subreason=subreason,
+            details={
+                "probe_protocol": "combined_image_identity_v1",
+                "failure_reason": result.failure_reason,
+                "failure_origin": result.failure_origin,
+                "timed_out": result.timed_out,
+                "oom_killed": result.oom_killed,
+                "output_truncated": result.output_truncated,
+                "exit_code": result.exit_code,
+            },
+        )
+
+
+def _parse_image_probe_sections(output: str, *, expected: tuple[str, ...]) -> dict[str, str]:
+    lines = output.splitlines()
+    expected_markers = [f"{_PROBE_MARKER_PREFIX}:{name}" for name in expected]
+    observed_markers = [line for line in lines if line.startswith(f"{_PROBE_MARKER_PREFIX}:")]
+    if not lines or lines[0] != expected_markers[0] or observed_markers != expected_markers:
+        raise DockerImageError(
+            "Docker combined image identity probe returned an invalid section inventory",
+            subreason="image_probe_output_invalid",
+            details={
+                "probe_protocol": "combined_image_identity_v1",
+                "expected_section_count": len(expected_markers),
+                "observed_section_count": len(observed_markers),
+            },
+        )
+    positions = [lines.index(marker) for marker in expected_markers]
+    sections: dict[str, str] = {}
+    for index, name in enumerate(expected):
+        start = positions[index] + 1
+        end = positions[index + 1] if index + 1 < len(positions) else len(lines)
+        value = "\n".join(lines[start:end]).strip()
+        if not value:
+            raise DockerImageError(
+                "Docker combined image identity probe returned an empty section",
+                subreason="image_probe_output_invalid",
+                details={
+                    "probe_protocol": "combined_image_identity_v1",
+                    "section": name,
+                },
+            )
+        sections[name] = value
+    return sections
 
 
 def _external_agent_as_runtime_config(
