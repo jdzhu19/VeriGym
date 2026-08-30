@@ -22,7 +22,11 @@ from verigym.schemas.provenance import BuildProvenance
 from verigym.schemas.release import ReleaseManifest
 from verigym.schemas.replay import ReplayEvidence
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
-from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
+from verigym.schemas.runtime import (
+    DockerCommandImageRuntimeConfig,
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+)
 from verigym.schemas.sampling import PassAtKReport, SampleSetManifest, SampleSetResult
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.security_scan import (
@@ -44,6 +48,7 @@ __all__ = [
     "ArtifactSecurityScan",
     "BuildProvenance",
     "EpisodeEvent",
+    "DockerCommandImageRuntimeConfig",
     "DockerExternalAgentRuntimeConfig",
     "DockerRuntimeConfig",
     "ExternalProcessRequest",

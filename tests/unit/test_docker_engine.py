@@ -204,3 +204,54 @@ def test_docker_cli_uses_separate_control_runtime_and_log_deadlines(
         (["wait", "container-4"], 37, 64 * 1024),
         (["logs", "container-4"], 60, 1234),
     ]
+
+
+def test_docker_cli_exec_uses_argv_options_and_a_candidate_only_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = DockerCliEngine(executable="/usr/bin/docker")
+    observed: list[tuple[list[str], int, int]] = []
+
+    def invoke(
+        arguments: list[str],
+        *,
+        timeout_s: int,
+        max_output_bytes: int = 1024 * 1024,
+    ) -> EngineResult:
+        observed.append((arguments, timeout_s, max_output_bytes))
+        return _result(["docker", *arguments])
+
+    monkeypatch.setattr(engine, "_invoke", invoke)
+    engine.exec_container(
+        "container-5",
+        argv=["/bin/bash", "-lc", "printf ok"],
+        user="10001:10001",
+        cwd="/workspace/repository",
+        environment={"PATH": "/usr/bin", "HOME": "/tmp/home"},
+        timeout_s=17,
+        max_output_bytes=2048,
+    )
+    engine.top_container("container-5")
+
+    assert observed == [
+        (
+            [
+                "exec",
+                "--user",
+                "10001:10001",
+                "--workdir",
+                "/workspace/repository",
+                "--env",
+                "HOME=/tmp/home",
+                "--env",
+                "PATH=/usr/bin",
+                "container-5",
+                "/bin/bash",
+                "-lc",
+                "printf ok",
+            ],
+            17,
+            2048,
+        ),
+        (["top", "container-5", "-eo", "pid,ppid,comm"], 60, 256 * 1024),
+    ]

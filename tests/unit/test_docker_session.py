@@ -18,6 +18,7 @@ from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.runtimes.docker.session import _external_process_mounts
 from verigym.schemas.common import RuntimeDescriptor, ToolchainProfile
 from verigym.schemas.runtime import (
+    DockerCommandImageRuntimeConfig,
     DockerExternalAgentRuntimeConfig,
     DockerRuntimeConfig,
     SessionReadOnlyMount,
@@ -89,7 +90,11 @@ class RecordingDockerEngine:
     def inspect_image(self, reference: str) -> dict[str, Any] | None:
         self.inspect_image_calls.append(reference)
         return {
-            "Id": AGENT_IMAGE_ID if "repository-agent" in reference else IMAGE_ID,
+            "Id": (
+                AGENT_IMAGE_ID
+                if "repository-agent" in reference or "command" in reference
+                else IMAGE_ID
+            ),
             "RepoDigests": None,
             "Created": "2026-01-01T00:00:00Z",
             "Os": "linux",
@@ -222,7 +227,15 @@ class RecordingDockerEngine:
         truncated = False
         if command[:2] == ["sh", "-c"] and "__VERIGYM_IMAGE_PROBE_V1__" in command[2]:
             marker = "__VERIGYM_IMAGE_PROBE_V1__"
-            if "binary_sha256" in command[2]:
+            if "rg_sha256" in command[2]:
+                stdout = (
+                    f"{marker}:uid\n10001\n"
+                    f"{marker}:gid\n10001\n"
+                    f"{marker}:rg_version\nripgrep 15.2.0 (rev e89fff89ac)\n"
+                    f"{marker}:rg_sha256\n{CODEX_SHA256}  ../usr/local/bin/rg\n"
+                    f"{marker}:keepalive\ntail\n"
+                )
+            elif "binary_sha256" in command[2]:
                 stderr = "WARNING: proceeding, even though PATH aliases could not be created\n"
                 stdout = (
                     f"{marker}:uid\n10001\n"
@@ -647,6 +660,57 @@ def test_external_agent_shell_uses_credential_free_networkless_command_image(
         assert _option_value(arguments, "--workdir") == "/workspace/repository/rtl"
         with pytest.raises(ValueError, match="exact /bin/bash"):
             session.execute_external_agent_command(CommandSpec(argv=["true"]))
+    finally:
+        session.close()
+        runtime.close()
+
+
+def test_codex_free_command_role_prepares_and_executes_without_external_process(
+    tmp_path: Path,
+) -> None:
+    engine = RecordingDockerEngine()
+    engine.image_labels = {
+        "org.verigym.runtime.role": "hwe-cva6-command",
+        "org.verigym.command.rg.sha256": CODEX_SHA256,
+        "org.verigym.codex.present": "absent",
+    }
+    runtime = _prepared_runtime(
+        engine,
+        command_image=DockerCommandImageRuntimeConfig(
+            image="example:command",
+            expected_image_id=AGENT_IMAGE_ID,
+            expected_rg_version="ripgrep 15.2.0 (rev e89fff89ac)",
+            expected_rg_sha256=CODEX_SHA256,
+            protocol="hwe_command_image_v1",
+            execution_backend="ephemeral_container_v1",
+            required_image_labels=engine.image_labels,
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+            max_command_time_s=300,
+            max_output_bytes=1024 * 1024,
+        ),
+    )
+    source = tmp_path / "source"
+    source.mkdir()
+    session = runtime.create_session(SessionSpec(source_dir=str(source), label="agent"))
+    try:
+        assert session.external_process_backend == "runtime_external_process_unavailable"
+        result = session.execute_external_agent_command(
+            CommandSpec(argv=["/bin/bash", "-lc", "pwd"], timeout_s=5)
+        )
+        assert result.exit_code == 0
+        assert result.metadata["command_image_protocol"] == "hwe_command_image_v1"
+        assert result.metadata["command_execution_backend"] == "ephemeral_container_v1"
+        summary = runtime.environment_summary()
+        assert summary["external_agent_execution_backend"] == (
+            "runtime_external_process_unavailable"
+        )
+        assert summary["external_agent_command_execution_backend"] == ("ephemeral_container_v1")
+        assert summary["docker_role_images"]["external_agent"] is None
+        assert summary["docker_role_images"]["command"]["resolved_image_id"] == AGENT_IMAGE_ID
+        arguments = engine.create_arguments[-1]
+        image_index = arguments.index(AGENT_IMAGE_ID)
+        environment = _all_option_values(arguments[:image_index], "--env")
+        assert not any(value.startswith("CODEX_HOME=") for value in environment)
     finally:
         session.close()
         runtime.close()

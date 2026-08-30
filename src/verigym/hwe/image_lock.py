@@ -136,6 +136,90 @@ class HweAgentImageLock(StrictModel):
         return self
 
 
+class HweCommandImageLock(StrictModel):
+    """Codex-free task binding for a credential-free HWE shell command image."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_hwe_command_image_lock_v1"] = "verigym_hwe_command_image_lock_v1"
+    task_id: str
+    task_hash: str
+    source_hash: str
+    verifier_base_image_id: str
+    derived_command_image_id: str
+    rg_version: Literal["ripgrep 15.2.0 (rev e89fff89ac)"] = "ripgrep 15.2.0 (rev e89fff89ac)"
+    rg_sha256: str
+    rg_release_archive_sha256: str
+    rg_source: Literal["github.com/BurntSushi/ripgrep/releases/15.2.0"] = (
+        "github.com/BurntSushi/ripgrep/releases/15.2.0"
+    )
+    collection_profile_id: Literal["hwe_standard_v2"] = "hwe_standard_v2"
+    tool_contract_id: Literal["hwe_native_shell_v2"] = "hwe_native_shell_v2"
+    command_protocol: Literal["hwe_command_image_v1"] = "hwe_command_image_v1"
+    supported_execution_backends: tuple[
+        Literal["ephemeral_container_v1"],
+        Literal["episode_container_exec_v1"],
+    ] = ("ephemeral_container_v1", "episode_container_exec_v1")
+    toolchain_profile_id: str = Field(min_length=1, max_length=128)
+    allowlisted_artifacts: list[HweAllowlistedArtifact] = Field(min_length=1, max_length=512)
+    source_whiteout_path: Literal["/home/cva6"] = "/home/cva6"
+    visible_workspace_path: Literal["/workspace/repository"] = "/workspace/repository"
+    build_network: Literal["none"] = "none"
+    runtime_network: Literal["none"] = "none"
+    codex_present: Literal[False] = False
+    provider_credentials_present: Literal[False] = False
+    hidden_assets_present: Literal[False] = False
+    verifier_payload_present: Literal[False] = False
+    reference_patch_present: Literal[False] = False
+    security_scan_id: str
+    security_scan_passed: Literal[True] = True
+    lock_hash: str
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, value: str) -> str:
+        if not _TASK_ID.fullmatch(value):
+            raise ValueError("HWE command-image task ID is not portable")
+        return value
+
+    @field_validator(
+        "task_hash",
+        "source_hash",
+        "rg_sha256",
+        "rg_release_archive_sha256",
+        "security_scan_id",
+        "lock_hash",
+    )
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("HWE command-image identity must be SHA-256")
+        return value
+
+    @field_validator("verifier_base_image_id", "derived_command_image_id")
+    @classmethod
+    def validate_image_id(cls, value: str) -> str:
+        if not _IMAGE_ID.fullmatch(value):
+            raise ValueError("HWE command-image identity must be sha256:<64 lowercase hex>")
+        return value
+
+    @model_validator(mode="after")
+    def validate_lock(self) -> Self:
+        if self.verifier_base_image_id == self.derived_command_image_id:
+            raise ValueError("HWE verifier and command images must be independently identified")
+        paths = [artifact.path for artifact in self.allowlisted_artifacts]
+        if len(paths) != len(set(paths)):
+            raise ValueError("HWE command-image allowlist contains duplicate paths")
+        roles = {artifact.role for artifact in self.allowlisted_artifacts}
+        if not {"build_tool", "simulator"}.issubset(roles):
+            raise ValueError(
+                "HWE command-image allowlist must bind the build and simulation toolchain"
+            )
+        identity = self.model_dump(mode="json", exclude={"lock_hash"})
+        if content_hash(identity) != self.lock_hash:
+            raise ValueError("HWE command-image lock identity changed")
+        return self
+
+
 def build_hwe_agent_image_lock(**values: object) -> HweAgentImageLock:
     base = {
         "schema_version": SCHEMA_VERSION,
@@ -155,4 +239,29 @@ def build_hwe_agent_image_lock(**values: object) -> HweAgentImageLock:
     return HweAgentImageLock.model_validate({**normalized, "lock_hash": content_hash(normalized)})
 
 
-__all__ = ["HweAgentImageLock", "HweAllowlistedArtifact", "build_hwe_agent_image_lock"]
+def build_hwe_command_image_lock(**values: object) -> HweCommandImageLock:
+    base = {
+        "schema_version": SCHEMA_VERSION,
+        "format_id": "verigym_hwe_command_image_lock_v1",
+        **values,
+    }
+    artifacts = base.get("allowlisted_artifacts")
+    if isinstance(artifacts, list):
+        base["allowlisted_artifacts"] = [
+            item
+            if isinstance(item, HweAllowlistedArtifact)
+            else HweAllowlistedArtifact.model_validate(item)
+            for item in artifacts
+        ]
+    provisional = HweCommandImageLock.model_construct(None, **base, lock_hash="0" * 64)
+    normalized = provisional.model_dump(mode="json", exclude={"lock_hash"})
+    return HweCommandImageLock.model_validate({**normalized, "lock_hash": content_hash(normalized)})
+
+
+__all__ = [
+    "HweAgentImageLock",
+    "HweAllowlistedArtifact",
+    "HweCommandImageLock",
+    "build_hwe_agent_image_lock",
+    "build_hwe_command_image_lock",
+]

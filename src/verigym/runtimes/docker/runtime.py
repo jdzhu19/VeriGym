@@ -17,6 +17,7 @@ from verigym.runtimes.docker.errors import (
     DockerRuntimeError,
     sanitize_diagnostic,
 )
+from verigym.runtimes.docker.external_command import command_image_runtime_config
 from verigym.runtimes.docker.image import inspect_backend, resolve_image
 from verigym.runtimes.docker.resources import resource_summary
 from verigym.runtimes.docker.security import BASELINE_ENVIRONMENT
@@ -69,15 +70,33 @@ _AGENT_IMAGE_PROBE_SCRIPT = (
     '  sha256sum "$4"\n'
     "fi\n"
 )
+_COMMAND_IMAGE_PROBE_SCRIPT = (
+    "set -eu\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:uid'\n"
+    "id -u\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:gid'\n"
+    "id -g\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:rg_version'\n"
+    '"$1" --version | head -n 1\n'
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:rg_sha256'\n"
+    'sha256sum "$2"\n'
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:keepalive'\n"
+    "test -x /usr/bin/tail\n"
+    "printf '%s\\n' tail\n"
+)
 _IMAGE_OBSERVATION_CACHE_LOCK = threading.Lock()
 _IMAGE_OBSERVATION_CACHE: dict[
     str,
-    tuple[RuntimeImageIdentity, RuntimeImageIdentity | None],
+    tuple[
+        RuntimeImageIdentity,
+        RuntimeImageIdentity | None,
+        RuntimeImageIdentity | None,
+    ],
 ] = {}
 
 
 class DockerRuntime(Runtime):
-    """Short-lived constrained container per command over private session workspaces."""
+    """Constrained verifier and command containers over private session workspaces."""
 
     def __init__(
         self,
@@ -93,6 +112,7 @@ class DockerRuntime(Runtime):
         self._expected_image_id = expected_image_id
         self._replay_image = replay_image
         self._agent_image: RuntimeImageIdentity | None = None
+        self._command_image: RuntimeImageIdentity | None = None
         self._image_observation_source: str | None = None
         self._run_id: str | None = None
         self._prepared = False
@@ -211,6 +231,34 @@ class DockerRuntime(Runtime):
                         "container_network_none_stdio_broker",
                     }
                 )
+            if self._config.command_image is not None:
+                self._command_image = resolve_image(
+                    engine,
+                    command_image_runtime_config(self._config.command_image),
+                    expected_image_id=self._config.command_image.expected_image_id,
+                )
+                if self._command_image.resolved_image_id == image.resolved_image_id:
+                    raise DockerImageError(
+                        "command and verifier resolved to the same image identity",
+                        subreason="role_image_identity_collision",
+                    )
+                expected_user = f"{os.getuid()}:{os.getgid()}"
+                if os.getuid() == 0 or self._command_image.effective_user != expected_user:
+                    raise DockerImageError(
+                        "command image user must match the current non-root host UID:GID",
+                        subreason="command_image_user_mapping_invalid",
+                    )
+                command_capabilities = {
+                    "credential_free_command_image",
+                    "role_separated_images",
+                }
+                if self._config.command_image.execution_backend == "episode_container_exec_v1":
+                    command_capabilities.add("episode_container_exec")
+                else:
+                    command_capabilities.add("ephemeral_command_container")
+                self._descriptor.capabilities = sorted(
+                    set(self._descriptor.capabilities) | command_capabilities
+                )
             self._descriptor.security = RuntimeSecuritySummary(
                 network_mode="none",
                 read_only_rootfs=True,
@@ -238,6 +286,8 @@ class DockerRuntime(Runtime):
                     self._probe_image()
                     if self._agent_image is not None:
                         self._probe_agent_image()
+                    if self._command_image is not None:
+                        self._probe_command_image()
                     self._cache_image_observations()
                     self._image_observation_source = "fresh_probe"
             else:
@@ -294,6 +344,7 @@ class DockerRuntime(Runtime):
         if descriptor.backend is None or descriptor.image is None:
             raise RuntimeError("Docker image observation cache identity is unavailable")
         external = self._require_config().external_agent
+        command = self._require_config().command_image
         return content_hash(
             {
                 "backend": descriptor.backend,
@@ -326,6 +377,20 @@ class DockerRuntime(Runtime):
                     external.expected_executable_sha256 if external is not None else None
                 ),
                 "agent_runtime_configuration": external,
+                "command_image": (
+                    self._command_image.model_copy(
+                        update={
+                            "observed_uid": None,
+                            "observed_gid": None,
+                            "iverilog_version": None,
+                            "vvp_version": None,
+                            "compatibility_status": None,
+                        }
+                    )
+                    if self._command_image is not None
+                    else None
+                ),
+                "command_runtime_configuration": command,
             }
         )
 
@@ -337,6 +402,11 @@ class DockerRuntime(Runtime):
             _IMAGE_OBSERVATION_CACHE[self._observation_cache_key()] = (
                 verifier.model_copy(deep=True),
                 self._agent_image.model_copy(deep=True) if self._agent_image is not None else None,
+                (
+                    self._command_image.model_copy(deep=True)
+                    if self._command_image is not None
+                    else None
+                ),
             )
 
     def _restore_cached_image_observations(self) -> bool:
@@ -345,9 +415,10 @@ class DockerRuntime(Runtime):
             cached = _IMAGE_OBSERVATION_CACHE.get(key)
             if cached is None:
                 return False
-            verifier, agent = (
+            verifier, agent, command = (
                 cached[0].model_copy(deep=True),
                 cached[1].model_copy(deep=True) if cached[1] is not None else None,
+                cached[2].model_copy(deep=True) if cached[2] is not None else None,
             )
         current = self._descriptor.image
         if current is None or self._descriptor.security is None:
@@ -386,6 +457,26 @@ class DockerRuntime(Runtime):
                     subreason="image_observation_cache_invalid",
                 )
             self._agent_image = agent
+        if (self._command_image is None) != (command is None):
+            raise DockerImageError(
+                "cached Docker command-image observations are incomplete",
+                subreason="image_observation_cache_invalid",
+            )
+        if command is not None and self._command_image is not None:
+            if (
+                command.resolved_image_id != self._command_image.resolved_image_id
+                or command.os != self._command_image.os
+                or command.architecture != self._command_image.architecture
+                or command.effective_user != self._command_image.effective_user
+                or command.observed_uid in {None, 0}
+                or command.observed_gid is None
+                or command.compatibility_status is None
+            ):
+                raise DockerImageError(
+                    "cached Docker command-image observations do not match the immutable image",
+                    subreason="image_observation_cache_invalid",
+                )
+            self._command_image = command
         self._descriptor.image = verifier
         self._descriptor.security = self._descriptor.security.model_copy(
             update={
@@ -600,6 +691,95 @@ class DockerRuntime(Runtime):
             finally:
                 session.close()
 
+    def _probe_command_image(self) -> None:
+        if self._command_image is None or self._run_id is None:
+            raise RuntimeError("Docker command image identity is unavailable")
+        command = self._require_config().command_image
+        if command is None:
+            raise RuntimeError("Docker command-image configuration is unavailable")
+        health_timeout_s = min(60, max(10, command.max_command_time_s))
+        probe_config = command_image_runtime_config(command).model_copy(
+            update={"max_command_time_s": health_timeout_s}
+        )
+        with tempfile.TemporaryDirectory(prefix="verigym-docker-command-probe-") as temporary:
+            session = DockerRuntimeSession(
+                spec=SessionSpec(
+                    source_dir=str(Path(temporary)),
+                    label="diagnostic",
+                    max_output_bytes=128 * 1024,
+                ),
+                engine=self._get_engine(),
+                config=probe_config,
+                image=self._command_image,
+                run_id=self._run_id,
+                owner=self,
+            )
+            self._sessions.append(session)
+            try:
+                probe = session.execute(
+                    CommandSpec(
+                        argv=[
+                            "sh",
+                            "-c",
+                            _COMMAND_IMAGE_PROBE_SCRIPT,
+                            "verigym-command-image-probe",
+                            "rg",
+                            f"../{command.expected_rg_path.lstrip('/')}",
+                        ],
+                        timeout_s=health_timeout_s,
+                    )
+                )
+                _require_image_probe_success(
+                    probe,
+                    role="command_image",
+                    subreason="command_image_health_failed",
+                )
+                sections = _parse_image_probe_sections(
+                    probe.stdout,
+                    expected=("uid", "gid", "rg_version", "rg_sha256", "keepalive"),
+                )
+                try:
+                    uid = int(sections["uid"])
+                    gid = int(sections["gid"])
+                except ValueError as exc:
+                    raise DockerImageError(
+                        "Docker command image returned an invalid user identity",
+                        subreason="command_image_identity_invalid",
+                    ) from exc
+                observed_rg_hash = sections["rg_sha256"].partition(" ")[0].strip()
+                if (
+                    uid == 0
+                    or sections["rg_version"] != command.expected_rg_version
+                    or observed_rg_hash != command.expected_rg_sha256
+                    or sections["keepalive"] != "tail"
+                ):
+                    raise DockerImageError(
+                        "Docker command image identity is invalid",
+                        subreason="command_image_identity_invalid",
+                    )
+                raw = self._get_engine().inspect_image(self._command_image.resolved_image_id)
+                raw_config = raw.get("Config") if isinstance(raw, dict) else None
+                labels = raw_config.get("Labels") if isinstance(raw_config, dict) else None
+                labels = labels if isinstance(labels, dict) else {}
+                if any(
+                    labels.get(key) != value for key, value in command.required_image_labels.items()
+                ):
+                    raise DockerImageError(
+                        "Docker command image lacks required immutable identity labels",
+                        subreason="command_image_labels_invalid",
+                    )
+                self._command_image = self._command_image.model_copy(
+                    update={
+                        "observed_uid": uid,
+                        "observed_gid": gid,
+                        "compatibility_status": (
+                            f"{command.expected_rg_version};{command.execution_backend}"
+                        ),
+                    }
+                )
+            finally:
+                session.close()
+
     def health_check(self) -> HealthCheckResult:
         temporary_engine = self._engine is None
         engine: DockerEngine = self._engine or DockerCliEngine()
@@ -644,6 +824,8 @@ class DockerRuntime(Runtime):
             image=self._descriptor.image,
             agent_config=self._require_config().external_agent,
             agent_image=self._agent_image,
+            command_config=self._require_config().command_image,
+            command_image=self._command_image,
             run_id=self._run_id,
             owner=self,
         )
@@ -652,6 +834,7 @@ class DockerRuntime(Runtime):
 
     def environment_summary(self) -> dict[str, object]:
         descriptor = self.descriptor
+        command_config = self._require_config().command_image
         return {
             "docker_backend": (
                 descriptor.backend.model_dump(mode="json") if descriptor.backend else None
@@ -672,11 +855,23 @@ class DockerRuntime(Runtime):
                 "external_agent": (
                     self._agent_image.model_dump(mode="json") if self._agent_image else None
                 ),
+                "command": (
+                    self._command_image.model_dump(mode="json") if self._command_image else None
+                ),
             },
             "external_agent_execution_backend": (
                 "docker_outer_runtime_delegated"
                 if self._agent_image is not None
                 else "runtime_external_process_unavailable"
+            ),
+            "external_agent_command_execution_backend": (
+                command_config.execution_backend
+                if command_config is not None
+                else (
+                    "ephemeral_container_v1"
+                    if self._agent_image is not None
+                    else "runtime_external_command_unavailable"
+                )
             ),
             "image_observation_source": self._image_observation_source,
         }
