@@ -343,6 +343,14 @@ validation PR-2989/3059. Provider calls and model processes remained zero. This 
 still requires a separate merged canary authorization; see the
 [v28 result audit](../../docs/audits/2026-08-30_openhands-v28-reference-patch-preflight-resume-passed.md).
 
+The separately authorized v29 evidence layer then resolved those five sources across their sealed
+v26/v27/v28 roots, built one distinct networkless agent image per reserve, ran the v2 effective-
+control scan for every image, and materialized the unchanged v19 canary contract. The contract
+selects PR-2330 training followed by PR-3204 validation with the frozen v19 teacher, versions,
+budgets and fail-closed policy. The run made zero provider calls and did not execute the canary;
+see the
+[v29 result audit](../../docs/audits/2026-08-30_openhands-v29-v19-canary-materialization-passed.md).
+
 ## Five-task HWE collection pilot
 
 `scripts/collect_cva6_hwe_openhands_pilot.py` is the opt-in multi-task collection entry point. It
