@@ -147,6 +147,15 @@ package and agent workspace, and verifies candidates with a digest-locked per-PR
 executable slice covers Ibex and CVA6; it never bulk-pulls the approximately 417 published images.
 See [HWE-Bench integration](docs/hwe_bench.md).
 
+The current OpenHands HWE campaign remains pre-canary. Five public CVA6 tasks were qualified in
+the sealed v28 evidence, v29 materialized the original static canary inputs, and v30 stopped during
+a zero-provider Docker preflight. The Codex-free command runtime is now merged. A local v31
+pre-authorization diagnostic exposed that `git diff --quiet` does not reject an untracked runner;
+it was stopped before any provider call and is not reusable. The fresh v32 authorization adds an
+explicit tracked-path gate and may only build and scan six network-disabled command images and
+materialize the successor canary contract. It does not authorize a provider canary, trajectory
+collection, SFT, inference evaluation, or held-out access.
+
 ## Run the toy RTL task
 
 The original deterministic scripted AgentEval remains available:
