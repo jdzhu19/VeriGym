@@ -15,10 +15,12 @@ from .functional_v2_agenteval_config import (
     FUNCTIONAL_V2_HIGH_IDENTITY,
     FUNCTIONAL_V2_LOW_IDENTITY,
     FUNCTIONAL_V2_MEDIUM_IDENTITY,
+    FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY,
     FUNCTIONAL_V2_PROMPT_INSTRUCTIONS,
     functional_v2_high_settings,
     functional_v2_low_settings,
     functional_v2_medium_settings,
+    functional_v2_mini_medium_settings,
 )
 
 
@@ -77,6 +79,13 @@ class CodexCliFunctionalV2MediumAgentEvalAdapter(_CodexCliFunctionalV2AgentEvalA
     settings_resolver = staticmethod(functional_v2_medium_settings)
 
 
+class CodexCliFunctionalV2MiniMediumAgentEvalAdapter(_CodexCliFunctionalV2AgentEvalAdapter):
+    """Run one gpt-5.4-mini/medium controlled functional-v2 scoring episode."""
+
+    descriptor = _descriptor(FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY.agent_name)
+    settings_resolver = staticmethod(functional_v2_mini_medium_settings)
+
+
 class CodexCliFunctionalV2HighAgentEvalAdapter(_CodexCliFunctionalV2AgentEvalAdapter):
     """Run one gpt-5.4/xhigh functional-v2 scoring episode."""
 
@@ -88,4 +97,5 @@ __all__ = [
     "CodexCliFunctionalV2HighAgentEvalAdapter",
     "CodexCliFunctionalV2LowAgentEvalAdapter",
     "CodexCliFunctionalV2MediumAgentEvalAdapter",
+    "CodexCliFunctionalV2MiniMediumAgentEvalAdapter",
 ]

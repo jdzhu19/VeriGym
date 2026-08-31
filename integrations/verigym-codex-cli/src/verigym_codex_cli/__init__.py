@@ -18,6 +18,7 @@ from .functional_v2_agenteval_agent import (
     CodexCliFunctionalV2HighAgentEvalAdapter,
     CodexCliFunctionalV2LowAgentEvalAdapter,
     CodexCliFunctionalV2MediumAgentEvalAdapter,
+    CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
 )
 from .preflight import AuthPreflightResult, run_auth_preflight
 from .readonly_agent import CodexCliReadonlyAgentAdapter
@@ -36,6 +37,7 @@ __all__ = [
     "CodexCliFunctionalV2HighAgentEvalAdapter",
     "CodexCliFunctionalV2LowAgentEvalAdapter",
     "CodexCliFunctionalV2MediumAgentEvalAdapter",
+    "CodexCliFunctionalV2MiniMediumAgentEvalAdapter",
     "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",

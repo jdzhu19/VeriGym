@@ -17,6 +17,7 @@ class VerilogEvalVariant(StrEnum):
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1 = "v2-spec-to-rtl-agent-eval-functional-v1"
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2 = "v2-spec-to-rtl-agent-eval-functional-v2"
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3 = "v2-spec-to-rtl-agent-eval-functional-v3"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4 = "v2-spec-to-rtl-agent-eval-functional-v4"
 
 
 class IcarusCompatibility(StrEnum):

@@ -152,11 +152,17 @@ FUNCTIONAL_V2_LOW_IDENTITY = _identity(tier="low", model_id="gpt-5.4-mini", reas
 FUNCTIONAL_V2_MEDIUM_IDENTITY = _identity(
     tier="medium", model_id="gpt-5.4-mini", reasoning_effort="high"
 )
+FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY = _identity(
+    tier="mini-medium-control",
+    model_id="gpt-5.4-mini",
+    reasoning_effort="medium",
+)
 FUNCTIONAL_V2_HIGH_IDENTITY = _identity(tier="high", model_id="gpt-5.4", reasoning_effort="xhigh")
 FUNCTIONAL_V2_IDENTITIES = {
     identity.tier: identity
     for identity in (
         FUNCTIONAL_V2_LOW_IDENTITY,
+        FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY,
         FUNCTIONAL_V2_MEDIUM_IDENTITY,
         FUNCTIONAL_V2_HIGH_IDENTITY,
     )
@@ -196,6 +202,20 @@ def functional_v2_medium_settings(
     return _settings("medium", options, capabilities, task_wall_time_s=task_wall_time_s)
 
 
+def functional_v2_mini_medium_settings(
+    options: Mapping[str, JsonValue],
+    capabilities: CapabilityReport,
+    *,
+    task_wall_time_s: int,
+) -> CodexAgentEvalSettings:
+    return _settings(
+        "mini-medium-control",
+        options,
+        capabilities,
+        task_wall_time_s=task_wall_time_s,
+    )
+
+
 def functional_v2_high_settings(
     options: Mapping[str, JsonValue],
     capabilities: CapabilityReport,
@@ -210,6 +230,7 @@ __all__ = [
     "FUNCTIONAL_V2_IDENTITIES",
     "FUNCTIONAL_V2_LOW_IDENTITY",
     "FUNCTIONAL_V2_MEDIUM_IDENTITY",
+    "FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY",
     "FUNCTIONAL_V2_PROMPT_HASH",
     "FUNCTIONAL_V2_PROMPT_INSTRUCTIONS",
     "FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT",
@@ -217,4 +238,5 @@ __all__ = [
     "functional_v2_high_settings",
     "functional_v2_low_settings",
     "functional_v2_medium_settings",
+    "functional_v2_mini_medium_settings",
 ]

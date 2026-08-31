@@ -251,6 +251,32 @@ def test_functional_v3_freezes_serial_recovery_smoke_without_mutating_v2() -> No
     )
 
 
+def test_functional_v4_adds_only_frozen_harder_unseen_smokes_and_inherits_v3() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    v3 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value)
+    v4 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value)
+    added = {
+        "Prob140_fsm_hdlc",
+        "Prob144_conwaylife",
+        "Prob153_gshare",
+        "Prob155_lemmings4",
+    }
+
+    assert v4._functional_smoke_tasks() == v3._functional_smoke_tasks() | added
+    assert v4._public_smoke("Prob137_fsm_serial") == v3._public_smoke("Prob137_fsm_serial")
+    assert v4._public_smoke("Prob150_review2015_fsmonehot") == v3._public_smoke(
+        "Prob150_review2015_fsmonehot"
+    )
+    for native_id in sorted(added):
+        smoke = v4._public_smoke(native_id)
+        assert smoke is not None
+        assert "PUBLIC_SMOKE_PASS" in smoke
+    assert v4.source_snapshot().configuration_fingerprint != (
+        v3.source_snapshot().configuration_fingerprint
+    )
+
+
 def test_multiple_adapter_roots_coexist_without_global_state(tmp_path: Path) -> None:
     other = copied_fixture(tmp_path)
     prompt = other / "dataset_spec-to-rtl" / "Prob900_fixture_and_prompt.txt"

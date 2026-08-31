@@ -9,6 +9,7 @@ from verigym_codex_cli.functional_v2_agenteval_agent import (
     CodexCliFunctionalV2HighAgentEvalAdapter,
     CodexCliFunctionalV2LowAgentEvalAdapter,
     CodexCliFunctionalV2MediumAgentEvalAdapter,
+    CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
 )
 from verigym_codex_cli.functional_v2_agenteval_config import (
     FUNCTIONAL_V2_IDENTITIES,
@@ -17,6 +18,7 @@ from verigym_codex_cli.functional_v2_agenteval_config import (
     functional_v2_high_settings,
     functional_v2_low_settings,
     functional_v2_medium_settings,
+    functional_v2_mini_medium_settings,
 )
 
 pytestmark = pytest.mark.codex_cli
@@ -29,6 +31,11 @@ _CLI_SHA256 = "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477"
     [
         ("low", functional_v2_low_settings, CodexCliFunctionalV2LowAgentEvalAdapter),
         ("medium", functional_v2_medium_settings, CodexCliFunctionalV2MediumAgentEvalAdapter),
+        (
+            "mini-medium-control",
+            functional_v2_mini_medium_settings,
+            CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
+        ),
         ("high", functional_v2_high_settings, CodexCliFunctionalV2HighAgentEvalAdapter),
     ],
 )
@@ -86,5 +93,6 @@ def test_functional_v2_fingerprints_are_frozen_literals() -> None:
     } == {
         "low": "6f310dc8c2459afda70899911155f08383ae21dfc2f9977e903e0b0ccb2f00f2",
         "medium": "4ae411e4dd59e6ecbfd6333b730989decd2c2bfe3b0cdf280926a2742b1ebbae",
+        "mini-medium-control": ("bae15e580bd9c29d8fca9d71ce72e9a67e43f37598d5fc10ca2e59d922438b02"),
         "high": "505dd28a93683aa478da731b4bbe3e03417cd51b6e1589695962a0a3c04cfc3d",
     }
