@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -22,6 +23,8 @@ from verigym.hwe.image_lock import (
 )
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
+_MAX_DIAGNOSTIC_BYTES = 4096
+_SCRATCH_PARENT = Path("/data/jzhu484/Agent/.verigym-tmp")
 _EXPECTED_IMAGE_ENVIRONMENT = [
     "PATH=/tools/verilator/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
     "HOME=/tmp/verigym-home",
@@ -31,6 +34,71 @@ _EXPECTED_IMAGE_ENVIRONMENT = [
 ]
 _RG_VERSION = "ripgrep 15.2.0 (rev e89fff89ac)"
 _RG_SOURCE = "github.com/BurntSushi/ripgrep/releases/15.2.0"
+_ASSERTION_EXIT_CODES = {
+    41: "rootfs_write_rejected",
+    42: "codex_command_absent",
+    61: "non_root_identity",
+    62: "source_whiteout_directory_present",
+    63: "source_whiteout_empty",
+    64: "legacy_source_marker_absent",
+    65: "verifier_workspace_absent",
+    66: "public_payload_absent",
+    67: "hidden_verifier_absent",
+    68: "reference_patch_absent",
+    69: "codex_executable_absent",
+    70: "codex_library_absent",
+    71: "codex_auth_absent",
+    72: "workspace_writable",
+    73: "tmp_writable",
+    74: "container_parent_readable",
+    75: "repository_parent_visible",
+    76: "absolute_toolchain_readable",
+    77: "ripgrep_hash_exact",
+    78: "ripgrep_version_exact",
+    79: "keepalive_available",
+    80: "make_available",
+    81: "verilator_binary_available",
+    82: "verilator_wrapper_available",
+    90: "allowlisted_artifact_hash_exact",
+}
+_ERROR_CATEGORIES = frozenset(
+    {
+        "container_assertion_failed",
+        "container_cleanup_failed",
+        "container_command_failed",
+        "container_controls_invalid",
+        "container_inspect_failed",
+        "diagnostic_output_over_bound",
+        "docker_create_failed",
+        "docker_create_output_invalid",
+        "docker_start_failed",
+        "docker_start_timeout",
+        "unexpected_command_output",
+        "unknown",
+        "workspace_cleanup_failed",
+        "workspace_proof_missing",
+    }
+)
+_FAILURE_STAGES = frozenset(
+    {
+        "container_cleanup",
+        "container_control_inspection",
+        "container_diagnostic_start",
+        "container_state_inspection",
+        "docker_create",
+        "unknown",
+        "workspace_cleanup",
+        "workspace_proof_validation",
+    }
+)
+
+
+class CommandImageScanFailure(RuntimeError):
+    """A scan failure carrying only bounded, content-free diagnostics."""
+
+    def __init__(self, diagnostic: dict[str, Any]) -> None:
+        super().__init__("HWE command-image container scan failed")
+        self.diagnostic = diagnostic
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -83,53 +151,145 @@ def _environment_map(values: object) -> dict[str, str]:
     return result
 
 
+def _bytes(value: bytes | str | None) -> bytes:
+    if value is None:
+        return b""
+    return value if isinstance(value, bytes) else value.encode("utf-8", errors="replace")
+
+
+def _stream_receipt(stdout: bytes | str | None, stderr: bytes | str | None) -> dict[str, Any]:
+    stdout_bytes = _bytes(stdout)
+    stderr_bytes = _bytes(stderr)
+    empty = hashlib.sha256(b"").hexdigest()
+    return {
+        "stdout_bytes": len(stdout_bytes),
+        "stderr_bytes": len(stderr_bytes),
+        "stdout_sha256": empty if not stdout_bytes else None,
+        "stderr_sha256": empty if not stderr_bytes else None,
+        "nonempty_output_hashed": False,
+        "output_within_bound": (
+            len(stdout_bytes) <= _MAX_DIAGNOSTIC_BYTES
+            and len(stderr_bytes) <= _MAX_DIAGNOSTIC_BYTES
+        ),
+    }
+
+
+def _empty_diagnostic() -> dict[str, Any]:
+    empty = hashlib.sha256(b"").hexdigest()
+    return {
+        "schema_version": "1.0",
+        "format_id": "verigym_hwe_command_image_diagnostic_v2",
+        "status": "running",
+        "failure_stage": None,
+        "error_category": None,
+        "assertion_id": None,
+        "create_exit_code": None,
+        "create_stdout_bytes": 0,
+        "create_stderr_bytes": 0,
+        "create_stdout_sha256": empty,
+        "create_stderr_sha256": empty,
+        "create_nonempty_output_hashed": False,
+        "create_output_within_bound": True,
+        "exit_code": None,
+        "container_exit_code": None,
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "stdout_sha256": empty,
+        "stderr_sha256": empty,
+        "nonempty_output_hashed": False,
+        "output_within_bound": True,
+        "cleanup_exit_code": None,
+        "cleanup_stdout_bytes": 0,
+        "cleanup_stderr_bytes": 0,
+        "cleanup_stdout_sha256": empty,
+        "cleanup_stderr_sha256": empty,
+        "cleanup_nonempty_output_hashed": False,
+        "cleanup_output_within_bound": True,
+        "temporary_container_created": False,
+        "temporary_container_removed": False,
+        "temporary_workspace_removed": False,
+        "raw_output_persisted": False,
+    }
+
+
+def _seal_diagnostic(value: dict[str, Any]) -> dict[str, Any]:
+    base = {key: item for key, item in value.items() if key != "diagnostic_hash"}
+    if (
+        base.get("error_category") is not None
+        and base.get("error_category") not in _ERROR_CATEGORIES
+    ):
+        base["error_category"] = "unknown"
+        base["assertion_id"] = None
+    if base.get("failure_stage") is not None and base.get("failure_stage") not in _FAILURE_STAGES:
+        base["failure_stage"] = "unknown"
+    if (
+        base.get("error_category") != "container_assertion_failed"
+        or base.get("assertion_id") not in _ASSERTION_EXIT_CODES.values()
+    ):
+        base["assertion_id"] = None
+    empty = hashlib.sha256(b"").hexdigest()
+    for prefix in ("create_", "", "cleanup_"):
+        for stream in ("stdout", "stderr"):
+            count = base.get(f"{prefix}{stream}_bytes")
+            base[f"{prefix}{stream}_sha256"] = empty if count == 0 else None
+        base[f"{prefix}nonempty_output_hashed"] = False
+    return {**base, "diagnostic_hash": content_hash(base)}
+
+
+def _checked(command: str, exit_code: int) -> str:
+    return f"{command} || exit {exit_code}"
+
+
 def _container_scan(
     image_id: str,
     *,
     user: str,
     rg_sha256: str,
     artifacts: list[dict[str, Any]],
-) -> dict[str, bool]:
-    artifact_checks = "\n".join(
-        'test "$(sha256sum -- '
-        f'{shlex.quote(str(item["path"]))} | cut -c1-64)" = '
-        f"{shlex.quote(str(item['sha256']))}"
+) -> tuple[dict[str, bool], dict[str, Any]]:
+    assertions = [
+        _checked(f'test "$(id -u):$(id -g)" = "{user}"', 61),
+        _checked("test -d /home/cva6", 62),
+        _checked('test -z "$(find /home/cva6 -mindepth 1 -maxdepth 1 -print -quit)"', 63),
+        _checked("test ! -e /home/cva6_base_commit.txt", 64),
+        _checked("test ! -e /workspace/verifier", 65),
+        _checked("test ! -e /verigym-public", 66),
+        _checked("test ! -e /hidden-verifier", 67),
+        _checked("test ! -e /reference.patch", 68),
+        _checked("test ! -e /usr/local/bin/codex", 69),
+        _checked("test ! -e /usr/local/lib/codex", 70),
+        _checked("test ! -e /root/.codex/auth.json", 71),
+        "if command -v codex >/dev/null 2>&1; then exit 42; fi",
+        "if touch /verigym-rootfs-write 2>/dev/null; then exit 41; fi",
+        _checked("touch /workspace/repository/workspace-proof", 72),
+        _checked("touch /tmp/ephemeral-proof", 73),
+        _checked("find .. -maxdepth 2 -print >/tmp/parent-read", 74),
+        _checked("grep -q ../repository /tmp/parent-read", 75),
+        _checked("sed -n '1p' /etc/os-release >/tmp/absolute-read", 76),
+        _checked(f'test "$(sha256sum /usr/local/bin/rg | cut -c1-64)" = "{rg_sha256}"', 77),
+        _checked(f'test "$(rg --version | head -n 1)" = "{_RG_VERSION}"', 78),
+        _checked("test -x /usr/bin/tail", 79),
+        _checked("make --version >/tmp/make-version", 80),
+        _checked("/tools/verilator/bin/verilator_bin --version >/tmp/verilator-bin-version", 81),
+        _checked("VERILATOR_ROOT=/tools/verilator verilator --version >/tmp/verilator-version", 82),
+    ]
+    assertions.extend(
+        _checked(
+            'test "$(sha256sum -- '
+            f'{shlex.quote(str(item["path"]))} | cut -c1-64)" = '
+            f"{shlex.quote(str(item['sha256']))}",
+            90,
+        )
         for item in artifacts
     )
-    command = "\n".join(
-        (
-            "set -eu",
-            f'test "$(id -u):$(id -g)" = "{user}"',
-            "test -d /home/cva6",
-            'test -z "$(find /home/cva6 -mindepth 1 -maxdepth 1 -print -quit)"',
-            "test ! -e /home/cva6_base_commit.txt",
-            "test ! -e /workspace/verifier",
-            "test ! -e /verigym-public",
-            "test ! -e /hidden-verifier",
-            "test ! -e /reference.patch",
-            "test ! -e /usr/local/bin/codex",
-            "test ! -e /usr/local/lib/codex",
-            "test ! -e /root/.codex/auth.json",
-            "if command -v codex >/dev/null 2>&1; then exit 42; fi",
-            "if touch /verigym-rootfs-write 2>/dev/null; then exit 41; fi",
-            "touch /workspace/repository/workspace-proof",
-            "touch /tmp/ephemeral-proof",
-            "find .. -maxdepth 2 -print >/tmp/parent-read",
-            "grep -q ../repository /tmp/parent-read",
-            "sed -n '1p' /etc/os-release >/tmp/absolute-read",
-            f'test "$(sha256sum /usr/local/bin/rg | cut -c1-64)" = "{rg_sha256}"',
-            f'test "$(rg --version | head -n 1)" = "{_RG_VERSION}"',
-            "test -x /usr/bin/tail",
-            "make --version >/tmp/make-version",
-            "/tools/verilator/bin/verilator_bin --version >/tmp/verilator-bin-version",
-            "VERILATOR_ROOT=/tools/verilator verilator --version >/tmp/verilator-version",
-            artifact_checks,
-        )
-    )
-    scratch_parent = Path("/data/jzhu484/Agent/.verigym-tmp")
-    scratch_parent.mkdir(parents=True, exist_ok=True)
-    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=scratch_parent))
+    command = "\n".join(("set -u", *assertions))
+    _SCRATCH_PARENT.mkdir(parents=True, exist_ok=True)
+    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=_SCRATCH_PARENT))
     container_id: str | None = None
+    checks: dict[str, bool] = {}
+    diagnostic = _empty_diagnostic()
+    failure: BaseException | None = None
+    phase = "docker_create"
     try:
         create = [
             "docker",
@@ -171,52 +331,127 @@ def _container_scan(
                 command,
             )
         )
-        container_id = _run(create, timeout=60).stdout.strip()
+        created = subprocess.run(create, check=False, capture_output=True, timeout=60)
+        create_streams = _stream_receipt(created.stdout, created.stderr)
+        diagnostic.update(
+            {
+                "create_exit_code": created.returncode,
+                **{f"create_{key}": value for key, value in create_streams.items()},
+            }
+        )
+        if not create_streams["output_within_bound"]:
+            diagnostic["error_category"] = "diagnostic_output_over_bound"
+            raise RuntimeError("HWE command-image Docker create output exceeded its bound")
+        if created.returncode != 0:
+            diagnostic["error_category"] = "docker_create_failed"
+            raise RuntimeError("HWE command-image Docker create failed")
+        try:
+            container_id = _bytes(created.stdout).decode("ascii", errors="strict").strip()
+        except UnicodeError as exc:
+            diagnostic["error_category"] = "docker_create_output_invalid"
+            raise RuntimeError("HWE command-image Docker create output was malformed") from exc
+        if not container_id or any(character.isspace() for character in container_id):
+            diagnostic["error_category"] = "docker_create_output_invalid"
+            raise RuntimeError("HWE command-image Docker create returned no container ID")
+        diagnostic["temporary_container_created"] = True
+        phase = "container_control_inspection"
         inspection_values = json.loads(
             _run(["docker", "container", "inspect", container_id], timeout=30).stdout
         )
+        if (
+            not isinstance(inspection_values, list)
+            or len(inspection_values) != 1
+            or not isinstance(inspection_values[0], dict)
+        ):
+            diagnostic["error_category"] = "container_inspect_failed"
+            raise RuntimeError("HWE command-image container inspection was malformed")
         inspection = inspection_values[0]
         host = inspection["HostConfig"]
         config = inspection["Config"]
         mounts = inspection["Mounts"]
-        checks = {
-            "network_none": host["NetworkMode"] == "none",
-            "ipc_private": host["IpcMode"] == "none",
-            "read_only_rootfs": host["ReadonlyRootfs"] is True,
-            "cap_drop_all": "ALL" in host["CapDrop"],
-            "no_new_privileges": any(
-                value.startswith("no-new-privileges") for value in host["SecurityOpt"]
-            ),
-            "private_pid_namespace": host["PidMode"] == "",
-            "bounded_resources": (
-                host["Memory"] == 16 * 1024**3
-                and host["MemorySwap"] == 16 * 1024**3
-                and host["NanoCpus"] == 4_000_000_000
-                and host["PidsLimit"] == 4096
-            ),
-            "single_visible_workspace_mount": (
-                len(mounts) == 1
-                and mounts[0]["Destination"] == "/workspace/repository"
-                and mounts[0]["RW"] is True
-            ),
-            "exact_environment": (
-                len(config["Env"]) == len(_EXPECTED_IMAGE_ENVIRONMENT)
-                and _environment_map(config["Env"]) == _environment_map(_EXPECTED_IMAGE_ENVIRONMENT)
-            ),
-            "non_root_identity": config["User"] == user,
-        }
+        checks.update(
+            {
+                "network_none": host["NetworkMode"] == "none",
+                "ipc_private": host["IpcMode"] == "none",
+                "read_only_rootfs": host["ReadonlyRootfs"] is True,
+                "cap_drop_all": "ALL" in host["CapDrop"],
+                "no_new_privileges": any(
+                    value.startswith("no-new-privileges") for value in host["SecurityOpt"]
+                ),
+                "private_pid_namespace": host["PidMode"] == "",
+                "bounded_resources": (
+                    host["Memory"] == 16 * 1024**3
+                    and host["MemorySwap"] == 16 * 1024**3
+                    and host["NanoCpus"] == 4_000_000_000
+                    and host["PidsLimit"] == 4096
+                ),
+                "single_visible_workspace_mount": (
+                    len(mounts) == 1
+                    and mounts[0]["Destination"] == "/workspace/repository"
+                    and mounts[0]["RW"] is True
+                ),
+                "exact_environment": (
+                    len(config["Env"]) == len(_EXPECTED_IMAGE_ENVIRONMENT)
+                    and _environment_map(config["Env"])
+                    == _environment_map(_EXPECTED_IMAGE_ENVIRONMENT)
+                ),
+                "non_root_identity": config["User"] == user,
+            }
+        )
         if not all(checks.values()):
-            failed = ", ".join(name for name, passed in checks.items() if not passed)
-            raise RuntimeError(f"HWE command container controls differ from the lock: {failed}")
-        started = _run(["docker", "start", "--attach", container_id], timeout=180)
-        if started.stdout or started.stderr:
-            raise RuntimeError("HWE command-image scan unexpectedly emitted command output")
+            diagnostic["error_category"] = "container_controls_invalid"
+            raise RuntimeError("HWE command container controls differ from the lock")
+        phase = "container_diagnostic_start"
+        try:
+            started = subprocess.run(
+                ["docker", "start", "--attach", container_id],
+                check=False,
+                capture_output=True,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired as exc:
+            diagnostic.update(_stream_receipt(exc.stdout, exc.stderr))
+            diagnostic["error_category"] = "docker_start_timeout"
+            raise RuntimeError("HWE command-image diagnostic scan timed out") from exc
+        diagnostic.update(
+            {
+                "exit_code": started.returncode,
+                **_stream_receipt(started.stdout, started.stderr),
+            }
+        )
+        if not diagnostic["output_within_bound"]:
+            diagnostic["error_category"] = "diagnostic_output_over_bound"
+            raise RuntimeError("HWE command-image diagnostic output exceeded its bound")
+        phase = "container_state_inspection"
         state_values = json.loads(
             _run(["docker", "container", "inspect", container_id], timeout=30).stdout
         )
-        if state_values[0]["State"]["ExitCode"] != 0:
-            raise RuntimeError("HWE command-image diagnostic scan failed")
+        if (
+            not isinstance(state_values, list)
+            or len(state_values) != 1
+            or not isinstance(state_values[0], dict)
+            or not isinstance(state_values[0].get("State"), dict)
+            or type(state_values[0]["State"].get("ExitCode")) is not int
+        ):
+            diagnostic["error_category"] = "container_inspect_failed"
+            raise RuntimeError("HWE command-image container state was malformed")
+        container_exit_code = int(state_values[0]["State"]["ExitCode"])
+        diagnostic["container_exit_code"] = container_exit_code
+        if started.returncode != 0 or container_exit_code != 0:
+            if container_exit_code in _ASSERTION_EXIT_CODES:
+                diagnostic["error_category"] = "container_assertion_failed"
+                diagnostic["assertion_id"] = _ASSERTION_EXIT_CODES[container_exit_code]
+            elif container_exit_code != 0 and started.returncode == container_exit_code:
+                diagnostic["error_category"] = "container_command_failed"
+            else:
+                diagnostic["error_category"] = "docker_start_failed"
+            raise RuntimeError("HWE command-image diagnostic scan exited unsuccessfully")
+        if diagnostic["stdout_bytes"] or diagnostic["stderr_bytes"]:
+            diagnostic["error_category"] = "unexpected_command_output"
+            raise RuntimeError("HWE command-image scan unexpectedly emitted command output")
+        phase = "workspace_proof_validation"
         if not (workspace / "workspace-proof").is_file():
+            diagnostic["error_category"] = "workspace_proof_missing"
             raise RuntimeError("HWE command-image workspace was not writable")
         checks.update(
             {
@@ -234,17 +469,60 @@ def _container_scan(
                 "tmp_ephemeral": not (workspace / "ephemeral-proof").exists(),
             }
         )
-        return checks
-    finally:
-        if container_id:
-            subprocess.run(
+        if not all(checks.values()):
+            diagnostic["error_category"] = "workspace_proof_missing"
+            raise RuntimeError("HWE command-image post-run checks failed")
+    except (Exception, KeyboardInterrupt) as exc:
+        failure = exc
+        diagnostic["failure_stage"] = phase
+        diagnostic["error_category"] = diagnostic["error_category"] or {
+            "docker_create": "docker_create_failed",
+            "container_control_inspection": "container_inspect_failed",
+            "container_diagnostic_start": "docker_start_failed",
+            "container_state_inspection": "container_inspect_failed",
+            "workspace_proof_validation": "workspace_proof_missing",
+        }.get(phase, "unknown")
+    if container_id:
+        try:
+            removed = subprocess.run(
                 ["docker", "container", "rm", "--force", container_id],
                 check=False,
                 capture_output=True,
-                text=True,
                 timeout=30,
             )
+            cleanup_streams = _stream_receipt(removed.stdout, removed.stderr)
+            diagnostic.update(
+                {
+                    "cleanup_exit_code": removed.returncode,
+                    **{f"cleanup_{key}": value for key, value in cleanup_streams.items()},
+                }
+            )
+            if removed.returncode != 0 or not cleanup_streams["output_within_bound"]:
+                raise RuntimeError("HWE command-image temporary container cleanup failed")
+            diagnostic["temporary_container_removed"] = True
+        except (Exception, KeyboardInterrupt) as exc:
+            failure = exc
+            diagnostic["failure_stage"] = "container_cleanup"
+            diagnostic["error_category"] = "container_cleanup_failed"
+    try:
         shutil.rmtree(workspace)
+        diagnostic["temporary_workspace_removed"] = True
+    except (Exception, KeyboardInterrupt) as exc:
+        failure = exc
+        diagnostic["failure_stage"] = "workspace_cleanup"
+        diagnostic["error_category"] = "workspace_cleanup_failed"
+    if failure is not None:
+        diagnostic["status"] = "failed"
+        raise CommandImageScanFailure(_seal_diagnostic(diagnostic)) from None
+    diagnostic.update(
+        {
+            "status": "passed",
+            "failure_stage": None,
+            "error_category": None,
+            "assertion_id": None,
+        }
+    )
+    return checks, _seal_diagnostic(diagnostic)
 
 
 def scan_and_lock(
@@ -328,16 +606,34 @@ def scan_and_lock(
             "role": "public_asset",
         }
     )
-    runtime_checks = _container_scan(
-        image_id,
-        user=f"{os.getuid()}:{os.getgid()}",
-        rg_sha256=rg_sha256,
-        artifacts=artifacts,
-    )
+    try:
+        runtime_checks, diagnostic = _container_scan(
+            image_id,
+            user=f"{os.getuid()}:{os.getgid()}",
+            rg_sha256=rg_sha256,
+            artifacts=artifacts,
+        )
+    except CommandImageScanFailure as exc:
+        failure_base = {
+            "schema_version": "1.0",
+            "format_id": "verigym_hwe_command_image_security_scan_v2",
+            "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+            "task_id": identity.task_id,
+            "verifier_base_image_id": identity.verifier_base_image_id,
+            "derived_command_image_id": image_id,
+            "unsanitized_command_image_id": unsanitized_id,
+            "diagnostic": exc.diagnostic,
+            "secrets_detected": False,
+            "scan_passed": False,
+        }
+        failure_scan = {**failure_base, "security_scan_id": content_hash(failure_base)}
+        security_output.parent.mkdir(parents=True, exist_ok=True)
+        atomic_dump_json(security_output, failure_scan)
+        raise RuntimeError("HWE command-image runtime security scan failed") from None
     base = {
         "schema_version": "1.0",
-        "format_id": "verigym_hwe_command_image_security_scan_v1",
-        "scanner_profile_id": "cva6-hwe-command-container-native-offline-v1",
+        "format_id": "verigym_hwe_command_image_security_scan_v2",
+        "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
         "task_id": identity.task_id,
         "verifier_base_image_id": identity.verifier_base_image_id,
         "derived_command_image_id": image_id,
@@ -359,6 +655,7 @@ def scan_and_lock(
         },
         "toolchain_artifacts": artifacts,
         "checks": {**image_checks, **runtime_checks},
+        "diagnostic": diagnostic,
         "secrets_detected": False,
         "scan_passed": True,
     }

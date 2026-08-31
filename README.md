@@ -155,6 +155,9 @@ it was stopped before any provider call and is not reusable. The authorized v32 
 then stopped fail-closed during the first command-image security scan, also before any provider
 call. It produced no image lock or successor canary contract and is not reusable. No provider
 canary, trajectory collection, SFT, inference evaluation, or held-out access is authorized.
+The generic successor guard records content-free, assertion-level command-image failures and
+checks absolute filesystem byte/inode headroom before construction; this repair does not itself
+authorize a new campaign identity or a retry of v32.
 
 ## Run the toy RTL task
 
