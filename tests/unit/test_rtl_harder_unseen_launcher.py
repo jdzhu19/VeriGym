@@ -212,6 +212,99 @@ def test_execution_stops_after_infrastructure_failure(tmp_path: Path) -> None:
     assert service.calls == 2
 
 
+def test_execution_resumes_after_completed_prefix_without_retry(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    cell = launcher._CELLS["mini-medium"]
+    output = tmp_path / "campaign"
+    (output / "evidence").mkdir(parents=True)
+    configs = _configs(output, launcher)
+    completed = [_execution_result(tmp_path, config, cell, launcher) for config in configs[:9]]
+    ledger = [
+        {
+            "ordinal": ordinal,
+            "run_id": config.run_id,
+            "task_id": config.task_id,
+            "sample_index": config.sample_index,
+            "authorization_granted": True,
+            "process_started": True,
+            "identity_observation_count": 1,
+            "provider_observation_recorded": True,
+            "retry_count": 0,
+            "resolved": True,
+            "status": "completed",
+        }
+        for ordinal, config in enumerate(configs[:9], start=1)
+    ]
+    ledger.append(
+        {
+            "ordinal": 10,
+            "run_id": configs[9].run_id,
+            "task_id": configs[9].task_id,
+            "sample_index": configs[9].sample_index,
+            "authorization_granted": True,
+            "process_started": False,
+            "identity_observation_count": 0,
+            "provider_observation_recorded": False,
+            "retry_count": 0,
+            "status": "authorized",
+        }
+    )
+    service = _FakeService(tmp_path, cell, launcher, [{}, {}, {}])
+
+    results = launcher._execute_exactly_twelve(
+        service,
+        configs,
+        output,
+        cell=cell,
+        initial_results=completed,
+        initial_ledger=ledger,
+    )
+    stored = json.loads(
+        (output / "evidence" / "process-authorizations.json").read_text(encoding="utf-8")
+    )["records"]
+
+    assert len(results) == 12
+    assert service.calls == 3
+    assert len(stored) == 12
+    assert stored[9]["retry_count"] == 0
+    assert [record["ordinal"] for record in stored] == list(range(1, 13))
+
+
+def test_execution_rejects_a_started_pending_resume_slot(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    cell = launcher._CELLS["mini-medium"]
+    output = tmp_path / "campaign"
+    (output / "evidence").mkdir(parents=True)
+    configs = _configs(output, launcher)
+    ledger = [
+        {
+            "ordinal": 1,
+            "run_id": configs[0].run_id,
+            "task_id": configs[0].task_id,
+            "sample_index": configs[0].sample_index,
+            "authorization_granted": True,
+            "process_started": True,
+            "identity_observation_count": 0,
+            "provider_observation_recorded": False,
+            "retry_count": 0,
+            "status": "authorized",
+        }
+    ]
+    service = _FakeService(tmp_path, cell, launcher, [{} for _ in range(12)])
+
+    with pytest.raises(Exception, match="pending authorization is not resumable"):
+        launcher._execute_exactly_twelve(
+            service,
+            configs,
+            output,
+            cell=cell,
+            initial_results=[],
+            initial_ledger=ledger,
+        )
+
+    assert service.calls == 0
+
+
 def test_wilson_interval_and_progress_are_bounded(tmp_path: Path) -> None:
     launcher = _launcher_module()
     cell = launcher._CELLS["full-xhigh"]

@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -184,6 +185,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--execute", action="store_true")
+    mode.add_argument("--resume-existing", action="store_true")
     mode.add_argument("--finalize-existing", action="store_true")
     parser.add_argument("--cell", choices=tuple(_CELLS), required=True)
     parser.add_argument("--output", type=Path)
@@ -202,6 +204,8 @@ def main() -> int:
         arguments.output = Path(f"/data/jzhu484/Agent/experiments/{cell.campaign_id}")
     if arguments.finalize_existing:
         return _finalize_existing(arguments, cell)
+    if arguments.resume_existing:
+        return _resume_existing(arguments, cell)
 
     site_work = smoke._new_path(arguments.site_work, "site-profile work directory")
     progress_path = _campaign_progress_path(site_work)
@@ -602,26 +606,49 @@ def _execute_exactly_twelve(
     cell: Cell,
     progress_path: Path | None = None,
     progress_mirror: Path | None = None,
+    initial_results: list[RunResult] | None = None,
+    initial_ledger: list[dict[str, Any]] | None = None,
 ) -> list[RunResult]:
     if len(configs) != _PROCESS_COUNT:
         raise ConfigurationError("harder-unseen launcher requires exactly twelve runs")
-    ledger: list[dict[str, Any]] = []
-    results: list[RunResult] = []
+    ledger = list(initial_ledger or [])
+    results = list(initial_results or [])
+    if len(results) > _PROCESS_COUNT or len(ledger) not in {len(results), len(results) + 1}:
+        raise ConfigurationError("harder-unseen resume prefix is not contiguous")
     for ordinal, config in enumerate(configs, start=1):
-        record: dict[str, Any] = {
-            "ordinal": ordinal,
-            "run_id": config.run_id,
-            "task_id": config.task_id,
-            "sample_index": config.sample_index,
-            "authorization_granted": True,
-            "process_started": False,
-            "identity_observation_count": 0,
-            "provider_observation_recorded": False,
-            "retry_count": 0,
-            "status": "authorized",
-        }
-        ledger.append(record)
-        _write_ledger(output, ledger)
+        if ordinal <= len(results):
+            continue
+        if ordinal <= len(ledger):
+            record = ledger[ordinal - 1]
+            expected_pending = {
+                "ordinal": ordinal,
+                "run_id": config.run_id,
+                "task_id": config.task_id,
+                "sample_index": config.sample_index,
+                "authorization_granted": True,
+                "process_started": False,
+                "identity_observation_count": 0,
+                "provider_observation_recorded": False,
+                "retry_count": 0,
+                "status": "authorized",
+            }
+            if any(record.get(key) != value for key, value in expected_pending.items()):
+                raise ConfigurationError("harder-unseen pending authorization is not resumable")
+        else:
+            record = {
+                "ordinal": ordinal,
+                "run_id": config.run_id,
+                "task_id": config.task_id,
+                "sample_index": config.sample_index,
+                "authorization_granted": True,
+                "process_started": False,
+                "identity_observation_count": 0,
+                "provider_observation_recorded": False,
+                "retry_count": 0,
+                "status": "authorized",
+            }
+            ledger.append(record)
+            _write_ledger(output, ledger)
         if progress_path is not None:
             _record_progress(
                 progress_path,
@@ -984,6 +1011,291 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _resume_existing(arguments: argparse.Namespace, cell: Cell) -> int:
+    """Continue only a proven contiguous prefix without repeating an agent process."""
+
+    if os.environ.get(_OPT_IN) != "1":
+        raise ConfigurationError(f"execution requires {_OPT_IN}=1")
+    output = smoke._directory(arguments.output)
+    original_site_work = smoke._directory(arguments.site_work)
+    broker_root = smoke._directory(arguments.broker_root)
+    source_root = smoke._directory(arguments.verilog_eval_source)
+    plan = _read_json(smoke._regular_file(output / "plan.json", "diagnostic plan"))
+    _validate_existing_plan(plan, cell)
+
+    resume_site_work = Path(
+        tempfile.mkdtemp(
+            prefix=f"{original_site_work.name}-resume-",
+            dir=original_site_work.parent,
+        )
+    ).resolve()
+    progress_path = _campaign_progress_path(original_site_work)
+    progress_mirror = output / "evidence" / "campaign-progress.json"
+
+    capability_path, capability, auth = smoke._codex_preflight(
+        arguments.codex_binary,
+        resume_site_work,
+    )
+    os.environ["VERIGYM_CODEX_CAPABILITY_FILE"] = str(capability_path)
+    image_id = smoke._docker_image_id(arguments.image)
+    docker_config = smoke._docker_config(arguments.image, image_id)
+    service = VeriGym(_registries(cell))
+    source_config = SuiteSourceConfig(source_root=source_root, variant=_VARIANT)
+    runtime_descriptor, qualification = _qualify_suite(
+        service,
+        source_config=source_config,
+        docker_config=docker_config,
+        scratch=resume_site_work / "qualification",
+    )
+    if runtime_descriptor.model_dump(mode="json") != plan.get(
+        "runtime"
+    ) or qualification != plan.get("qualification"):
+        raise ConfigurationError("resume preflight differs from the frozen campaign plan")
+
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(smoke._broker_root(broker_root))
+    configs = _frozen_run_configs(
+        service,
+        cell=cell,
+        source_config=source_config,
+        docker_config=docker_config,
+        runtime_descriptor=runtime_descriptor,
+        agent_options=_agent_options(cell, capability, auth),
+        output=output / "runs",
+    )
+    hashes = [content_hash(item.identity_payload()) for item in configs]
+    if hashes != plan.get("run_config_hashes"):
+        raise ConfigurationError("resume run configurations differ from the frozen plan")
+
+    results, ledger, pending = _load_resume_prefix(output, cell)
+    if len(results) == _PROCESS_COUNT:
+        raise ConfigurationError(
+            "completed diagnostic requires independent finalization, not resume"
+        )
+    if pending is not None:
+        _archive_unstarted_run(output, pending, completed_processes=len(results))
+    _record_progress(
+        progress_path,
+        cell,
+        phase="execution",
+        status="running",
+        completed_processes=len(results),
+        active_process_ordinal=len(results) + 1,
+        mirror=progress_mirror,
+    )
+    results = _execute_exactly_twelve(
+        service,
+        configs,
+        output,
+        cell=cell,
+        progress_path=progress_path,
+        progress_mirror=progress_mirror,
+        initial_results=results,
+        initial_ledger=ledger,
+    )
+    _record_progress(
+        progress_path,
+        cell,
+        phase="execution",
+        status="completed",
+        completed_processes=_PROCESS_COUNT,
+        mirror=progress_mirror,
+    )
+    _record_progress(
+        progress_path,
+        cell,
+        phase="finalization",
+        status="started",
+        completed_processes=_PROCESS_COUNT,
+        mirror=progress_mirror,
+    )
+    summary = _finalize_results(
+        results,
+        cell=cell,
+        output=output,
+        service=service,
+        source_config=source_config,
+        source_root=source_root,
+        site_paths=(original_site_work, resume_site_work, broker_root, output),
+    )
+    _record_progress(
+        progress_path,
+        cell,
+        phase="finalization",
+        status="completed",
+        completed_processes=_PROCESS_COUNT,
+        resolved_processes=summary["resolved_count"],
+        mirror=progress_mirror,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if summary["diagnostic_complete"] else 2
+
+
+def _load_resume_prefix(
+    output: Path,
+    cell: Cell,
+) -> tuple[list[RunResult], list[dict[str, Any]], RunSpec | None]:
+    ledger_payload = _read_json(
+        smoke._regular_file(
+            output / "evidence" / "process-authorizations.json",
+            "process authorization ledger",
+        )
+    )
+    records = ledger_payload.get("records")
+    if not isinstance(records, list) or not 1 <= len(records) <= _PROCESS_COUNT:
+        raise ConfigurationError("resume ledger must contain a non-empty bounded prefix")
+
+    results: list[RunResult] = []
+    pending: RunSpec | None = None
+    for index, record in enumerate(records):
+        spec = _RUN_SPECS[index]
+        base = {
+            "ordinal": spec.ordinal,
+            "run_id": spec.run_id,
+            "task_id": spec.task_id,
+            "sample_index": spec.episode_index,
+            "authorization_granted": True,
+            "retry_count": 0,
+        }
+        if not isinstance(record, dict) or any(
+            record.get(key) != value for key, value in base.items()
+        ):
+            raise ConfigurationError("resume ledger is not a frozen contiguous prefix")
+        if record.get("status") == "authorized":
+            expected_pending = {
+                "process_started": False,
+                "identity_observation_count": 0,
+                "provider_observation_recorded": False,
+                "resolved": None,
+            }
+            if index != len(records) - 1 or any(
+                record.get(key) != value
+                for key, value in expected_pending.items()
+                if key in record or key != "resolved"
+            ):
+                raise ConfigurationError("only the next unstarted authorization may be resumed")
+            pending = spec
+            continue
+
+        result = _load_run_result(output, spec)
+        expected_completed = {
+            "process_started": True,
+            "identity_observation_count": 1,
+            "provider_observation_recorded": True,
+            "resolved": result.scorecard.resolved,
+            "status": _expected_ledger_status(result),
+        }
+        if any(record.get(key) != value for key, value in expected_completed.items()):
+            raise ConfigurationError("resume ledger differs from completed run evidence")
+        if not _identity_observation_valid(result, cell):
+            raise ConfigurationError("resume prefix contains invalid model identity evidence")
+        if expected_completed["status"] == "infrastructure_failure":
+            raise ConfigurationError("infrastructure-invalid campaigns cannot be resumed")
+        results.append(result)
+
+    if len(results) + (pending is not None) != len(records):
+        raise ConfigurationError("resume ledger contains a gap after an authorization")
+    expected_entries = {spec.run_id for spec in _RUN_SPECS[: len(records)]}
+    runs_root = output / "runs"
+    if runs_root.is_symlink() or not runs_root.is_dir():
+        raise ConfigurationError("resume campaign has no real runs directory")
+    actual_entries = {entry.name for entry in runs_root.iterdir()}
+    if actual_entries != expected_entries:
+        raise ConfigurationError("resume runs are not the exact ledger prefix")
+    return results, records, pending
+
+
+def _load_run_result(output: Path, spec: RunSpec) -> RunResult:
+    run_dir = output / "runs" / spec.run_id
+    manifest = load_model(run_dir / "run_manifest.json", RunManifest)
+    scorecard = load_model(run_dir / "scorecard.json", ScoreCard)
+    if (
+        run_dir.is_symlink()
+        or manifest.run_id != spec.run_id
+        or manifest.task_id != spec.task_id
+        or manifest.sample_index != spec.episode_index
+        or scorecard.run_id != spec.run_id
+        or scorecard.task_id != spec.task_id
+    ):
+        raise ConfigurationError("resume run differs from its frozen slot")
+    return RunResult(run_dir=run_dir, manifest=manifest, scorecard=scorecard)
+
+
+def _expected_ledger_status(result: RunResult) -> str:
+    failure = result.scorecard.failure
+    infrastructure = result.scorecard.correctness.infrastructure_error or (
+        failure is not None and failure.infrastructure
+    )
+    if infrastructure:
+        return "infrastructure_failure"
+    if failure is not None and failure.kind == "policy":
+        return "policy_failure"
+    if failure is not None:
+        return "contained_model_failure"
+    if not result.scorecard.resolved:
+        return "verifier_rejection"
+    return "completed"
+
+
+def _archive_unstarted_run(output: Path, spec: RunSpec, *, completed_processes: int) -> None:
+    run_dir = output / "runs" / spec.run_id
+    if not run_dir.is_dir() or run_dir.is_symlink():
+        raise ConfigurationError("authorized resume slot has no inspectable staging directory")
+    if any(path.is_symlink() for path in run_dir.rglob("*")):
+        raise ConfigurationError("authorized resume staging directory contains a symlink")
+    manifest = load_model(run_dir / "run_manifest.json", RunManifest)
+    codex_root = run_dir / "artifacts" / "codex_cli"
+    agent_log = run_dir / "logs" / "agent.log"
+    verifier_log = run_dir / "logs" / "verifier.log"
+    trace_path = run_dir / "trace.jsonl"
+    try:
+        trace = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("authorized resume staging trace is unavailable") from exc
+    event_types = [item.get("event_type") for item in trace if isinstance(item, dict)]
+    proven_unstarted = bool(
+        manifest.run_id == spec.run_id
+        and manifest.task_id == spec.task_id
+        and manifest.sample_index == spec.episode_index
+        and not manifest.external_agent_observations
+        and manifest.candidate_hash is None
+        and not manifest.agent_feedback_evaluations
+        and codex_root.is_dir()
+        and not any(codex_root.iterdir())
+        and agent_log.is_file()
+        and agent_log.stat().st_size == 0
+        and verifier_log.is_file()
+        and verifier_log.stat().st_size == 0
+        and not (run_dir / "scorecard.json").exists()
+        and event_types == ["episode_started", "observation_emitted"]
+    )
+    if not proven_unstarted:
+        raise ConfigurationError(
+            "interrupted slot may have started an agent process; resume refused"
+        )
+
+    archive_root = output / "evidence" / "interrupted-before-agent-process"
+    archive_root.mkdir()
+    archived = archive_root / spec.run_id
+    if archived.exists() or archived.is_symlink():
+        raise ConfigurationError("interrupted staging archive already exists")
+    run_dir.rename(archived)
+    atomic_dump_json(
+        output / "evidence" / "resume-audit.json",
+        {
+            "schema_version": "1.0",
+            "classification": "external_interruption_before_agent_process",
+            "run_id": spec.run_id,
+            "ordinal": spec.ordinal,
+            "completed_processes_preserved": completed_processes,
+            "agent_process_started": False,
+            "model_retry_performed": False,
+            "staging_artifacts_archived": True,
+            "diagnostic_only": True,
+            "benchmark_score_claimed": False,
+        },
+    )
+
+
 def _finalize_existing(arguments: argparse.Namespace, cell: Cell) -> int:
     output = smoke._directory(arguments.output)
     site_work = smoke._directory(arguments.site_work)
@@ -1075,19 +1387,7 @@ def _load_existing_results(output: Path) -> list[RunResult]:
         raise ConfigurationError("existing harder-unseen diagnostic does not contain twelve runs")
     results: list[RunResult] = []
     for spec in _RUN_SPECS:
-        run_dir = runs_root / spec.run_id
-        manifest = load_model(run_dir / "run_manifest.json", RunManifest)
-        scorecard = load_model(run_dir / "scorecard.json", ScoreCard)
-        if (
-            run_dir.is_symlink()
-            or manifest.run_id != spec.run_id
-            or manifest.task_id != spec.task_id
-            or manifest.sample_index != spec.episode_index
-            or scorecard.run_id != spec.run_id
-            or scorecard.task_id != spec.task_id
-        ):
-            raise ConfigurationError("existing harder-unseen run differs from its frozen slot")
-        results.append(RunResult(run_dir=run_dir, manifest=manifest, scorecard=scorecard))
+        results.append(_load_run_result(output, spec))
     return results
 
 
