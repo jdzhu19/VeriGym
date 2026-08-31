@@ -170,6 +170,14 @@ class DockerRuntimeSession(RuntimeSession):
         return "docker_outer_runtime_delegated"
 
     @property
+    def external_agent_command_backend(self) -> str:
+        if self._command_config is not None and self._command_image is not None:
+            return self._command_config.execution_backend
+        if self._agent_config is not None and self._agent_image is not None:
+            return "ephemeral_container_v1"
+        return "runtime_external_command_unavailable"
+
+    @property
     def logical_workspace_root(self) -> str:
         return "/workspace"
 

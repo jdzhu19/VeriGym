@@ -74,6 +74,19 @@ OPENHANDS_BOUNDED_ITERATION_TERMINATION_POLICY = (
 _TOOL_NAMES = sorted(item["function"]["name"] for item in deepseek_harness_tool_definitions())
 
 
+def _validated_hwe_runtime_bridge(
+    bridge: ExternalAgentBridge | None,
+) -> ExternalAgentBridge:
+    if bridge is None or (
+        bridge.execution_backend != "docker_outer_runtime_delegated"
+        and bridge.command_execution_backend != "episode_container_exec_v1"
+    ):
+        raise ValueError("OpenHands HWE requires an isolated Docker agent or command backend")
+    if bridge.isolation_level != "docker_standard":
+        raise ValueError("OpenHands HWE requires Docker standard isolation")
+    return bridge
+
+
 class OpenHandsHweAgentAdapter(AgentAdapter):
     """Run one exact, no-retry OpenHands HWE episode through six brokered tools."""
 
@@ -120,11 +133,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         self._pending_training_trajectory: dict[str, Any] | None = None
 
     def start(self, context: AgentContext) -> None:
-        bridge = context.external_bridge
-        if bridge is None or bridge.execution_backend != "docker_outer_runtime_delegated":
-            raise ValueError("OpenHands HWE requires the Docker outer runtime")
-        if bridge.isolation_level != "docker_standard":
-            raise ValueError("OpenHands HWE requires Docker standard isolation")
+        bridge = _validated_hwe_runtime_bridge(context.external_bridge)
         policy = context.prompt_policy
         if (
             policy is None

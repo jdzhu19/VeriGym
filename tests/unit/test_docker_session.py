@@ -415,6 +415,7 @@ def test_runtime_resolves_once_and_uses_same_image_for_distinct_sessions(tmp_pat
     verifier = runtime.create_session(SessionSpec(source_dir=str(source), label="verifier"))
     try:
         assert agent.external_process_backend == "runtime_external_process_unavailable"
+        assert agent.external_agent_command_backend == "runtime_external_command_unavailable"
         assert agent.logical_workspace_root == "/workspace"
         assert (
             runtime.environment_summary()["external_agent_execution_backend"]
@@ -694,6 +695,7 @@ def test_codex_free_command_role_prepares_and_executes_without_external_process(
     session = runtime.create_session(SessionSpec(source_dir=str(source), label="agent"))
     try:
         assert session.external_process_backend == "runtime_external_process_unavailable"
+        assert session.external_agent_command_backend == "ephemeral_container_v1"
         result = session.execute_external_agent_command(
             CommandSpec(argv=["/bin/bash", "-lc", "pwd"], timeout_s=5)
         )
@@ -711,6 +713,42 @@ def test_codex_free_command_role_prepares_and_executes_without_external_process(
         image_index = arguments.index(AGENT_IMAGE_ID)
         environment = _all_option_values(arguments[:image_index], "--env")
         assert not any(value.startswith("CODEX_HOME=") for value in environment)
+    finally:
+        session.close()
+        runtime.close()
+
+
+def test_episode_command_role_exposes_external_agent_command_backend(tmp_path: Path) -> None:
+    engine = RecordingDockerEngine()
+    engine.image_labels = {
+        "org.verigym.runtime.role": "hwe-cva6-command",
+        "org.verigym.command.rg.sha256": CODEX_SHA256,
+        "org.verigym.codex.present": "absent",
+    }
+    runtime = _prepared_runtime(
+        engine,
+        command_image=DockerCommandImageRuntimeConfig(
+            image="example:command",
+            expected_image_id=AGENT_IMAGE_ID,
+            expected_rg_version="ripgrep 15.2.0 (rev e89fff89ac)",
+            expected_rg_sha256=CODEX_SHA256,
+            protocol="hwe_command_image_v1",
+            execution_backend="episode_container_exec_v1",
+            required_image_labels=engine.image_labels,
+            run_as_user=f"{os.getuid()}:{os.getgid()}",
+            max_command_time_s=300,
+            max_output_bytes=1024 * 1024,
+        ),
+    )
+    source = tmp_path / "source"
+    source.mkdir()
+    session = runtime.create_session(SessionSpec(source_dir=str(source), label="agent"))
+    try:
+        assert session.external_process_backend == "runtime_external_process_unavailable"
+        assert session.external_agent_command_backend == "episode_container_exec_v1"
+        assert runtime.environment_summary()["external_agent_command_execution_backend"] == (
+            "episode_container_exec_v1"
+        )
     finally:
         session.close()
         runtime.close()
