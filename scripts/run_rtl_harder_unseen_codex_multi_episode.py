@@ -241,7 +241,9 @@ def main() -> int:
     )
     _record_progress(progress_path, cell, phase="suite_qualification", status="completed")
 
-    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(smoke._broker_root(broker_root))
+    if len(str(broker_root)) > 72:
+        raise ConfigurationError("site work path is too long for the Unix broker socket")
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(broker_root)
     _record_progress(progress_path, cell, phase="freeze", status="started")
     configs = _frozen_run_configs(
         service,
