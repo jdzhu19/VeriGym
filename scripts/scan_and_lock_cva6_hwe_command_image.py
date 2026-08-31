@@ -24,6 +24,7 @@ from verigym.hwe.image_lock import (
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
 _MAX_DIAGNOSTIC_BYTES = 4096
+_SCRATCH_PARENT = Path("/data/jzhu484/Agent/.verigym-tmp")
 _EXPECTED_IMAGE_ENVIRONMENT = [
     "PATH=/tools/verilator/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin",
     "HOME=/tmp/verigym-home",
@@ -282,9 +283,8 @@ def _container_scan(
         for item in artifacts
     )
     command = "\n".join(("set -u", *assertions))
-    scratch_parent = Path("/data/jzhu484/Agent/.verigym-tmp")
-    scratch_parent.mkdir(parents=True, exist_ok=True)
-    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=scratch_parent))
+    _SCRATCH_PARENT.mkdir(parents=True, exist_ok=True)
+    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=_SCRATCH_PARENT))
     container_id: str | None = None
     checks: dict[str, bool] = {}
     diagnostic = _empty_diagnostic()

@@ -46,6 +46,7 @@ def _run_scan(
 ):
     workspace = tmp_path / "scan-workspace"
     workspace.mkdir()
+    monkeypatch.setattr(_scanner, "_SCRATCH_PARENT", tmp_path)
     monkeypatch.setattr(
         _scanner.tempfile,
         "mkdtemp",
