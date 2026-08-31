@@ -33,9 +33,10 @@ from verigym.core.hashing import content_hash
 from verigym.core.loaders import load_model
 from verigym.core.orchestrator import VeriGym
 from verigym.core.workspace import copy_tree_safely
+from verigym.experiments.identity import normalized_runtime_descriptor
 from verigym.experiments.state import atomic_dump_json
 from verigym.registry.base import PluginOrigin
-from verigym.schemas.common import InteractionMode
+from verigym.schemas.common import InteractionMode, RuntimeDescriptor
 from verigym.schemas.run import RunConfig, RunManifest, RunResult
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.score import ScoreCard
@@ -1045,8 +1046,9 @@ def _resume_existing(arguments: argparse.Namespace, cell: Cell) -> int:
         docker_config=docker_config,
         scratch=resume_site_work / "qualification",
     )
-    if runtime_descriptor.model_dump(mode="json") != plan.get(
-        "runtime"
+    frozen_runtime = RuntimeDescriptor.model_validate(plan.get("runtime"))
+    if normalized_runtime_descriptor(runtime_descriptor) != normalized_runtime_descriptor(
+        frozen_runtime
     ) or qualification != plan.get("qualification"):
         raise ConfigurationError("resume preflight differs from the frozen campaign plan")
 
@@ -1056,7 +1058,7 @@ def _resume_existing(arguments: argparse.Namespace, cell: Cell) -> int:
         cell=cell,
         source_config=source_config,
         docker_config=docker_config,
-        runtime_descriptor=runtime_descriptor,
+        runtime_descriptor=frozen_runtime,
         agent_options=_agent_options(cell, capability, auth),
         output=output / "runs",
     )
