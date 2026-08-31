@@ -98,6 +98,29 @@ def test_recoverable_broker_error_returns_safe_state_and_next_actions(tmp_path: 
     assert broker.stats().policy_failure is None
 
 
+def test_compatible_broker_maps_model_apply_patch_to_codex_tool(tmp_path: Path) -> None:
+    broker = RepositoryToolBroker(
+        bridge=_Bridge(),  # type: ignore[arg-type]
+        socket_path=tmp_path / "broker" / "mcp.sock",
+        public_test_ids=(),
+        codex_patch_compatibility=True,
+    )
+
+    response = broker._dispatch(  # noqa: SLF001
+        {
+            "name": "apply_patch",
+            "arguments": {
+                "patch": (
+                    "*** Begin Patch\n*** Add File: rtl/new.v\n+module x; endmodule\n*** End Patch"
+                )
+            },
+        }
+    )
+
+    assert response["isError"] is False
+    assert broker.stats().patch_format_profile == "strict_unified_and_codex_native_v1"
+
+
 @pytest.mark.parametrize(
     ("message", "category"),
     [

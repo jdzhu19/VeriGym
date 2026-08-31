@@ -49,9 +49,11 @@ class DockerEngine(Protocol):
 
     def inspect_container(self, container_id: str) -> dict[str, Any]: ...
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
-    ) -> EngineResult: ...
+    def start_container(self, container_id: str) -> EngineResult: ...
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult: ...
+
+    def container_logs(self, container_id: str, *, max_output_bytes: int) -> EngineResult: ...
 
     def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]: ...
 
@@ -286,14 +288,34 @@ class DockerCliEngine:
             )
         return payload[0]
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
-    ) -> EngineResult:
-        return self._invoke(
-            ["start", "--attach", container_id],
-            timeout_s=timeout_s,
+    def start_container(self, container_id: str) -> EngineResult:
+        result = self._invoke(["start", container_id], timeout_s=_CONTAINER_CONTROL_TIMEOUT_S)
+        if result.timed_out:
+            raise DockerDaemonError(
+                "Docker container start request timed out",
+                subreason="container_start_timeout",
+            )
+        if result.exit_code != 0:
+            self._raise_control_error(result, action="container_start")
+        return result
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult:
+        return self._invoke(["wait", container_id], timeout_s=timeout_s)
+
+    def container_logs(self, container_id: str, *, max_output_bytes: int) -> EngineResult:
+        result = self._invoke(
+            ["logs", container_id],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
             max_output_bytes=max_output_bytes,
         )
+        if result.timed_out:
+            raise DockerDaemonError(
+                "Docker container logs request timed out",
+                subreason="container_logs_timeout",
+            )
+        if result.exit_code != 0:
+            self._raise_control_error(result, action="container_logs")
+        return result
 
     def start_attach_streaming(self, container_id: str) -> subprocess.Popen[bytes]:
         """Attach a bounded-protocol broker to an interactive managed container."""

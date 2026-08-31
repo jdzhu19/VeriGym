@@ -50,6 +50,42 @@ def test_matrix_freezes_exactly_fourteen_single_process_slots() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("tier", "model", "reasoning"),
+    [
+        ("low", "gpt-5.4-mini", "low"),
+        ("medium", "gpt-5.4-mini", "high"),
+        ("high", "gpt-5.4", "xhigh"),
+    ],
+)
+def test_v2_tier_activation_keeps_the_same_fourteen_slots(
+    tier: str, model: str, reasoning: str
+) -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile(tier)
+
+    assert len(launcher._RUN_SPECS) == 14
+    assert launcher._PROFILE.model_id == model
+    assert launcher._PROFILE.reasoning_effort == reasoning
+    assert all("agent_eval_functional_v2" in spec.task_id for spec in launcher._RUN_SPECS[:4])
+    assert all(launcher._VE_VARIANT in spec.task_id for spec in launcher._RUN_SPECS[4:])
+    assert launcher._PROFILE.agent_name.endswith(f"-{tier}-agenteval-agent")
+
+
+@pytest.mark.parametrize("tier", ["low", "medium", "high"])
+def test_v3_tiers_change_only_verilog_eval_feedback_revision(tier: str) -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile(f"{tier}-v3")
+
+    assert launcher._PROFILE.campaign_id.endswith("14run-diagnostic-v3")
+    assert launcher._PROFILE.tier == tier
+    assert launcher._PROFILE.ve_variant.endswith("agent-eval-functional-v3")
+    assert launcher._PROFILE.counter_variant.endswith("agent_eval_functional_v2")
+    assert launcher._PROFILE.up_down_variant.endswith("agent_eval_functional_v2")
+    assert launcher._PROFILE.rtllm_public_feedback_semantics.endswith("smoke_v2")
+    assert launcher._PROFILE.verilog_eval_public_feedback_semantics.endswith("smoke_v3")
+
+
 def _configs(output: Path, launcher: ModuleType) -> list[RunConfig]:
     return [
         RunConfig(task_id=spec.task_id, output=output / "runs", run_id=spec.run_id)
@@ -264,3 +300,69 @@ def test_commercial_scan_ignores_only_content_free_mcp_category_keys() -> None:
         )
         is not None
     )
+
+
+def test_campaign_progress_is_atomic_bounded_and_content_free(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile("medium")
+    path = tmp_path / "campaign-progress.json"
+    mirror = tmp_path / "evidence" / "campaign-progress.json"
+
+    launcher._record_progress(
+        path,
+        phase="execution",
+        status="running",
+        completed_processes=6,
+        active_process_ordinal=7,
+        mirror=mirror,
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert json.loads(mirror.read_text(encoding="utf-8")) == payload
+    assert payload == {
+        "schema_version": "1.0",
+        "campaign_id": "rtl-functional-multiturn-codex-medium-14run-diagnostic-v2",
+        "comparison_tier": "medium",
+        "phase": "execution",
+        "status": "running",
+        "planned_processes": 14,
+        "completed_processes": 6,
+        "active_process_ordinal": 7,
+        "resolved_processes": None,
+        "diagnostic_only": True,
+        "benchmark_score_claimed": False,
+    }
+    event = json.loads(capsys.readouterr().out)
+    assert event == {"event": "campaign_progress", **payload}
+    serialized = json.dumps(payload, sort_keys=True)
+    assert "/" not in serialized
+    assert "task_id" not in serialized
+    assert "profile_name" not in serialized
+
+    with pytest.raises(Exception, match="allowlisted"):
+        launcher._record_progress(path, phase="private-task", status="running")
+    with pytest.raises(Exception, match="out of range"):
+        launcher._record_progress(
+            path,
+            phase="execution",
+            status="running",
+            completed_processes=15,
+        )
+
+
+def test_preflight_progress_does_not_create_reserved_site_work(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    site_work = tmp_path / "reserved-site-work"
+    progress = launcher._campaign_progress_path(site_work)
+
+    launcher._record_progress(
+        progress,
+        phase="input_qualification",
+        status="started",
+    )
+
+    assert progress == tmp_path / ".reserved-site-work.campaign-progress.json"
+    assert progress.is_file()
+    assert not site_work.exists()

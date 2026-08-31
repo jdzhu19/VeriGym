@@ -213,6 +213,44 @@ def test_agent_eval_variant_materializes_public_compile_without_hidden_assets() 
     assert "module tb" not in visible_text
 
 
+def test_functional_v2_variant_has_independent_identity() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    assert VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value == (
+        "v2-spec-to-rtl-agent-eval-functional-v2"
+    )
+    smoke = (
+        Path(__file__).parents[2]
+        / "src/verigym/suites/verilog_eval/assets/public_smoke_v2"
+        / "Prob150_review2015_fsmonehot.sv"
+    ).read_text(encoding="utf-8")
+    assert "state[8] & ~done_counting" in smoke
+    assert "state[9] & ~ack" in smoke
+    assert "state_index < 10" in smoke
+
+
+def test_functional_v3_freezes_serial_recovery_smoke_without_mutating_v2() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    v2_name = VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value
+    v3_name = VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value
+    v2 = adapter(variant=v2_name)
+    v3 = adapter(variant=v3_name)
+
+    v2_serial = v2._public_smoke("Prob137_fsm_serial")
+    v3_serial = v3._public_smoke("Prob137_fsm_serial")
+    assert v2_serial is not None and v3_serial is not None
+    assert "resynchronization asserted done" not in v2_serial
+    assert "resynchronization asserted done" in v3_serial
+    assert "invalid stop accepted" in v3_serial
+    assert v3._public_smoke("Prob150_review2015_fsmonehot") == v2._public_smoke(
+        "Prob150_review2015_fsmonehot"
+    )
+    assert v2.source_snapshot().configuration_fingerprint != (
+        v3.source_snapshot().configuration_fingerprint
+    )
+
+
 def test_multiple_adapter_roots_coexist_without_global_state(tmp_path: Path) -> None:
     other = copied_fixture(tmp_path)
     prompt = other / "dataset_spec-to-rtl" / "Prob900_fixture_and_prompt.txt"

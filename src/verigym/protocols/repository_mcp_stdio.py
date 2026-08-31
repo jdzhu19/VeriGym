@@ -12,13 +12,21 @@ from typing import Any
 from verigym.protocols.repository_action import repository_tool_definitions
 
 _MAX_MESSAGE_BYTES = 2 * 1024 * 1024
-_TOOL_DEFINITIONS = repository_tool_definitions(dialect="mcp")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--socket", type=Path, required=True)
+    parser.add_argument("--codex-compatible-patch", action="store_true")
     arguments = parser.parse_args()
+    tool_definitions = repository_tool_definitions(
+        dialect="mcp",
+        patch_format_profile=(
+            "strict_unified_and_codex_native_v1"
+            if arguments.codex_compatible_patch
+            else "strict_unified_v1"
+        ),
+    )
     while True:
         raw = sys.stdin.buffer.readline(_MAX_MESSAGE_BYTES + 1)
         if not raw:
@@ -27,7 +35,7 @@ def main() -> None:
             return
         try:
             request = json.loads(raw)
-            response = _handle(request, arguments.socket)
+            response = _handle(request, arguments.socket, tool_definitions)
         except Exception as exc:
             response = _error(None, -32603, f"MCP adapter error: {type(exc).__name__}")
         if response is not None:
@@ -35,7 +43,13 @@ def main() -> None:
             sys.stdout.flush()
 
 
-def _handle(request: Any, socket_path: Path) -> dict[str, Any] | None:
+def _handle(
+    request: Any,
+    socket_path: Path,
+    tool_definitions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    if tool_definitions is None:
+        tool_definitions = repository_tool_definitions(dialect="mcp")
     if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
         return _error(None, -32600, "invalid JSON-RPC request")
     request_id = request.get("id")
@@ -58,7 +72,7 @@ def _handle(request: Any, socket_path: Path) -> dict[str, Any] | None:
     if method == "ping":
         return {"jsonrpc": "2.0", "id": request_id, "result": {}}
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": _TOOL_DEFINITIONS}}
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": tool_definitions}}
     if method == "tools/call":
         params = request.get("params")
         if not isinstance(params, dict):

@@ -163,8 +163,18 @@ _ACTION_DESCRIPTIONS = {
     "finish": "Finish after applying a patch and inspecting the candidate diff.",
 }
 
+_CODEX_COMPATIBLE_PATCH_DESCRIPTION = (
+    "Apply one patch to editable repository paths. Prefer the Codex-native grammar with "
+    "*** Begin Patch, *** Update File: path, @@, and *** End Patch; strict numbered unified "
+    "diffs are also accepted. Copy repository-relative editable paths verbatim."
+)
 
-def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, Any]]:
+
+def repository_tool_definitions(
+    *,
+    dialect: str = "openai",
+    patch_format_profile: str = "strict_unified_v1",
+) -> list[dict[str, Any]]:
     """Derive provider tool definitions from the canonical action registry.
 
     The returned schemas are intentionally copies of the registry schemas. Providers may
@@ -172,6 +182,11 @@ def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, An
     argument contract.
     """
 
+    if patch_format_profile not in {
+        "strict_unified_v1",
+        "strict_unified_and_codex_native_v1",
+    }:
+        raise ValueError("unknown repository patch-format profile")
     registry = action_registry()["actions"]
     if not isinstance(registry, dict):  # pragma: no cover - action_registry is local and typed
         raise RuntimeError("repository action registry is malformed")
@@ -181,13 +196,19 @@ def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, An
         if not isinstance(entry, dict) or not isinstance(entry.get("arguments_schema"), dict):
             raise RuntimeError("repository action registry entry is malformed")
         schema = json.loads(json.dumps(entry["arguments_schema"]))
+        description = (
+            _CODEX_COMPATIBLE_PATCH_DESCRIPTION
+            if name == "apply_patch"
+            and patch_format_profile == "strict_unified_and_codex_native_v1"
+            else _ACTION_DESCRIPTIONS[name]
+        )
         if dialect == "openai":
             definitions.append(
                 {
                     "type": "function",
                     "function": {
                         "name": name,
-                        "description": _ACTION_DESCRIPTIONS[name],
+                        "description": description,
                         "parameters": schema,
                     },
                 }
@@ -196,7 +217,7 @@ def repository_tool_definitions(*, dialect: str = "openai") -> list[dict[str, An
             definitions.append(
                 {
                     "name": name,
-                    "description": _ACTION_DESCRIPTIONS[name],
+                    "description": description,
                     "inputSchema": schema,
                 }
             )
@@ -321,6 +342,7 @@ def prompt_contract(
                 "repository_action_v2_prompt_v5",
                 "repository_action_v2_prompt_v6",
                 "repository_action_v2_prompt_v7",
+                "repository_action_v2_prompt_v8",
             }
         )
     if selected_prompt_contract_id not in compatible_prompt_contracts:
@@ -421,6 +443,21 @@ def prompt_contract(
                 "Do not end with assistant text before the typed finish action.",
             ]
         )
+    if selected_prompt_contract_id == "repository_action_v2_prompt_v8":
+        contract["rules"].extend(
+            [
+                "Treat compile as the frozen public validation gate for this task; it may include "
+                "a bounded functional smoke simulation.",
+                "Prefer the Codex-native file patch grammar; strict numbered unified diffs remain "
+                "accepted for compatibility.",
+                "Every patch path must exactly copy one repository-relative editable path.",
+                "Recoverable patch-format errors do not relax path, link, size, or hidden-asset "
+                "policy.",
+                "If public validation fails, repair and rerun validation before PPA or finish.",
+                "Track broker-reported elapsed and remaining wall time and finish with the typed "
+                "finish action.",
+            ]
+        )
     return contract
 
 
@@ -458,6 +495,7 @@ def resolve_repository_action_protocol(
             "repository_action_v2_prompt_v5",
             "repository_action_v2_prompt_v6",
             "repository_action_v2_prompt_v7",
+            "repository_action_v2_prompt_v8",
         }
         else default_prompt_contract_id
     )

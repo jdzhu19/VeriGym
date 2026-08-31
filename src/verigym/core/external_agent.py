@@ -152,6 +152,7 @@ class RuntimeExternalAgentBridge:
         if self._agent_feedback_action_callback is not None:
             action = {
                 "file.apply_patch": "apply_patch",
+                "file.apply_codex_patch": "apply_patch",
                 "file.diff": "inspect_diff",
             }.get(tool_name)
             if action is not None:

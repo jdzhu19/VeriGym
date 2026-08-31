@@ -330,6 +330,41 @@ class FileApplyPatchTool(DirectFileTool):
         )
 
 
+class FileCodexPatchTool(DirectFileTool):
+    """Apply either strict unified diffs or the native Codex patch grammar."""
+
+    descriptor = _descriptor("file.apply_codex_patch", "apply_patch")
+    request_model = FileApplyPatchRequest
+
+    def execute_direct(self, request: BaseModel, context: ToolContext) -> ToolResult:
+        assert isinstance(request, FileApplyPatchRequest)
+        assert context.session is not None
+        policy = context.workspace_policy
+        assert isinstance(policy, WorkspacePolicy)
+        parser = (
+            _parse_and_apply_codex_patch
+            if request.patch.lstrip().startswith("*** Begin Patch")
+            else _parse_and_apply_patch
+        )
+        changes, previous = parser(request.patch, context, policy)
+        policy.check_patch_size(len(changes), len(request.patch.splitlines()))
+        try:
+            _check_workspace_limits(context, policy)
+        except Exception:
+            for relative, prior_content in previous.items():
+                target = context.session.root / relative
+                if prior_content is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    context.session.write_file(relative, prior_content)
+            raise
+        return _direct_result(
+            self.descriptor.name,
+            message=f"applied compatible patch to {len(changes)} file(s)",
+            metadata={"changed_files": changes},
+        )
+
+
 class FileDiffTool(DirectFileTool):
     descriptor = _descriptor("file.diff", "diff")
     request_model = FileDiffRequest
@@ -558,12 +593,158 @@ def _parse_and_apply_patch(
     return sorted(planned), previous
 
 
+_CODEX_FILE_MARKERS = (
+    "*** Add File: ",
+    "*** Delete File: ",
+    "*** Update File: ",
+    "*** Move to: ",
+)
+
+
+def _parse_and_apply_codex_patch(
+    patch: str, context: ToolContext, policy: WorkspacePolicy
+) -> tuple[list[str], dict[str, bytes | None]]:
+    """Apply the bounded file-oriented patch grammar used by Codex.
+
+    This is deliberately a smaller surface than Codex's host tool: paths still pass through
+    ``WorkspacePolicy``, renames are rejected, and update hunks must locate exact forward
+    context. The operation is planned completely before any workspace bytes are changed.
+    """
+
+    assert context.session is not None
+    lines = patch.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    if not lines or lines[0].strip() != "*** Begin Patch":
+        raise PathPolicyError("invalid Codex patch: missing begin marker")
+    if lines[-1].strip() != "*** End Patch":
+        raise PathPolicyError("invalid Codex patch: missing end marker")
+    index = 1
+    planned: dict[str, bytes | None] = {}
+    while index < len(lines) - 1:
+        if not lines[index].strip():
+            index += 1
+            continue
+        marker = lines[index]
+        if marker.startswith("*** Move to: "):
+            raise PathPolicyError("renames are not supported by file.apply_codex_patch")
+        if not marker.startswith(_CODEX_FILE_MARKERS[:3]):
+            raise PathPolicyError("invalid Codex patch: expected file operation")
+        operation, raw_path = marker[4:].split(" File: ", 1)
+        target = policy.check_write(raw_path)
+        if target in planned:
+            raise PathPolicyError("invalid Codex patch: duplicate file operation")
+        index += 1
+        if operation == "Delete":
+            if index < len(lines) - 1 and not lines[index].startswith("*** "):
+                raise PathPolicyError("invalid Codex patch: delete operation has a body")
+            context.session.read_file(target)
+            planned[target] = None
+            continue
+        if operation == "Add":
+            added: list[str] = []
+            while index < len(lines) - 1 and not _is_codex_file_marker(lines[index]):
+                line = lines[index]
+                if not line.startswith("+"):
+                    raise PathPolicyError("invalid Codex patch hunk body")
+                added.append(line[1:])
+                index += 1
+            if (context.session.root / target).exists():
+                raise PathPolicyError("patch context does not match the workspace")
+            planned[target] = _codex_lines_to_bytes(added)
+            continue
+        original_bytes = context.session.read_file(target)
+        original = original_bytes.decode("utf-8").splitlines()
+        output: list[str] = []
+        source_index = 0
+        saw_hunk = False
+        while index < len(lines) - 1 and not _is_codex_file_marker(lines[index]):
+            if not lines[index].startswith("@@"):
+                if lines[index].strip():
+                    raise PathPolicyError("invalid Codex patch: expected hunk header")
+                index += 1
+                continue
+            saw_hunk = True
+            index += 1
+            old_lines: list[str] = []
+            new_lines: list[str] = []
+            end_of_file = False
+            while (
+                index < len(lines) - 1
+                and not lines[index].startswith("@@")
+                and not _is_codex_file_marker(lines[index])
+            ):
+                line = lines[index]
+                if line == "*** End of File":
+                    end_of_file = True
+                    index += 1
+                    continue
+                if not line or line[0] not in {" ", "+", "-"}:
+                    raise PathPolicyError("invalid Codex patch hunk body")
+                if line[0] in {" ", "-"}:
+                    old_lines.append(line[1:])
+                if line[0] in {" ", "+"}:
+                    new_lines.append(line[1:])
+                index += 1
+            if old_lines:
+                match_index = _find_exact_hunk(original, old_lines, source_index)
+            elif not original:
+                match_index = 0
+            elif end_of_file:
+                match_index = len(original)
+            else:
+                raise PathPolicyError("patch context does not match the workspace")
+            output.extend(original[source_index:match_index])
+            output.extend(new_lines)
+            source_index = match_index + len(old_lines)
+        if not saw_hunk:
+            raise PathPolicyError("patch file has no hunks")
+        output.extend(original[source_index:])
+        planned[target] = _codex_lines_to_bytes(
+            output,
+            trailing_newline=original_bytes.endswith((b"\n", b"\r")),
+        )
+    if not planned:
+        raise PathPolicyError("patch is empty")
+    policy.check_patch_size(len(planned), len(lines))
+    previous: dict[str, bytes | None] = {}
+    for target, data in planned.items():
+        target_path = context.session.root / target
+        previous[target] = target_path.read_bytes() if target_path.is_file() else None
+        if data is None:
+            target_path.unlink(missing_ok=True)
+        else:
+            context.session.write_file(target, data)
+    return sorted(planned), previous
+
+
+def _find_exact_hunk(original: list[str], needle: list[str], start: int) -> int:
+    matches = [
+        index
+        for index in range(start, len(original) - len(needle) + 1)
+        if original[index : index + len(needle)] == needle
+    ]
+    if not matches:
+        raise PathPolicyError("patch context does not match the workspace")
+    return matches[0]
+
+
+def _is_codex_file_marker(line: str) -> bool:
+    return line.startswith(_CODEX_FILE_MARKERS)
+
+
+def _codex_lines_to_bytes(lines: list[str], *, trailing_newline: bool = True) -> bytes:
+    text = "\n".join(lines)
+    if trailing_newline and (lines or text):
+        text += "\n"
+    return text.encode("utf-8")
+
+
 def builtin_file_tools() -> list[ToolPlugin]:
     return [
         FileListTool(),
         FileReadTool(),
         FileSearchTool(),
         FileApplyPatchTool(),
+        FileCodexPatchTool(),
         FileWriteTool(),
         FileDiffTool(),
     ]

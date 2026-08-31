@@ -262,6 +262,9 @@ class CodexCliAgentEvalAdapter(AgentAdapter):
                     wall_time_s=settings.execution.effective_process_timeout_s,
                     finalization_reserve_s=settings.finalization_reserve_s,
                     max_exploratory_calls=settings.max_exploratory_calls,
+                    codex_patch_compatibility=(
+                        settings.patch_format_profile == "strict_unified_and_codex_native_v1"
+                    ),
                 )
                 arguments = build_agenteval_arguments(
                     capabilities,
@@ -385,10 +388,19 @@ def _agenteval_prompt(
     contract = context.agent_feedback_contract
     assert contract is not None
     resolved_instructions = list(instructions)
-    resolved_instructions.append(
-        "apply_patch requires --- a/path and +++ b/path headers plus numbered @@ hunks; never "
-        "use *** Update File syntax."
-    )
+    if (
+        getattr(settings, "patch_format_profile", "strict_unified_v1")
+        == "strict_unified_and_codex_native_v1"
+    ):
+        resolved_instructions.append(
+            "Prefer Codex-native *** Begin Patch / *** Update File: path / @@ / "
+            "*** End Patch syntax; strict numbered unified diffs are also accepted."
+        )
+    else:
+        resolved_instructions.append(
+            "apply_patch requires --- a/path and +++ b/path headers plus numbered @@ hunks; "
+            "never use *** Update File syntax."
+        )
     resolved_instructions.append(
         "Every successful patch invalidates prior compile, PPA, and diff evidence."
     )
@@ -745,6 +757,7 @@ def _safe_broker_stats(stats: RepositoryToolBrokerStats) -> dict[str, object]:
             stats.public_validation_rechecks_after_repair_patch
         ),
         "public_validation_failed_then_passed": stats.public_validation_failed_then_passed,
+        "patch_format_profile": stats.patch_format_profile,
     }
 
 

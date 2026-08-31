@@ -206,6 +206,7 @@ class CodexAgentEvalSettings:
     max_consecutive_rejected_calls: int
     max_exploratory_calls: int
     finalization_reserve_s: int
+    patch_format_profile: str
 
 
 @dataclass(frozen=True)
@@ -223,6 +224,10 @@ class AgentEvalSettingsProfile:
     agent_version_hash: str
     integration_track: str = "codex_cli_agenteval_scoring"
     tool_availability_policy: str = "verigym_direct_allowlisted_mcp_broker_attested_v5"
+    broker_limits: tuple[int, int, int] = _BROKER_LIMITS
+    max_exploratory_calls: int = _MAX_EXPLORATORY_CALLS
+    finalization_reserve_s: int = _FINALIZATION_RESERVE_S
+    patch_format_profile: str = "strict_unified_v1"
 
 
 _DEFAULT_PROFILE = AgentEvalSettingsProfile(
@@ -295,9 +300,10 @@ def agenteval_settings(
             "prompt_hash": profile.prompt_hash,
             "tool_policy_fingerprint": profile.tool_policy_fingerprint,
             "capability_fingerprint": capabilities.capability_fingerprint,
-            "broker_limits": _BROKER_LIMITS,
-            "max_exploratory_calls": _MAX_EXPLORATORY_CALLS,
-            "finalization_reserve_s": _FINALIZATION_RESERVE_S,
+            "broker_limits": profile.broker_limits,
+            "max_exploratory_calls": profile.max_exploratory_calls,
+            "finalization_reserve_s": profile.finalization_reserve_s,
+            "patch_format_profile": profile.patch_format_profile,
             "training": False,
         }
     )
@@ -316,11 +322,12 @@ def agenteval_settings(
         prompt_hash=profile.prompt_hash,
         tool_policy_fingerprint=profile.tool_policy_fingerprint,
         capability_fingerprint=capabilities.capability_fingerprint,
-        max_tool_calls=_BROKER_LIMITS[0],
-        max_patch_calls=_BROKER_LIMITS[1],
-        max_consecutive_rejected_calls=_BROKER_LIMITS[2],
-        max_exploratory_calls=_MAX_EXPLORATORY_CALLS,
-        finalization_reserve_s=_FINALIZATION_RESERVE_S,
+        max_tool_calls=profile.broker_limits[0],
+        max_patch_calls=profile.broker_limits[1],
+        max_consecutive_rejected_calls=profile.broker_limits[2],
+        max_exploratory_calls=profile.max_exploratory_calls,
+        finalization_reserve_s=profile.finalization_reserve_s,
+        patch_format_profile=profile.patch_format_profile,
     )
 
 

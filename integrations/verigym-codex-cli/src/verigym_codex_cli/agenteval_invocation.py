@@ -19,7 +19,12 @@ def build_agenteval_arguments(
     socket_path: Path,
 ) -> list[str]:
     execution = settings.execution
-    tool_names = [definition["name"] for definition in repository_tool_definitions(dialect="mcp")]
+    tool_names = [
+        definition["name"]
+        for definition in repository_tool_definitions(
+            dialect="mcp", patch_format_profile=settings.patch_format_profile
+        )
+    ]
     child_args = [
         "-i",
         "PATH=/usr/local/bin:/usr/bin:/bin",
@@ -30,6 +35,8 @@ def build_agenteval_arguments(
         "--socket",
         str(socket_path),
     ]
+    if settings.patch_format_profile == "strict_unified_and_codex_native_v1":
+        child_args.append("--codex-compatible-patch")
     arguments = [
         capabilities.non_interactive_command,
         capabilities.machine_output_flag,
@@ -113,6 +120,7 @@ def sanitized_agenteval_invocation(
         "broker_max_consecutive_rejected_calls": settings.max_consecutive_rejected_calls,
         "broker_max_exploratory_calls": settings.max_exploratory_calls,
         "broker_finalization_reserve_s": settings.finalization_reserve_s,
+        "broker_patch_format_profile": settings.patch_format_profile,
         "agent_version_id": settings.agent_version_id,
         "agent_version_hash": settings.agent_version_hash,
         "prompt_hash": settings.prompt_hash,

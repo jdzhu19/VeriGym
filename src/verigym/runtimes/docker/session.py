@@ -18,16 +18,13 @@ from verigym.core.workspace import copy_tree_safely, normalize_relative_path
 from verigym.runtimes.base import RuntimeSession
 from verigym.runtimes.docker.artifacts import collect_declared_artifacts
 from verigym.runtimes.docker.engine import DockerEngine
-from verigym.runtimes.docker.errors import (
-    DockerContainerError,
-    DockerRuntimeError,
-    sanitize_diagnostic,
-)
+from verigym.runtimes.docker.errors import DockerRuntimeError, sanitize_diagnostic
 from verigym.runtimes.docker.external_command import DockerExternalAgentCommandExecutor
 from verigym.runtimes.docker.external_process import (
     DockerExternalProcessExecutor,
     external_agent_runtime_config,
 )
+from verigym.runtimes.docker.lifecycle import execute_created_container
 from verigym.runtimes.docker.mounts import (
     MountSpec,
     mount_arguments,
@@ -308,26 +305,14 @@ class DockerRuntimeSession(RuntimeSession):
                 expected_environment=environment,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_created_container(
+                self._engine,
                 container_id,
                 timeout_s=effective_limit,
                 max_output_bytes=self._max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
-            state_payload = self._engine.inspect_container(container_id)
-            state = state_payload.get("State")
-            state = state if isinstance(state, dict) else {}
+            state = execution.state
             state_status = state.get("Status")
-            state_error = state.get("Error")
-            if not execution.timed_out and (
-                state_status != "exited" or (isinstance(state_error, str) and state_error)
-            ):
-                raise DockerContainerError(
-                    "Docker could not start or complete the command container",
-                    subreason="container_start_failed",
-                    details={"state": state_status},
-                )
             oom_killed = state.get("OOMKilled") is True
             exit_code = state.get("ExitCode") if isinstance(state.get("ExitCode"), int) else None
             artifacts = collect_declared_artifacts(
@@ -343,12 +328,12 @@ class DockerRuntimeSession(RuntimeSession):
                 argv=logical_argv,
                 cwd=command.cwd,
                 exit_code=exit_code,
-                stdout=execution.stdout,
-                stderr=execution.stderr,
+                stdout=execution.logs.stdout,
+                stderr=execution.logs.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=execution.timed_out,
                 oom_killed=oom_killed,
-                output_truncated=execution.output_truncated,
+                output_truncated=execution.logs.output_truncated,
                 failure_reason=failure_reason,
                 failure_origin="candidate_process" if failure_reason else None,
                 container_id=container_id,
@@ -356,6 +341,11 @@ class DockerRuntimeSession(RuntimeSession):
                 metadata={
                     "effective_timeout_s": effective_limit,
                     "memory_limit_bytes": self._config.memory_bytes,
+                    "container_lifecycle_s": {
+                        "start": execution.start_duration_s,
+                        "wait": execution.wait_duration_s,
+                        "logs": execution.logs_duration_s,
+                    },
                     "resource_limits": resource_summary(
                         self._config,
                         max_output_bytes=self._max_output_bytes,
@@ -489,28 +479,25 @@ class DockerRuntimeSession(RuntimeSession):
                 expected_environment=_EXTERNAL_AGENT_UTILITY_ENVIRONMENT,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_created_container(
+                self._engine,
                 container_id,
                 timeout_s=min(60, config.max_command_time_s),
                 max_output_bytes=self._max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
-            state_payload = self._engine.inspect_container(container_id)
-            state = state_payload.get("State")
-            state = state if isinstance(state, dict) else {}
+            state = execution.state
             oom_killed = state.get("OOMKilled") is True
             exit_code = state.get("ExitCode") if isinstance(state.get("ExitCode"), int) else None
             completed = CompletedCommand(
                 argv=["verigym-public-test", "run", test_id],
                 cwd=".",
                 exit_code=exit_code,
-                stdout=execution.stdout,
-                stderr=execution.stderr,
+                stdout=execution.logs.stdout,
+                stderr=execution.logs.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=execution.timed_out,
                 oom_killed=oom_killed,
-                output_truncated=execution.output_truncated,
+                output_truncated=execution.logs.output_truncated,
                 failure_reason=(
                     "timeout" if execution.timed_out else "out_of_memory" if oom_killed else None
                 ),
@@ -522,6 +509,11 @@ class DockerRuntimeSession(RuntimeSession):
                     "network_policy": "none",
                     "public_assets_read_only": True,
                     "agent_image_id": self._agent_image.resolved_image_id,
+                    "container_lifecycle_s": {
+                        "start": execution.start_duration_s,
+                        "wait": execution.wait_duration_s,
+                        "logs": execution.logs_duration_s,
+                    },
                 },
             )
         except DockerRuntimeError as exc:

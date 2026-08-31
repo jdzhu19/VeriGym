@@ -35,6 +35,8 @@ _TOOL_NAMES = frozenset(
     definition["name"] for definition in repository_tool_definitions(dialect="mcp")
 )
 _RECOVERABLE_PATCH_ERRORS = (
+    ("invalid Codex patch hunk body", "patch_body"),
+    ("invalid Codex patch:", "patch_format"),
     ("invalid unified patch hunk header", "patch_header"),
     ("invalid unified patch hunk body", "patch_body"),
     ("invalid unified patch: expected hunk header", "patch_header"),
@@ -45,6 +47,7 @@ _RECOVERABLE_PATCH_ERRORS = (
     ("patch hunk line counts do not match its header", "patch_count"),
     ("patch cannot have both paths set to /dev/null", "patch_format"),
     ("renames are not supported by file.apply_patch", "patch_rename"),
+    ("renames are not supported by file.apply_codex_patch", "patch_rename"),
     ("patch file has no hunks", "patch_empty"),
     ("patch is empty", "patch_empty"),
 )
@@ -106,6 +109,7 @@ class RepositoryToolBrokerStats:
     repair_patches_after_public_validation_failure: int = 0
     public_validation_rechecks_after_repair_patch: int = 0
     public_validation_failed_then_passed: bool = False
+    patch_format_profile: str = "strict_unified_v1"
 
 
 @dataclass(frozen=True)
@@ -153,6 +157,7 @@ class RepositoryToolBroker:
         wall_time_s: float | None = None,
         finalization_reserve_s: float | None = None,
         max_exploratory_calls: int | None = None,
+        codex_patch_compatibility: bool = False,
     ) -> None:
         if capture_training_transcript and campaign_role != "training":
             raise ValueError("repository broker transcript capture is training-only")
@@ -232,6 +237,7 @@ class RepositoryToolBroker:
             float(finalization_reserve_s) if finalization_reserve_s is not None else None
         )
         self._max_exploratory_calls = max_exploratory_calls
+        self._codex_patch_compatibility = codex_patch_compatibility
         self._started_monotonic_s = time.monotonic()
         self._terminal_tool_name: str | None = None
         self._terminal_path_category: str | None = None
@@ -329,6 +335,11 @@ class RepositoryToolBroker:
                     self._public_validation_rechecks_after_repair_patch
                 ),
                 public_validation_failed_then_passed=(self._public_validation_failed_then_passed),
+                patch_format_profile=(
+                    "strict_unified_and_codex_native_v1"
+                    if self._codex_patch_compatibility
+                    else "strict_unified_v1"
+                ),
             )
 
     @property
@@ -486,7 +497,13 @@ class RepositoryToolBroker:
                 with self._lock:
                     self._patches += 1
                 response, _success = self._workspace_result_with_success(
-                    name, "file.apply_patch", arguments
+                    name,
+                    (
+                        "file.apply_codex_patch"
+                        if self._codex_patch_compatibility
+                        else "file.apply_patch"
+                    ),
+                    arguments,
                 )
                 return self._capture_response(name, canonical_arguments, response)
             if name == "run_public_test":

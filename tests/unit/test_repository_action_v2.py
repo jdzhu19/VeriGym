@@ -12,6 +12,7 @@ from verigym.protocols.repository_action import (
     extract_transport_action,
     prompt_contract,
     repository_action_state_failure,
+    repository_tool_definitions,
     resolve_repository_action_protocol,
     validate_canonical_action,
     validate_repository_action_protocol_binding,
@@ -344,6 +345,25 @@ def test_v7_prompt_contract_adds_functional_repair_loop() -> None:
     assert contract["prompt_contract_id"] == "repository_action_v2_prompt_v7"
     assert any("functional smoke" in rule for rule in contract["rules"])
     assert any("repair the current candidate" in rule for rule in contract["rules"])
+
+
+def test_v8_prompt_and_tool_contract_advertise_compatible_patch_grammar() -> None:
+    contract = prompt_contract(
+        "repository_action_state_machine_v3",
+        prompt_contract_id="repository_action_v2_prompt_v8",
+    )
+    compatible = repository_tool_definitions(
+        dialect="mcp",
+        patch_format_profile="strict_unified_and_codex_native_v1",
+    )
+    default = repository_tool_definitions(dialect="mcp")
+    compatible_patch = next(item for item in compatible if item["name"] == "apply_patch")
+    default_patch = next(item for item in default if item["name"] == "apply_patch")
+
+    assert contract["prompt_contract_id"] == "repository_action_v2_prompt_v8"
+    assert any("Codex-native" in rule for rule in contract["rules"])
+    assert "*** Begin Patch" in compatible_patch["description"]
+    assert "*** Begin Patch" not in default_patch["description"]
 
 
 @pytest.mark.parametrize("case", range(5))

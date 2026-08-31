@@ -164,9 +164,11 @@ class RecordingDockerEngine:
     def inspect_container(self, container_id: str) -> dict[str, Any]:
         return self.containers[container_id]["payload"]
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
-    ) -> EngineResult:
+    def start_container(self, container_id: str) -> EngineResult:
+        self.containers[container_id]["payload"]["State"]["Status"] = "running"
+        return _engine_success()
+
+    def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult:
         self.start_timeouts.append(timeout_s)
         command = self.containers[container_id]["command"]
         state = self.containers[container_id]["payload"]["State"]
@@ -174,7 +176,6 @@ class RecordingDockerEngine:
         stderr = ""
         exit_code = 0
         timed_out = False
-        truncated = False
         if command and command[0] in self.missing_commands:
             stderr = f"{command[0]}: not found\n"
             exit_code = 127
@@ -241,6 +242,10 @@ class RecordingDockerEngine:
             stdout = "partial\n"
             timed_out = True
             state.update({"Status": "running", "ExitCode": 0})
+        elif command and command[0] == "wait-lag":
+            stdout = "finished\n"
+            timed_out = True
+            state.update({"Status": "exited", "ExitCode": 0})
         elif command and command[0] == "hungry":
             exit_code = 137
             state.update({"Status": "exited", "OOMKilled": True, "ExitCode": 137})
@@ -248,19 +253,34 @@ class RecordingDockerEngine:
             exit_code = 125
             state.update({"Status": "created", "Error": "runtime create failed", "ExitCode": 125})
         elif command and command[0] == "large-output":
-            stdout = "x" * max_output_bytes
-            truncated = True
+            stdout = "x" * 4096
             state.update({"Status": "exited", "ExitCode": 0})
         else:
             stdout = "ok\n"
             state.update({"Status": "exited", "ExitCode": 0})
+        self.containers[container_id]["stdout"] = stdout
+        self.containers[container_id]["stderr"] = stderr
         return EngineResult(
-            argv=["docker", "start", "--attach", container_id],
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            argv=["docker", "wait", container_id],
+            exit_code=0,
+            stdout=f"{exit_code}\n" if not timed_out else "",
+            stderr="",
             duration_s=0.01,
             timed_out=timed_out,
+        )
+
+    def container_logs(self, container_id: str, *, max_output_bytes: int) -> EngineResult:
+        stdout = str(self.containers[container_id].get("stdout", ""))
+        stderr = str(self.containers[container_id].get("stderr", ""))
+        truncated = (
+            len(stdout.encode()) > max_output_bytes or len(stderr.encode()) > max_output_bytes
+        )
+        return EngineResult(
+            argv=["docker", "logs", container_id],
+            exit_code=0,
+            stdout=stdout.encode()[:max_output_bytes].decode(),
+            stderr=stderr.encode()[:max_output_bytes].decode(),
+            duration_s=0.01,
             output_truncated=truncated,
         )
 
@@ -399,6 +419,10 @@ def test_timeout_oom_output_limit_and_control_plane_are_structured(tmp_path: Pat
         assert daemon.error is not None
         assert daemon.failure_reason == "container_start_failed"
         assert daemon.failure_origin == "control_plane"
+        wait_lag = session.execute(CommandSpec(argv=["wait-lag"], timeout_s=3))
+        assert not wait_lag.timed_out
+        assert wait_lag.failure_reason == "container_wait_timeout_after_exit"
+        assert wait_lag.failure_origin == "control_plane"
     finally:
         session.close()
         runtime.close()

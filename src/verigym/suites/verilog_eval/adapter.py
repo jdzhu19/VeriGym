@@ -62,6 +62,10 @@ SUITE_VERSION = "v2-spec-to-rtl-compat-1"
 AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
 FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v1"
 FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.2.0"
+FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v2"
+FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION = "0.3.0"
+FUNCTIONAL_AGENT_EVAL_V3_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v3"
+FUNCTIONAL_AGENT_EVAL_V3_ADAPTER_VERSION = "0.4.0"
 _FUNCTIONAL_SMOKE_TASKS = frozenset(
     {
         "Prob038_count15",
@@ -395,10 +399,20 @@ class VerilogEvalSuite(SuiteAdapter):
         agent_eval = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
         }
-        functional_agent_eval = (
-            variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value
-        )
+        functional_agent_eval = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
+        }
+        codex_patch_compatible = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
+        }
+        functional_v3 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value
+        functional_v2 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
         candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
         public_smoke = self._public_smoke(problem.native_id) if functional_agent_eval else None
@@ -417,7 +431,11 @@ class VerilogEvalSuite(SuiteAdapter):
             )
         )
         suite_version = (
-            FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
+            FUNCTIONAL_AGENT_EVAL_V3_SUITE_VERSION
+            if functional_v3
+            else FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION
+            if functional_v2
+            else FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
             if functional_agent_eval
             else AGENT_EVAL_SUITE_VERSION
             if agent_eval
@@ -480,6 +498,7 @@ class VerilogEvalSuite(SuiteAdapter):
                     "file.list",
                     "file.read",
                     "file.apply_patch",
+                    *(["file.apply_codex_patch"] if codex_patch_compatible else []),
                     "file.diff",
                     *(["repository.public_test"] if agent_eval else []),
                 ],
@@ -551,13 +570,21 @@ class VerilogEvalSuite(SuiteAdapter):
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "task_content_hash": problem.content_hash,
                 "adapter_version": (
-                    FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
+                    FUNCTIONAL_AGENT_EVAL_V3_ADAPTER_VERSION
+                    if functional_v3
+                    else FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION
+                    if functional_v2
+                    else FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
                     if functional_agent_eval
                     else ADAPTER_VERSION
                 ),
                 "synthetic_fixture": snapshot.synthetic_fixture,
                 "public_feedback_semantics": (
-                    "compile_and_independent_functional_smoke_v1"
+                    "compile_and_independent_functional_smoke_v3"
+                    if functional_v3
+                    else "compile_and_independent_functional_smoke_v2"
+                    if functional_v2
+                    else "compile_and_independent_functional_smoke_v1"
                     if functional_agent_eval
                     else "compile_only_v1"
                     if agent_eval
@@ -585,6 +612,8 @@ class VerilogEvalSuite(SuiteAdapter):
             in {
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             }
         )
 
@@ -592,7 +621,11 @@ class VerilogEvalSuite(SuiteAdapter):
         return bool(
             self._config is not None
             and self._config.variant
-            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value
+            in {
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
+            }
         )
 
     def _public_smoke(self, native_id: str) -> str | None:
@@ -602,7 +635,25 @@ class VerilogEvalSuite(SuiteAdapter):
             raise ConfigurationError(
                 f"VerilogEval functional AgentEval has no frozen public smoke for {native_id}"
             )
-        path = Path(__file__).parent / "assets" / "public_smoke" / f"{native_id}.sv"
+        assert self._config is not None
+        root = Path(__file__).parent / "assets"
+        candidates = []
+        if self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value:
+            candidates.append(root / "public_smoke_v3" / f"{native_id}.sv")
+        if self._config.variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
+        }:
+            candidates.append(root / "public_smoke_v2" / f"{native_id}.sv")
+        candidates.append(root / "public_smoke" / f"{native_id}.sv")
+        path = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.is_file() and not candidate.is_symlink()
+            ),
+            candidates[-1],
+        )
         if path.is_symlink() or not path.is_file():
             raise ConfigurationError("VerilogEval public smoke asset is unavailable")
         return path.read_text(encoding="utf-8")

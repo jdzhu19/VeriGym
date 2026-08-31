@@ -61,6 +61,7 @@ class RepositoryActionProtocolSpec(StrictModel):
         "repository_action_v2_prompt_v5",
         "repository_action_v2_prompt_v6",
         "repository_action_v2_prompt_v7",
+        "repository_action_v2_prompt_v8",
     ] = "repository_action_v2_prompt_v2"
     normalizer_id: Literal["repository_action_json_representation_v1"] = (
         "repository_action_json_representation_v1"
@@ -88,6 +89,7 @@ class RepositoryActionProtocolSpec(StrictModel):
                     "repository_action_v2_prompt_v5",
                     "repository_action_v2_prompt_v6",
                     "repository_action_v2_prompt_v7",
+                    "repository_action_v2_prompt_v8",
                 }
             )
         if self.prompt_contract_id not in compatible:

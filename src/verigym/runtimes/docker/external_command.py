@@ -7,12 +7,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from verigym.runtimes.docker.engine import DockerEngine
-from verigym.runtimes.docker.errors import (
-    DockerContainerError,
-    DockerRuntimeError,
-    sanitize_diagnostic,
-)
+from verigym.runtimes.docker.errors import DockerRuntimeError, sanitize_diagnostic
 from verigym.runtimes.docker.external_process import external_agent_runtime_config
+from verigym.runtimes.docker.lifecycle import execute_created_container
 from verigym.runtimes.docker.mounts import MountSpec, mount_arguments
 from verigym.runtimes.docker.resources import (
     effective_timeout,
@@ -102,26 +99,13 @@ class DockerExternalAgentCommandExecutor:
                 expected_environment=_ENVIRONMENT,
                 expected_labels=labels,
             )
-            execution = self._engine.start_attach(
+            execution = execute_created_container(
+                self._engine,
                 container_id,
                 timeout_s=timeout_s,
                 max_output_bytes=self._config.max_output_bytes,
             )
-            if execution.timed_out:
-                self._engine.kill_container(container_id)
-            state_payload = self._engine.inspect_container(container_id)
-            state = state_payload.get("State")
-            state = state if isinstance(state, dict) else {}
-            state_status = state.get("Status")
-            state_error = state.get("Error")
-            if not execution.timed_out and (
-                state_status != "exited" or (isinstance(state_error, str) and state_error)
-            ):
-                raise DockerContainerError(
-                    "Docker could not complete the external-agent command",
-                    subreason="container_start_failed",
-                    details={"state": state_status},
-                )
+            state = execution.state
             oom_killed = state.get("OOMKilled") is True
             exit_code = state.get("ExitCode") if isinstance(state.get("ExitCode"), int) else None
             failure_reason = (
@@ -131,12 +115,12 @@ class DockerExternalAgentCommandExecutor:
                 argv=list(command.argv),
                 cwd=command.cwd,
                 exit_code=exit_code,
-                stdout=execution.stdout,
-                stderr=execution.stderr,
+                stdout=execution.logs.stdout,
+                stderr=execution.logs.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=execution.timed_out,
                 oom_killed=oom_killed,
-                output_truncated=execution.output_truncated,
+                output_truncated=execution.logs.output_truncated,
                 failure_reason=failure_reason,
                 failure_origin="candidate_process" if failure_reason else None,
                 container_id=container_id,
@@ -145,6 +129,11 @@ class DockerExternalAgentCommandExecutor:
                     "effective_timeout_s": timeout_s,
                     "credential_environment_names": [],
                     "network_mode": "none",
+                    "container_lifecycle_s": {
+                        "start": execution.start_duration_s,
+                        "wait": execution.wait_duration_s,
+                        "logs": execution.logs_duration_s,
+                    },
                     "resource_limits": resource_summary(
                         runtime_config,
                         max_output_bytes=self._config.max_output_bytes,

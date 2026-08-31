@@ -57,6 +57,8 @@ UP_DOWN_ICARUS_TRAINING_SUITE_VERSION = "rtllm-41b2689-up-down-counter-icarus-tr
 AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-agent-eval-v1"
 FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-agent-eval-functional-v1"
 FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.4.0"
+FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION = "rtllm-41b2689-agent-eval-functional-v2"
+FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION = "0.5.0"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 TASK_ROOT = Path("Control/Counter/counter_12")
@@ -104,6 +106,8 @@ _FUNCTIONAL_AGENT_EVAL_VARIANTS = frozenset(
     {
         "counter_12_agent_eval_functional_v1",
         "up_down_counter_agent_eval_functional_v1",
+        "counter_12_agent_eval_functional_v2",
+        "up_down_counter_agent_eval_functional_v2",
     }
 )
 _SUPPORTED_VARIANTS = frozenset(
@@ -208,10 +212,13 @@ class RTLLMSuite(SuiteAdapter):
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
         agent_eval = variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         functional_agent_eval = variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        functional_v2 = variant.endswith("_agent_eval_functional_v2")
         task_root = UP_DOWN_TASK_ROOT if up_down else TASK_ROOT
         expected_hashes = _UP_DOWN_EXPECTED_HASHES if up_down else _EXPECTED_HASHES
         suite_version = (
-            FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
+            FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION
+            if functional_v2
+            else FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
             if functional_agent_eval
             else AGENT_EVAL_SUITE_VERSION
             if agent_eval
@@ -289,6 +296,7 @@ class RTLLMSuite(SuiteAdapter):
                     "file.list",
                     "file.read",
                     "file.apply_patch",
+                    *(["file.apply_codex_patch"] if functional_v2 else []),
                     "file.diff",
                     *(["repository.public_test"] if agent_eval else []),
                 ],
@@ -382,13 +390,17 @@ class RTLLMSuite(SuiteAdapter):
                 "language": "verilog-2005",
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "adapter_version": (
-                    FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
+                    FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION
+                    if functional_v2
+                    else FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
                     if functional_agent_eval
                     else ADAPTER_VERSION
                 ),
                 "pinned_commit": PINNED_COMMIT,
                 "evaluation_profile": (
-                    "icarus12-agent-eval-functional-v1"
+                    "icarus12-agent-eval-functional-v2"
+                    if functional_v2
+                    else "icarus12-agent-eval-functional-v1"
                     if functional_agent_eval
                     else "icarus12-agent-eval-v1"
                     if agent_eval
@@ -421,7 +433,9 @@ class RTLLMSuite(SuiteAdapter):
                             ),
                         },
                         "public_feedback_semantics": (
-                            "compile_and_independent_functional_smoke_v1"
+                            "compile_and_independent_functional_smoke_v2"
+                            if functional_v2
+                            else "compile_and_independent_functional_smoke_v1"
                             if functional_agent_eval
                             else "compile_only_v1"
                         ),
@@ -712,6 +726,8 @@ class RTLLMSuite(SuiteAdapter):
             return "up_down_counter"
         if variant.endswith("_agent_eval_functional_v1"):
             return variant.removesuffix("_agent_eval_functional_v1")
+        if variant.endswith("_agent_eval_functional_v2"):
+            return variant.removesuffix("_agent_eval_functional_v2")
         if variant.endswith("_agent_eval_v1"):
             return variant.removesuffix("_agent_eval_v1")
         return variant

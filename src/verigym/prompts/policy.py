@@ -46,6 +46,9 @@ def resolve_prompt_policy(
         return None
     agent_feedback = task.metadata.get("agent_feedback_contract")
     is_agent_eval = isinstance(agent_feedback, dict)
+    agent_eval_prompt_v8 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v8"
+    )
     agent_eval_prompt_v7 = is_agent_eval and (
         spec.prompt_contract_id == "repository_action_v2_prompt_v7"
     )
@@ -59,7 +62,9 @@ def resolve_prompt_policy(
         spec.prompt_contract_id == "repository_action_v2_prompt_v4"
     )
     prompt_contract_id = (
-        "repository_action_v2_prompt_v7"
+        "repository_action_v2_prompt_v8"
+        if agent_eval_prompt_v8
+        else "repository_action_v2_prompt_v7"
         if agent_eval_prompt_v7
         else "repository_action_v2_prompt_v6"
         if agent_eval_prompt_v6
@@ -72,7 +77,9 @@ def resolve_prompt_policy(
         else spec.prompt_contract_id
     )
     prompt_contract_version = (
-        "7.0.0"
+        "8.0.0"
+        if agent_eval_prompt_v8
+        else "7.0.0"
         if agent_eval_prompt_v7
         else "6.0.0"
         if agent_eval_prompt_v6
@@ -85,14 +92,18 @@ def resolve_prompt_policy(
         else spec.prompt_contract_version
     )
     task_context_policy = (
-        "revision_bound_functional_agent_feedback_v1"
+        "revision_bound_functional_agent_feedback_v2"
+        if agent_eval_prompt_v8
+        else "revision_bound_functional_agent_feedback_v1"
         if agent_eval_prompt_v7
         else "revision_bound_agent_feedback_v1"
         if is_agent_eval
         else spec.task_context_policy
     )
     base_instruction_policy = (
-        "generated_repository_action_registry_v7"
+        "generated_repository_action_registry_v8"
+        if agent_eval_prompt_v8
+        else "generated_repository_action_registry_v7"
         if agent_eval_prompt_v7
         else "generated_repository_action_registry_v6"
         if agent_eval_prompt_v6
@@ -105,7 +116,9 @@ def resolve_prompt_policy(
         else spec.base_instruction_policy
     )
     content_visibility_policy = (
-        "visible_assets_and_public_functional_feedback_v1"
+        "visible_assets_and_public_functional_feedback_v2"
+        if agent_eval_prompt_v8
+        else "visible_assets_and_public_functional_feedback_v1"
         if agent_eval_prompt_v7
         else "visible_assets_and_revision_bound_feedback_v1"
         if is_agent_eval

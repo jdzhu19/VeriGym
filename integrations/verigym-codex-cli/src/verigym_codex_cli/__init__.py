@@ -14,6 +14,11 @@ from .auth import (
     resolve_auth_mode,
 )
 from .functional_agenteval_agent import CodexCliFunctionalAgentEvalAdapter
+from .functional_v2_agenteval_agent import (
+    CodexCliFunctionalV2HighAgentEvalAdapter,
+    CodexCliFunctionalV2LowAgentEvalAdapter,
+    CodexCliFunctionalV2MediumAgentEvalAdapter,
+)
 from .preflight import AuthPreflightResult, run_auth_preflight
 from .readonly_agent import CodexCliReadonlyAgentAdapter
 from .teacher_agent import CodexCliMcpTeacherAdapter
@@ -28,6 +33,9 @@ __all__ = [
     "CodexCliAgentAdapter",
     "CodexCliAgentEvalAdapter",
     "CodexCliFunctionalAgentEvalAdapter",
+    "CodexCliFunctionalV2HighAgentEvalAdapter",
+    "CodexCliFunctionalV2LowAgentEvalAdapter",
+    "CodexCliFunctionalV2MediumAgentEvalAdapter",
     "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",

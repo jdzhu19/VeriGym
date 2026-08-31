@@ -29,6 +29,8 @@ def test_counter_family_variants_are_explicit(tmp_path: Path) -> None:
         "up_down_counter_iverilog_training",
         "counter_12_agent_eval_v1",
         "up_down_counter_agent_eval_v1",
+        "counter_12_agent_eval_functional_v2",
+        "up_down_counter_agent_eval_functional_v2",
     ):
         configured = RTLLMSuite().with_source(
             SuiteSourceConfig(source_root=tmp_path, variant=variant)
@@ -54,6 +56,15 @@ def test_agent_eval_variants_map_to_distinct_upstream_tasks(tmp_path: Path) -> N
 
     assert counter._base_variant() == "counter_12"
     assert up_down._base_variant() == "up_down_counter"
+
+    counter_v2 = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant="counter_12_agent_eval_functional_v2")
+    )
+    up_down_v2 = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant="up_down_counter_agent_eval_functional_v2")
+    )
+    assert counter_v2._base_variant() == "counter_12"
+    assert up_down_v2._base_variant() == "up_down_counter"
 
 
 def test_variant_is_strict(tmp_path: Path) -> None:
