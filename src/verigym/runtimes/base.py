@@ -50,6 +50,12 @@ class RuntimeSession(ABC):
         return "host_local_trusted"
 
     @property
+    def external_agent_command_backend(self) -> str:
+        """Stable command-image backend label for external-agent bridges."""
+
+        return "runtime_external_command_unavailable"
+
+    @property
     def logical_workspace_root(self) -> str:
         """Path vocabulary exposed to an external process."""
 

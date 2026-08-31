@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from verigym.hwe.image_lock import build_hwe_command_image_lock
+from types import SimpleNamespace
+from typing import cast
 
+import pytest
+from verigym.hwe.image_lock import build_hwe_command_image_lock
+from verigym.plugin_api import ExternalAgentBridge
+
+from verigym_openhands.hwe_agent import _validated_hwe_runtime_bridge
 from verigym_openhands.hwe_command_runtime import build_hwe_command_runtime_config
 
 
@@ -42,3 +48,47 @@ def test_openhands_successor_runtime_uses_command_role_without_external_codex_ag
     assert config.command_image.expected_rg_sha256 == lock.rg_sha256
     assert not hasattr(config.command_image, "process_argv")
     assert config.command_image.required_image_labels["org.verigym.codex.present"] == "absent"
+
+
+def _bridge(
+    *, process: str, command: str, isolation: str = "docker_standard"
+) -> ExternalAgentBridge:
+    return cast(
+        ExternalAgentBridge,
+        SimpleNamespace(
+            execution_backend=process,
+            command_execution_backend=command,
+            isolation_level=isolation,
+        ),
+    )
+
+
+def test_openhands_start_gate_accepts_only_explicit_isolated_backends() -> None:
+    command = _bridge(
+        process="runtime_external_process_unavailable",
+        command="episode_container_exec_v1",
+    )
+    outer = _bridge(
+        process="docker_outer_runtime_delegated",
+        command="ephemeral_container_v1",
+    )
+
+    assert _validated_hwe_runtime_bridge(command) is command
+    assert _validated_hwe_runtime_bridge(outer) is outer
+    for rejected in (
+        _bridge(
+            process="runtime_external_process_unavailable",
+            command="runtime_external_command_unavailable",
+        ),
+        _bridge(
+            process="runtime_external_process_unavailable",
+            command="ephemeral_container_v1",
+        ),
+        _bridge(
+            process="runtime_external_process_unavailable",
+            command="episode_container_exec_v1",
+            isolation="trusted_local",
+        ),
+    ):
+        with pytest.raises(ValueError, match="Docker|isolated"):
+            _validated_hwe_runtime_bridge(rejected)

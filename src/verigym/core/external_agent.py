@@ -109,6 +109,10 @@ class RuntimeExternalAgentBridge:
         return self._session.external_process_backend
 
     @property
+    def command_execution_backend(self) -> str:
+        return self._session.external_agent_command_backend
+
+    @property
     def logical_workspace_root(self) -> str:
         return self._session.logical_workspace_root
 

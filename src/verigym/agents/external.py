@@ -39,6 +39,9 @@ class ExternalAgentBridge(Protocol):
     def execution_backend(self) -> str: ...
 
     @property
+    def command_execution_backend(self) -> str: ...
+
+    @property
     def logical_workspace_root(self) -> str: ...
 
     @property

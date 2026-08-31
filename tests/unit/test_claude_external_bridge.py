@@ -35,6 +35,7 @@ def test_claude_bridge_uses_core_workspace_tools_and_own_event_namespace(
             ),
             trace=trace,
         )
+        assert bridge.command_execution_backend == "runtime_external_command_unavailable"
         result = bridge.invoke_workspace_tool(
             "file.write",
             {"path": "repository/a.sv", "content": "module fixed; endmodule\n"},
