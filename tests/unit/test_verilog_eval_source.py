@@ -277,6 +277,25 @@ def test_functional_v4_adds_only_frozen_harder_unseen_smokes_and_inherits_v3() -
     )
 
 
+def test_functional_v5_strengthens_only_lemmings_without_mutating_v4() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    v4 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value)
+    v5 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value)
+
+    assert v5._functional_smoke_tasks() == v4._functional_smoke_tasks()
+    for native_id in ("Prob140_fsm_hdlc", "Prob144_conwaylife", "Prob153_gshare"):
+        assert v5._public_smoke(native_id) == v4._public_smoke(native_id)
+    v4_lemmings = v4._public_smoke("Prob155_lemmings4")
+    v5_lemmings = v5._public_smoke("Prob155_lemmings4")
+    assert v4_lemmings is not None and v5_lemmings is not None
+    assert v5_lemmings != v4_lemmings
+    assert "for (i = 1; i < 20; i = i + 1)" in v5_lemmings
+    assert v5.source_snapshot().configuration_fingerprint != (
+        v4.source_snapshot().configuration_fingerprint
+    )
+
+
 def test_multiple_adapter_roots_coexist_without_global_state(tmp_path: Path) -> None:
     other = copied_fixture(tmp_path)
     prompt = other / "dataset_spec-to-rtl" / "Prob900_fixture_and_prompt.txt"

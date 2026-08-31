@@ -41,7 +41,7 @@ from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier import VerifierStatus
 
-_VARIANT = "v2-spec-to-rtl-agent-eval-functional-v4"
+_VARIANT = "v2-spec-to-rtl-agent-eval-functional-v5"
 _NATIVE_TASKS = (
     "Prob140_fsm_hdlc",
     "Prob144_conwaylife",
@@ -100,7 +100,7 @@ class Cell:
 
     @property
     def campaign_id(self) -> str:
-        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v3"
+        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v4"
 
 
 def _cell(
@@ -376,7 +376,7 @@ def _qualify_suite(
         for spec in _unique_specs():
             loaded_suite, task, assets = service.load_task(spec.task_id, source_config)
             if task.metadata.get("public_feedback_semantics") != (
-                "compile_and_independent_functional_smoke_v4"
+                "compile_and_independent_functional_smoke_v5"
             ):
                 raise ConfigurationError("harder-unseen public feedback revision drifted")
             visible = Path(assets.visible_root)
