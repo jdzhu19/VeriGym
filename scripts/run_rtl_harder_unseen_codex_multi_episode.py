@@ -241,9 +241,7 @@ def main() -> int:
     )
     _record_progress(progress_path, cell, phase="suite_qualification", status="completed")
 
-    if len(str(broker_root)) > 72:
-        raise ConfigurationError("site work path is too long for the Unix broker socket")
-    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(broker_root)
+    _configure_broker_environment(broker_root, create=True)
     _record_progress(progress_path, cell, phase="freeze", status="started")
     configs = _frozen_run_configs(
         service,
@@ -1054,7 +1052,7 @@ def _resume_existing(arguments: argparse.Namespace, cell: Cell) -> int:
     ) or qualification != plan.get("qualification"):
         raise ConfigurationError("resume preflight differs from the frozen campaign plan")
 
-    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(smoke._broker_root(broker_root))
+    _configure_broker_environment(broker_root, create=False)
     configs = _frozen_run_configs(
         service,
         cell=cell,
@@ -1204,6 +1202,13 @@ def _load_resume_prefix(
     if actual_entries != expected_entries:
         raise ConfigurationError("resume runs are not the exact ledger prefix")
     return results, records, pending
+
+
+def _configure_broker_environment(root: Path, *, create: bool) -> None:
+    selected = smoke._broker_root(root) if create else root
+    if len(str(selected)) > 72:
+        raise ConfigurationError("site work path is too long for the Unix broker socket")
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(selected)
 
 
 def _load_run_result(output: Path, spec: RunSpec) -> RunResult:

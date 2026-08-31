@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -303,6 +304,26 @@ def test_execution_rejects_a_started_pending_resume_slot(tmp_path: Path) -> None
         )
 
     assert service.calls == 0
+
+
+def test_broker_environment_creates_new_root_and_reuses_existing_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = _launcher_module()
+    monkeypatch.delenv("VERIGYM_CODEX_BROKER_ROOT", raising=False)
+    scratch = Path("/data/jzhu484/Agent/.verigym-tmp")
+    with tempfile.TemporaryDirectory(prefix="bg-", dir=scratch) as temporary:
+        root = Path(temporary)
+        fresh = root / "new"
+
+        launcher._configure_broker_environment(fresh, create=True)
+
+        assert fresh.is_dir()
+        assert launcher.os.environ["VERIGYM_CODEX_BROKER_ROOT"] == str(fresh)
+        existing = root / "old"
+        existing.mkdir()
+        launcher._configure_broker_environment(existing, create=False)
+        assert launcher.os.environ["VERIGYM_CODEX_BROKER_ROOT"] == str(existing)
 
 
 def test_wilson_interval_and_progress_are_bounded(tmp_path: Path) -> None:
