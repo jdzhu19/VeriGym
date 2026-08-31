@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v33_codex_free_canary_materialization_authorization_v1",
+  "status": "authorized_pending_materialization",
+  "identity": "openhands-hwe-v33-codex-free-canary-materialization-v1",
+  "prior_evidence": {
+    "v29_audit_merge_commit": "33b30172999ef5b7e99e0df26d709deaf6bcd117",
+    "v29_progress_hash": "42f85402c9e509a687ec32c953b24a026f978b5bf0684eb877f32876d0d302f0",
+    "v29_progress_file_sha256": "f2992d89c13de3ce4a55cb15f4c4985be8c7dd2c0402ea1b675bb793f55b00f2",
+    "v29_qualification_receipt_hash": "3eea3a1b0fc2bb3d2027c4c9c97549012ce32c484b3b7d07bdb15fc5260e59cb",
+    "v29_qualification_file_sha256": "c56201069b55e1eb1bf5d7532dbfe891d54aa562c2ee980a83e3340f3b05d9e8",
+    "v29_source_catalog_hash": "7d708bb0c7ac86e0562899e42abce671cde0c9c5b1d96fa21420cfed1fed400f",
+    "v29_source_catalog_file_sha256": "09abccc6d25f20abd9866d9bd8a7004727566a10bf3aa87af02077637931836a",
+    "v29_canary_contract_hash": "cf6ba5b011f35ec958eaef319ee79ee4f8cd2fcbab77f0dae62f6dbd2c202efc",
+    "v29_canary_contract_file_sha256": "c65e4f10d243c0efb3e56fb2217c4c65f350cd58cd51aa0f69b13b3f12854a8a",
+    "v30_audit_merge_commit": "ac6e604a15be1901c0d3ac7be4576ae14b292d1a",
+    "v30_report_hash": "da246599e8f2a0553d54771fa0f8f6e15a7167f9290c07bac23533f81144bb76",
+    "v30_report_file_sha256": "68df4079a1a12e278f596b481282c9d6128ac7f1a5b125acafcf5dbfd175e017",
+    "v30_status": "stopped_infrastructure_invalid",
+    "v30_provider_episode_count": 0,
+    "runtime_fix_merge_commit": "54d25fe88da82ea1bbc57842ef8ed4a4250387f7",
+    "v32_audit_merge_commit": "d4b37fb1cfbcb8df0d51fcc995a40d73b79981f6",
+    "v32_progress_hash": "4d713ed9faa05104a9fcee28a559158d1af03e19915986aedbeacb9672e1942b",
+    "v32_progress_file_sha256": "27c48e0ff1a2905ba4a3f6f7e2ed1defe17c1746c4a7d01de97fd2ff869d0583",
+    "v32_build_receipt_file_sha256": "45fa97a18ed0c7b2e5e540f6d101e972ea928ec401a6ba8400effd0d7cdb5959",
+    "v32_status": "stopped_security_or_infrastructure_invalid",
+    "v32_locked_command_image_count": 0,
+    "materialization_fix_merge_commit": "066212da8adcc9293948bcbf350c4dfeccffa489"
+  },
+  "v32_predecessor_stop": {
+    "identity": "openhands-hwe-v32-codex-free-canary-materialization-v1",
+    "status": "stopped_security_or_infrastructure_invalid",
+    "failure_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+    "failed_command_image_id": "sha256:10ff15403de96b2db89e7c48167d0ea968ea8e83ed8be33cc06536ecd755869e",
+    "failed_unsanitized_image_id": "sha256:2368312010a59bcd548219cf1f1a69a4eaffa94a152dc787b04763d428090064",
+    "provider_calls": 0,
+    "model_process_count": 0,
+    "canary_executed": false,
+    "command_image_locks": 0,
+    "reuse_allowed": false
+  },
+  "preauthorization_headroom": {
+    "status": "passed_snapshot_only",
+    "preflight_hash": "ae63e24aca016abbabb8d988f66717bc53916cc01646a26b2d36b7e36b7f6960",
+    "receipt_file_sha256": "98f79f4e7ff324985d2fdcd53eb641ef6f4f0c28a320536fa8fe1a6e7c736fdf",
+    "policy": {
+      "absolute_thresholds": true,
+      "percentage_thresholds": false,
+      "planned_command_image_count": 6,
+      "maximum_bytes_per_command_image": 8589934592,
+      "docker_headroom_multiplier": 2
+    },
+    "requirements": [
+      {
+        "role": "control_root",
+        "minimum_free_bytes": 4294967296,
+        "minimum_free_inodes": 100000
+      },
+      {
+        "role": "docker_root",
+        "minimum_free_bytes": 103079215104,
+        "minimum_free_inodes": 250000
+      },
+      {
+        "role": "scratch_root",
+        "minimum_free_bytes": 8589934592,
+        "minimum_free_inodes": 50000
+      },
+      {
+        "role": "output_parent",
+        "minimum_free_bytes": 2147483648,
+        "minimum_free_inodes": 10000
+      }
+    ],
+    "execution_gate_must_rerun": true,
+    "authorization_granted_by_snapshot": false,
+    "provider_calls": 0,
+    "model_process_count": 0
+  },
+  "legacy_image_locks": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "file_sha256": "38776012996f20a2ac8d34a1bf5c80d77db9303d2132921d6dfcb064386a3f46",
+      "lock_hash": "e26ca258478f3182d3ebf145ae17451fea22522f74ae5eb4b3c7af5dc4b26036",
+      "task_hash": "c0ce40d1c733daf1f48ab7c4f357839b7738ac3174c318ba77697ffc70032fba",
+      "source_hash": "b2682457ca342f6548850c2e83d1a7eea60bff7dec99f168eb6b9a75c9054c7b",
+      "verifier_image": "sha256:bd04dfaa28bf30b408365e26b31bc829a2d3c729e3ea5321522289c583b1dcf9"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "file_sha256": "b6c41c6618c0c057d6108109f18a67b976e5bbeba6bc1ce52ce8990f5926d34a",
+      "lock_hash": "71f05955ded644c97d85ec53aafb89fc2675498103a4839a36009a40ec5f0926",
+      "task_hash": "47cd8b6b6964b337751528bd7479dc9fb8e7f18cbdef1bf605bd70acd6e70fad",
+      "source_hash": "b6a03041571bfbd70cbea308f358747efce9001685f1104ff411306e51bbafa9",
+      "verifier_image": "sha256:ba05f4c8a52ffe566161af9fd1b654690019837509e6d0a5797a4b4b9e959ad8"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3231",
+      "file_sha256": "39d0107eee9943c81b4152ed926edc224ee359ea24a06f001a164275813186bd",
+      "lock_hash": "4318625b6d93f680fa4ae19285c28cde504d68965cca17f2b8b0b4a620df4576",
+      "task_hash": "6597b3856b61cca5608ca1591a1df9ef911f930578a87fe1f57fbcba1745f913",
+      "source_hash": "400347869b2873f624202d475d9fd677dda3789ba2751f7d77c226bce5057cb6",
+      "verifier_image": "sha256:ab7533912960b0fe851b446c85569b5994e1c7c3321449dcc7dfc6ab7e2af34d"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2989",
+      "file_sha256": "ebbab5bb45be755c3807b49b9389548a741f1b0f3a774ce432f84be65c52140d",
+      "lock_hash": "cae38b4a1cf018929ad14edb8aaea06512c088585ec9560f1cffc315395d027b",
+      "task_hash": "1c4dcc4c8ba5bed7b8b5342a1752350ae0447fe2101adb7e3f77c85151e368c0",
+      "source_hash": "8c8c4c95bd12348a232e9d85c9da430ad3378bb3e9f65e87c4825154a91bbe24",
+      "verifier_image": "sha256:80542137a7ac8379c7ee2fd7f851f3aad3bf3e857da85c6292503ccfdb47c260"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3059",
+      "file_sha256": "7de070d9b073db665c64ca23127432770eb615b534e24583470b0ad9b57d1708",
+      "lock_hash": "824c5df9a84b2f91bc545e79930d280fac8d24a2b8cc5d630d88a88f469c772f",
+      "task_hash": "c1549938585e9152fa30898df196e312a45836062e03f2a35bb28d4896fba7e0",
+      "source_hash": "e5c320e0beaaba4e4c473da9c695db5ffdabb537c29e89d8d48bb8be9e8422b5",
+      "verifier_image": "sha256:c4c9b688bec8e6a8f730bc7b1e5aad6766cbd22c74b5d1cbdcfdd8ba59565479"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+      "file_sha256": "55ff6b4efb9675a0a6d512b32d0b33d7778d93d81159086c7485b9f3ebe92a6b",
+      "lock_hash": "b3fe6732fe4d9b52a6444cda90b25add311665af537acf6b389ad1fdafa1933b",
+      "task_hash": "9322fa0b8455126e5c5f2e68ae02c47484935d5ea84bf69b9e6494658e229e86",
+      "source_hash": "15861c5f52071656a4ac8dbe7f96df49c974d24c2e3f53f9e449eba12794f02f",
+      "verifier_image": "sha256:459deab1a9b65a25be4583087238308dd12e773b818e720299cc8cafe55f4f64"
+    }
+  ],
+  "command_image_inputs": {
+    "image_count": 6,
+    "ripgrep_version": "ripgrep 15.2.0 (rev e89fff89ac)",
+    "ripgrep_binary_sha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+    "ripgrep_release_archive_sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+    "tag_namespace": "verigym/cva6-openhands-v33-command",
+    "build_network": "none",
+    "runtime_network": "none",
+    "execution_backend": "episode_container_exec_v1",
+    "security_scan_format": "verigym_hwe_command_image_security_scan_v2",
+    "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+    "codex_present": false
+  },
+  "canary_contract": {
+    "campaign_id": "openhands-hwe-v33-codex-free-required-tool-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v33-codex-free-canary-v1",
+    "protocol_profile": "required_tool_content_recovery_v19",
+    "task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204"
+    ],
+    "roles": [
+      "training",
+      "validation"
+    ],
+    "seed": 489,
+    "sample_index": 5,
+    "provider_calls_during_materialization": 0
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "historical_tasks_retried": false,
+    "historical_evidence_relabelled": false,
+    "one_distinct_command_image_per_task": true,
+    "task_source_verifier_binding_exact": true,
+    "build_network_none": true,
+    "runtime_network_none": true,
+    "image_security_scan_required": true,
+    "headroom_preflight_before_image_build": true,
+    "headroom_policy_exact": true,
+    "failed_scan_diagnostic_content_free": true,
+    "v32_images_reused": false,
+    "public_qualification_rerun": false,
+    "codex_binary_absent": true,
+    "provider_credentials_absent": true,
+    "atomic_progress": true,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "consume_sealed_v29_evidence": true,
+    "record_sealed_v30_stop": true,
+    "record_sealed_v32_stop": true,
+    "run_zero_provider_headroom_preflight": true,
+    "build_six_command_images": true,
+    "scan_six_command_images": true,
+    "materialize_successor_canary_contract": true,
+    "reuse_v32_command_images": false,
+    "rerun_public_qualification": false,
+    "invoke_provider": false,
+    "execute_canary": false,
+    "start_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately_no_retry",
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "79cca2864460c0b6ca4d4d8902e4f7be1cb6ae8296743b6b1409b2e3725deb17"
+}
