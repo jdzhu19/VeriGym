@@ -157,7 +157,11 @@ call. It produced no image lock or successor canary contract and is not reusable
 canary, trajectory collection, SFT, inference evaluation, or held-out access is authorized.
 The generic successor guard records content-free, assertion-level command-image failures and
 checks absolute filesystem byte/inode headroom before construction; this repair does not itself
-authorize a new campaign identity or a retry of v32.
+authorize a retry of v32. The separately reviewed v33 authorization introduces a fresh tag and
+materialization identity, consumes the sealed public qualification without rerunning it, requires
+a new headroom receipt before the first image build, and accepts only v2 command-image security
+receipts. It still authorizes no provider call, canary execution, trajectory collection, training,
+inference evaluation, or held-out access.
 
 ## Run the toy RTL task
 

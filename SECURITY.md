@@ -134,6 +134,17 @@ on a multi-terabyte filesystem can still provide ample bounded capacity. Receipt
 numeric capacity only, never resolved host paths or raw `docker info` output. Rejection occurs
 before image construction and does not authorize an automatic retry or successor identity.
 
+The one-use OpenHands v33 authorization is a successor materialization identity, not a retry of
+v32. It hash-binds the exact two-file v32 terminal inventory, requires zero locked v32 command
+images, and prohibits importing either failed v32 image ID. It reuses the sealed v29 public-task
+qualification without verifier replay. After the authorization commit is merged to `origin/main`,
+the runner must repeat the absolute headroom gate and persist its receipt before constructing the
+first of six task-distinct command images. Every successful image must bind a passed v2 security
+receipt; a failed scan may contribute only the closed, content-free diagnostic summary to terminal
+progress. A missing or malformed receipt, insufficient capacity, unexpected file, cleanup failure,
+or binding mismatch stops the identity without retry. This authorization does not permit provider
+access, canary execution, trajectory collection, SFT, inference evaluation, or held-out access.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
