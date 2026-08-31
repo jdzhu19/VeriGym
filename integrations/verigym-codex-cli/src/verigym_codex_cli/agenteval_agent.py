@@ -769,7 +769,8 @@ def _configured_broker_root() -> Path:
     if path.is_symlink():
         raise CodexProcessError("Codex broker root cannot be a symlink")
     resolved = path.resolve(strict=True)
-    if not resolved.is_dir() or len(os.fsencode(resolved)) > 72:
+    # codex-agenteval-XXXXXXXX/b/mcp.sock consumes 36 of the broker's 100-byte limit.
+    if not resolved.is_dir() or len(os.fsencode(resolved)) > 64:
         raise CodexProcessError("Codex broker root must be a short real directory")
     return resolved
 

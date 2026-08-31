@@ -545,9 +545,11 @@ def _configure_campaign_temp_root(site_work: Path) -> Path:
 
 
 def _broker_root(root: Path) -> Path:
-    root.mkdir(parents=True)
-    if len(str(root)) > 72:
+    # The later TemporaryDirectory/socket suffix consumes 36 of the broker's 100 bytes.
+    resolved = root.resolve(strict=False)
+    if len(os.fsencode(resolved)) > 64:
         raise ConfigurationError("site work path is too long for the Unix broker socket")
+    root.mkdir(parents=True)
     return root
 
 

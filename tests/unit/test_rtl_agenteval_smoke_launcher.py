@@ -30,6 +30,16 @@ def _launcher_module() -> ModuleType:
     return module
 
 
+def test_broker_root_length_is_rejected_before_directory_creation(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    root = tmp_path / ("b" * 80)
+
+    with pytest.raises(Exception, match="too long"):
+        launcher._broker_root(root)
+
+    assert not root.exists()
+
+
 def test_launcher_preserves_all_prelaunch_agent_resolutions() -> None:
     launcher = _launcher_module()
     service = offline_service()
