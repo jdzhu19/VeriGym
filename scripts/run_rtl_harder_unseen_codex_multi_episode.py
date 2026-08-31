@@ -13,18 +13,18 @@ from typing import Any
 
 import run_rtl_agenteval_codex_smoke as smoke
 from verigym_codex_cli import (
-    CodexCliFunctionalV2HighAgentEvalAdapter,
-    CodexCliFunctionalV2LowAgentEvalAdapter,
-    CodexCliFunctionalV2MediumAgentEvalAdapter,
-    CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
+    CodexCliFunctionalV3HighAgentEvalAdapter,
+    CodexCliFunctionalV3LowAgentEvalAdapter,
+    CodexCliFunctionalV3MediumAgentEvalAdapter,
+    CodexCliFunctionalV3MiniMediumAgentEvalAdapter,
 )
-from verigym_codex_cli.functional_v2_agenteval_config import (
-    FUNCTIONAL_V2_HIGH_IDENTITY,
-    FUNCTIONAL_V2_LOW_IDENTITY,
-    FUNCTIONAL_V2_MEDIUM_IDENTITY,
-    FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY,
-    FUNCTIONAL_V2_PROMPT_HASH,
-    FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT,
+from verigym_codex_cli.functional_v3_agenteval_config import (
+    FUNCTIONAL_V3_HIGH_IDENTITY,
+    FUNCTIONAL_V3_LOW_IDENTITY,
+    FUNCTIONAL_V3_MEDIUM_IDENTITY,
+    FUNCTIONAL_V3_MINI_MEDIUM_IDENTITY,
+    FUNCTIONAL_V3_PROMPT_HASH,
+    FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
 )
 
 from verigym.core.errors import ConfigurationError
@@ -100,7 +100,7 @@ class Cell:
 
     @property
     def campaign_id(self) -> str:
-        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v1"
+        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v2"
 
 
 def _cell(
@@ -124,28 +124,28 @@ def _cell(
 _CELLS = {
     "mini-low": _cell(
         "mini-low",
-        FUNCTIONAL_V2_LOW_IDENTITY,
-        CodexCliFunctionalV2LowAgentEvalAdapter,
+        FUNCTIONAL_V3_LOW_IDENTITY,
+        CodexCliFunctionalV3LowAgentEvalAdapter,
         "overall_strength_low",
         "same_model_reasoning_low",
     ),
     "mini-medium": _cell(
         "mini-medium",
-        FUNCTIONAL_V2_MINI_MEDIUM_IDENTITY,
-        CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
+        FUNCTIONAL_V3_MINI_MEDIUM_IDENTITY,
+        CodexCliFunctionalV3MiniMediumAgentEvalAdapter,
         "same_model_reasoning_medium",
     ),
     "mini-high": _cell(
         "mini-high",
-        FUNCTIONAL_V2_MEDIUM_IDENTITY,
-        CodexCliFunctionalV2MediumAgentEvalAdapter,
+        FUNCTIONAL_V3_MEDIUM_IDENTITY,
+        CodexCliFunctionalV3MediumAgentEvalAdapter,
         "overall_strength_medium",
         "same_model_reasoning_high",
     ),
     "full-xhigh": _cell(
         "full-xhigh",
-        FUNCTIONAL_V2_HIGH_IDENTITY,
-        CodexCliFunctionalV2HighAgentEvalAdapter,
+        FUNCTIONAL_V3_HIGH_IDENTITY,
+        CodexCliFunctionalV3HighAgentEvalAdapter,
         "overall_strength_high",
     ),
 }
@@ -482,8 +482,8 @@ def _agent_options(cell: Cell, capability: Any, auth: Any) -> dict[str, Any]:
         "expected_cli_version": smoke._EXPECTED_CLI_VERSION,
         "expected_cli_executable_sha256": smoke._EXPECTED_CODEX_SHA256,
         "expected_capability_fingerprint": capability.capability_fingerprint,
-        "expected_prompt_hash": FUNCTIONAL_V2_PROMPT_HASH,
-        "expected_tool_policy_fingerprint": FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT,
+        "expected_prompt_hash": FUNCTIONAL_V3_PROMPT_HASH,
+        "expected_tool_policy_fingerprint": FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
         "expected_requested_auth_mode": auth.requested_auth_mode,
         "expected_resolved_auth_mode": auth.resolved_auth_mode,
         "expected_auth_semantic_id": auth.auth_semantic_id,
@@ -544,6 +544,7 @@ def _build_plan(
     return {
         "schema_version": "1.0",
         "campaign_id": cell.campaign_id,
+        "harness_revision": "functional-v3-recoverable-workspace-request",
         "cell": cell.key,
         "comparison_groups": list(cell.comparison_groups),
         "model": cell.model_id,
@@ -577,8 +578,8 @@ def _build_plan(
             "capability_fingerprint": capability.capability_fingerprint,
             "agent_version_id": cell.agent_version_id,
             "agent_version_hash": cell.agent_version_hash,
-            "prompt_hash": FUNCTIONAL_V2_PROMPT_HASH,
-            "tool_policy_fingerprint": FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT,
+            "prompt_hash": FUNCTIONAL_V3_PROMPT_HASH,
+            "tool_policy_fingerprint": FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
             "auth": auth.safe_dict(),
         },
         "runtime": runtime_descriptor.model_dump(mode="json"),
@@ -697,8 +698,8 @@ def _identity_observation_valid(result: RunResult, cell: Cell) -> bool:
         and observation.effective_reasoning_effort == cell.reasoning_effort
         and observation.harness_id == cell.agent_version_id
         and observation.agent_version_hash == cell.agent_version_hash
-        and observation.prompt_contract_hash == FUNCTIONAL_V2_PROMPT_HASH
-        and observation.tool_policy_fingerprint == FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT
+        and observation.prompt_contract_hash == FUNCTIONAL_V3_PROMPT_HASH
+        and observation.tool_policy_fingerprint == FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT
     )
 
 
@@ -1052,8 +1053,8 @@ def _validate_existing_plan(plan: Any, cell: Cell) -> None:
         not isinstance(codex, dict)
         or codex.get("agent_version_id") != cell.agent_version_id
         or codex.get("agent_version_hash") != cell.agent_version_hash
-        or codex.get("prompt_hash") != FUNCTIONAL_V2_PROMPT_HASH
-        or codex.get("tool_policy_fingerprint") != FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT
+        or codex.get("prompt_hash") != FUNCTIONAL_V3_PROMPT_HASH
+        or codex.get("tool_policy_fingerprint") != FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT
         or not isinstance(hashes, list)
         or len(hashes) != _PROCESS_COUNT
         or not all(isinstance(item, str) and smoke._SHA256.fullmatch(item) for item in hashes)

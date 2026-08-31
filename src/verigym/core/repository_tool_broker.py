@@ -714,6 +714,10 @@ class RepositoryToolBroker:
                     "workspace_tool_internal_error",
                     terminal_tool_name=name,
                 )
+        elif not result.success and result.category.value == "invalid_request":
+            error_subcategory = _safe_error_subcategory(failure_message)
+            with self._lock:
+                self._record_rejection_locked()
         elif result.success:
             with self._lock:
                 if name == "apply_patch":

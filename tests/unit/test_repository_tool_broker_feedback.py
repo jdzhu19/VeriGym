@@ -121,6 +121,30 @@ def test_compatible_broker_maps_model_apply_patch_to_codex_tool(tmp_path: Path) 
     assert broker.stats().patch_format_profile == "strict_unified_and_codex_native_v1"
 
 
+def test_workspace_invalid_request_is_recoverable_and_counted(tmp_path: Path) -> None:
+    broker = _broker(
+        tmp_path,
+        _Bridge(
+            result_category=ErrorCategory.INVALID_REQUEST,
+            result_message="path is not a directory",
+        ),
+    )
+
+    response = broker._dispatch(  # noqa: SLF001
+        {"name": "list_files", "arguments": {"path": "repository/rtl/TopModule.sv"}}
+    )
+    payload = _payload(response)
+    stats = broker.stats()
+
+    assert response["isError"] is True
+    assert payload["error_subcategory"] == "invalid_request"
+    assert payload["state"]["phase"] == "working"
+    assert "list_files" in payload["next_allowed_actions"]
+    assert stats.rejected_calls == 1
+    assert stats.policy_failure is None
+    assert stats.infrastructure_failure is None
+
+
 @pytest.mark.parametrize(
     ("message", "category"),
     [

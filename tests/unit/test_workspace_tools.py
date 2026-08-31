@@ -173,6 +173,17 @@ def test_symlink_escape_is_rejected(tmp_path, local_session, policy) -> None:
     assert not searched.success
 
 
+def test_listing_a_workspace_file_is_recoverable_invalid_request(local_session, policy) -> None:
+    result = FileListTool().execute(
+        {"path": "rtl/counter.v"},
+        ToolContext(session=local_session, workspace_policy=policy),
+    )
+
+    assert not result.success
+    assert result.category == ErrorCategory.INVALID_REQUEST
+    assert result.message == "path is not a directory"
+
+
 def test_safe_copy_refuses_source_symlinks(tmp_path) -> None:
     source = tmp_path / "source"
     destination = tmp_path / "destination"

@@ -465,8 +465,10 @@ def _safe_directory(context: ToolContext, relative: str) -> Path:
         resolved = root.resolve(strict=True)
     except FileNotFoundError:
         raise FileNotFoundError(relative) from None
-    if not resolved.is_relative_to(context.session.root) or not resolved.is_dir():
+    if not resolved.is_relative_to(context.session.root):
         raise PathPolicyError("directory escapes the workspace")
+    if not resolved.is_dir():
+        raise ValueError("path is not a directory")
     return resolved
 
 

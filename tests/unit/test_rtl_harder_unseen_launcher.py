@@ -89,7 +89,7 @@ def _configs(output: Path, launcher: ModuleType) -> list[RunConfig]:
     ]
 
 
-def _observation(cell: object) -> SimpleNamespace:
+def _observation(cell: object, launcher: ModuleType) -> SimpleNamespace:
     return SimpleNamespace(
         invocation_count=1,
         requested_model_id=cell.model_id,
@@ -97,10 +97,8 @@ def _observation(cell: object) -> SimpleNamespace:
         effective_reasoning_effort=cell.reasoning_effort,
         harness_id=cell.agent_version_id,
         agent_version_hash=cell.agent_version_hash,
-        prompt_contract_hash=("14635a854a76a46c8260572cf3a303c0672da77e8b52cdae09427582e79b8ee9"),
-        tool_policy_fingerprint=(
-            "5cb057a7cb6722538144acf1e9ef3265eae3c3391af0ab97eb2b96b93e941a1c"
-        ),
+        prompt_contract_hash=launcher.FUNCTIONAL_V3_PROMPT_HASH,
+        tool_policy_fingerprint=launcher.FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
     )
 
 
@@ -108,6 +106,7 @@ def _execution_result(
     root: Path,
     config: RunConfig,
     cell: object,
+    launcher: ModuleType,
     *,
     failure: object | None = None,
     infrastructure_error: bool = False,
@@ -120,7 +119,7 @@ def _execution_result(
     (evidence / "identity.json").write_text("{}", encoding="utf-8")
     return SimpleNamespace(
         run_dir=run_dir,
-        manifest=SimpleNamespace(external_agent_observations=[_observation(cell)]),
+        manifest=SimpleNamespace(external_agent_observations=[_observation(cell, launcher)]),
         scorecard=SimpleNamespace(
             resolved=resolved,
             correctness=SimpleNamespace(infrastructure_error=infrastructure_error),
@@ -134,17 +133,19 @@ class _FakeService:
         self,
         root: Path,
         cell: object,
+        launcher: ModuleType,
         outcomes: list[dict[str, object]],
     ) -> None:
         self.root = root
         self.cell = cell
+        self.launcher = launcher
         self.outcomes = outcomes
         self.calls = 0
 
     def run(self, config: RunConfig) -> SimpleNamespace:
         outcome = self.outcomes[self.calls]
         self.calls += 1
-        return _execution_result(self.root, config, self.cell, **outcome)
+        return _execution_result(self.root, config, self.cell, self.launcher, **outcome)
 
 
 def test_execution_continues_model_failures_without_retry(tmp_path: Path) -> None:
@@ -158,7 +159,7 @@ def test_execution_continues_model_failures_without_retry(tmp_path: Path) -> Non
         "resolved": False,
     }
     outcomes[1] = {"resolved": False}
-    service = _FakeService(tmp_path, cell, outcomes)
+    service = _FakeService(tmp_path, cell, launcher, outcomes)
 
     results = launcher._execute_exactly_twelve(
         service,
@@ -193,7 +194,7 @@ def test_execution_stops_after_infrastructure_failure(tmp_path: Path) -> None:
         },
         *({} for _ in range(10)),
     ]
-    service = _FakeService(tmp_path, cell, outcomes)
+    service = _FakeService(tmp_path, cell, launcher, outcomes)
 
     with pytest.raises(launcher.CampaignInfrastructureError, match="infrastructure or safety"):
         launcher._execute_exactly_twelve(

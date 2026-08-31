@@ -20,6 +20,12 @@ from .functional_v2_agenteval_agent import (
     CodexCliFunctionalV2MediumAgentEvalAdapter,
     CodexCliFunctionalV2MiniMediumAgentEvalAdapter,
 )
+from .functional_v3_agenteval_agent import (
+    CodexCliFunctionalV3HighAgentEvalAdapter,
+    CodexCliFunctionalV3LowAgentEvalAdapter,
+    CodexCliFunctionalV3MediumAgentEvalAdapter,
+    CodexCliFunctionalV3MiniMediumAgentEvalAdapter,
+)
 from .preflight import AuthPreflightResult, run_auth_preflight
 from .readonly_agent import CodexCliReadonlyAgentAdapter
 from .teacher_agent import CodexCliMcpTeacherAdapter
@@ -38,6 +44,10 @@ __all__ = [
     "CodexCliFunctionalV2LowAgentEvalAdapter",
     "CodexCliFunctionalV2MediumAgentEvalAdapter",
     "CodexCliFunctionalV2MiniMediumAgentEvalAdapter",
+    "CodexCliFunctionalV3HighAgentEvalAdapter",
+    "CodexCliFunctionalV3LowAgentEvalAdapter",
+    "CodexCliFunctionalV3MediumAgentEvalAdapter",
+    "CodexCliFunctionalV3MiniMediumAgentEvalAdapter",
     "CodexCliHweAgentAdapter",
     "CodexCliReadonlyAgentAdapter",
     "CodexCliMcpTeacherAdapter",
