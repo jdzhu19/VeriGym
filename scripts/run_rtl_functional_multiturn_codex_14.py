@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Qualify and execute a frozen 14-process RTLLM/VerilogEval multi-turn diagnostic."""
+"""Run a frozen mixed 14-process or RTLLM dual-backend multi-turn diagnostic."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,10 @@ from verigym_codex_cli import (
     CodexCliFunctionalV2HighAgentEvalAdapter,
     CodexCliFunctionalV2LowAgentEvalAdapter,
     CodexCliFunctionalV2MediumAgentEvalAdapter,
+    CodexCliFunctionalV3HighAgentEvalAdapter,
+    CodexCliFunctionalV3LowAgentEvalAdapter,
+    CodexCliFunctionalV3MediumAgentEvalAdapter,
+    CodexCliFunctionalV3MiniMediumAgentEvalAdapter,
 )
 from verigym_codex_cli.functional_agenteval_config import (
     FUNCTIONAL_AGENTEVAL_AGENT_VERSION_HASH,
@@ -29,6 +33,14 @@ from verigym_codex_cli.functional_v2_agenteval_config import (
     FUNCTIONAL_V2_MEDIUM_IDENTITY,
     FUNCTIONAL_V2_PROMPT_HASH,
     FUNCTIONAL_V2_TOOL_POLICY_FINGERPRINT,
+)
+from verigym_codex_cli.functional_v3_agenteval_config import (
+    FUNCTIONAL_V3_HIGH_IDENTITY,
+    FUNCTIONAL_V3_LOW_IDENTITY,
+    FUNCTIONAL_V3_MEDIUM_IDENTITY,
+    FUNCTIONAL_V3_MINI_MEDIUM_IDENTITY,
+    FUNCTIONAL_V3_PROMPT_HASH,
+    FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
 )
 
 from verigym.core.agent_feedback import (
@@ -53,8 +65,11 @@ from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
-_PROCESS_COUNT = 14
+_MIXED_PROCESS_COUNT = 14
+_RTLLM_PROCESS_COUNT = 4
+_PROCESS_COUNT = _MIXED_PROCESS_COUNT
 _OPT_IN = "VERIGYM_RUN_RTL_FUNCTIONAL_MULTITURN_14"
+_RTLLM_ONLY = False
 _PATH_CATEGORIES = frozenset(
     {
         "absolute",
@@ -203,6 +218,45 @@ _CAMPAIGN_PROFILES = {
 _CAMPAIGN_PROFILES.update(
     {f"{tier}-v3": _v3_profile(_CAMPAIGN_PROFILES[tier]) for tier in ("low", "medium", "high")}
 )
+
+
+def _functional_v3_profile(tier: str, adapter_class: type[Any], identity: Any) -> CampaignProfile:
+    return CampaignProfile(
+        tier=tier,
+        campaign_id=f"rtl-rtllm-multiturn-codex-{tier}-dualbackend-4run-diagnostic-v1",
+        agent_name=identity.agent_name,
+        adapter_class=adapter_class,
+        model_id=identity.model_id,
+        reasoning_effort=identity.reasoning_effort,
+        prompt_contract_id="repository_action_v2_prompt_v8",
+        agent_version_id=identity.agent_version_id,
+        agent_version_hash=identity.agent_version_hash,
+        prompt_hash=FUNCTIONAL_V3_PROMPT_HASH,
+        tool_policy_fingerprint=FUNCTIONAL_V3_TOOL_POLICY_FINGERPRINT,
+        ve_variant="v2-spec-to-rtl-agent-eval-functional-v3",
+        counter_variant="counter_12_agent_eval_functional_v2",
+        up_down_variant="up_down_counter_agent_eval_functional_v2",
+        rtllm_public_feedback_semantics="compile_and_independent_functional_smoke_v2",
+        verilog_eval_public_feedback_semantics="compile_and_independent_functional_smoke_v3",
+    )
+
+
+_RTLLM_CELL_PROFILES = {
+    "mini-low": _functional_v3_profile(
+        "mini-low", CodexCliFunctionalV3LowAgentEvalAdapter, FUNCTIONAL_V3_LOW_IDENTITY
+    ),
+    "mini-medium": _functional_v3_profile(
+        "mini-medium",
+        CodexCliFunctionalV3MiniMediumAgentEvalAdapter,
+        FUNCTIONAL_V3_MINI_MEDIUM_IDENTITY,
+    ),
+    "mini-high": _functional_v3_profile(
+        "mini-high", CodexCliFunctionalV3MediumAgentEvalAdapter, FUNCTIONAL_V3_MEDIUM_IDENTITY
+    ),
+    "full-xhigh": _functional_v3_profile(
+        "full-xhigh", CodexCliFunctionalV3HighAgentEvalAdapter, FUNCTIONAL_V3_HIGH_IDENTITY
+    ),
+}
 _PROFILE = _LEGACY_PROFILE
 _CAMPAIGN_ID = _PROFILE.campaign_id
 _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
@@ -212,7 +266,7 @@ _UP_DOWN_VARIANT = _PROFILE.up_down_variant
 
 
 def _run_specs() -> tuple[RunSpec, ...]:
-    return (
+    rtllm_specs = (
         RunSpec("01-counter-open", f"rtllm/{_COUNTER_VARIANT}", "counter", "counter_open", True),
         RunSpec("02-counter-dc", f"rtllm/{_COUNTER_VARIANT}", "counter", "counter_dc", True),
         RunSpec(
@@ -229,6 +283,11 @@ def _run_specs() -> tuple[RunSpec, ...]:
             "up_down_dc",
             True,
         ),
+    )
+    if _RTLLM_ONLY:
+        return rtllm_specs
+    return (
+        *rtllm_specs,
         *(
             RunSpec(
                 f"{ordinal:02d}-ve-{native_id.lower()}",
@@ -245,10 +304,28 @@ _RUN_IDS = tuple(spec.run_id for spec in _RUN_SPECS)
 _PPA_RUN_IDS = frozenset(spec.run_id for spec in _RUN_SPECS if spec.ppa)
 
 
-def _activate_profile(tier: str) -> None:
-    global _CAMPAIGN_ID, _COUNTER_VARIANT, _OUTPUT, _PPA_RUN_IDS, _PROFILE
-    global _RUN_IDS, _RUN_SPECS, _UP_DOWN_VARIANT, _VE_VARIANT
-    _PROFILE = _CAMPAIGN_PROFILES[tier]
+def _activate_profile(tier: str, rtllm_cell: str | None = None, rtllm_revision: str = "v1") -> None:
+    global _CAMPAIGN_ID, _COUNTER_VARIANT, _OPT_IN, _OUTPUT, _PPA_RUN_IDS, _PROCESS_COUNT
+    global _PROFILE, _RTLLM_ONLY, _RUN_IDS, _RUN_SPECS, _UP_DOWN_VARIANT, _VE_VARIANT
+    _RTLLM_ONLY = rtllm_cell is not None
+    if rtllm_cell is None:
+        _PROFILE = _CAMPAIGN_PROFILES[tier]
+    else:
+        base = _RTLLM_CELL_PROFILES[rtllm_cell]
+        _PROFILE = (
+            base
+            if rtllm_revision == "v1"
+            else replace(
+                base,
+                campaign_id=base.campaign_id.removesuffix("-v1") + f"-{rtllm_revision}",
+            )
+        )
+    _PROCESS_COUNT = _RTLLM_PROCESS_COUNT if _RTLLM_ONLY else _MIXED_PROCESS_COUNT
+    _OPT_IN = (
+        "VERIGYM_RUN_RTLLM_DUAL_BACKEND_4"
+        if _RTLLM_ONLY
+        else "VERIGYM_RUN_RTL_FUNCTIONAL_MULTITURN_14"
+    )
     _CAMPAIGN_ID = _PROFILE.campaign_id
     _OUTPUT = Path(f"/data/jzhu484/Agent/experiments/{_CAMPAIGN_ID}")
     _VE_VARIANT = _PROFILE.ve_variant
@@ -269,6 +346,8 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--execute", action="store_true")
     mode.add_argument("--finalize-existing", action="store_true")
     parser.add_argument("--tier", choices=tuple(_CAMPAIGN_PROFILES), default="legacy")
+    parser.add_argument("--rtllm-cell", choices=tuple(_RTLLM_CELL_PROFILES))
+    parser.add_argument("--rtllm-revision", choices=("v1", "v2"), default="v1")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--site-work", type=Path, required=True)
     parser.add_argument(
@@ -277,7 +356,7 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("/data/jzhu484/Agent/.verigym-tmp/cb-fmt1"),
     )
     parser.add_argument("--rtllm-source", type=Path, required=True)
-    parser.add_argument("--verilog-eval-source", type=Path, required=True)
+    parser.add_argument("--verilog-eval-source", type=Path)
     parser.add_argument("--pdk-root", type=Path, required=True)
     parser.add_argument("--dc-counter-profile", type=Path, required=True)
     parser.add_argument("--dc-up-down-profile", type=Path, required=True)
@@ -290,7 +369,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = _parser().parse_args()
-    _activate_profile(arguments.tier)
+    _activate_profile(arguments.tier, arguments.rtllm_cell, arguments.rtllm_revision)
     if arguments.output is None:
         arguments.output = _OUTPUT
     if arguments.finalize_existing:
@@ -300,7 +379,7 @@ def main() -> int:
     progress_path = _campaign_progress_path(site_work)
     _record_progress(progress_path, phase="input_qualification", status="started")
     output = smoke._new_path(arguments.output, "diagnostic output")
-    broker_root = smoke._new_path(arguments.broker_root, "Codex broker root")
+    broker_root = smoke._broker_root(smoke._new_path(arguments.broker_root, "Codex broker root"))
     inputs = _inputs(arguments)
     profile_paths = _profile_paths(arguments)
     _record_progress(progress_path, phase="input_qualification", status="completed")
@@ -339,7 +418,7 @@ def main() -> int:
         scratch=site_work / "qualification",
     )
     _record_progress(progress_path, phase="toolchain_qualification", status="completed")
-    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(smoke._broker_root(broker_root))
+    os.environ["VERIGYM_CODEX_BROKER_ROOT"] = str(broker_root)
     _record_progress(progress_path, phase="freeze", status="started")
     configs = _frozen_run_configs(
         service,
@@ -435,11 +514,15 @@ def main() -> int:
 
 
 def _inputs(arguments: argparse.Namespace) -> dict[str, Path]:
-    return {
+    inputs = {
         "rtllm": smoke._directory(arguments.rtllm_source),
-        "verilog_eval": smoke._directory(arguments.verilog_eval_source),
         "pdk": smoke._directory(arguments.pdk_root),
     }
+    if not _RTLLM_ONLY:
+        if arguments.verilog_eval_source is None:
+            raise ConfigurationError("mixed diagnostic requires --verilog-eval-source")
+        inputs["verilog_eval"] = smoke._directory(arguments.verilog_eval_source)
+    return inputs
 
 
 def _profile_paths(arguments: argparse.Namespace) -> dict[str, Path]:
@@ -452,11 +535,15 @@ def _profile_paths(arguments: argparse.Namespace) -> dict[str, Path]:
 
 
 def _source_configs(inputs: dict[str, Path]) -> dict[str, SuiteSourceConfig]:
-    return {
+    configs = {
         "counter": SuiteSourceConfig(source_root=inputs["rtllm"], variant=_COUNTER_VARIANT),
         "up_down": SuiteSourceConfig(source_root=inputs["rtllm"], variant=_UP_DOWN_VARIANT),
-        "verilog_eval": SuiteSourceConfig(source_root=inputs["verilog_eval"], variant=_VE_VARIANT),
     }
+    if not _RTLLM_ONLY:
+        configs["verilog_eval"] = SuiteSourceConfig(
+            source_root=inputs["verilog_eval"], variant=_VE_VARIANT
+        )
+    return configs
 
 
 def _registries() -> Any:
@@ -523,13 +610,14 @@ def _no_model_qualification(
                 )
                 for key in ("counter", "up_down")
             },
-            "verilog_eval_hidden_references": _qualify_verilog_eval_hidden(
+        }
+        if not _RTLLM_ONLY:
+            records["verilog_eval_hidden_references"] = _qualify_verilog_eval_hidden(
                 service,
                 source_configs["verilog_eval"],
                 runtime,
                 scratch / "hidden-verilog-eval",
-            ),
-        }
+            )
         resolved_items: dict[str, PreparedProfile] = {}
         for name, key in (
             ("counter_open", "counter"),
@@ -717,6 +805,8 @@ def _qualify_agent_feedback(
     records: list[dict[str, Any]] = []
     for source_key, task_id, profile_name in (
         ("counter", f"rtllm/{_COUNTER_VARIANT}", "counter_open"),
+        ("counter", f"rtllm/{_COUNTER_VARIANT}", "counter_dc"),
+        ("up_down", f"rtllm/{_UP_DOWN_VARIANT}", "up_down_open"),
         ("up_down", f"rtllm/{_UP_DOWN_VARIANT}", "up_down_dc"),
     ):
         suite, task, assets = service.load_task(task_id, source_configs[source_key])
@@ -848,7 +938,7 @@ def _frozen_run_configs(
             )
         )
     if len(configs) != _PROCESS_COUNT:
-        raise ConfigurationError("functional diagnostic must freeze exactly fourteen runs")
+        raise ConfigurationError(f"functional diagnostic must freeze exactly {_PROCESS_COUNT} runs")
     return configs
 
 
@@ -872,7 +962,8 @@ def _build_plan(
         "samples_per_task_profile": 1,
         "planned_codex_processes": _PROCESS_COUNT,
         "automatic_retries": 0,
-        "benchmark_suites": ["rtllm", "verilog-eval"],
+        "benchmark_suites": ["rtllm"] if _RTLLM_ONLY else ["rtllm", "verilog-eval"],
+        **({"comparison_scope": "rtllm_dual_backend_v1"} if _RTLLM_ONLY else {}),
         "multiturn_definition": (
             "read_first_candidate_public_compile_and_functional_smoke_repair_revalidate_"
             "optional_ppa_typed_finish_hidden_once_v1"
@@ -924,7 +1015,7 @@ def _execute_exactly_fourteen(
     progress_mirror: Path | None = None,
 ) -> list[RunResult]:
     if len(configs) != _PROCESS_COUNT:
-        raise ConfigurationError("launcher must contain exactly fourteen frozen runs")
+        raise ConfigurationError(f"launcher must contain exactly {_PROCESS_COUNT} frozen runs")
     ledger: list[dict[str, Any]] = []
     results: list[RunResult] = []
     for ordinal, config in enumerate(configs, start=1):
@@ -1015,7 +1106,7 @@ def _execute_exactly_fourteen(
                 "functional diagnostic stopped after infrastructure or safety failure"
             )
     if len(results) != _PROCESS_COUNT:
-        raise ConfigurationError("fourteen-process diagnostic stopped before completion")
+        raise ConfigurationError("functional diagnostic stopped before all frozen runs completed")
     return results
 
 
@@ -1394,7 +1485,8 @@ def _validate_existing_plan(plan: Any) -> None:
         "samples_per_task_profile": 1,
         "planned_codex_processes": _PROCESS_COUNT,
         "automatic_retries": 0,
-        "benchmark_suites": ["rtllm", "verilog-eval"],
+        "benchmark_suites": ["rtllm"] if _RTLLM_ONLY else ["rtllm", "verilog-eval"],
+        **({"comparison_scope": "rtllm_dual_backend_v1"} if _RTLLM_ONLY else {}),
         "diagnostic_only": True,
         "benchmark_score_claimed": False,
         "automatic_retries_authorized": False,
@@ -1424,7 +1516,7 @@ def _load_existing_results(output: Path) -> list[RunResult]:
     if runs_root.is_symlink() or not runs_root.is_dir():
         raise ConfigurationError("existing diagnostic has no real runs directory")
     if sorted(entry.name for entry in runs_root.iterdir()) != sorted(_RUN_IDS):
-        raise ConfigurationError("existing diagnostic does not contain exactly fourteen runs")
+        raise ConfigurationError("existing diagnostic does not contain every frozen run")
     results: list[RunResult] = []
     for spec in _RUN_SPECS:
         run_dir = runs_root / spec.run_id
@@ -1452,7 +1544,7 @@ def _validate_existing_ledger(output: Path, results: list[RunResult]) -> None:
     )
     records = ledger.get("records")
     if not isinstance(records, list) or len(records) != _PROCESS_COUNT:
-        raise ConfigurationError("authorization ledger must contain exactly fourteen records")
+        raise ConfigurationError("authorization ledger must contain every frozen run")
     for ordinal, (record, result) in enumerate(zip(records, results, strict=True), start=1):
         expected = {
             "ordinal": ordinal,

@@ -86,6 +86,68 @@ def test_v3_tiers_change_only_verilog_eval_feedback_revision(tier: str) -> None:
     assert launcher._PROFILE.verilog_eval_public_feedback_semantics.endswith("smoke_v3")
 
 
+@pytest.mark.parametrize(
+    ("cell", "model", "reasoning"),
+    [
+        ("mini-low", "gpt-5.4-mini", "low"),
+        ("mini-medium", "gpt-5.4-mini", "medium"),
+        ("mini-high", "gpt-5.4-mini", "high"),
+        ("full-xhigh", "gpt-5.4", "xhigh"),
+    ],
+)
+def test_rtllm_dual_backend_cells_freeze_exactly_four_processes(
+    cell: str, model: str, reasoning: str
+) -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile("legacy", cell)
+
+    assert launcher._PROCESS_COUNT == 4
+    assert launcher._PROFILE.model_id == model
+    assert launcher._PROFILE.reasoning_effort == reasoning
+    assert launcher._PROFILE.agent_name.startswith("codex-cli-functional-v3-")
+    assert launcher._CAMPAIGN_ID == (
+        f"rtl-rtllm-multiturn-codex-{cell}-dualbackend-4run-diagnostic-v1"
+    )
+    assert launcher._OPT_IN == "VERIGYM_RUN_RTLLM_DUAL_BACKEND_4"
+    assert [(spec.source_key, spec.profile_name, spec.ppa) for spec in launcher._RUN_SPECS] == [
+        ("counter", "counter_open", True),
+        ("counter", "counter_dc", True),
+        ("up_down", "up_down_open", True),
+        ("up_down", "up_down_dc", True),
+    ]
+    assert launcher._PPA_RUN_IDS == {
+        "01-counter-open",
+        "02-counter-dc",
+        "03-up-down-open",
+        "04-up-down-dc",
+    }
+
+
+def test_reactivating_mixed_profile_restores_historical_scope() -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile("legacy", "mini-low")
+    launcher._activate_profile("legacy")
+
+    assert launcher._PROCESS_COUNT == 14
+    assert len(launcher._RUN_SPECS) == 14
+    assert launcher._CAMPAIGN_ID.endswith("14run-diagnostic-v1")
+    assert launcher._OPT_IN == "VERIGYM_RUN_RTL_FUNCTIONAL_MULTITURN_14"
+
+
+def test_rtllm_successor_revision_changes_only_campaign_identity() -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile("legacy", "mini-medium")
+    predecessor = launcher._PROFILE
+    launcher._activate_profile("legacy", "mini-medium", "v2")
+
+    assert launcher._CAMPAIGN_ID.endswith("4run-diagnostic-v2")
+    assert launcher._PROFILE.campaign_id != predecessor.campaign_id
+    assert launcher._PROFILE.agent_name == predecessor.agent_name
+    assert launcher._PROFILE.agent_version_hash == predecessor.agent_version_hash
+    assert launcher._PROFILE.prompt_hash == predecessor.prompt_hash
+    assert launcher._PROFILE.tool_policy_fingerprint == predecessor.tool_policy_fingerprint
+
+
 def _configs(output: Path, launcher: ModuleType) -> list[RunConfig]:
     return [
         RunConfig(task_id=spec.task_id, output=output / "runs", run_id=spec.run_id)
@@ -96,13 +158,13 @@ def _configs(output: Path, launcher: ModuleType) -> list[RunConfig]:
 def _observation(launcher: ModuleType) -> SimpleNamespace:
     return SimpleNamespace(
         invocation_count=1,
-        requested_model_id="gpt-5.4-mini",
+        requested_model_id=launcher._PROFILE.model_id,
         observed_model_id=None,
-        effective_reasoning_effort="medium",
-        harness_id=launcher.FUNCTIONAL_AGENTEVAL_AGENT_VERSION_ID,
-        agent_version_hash=launcher.FUNCTIONAL_AGENTEVAL_AGENT_VERSION_HASH,
-        prompt_contract_hash=launcher.FUNCTIONAL_AGENTEVAL_PROMPT_HASH,
-        tool_policy_fingerprint=launcher.FUNCTIONAL_AGENTEVAL_TOOL_POLICY_FINGERPRINT,
+        effective_reasoning_effort=launcher._PROFILE.reasoning_effort,
+        harness_id=launcher._PROFILE.agent_version_id,
+        agent_version_hash=launcher._PROFILE.agent_version_hash,
+        prompt_contract_hash=launcher._PROFILE.prompt_hash,
+        tool_policy_fingerprint=launcher._PROFILE.tool_policy_fingerprint,
     )
 
 
@@ -178,6 +240,25 @@ def test_continues_model_failure_and_verifier_rejection_without_retry(tmp_path: 
     assert all(record["authorization_granted"] for record in records)
     assert all(record["process_started"] for record in records)
     assert all(record["identity_observation_count"] == 1 for record in records)
+    assert all(record["provider_observation_recorded"] for record in records)
+    assert all(record["retry_count"] == 0 for record in records)
+
+
+def test_rtllm_cell_executes_exactly_four_without_retry(tmp_path: Path) -> None:
+    launcher = _launcher_module()
+    launcher._activate_profile("legacy", "mini-medium")
+    output = tmp_path / "campaign"
+    (output / "evidence").mkdir(parents=True)
+    service = _FakeService(tmp_path, launcher, [{} for _ in range(4)])
+
+    results = launcher._execute_exactly_fourteen(service, _configs(output, launcher), output)
+    records = json.loads(
+        (output / "evidence" / "process-authorizations.json").read_text(encoding="utf-8")
+    )["records"]
+
+    assert len(results) == 4
+    assert service.calls == 4
+    assert len(records) == 4
     assert all(record["provider_observation_recorded"] for record in records)
     assert all(record["retry_count"] == 0 for record in records)
 
