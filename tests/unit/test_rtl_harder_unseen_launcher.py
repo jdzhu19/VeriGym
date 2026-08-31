@@ -159,6 +159,10 @@ def test_execution_continues_model_failures_without_retry(tmp_path: Path) -> Non
         "resolved": False,
     }
     outcomes[1] = {"resolved": False}
+    outcomes[2] = {
+        "failure": SimpleNamespace(kind="policy", infrastructure=False),
+        "resolved": False,
+    }
     service = _FakeService(tmp_path, cell, launcher, outcomes)
 
     results = launcher._execute_exactly_twelve(
@@ -173,9 +177,10 @@ def test_execution_continues_model_failures_without_retry(tmp_path: Path) -> Non
 
     assert len(results) == 12
     assert service.calls == 12
-    assert [record["status"] for record in records[:2]] == [
+    assert [record["status"] for record in records[:3]] == [
         "contained_model_failure",
         "verifier_rejection",
+        "policy_failure",
     ]
     assert all(record["retry_count"] == 0 for record in records)
     assert [record["sample_index"] for record in records[:3]] == [0, 1, 2]
@@ -196,7 +201,7 @@ def test_execution_stops_after_infrastructure_failure(tmp_path: Path) -> None:
     ]
     service = _FakeService(tmp_path, cell, launcher, outcomes)
 
-    with pytest.raises(launcher.CampaignInfrastructureError, match="infrastructure or safety"):
+    with pytest.raises(launcher.CampaignInfrastructureError, match="infrastructure failure"):
         launcher._execute_exactly_twelve(
             service,
             _configs(output, launcher),

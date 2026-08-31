@@ -100,7 +100,7 @@ class Cell:
 
     @property
     def campaign_id(self) -> str:
-        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v2"
+        return f"rtl-harder-unseen-codex-{self.key}-12episode-diagnostic-v3"
 
 
 def _cell(
@@ -545,6 +545,7 @@ def _build_plan(
         "schema_version": "1.0",
         "campaign_id": cell.campaign_id,
         "harness_revision": "functional-v3-recoverable-workspace-request",
+        "campaign_orchestration_revision": "contained_model_policy_failure_v1",
         "cell": cell.key,
         "comparison_groups": list(cell.comparison_groups),
         "model": cell.model_id,
@@ -676,9 +677,9 @@ def _execute_exactly_twelve(
         else:
             record["status"] = "completed"
         _write_ledger(output, ledger)
-        if ordinal < len(configs) and (infrastructure or policy):
+        if ordinal < len(configs) and infrastructure:
             raise CampaignInfrastructureError(
-                "harder-unseen diagnostic stopped after infrastructure or safety failure"
+                "harder-unseen diagnostic stopped after infrastructure failure"
             )
     if len(results) != _PROCESS_COUNT:
         raise ConfigurationError("harder-unseen diagnostic stopped before twelve results")
@@ -894,7 +895,6 @@ def _campaign_summary(
         and all(record["identity_observation_count"] == 1 for record in records)
         and all(record["hidden_verifier_at_most_once"] for record in records)
         and not any(record["infrastructure_failure"] for record in records)
-        and not any(record["policy_failure"] for record in records)
     )
     evidence_complete = bool(
         infrastructure_complete
@@ -936,6 +936,7 @@ def _campaign_summary(
         "functional_repair_success_count": sum(
             record["functional_failed_then_passed"] for record in records
         ),
+        "model_policy_failure_count": sum(record["policy_failure"] for record in records),
         "task_results": task_records,
         "runs": records,
         "automatic_retries": 0,
@@ -1031,6 +1032,8 @@ def _finalize_existing(arguments: argparse.Namespace, cell: Cell) -> int:
 def _validate_existing_plan(plan: Any, cell: Cell) -> None:
     expected = {
         "campaign_id": cell.campaign_id,
+        "harness_revision": "functional-v3-recoverable-workspace-request",
+        "campaign_orchestration_revision": "contained_model_policy_failure_v1",
         "cell": cell.key,
         "comparison_groups": list(cell.comparison_groups),
         "model": cell.model_id,
