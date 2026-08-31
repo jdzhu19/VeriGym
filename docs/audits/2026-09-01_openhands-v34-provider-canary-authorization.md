@@ -73,6 +73,7 @@ Credential-free checks on the authorization branch produced:
 - authorization-hash recomputation and the real pre-merge opt-in rejection: passed, with no output
   root created;
 - read-only v33 evidence tree, contract, catalog, progress and two command locks: passed;
+- local tiktoken 0.7.0 overlay: version, import origin and no-symlink checks passed;
 - provider calls, canary episodes, collection, training, GPU work and held-out loads: zero.
 
 The local HWE Git 2.31 binary filters `git apply --numstat` when invoked from a repository
@@ -86,7 +87,7 @@ After the authorization merge and green `main` checks, execute exactly once from
 whose `HEAD` equals `origin/main`:
 
 ```bash
-PYTHONPATH=.:src:integrations/verigym-hwe-bench/src:integrations/verigym-openhands/src:integrations/verigym-deepseek-harness/src \
+PYTHONPATH=/data/jzhu484/Agent/.verigym-tmp/openhands-ci-py312-v1/tiktoken-overlay:.:src:integrations/verigym-hwe-bench/src:integrations/verigym-openhands/src:integrations/verigym-deepseek-harness/src \
 VERIGYM_RUN_OPENHANDS_HWE_V34_PROVIDER_CANARY_V1=1 \
 /data/jzhu484/Agent/.verigym-tmp/openhands-ci-py312-v1/bin/python \
   scripts/collect_cva6_hwe_openhands_v34_provider_canary.py \
