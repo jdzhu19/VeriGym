@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v34_provider_canary_authorization_v1",
+  "status": "authorized_pending_provider_canary",
+  "identity": "openhands-hwe-v34-provider-canary-v1",
+  "v33_materialization_evidence": {
+    "audit_merge_commit": "648fe717e88b36876245df09e73222f906f83918",
+    "audit_file_sha256": "63f814ebeee613e479db3c99f362211e6304778d11ab4cc35873c50f7750af5a",
+    "evidence_tree_hash": "62963cb8d23d48ae31b328d27648fb693d263b698be526f4b7aa4e6df4aa02e6",
+    "progress_hash": "463aa8016d62e947421379cd925009c131a589d754e0c17e7c7f83c72fef26df",
+    "progress_file_sha256": "267c8340e98b81a092216afccc5dadd0834960613920499c392f34522dd78839",
+    "catalog_hash": "05be424d40014e7ef69106f85e5ea161db2bb8e70103c8d1279e4a7c118f8e05",
+    "catalog_file_sha256": "08c31fb7ad13d96fda850f114b34688ec22c0d96a865eb21e5d19fe03df5a423",
+    "contract_hash": "6acc93394bbfd0023063d218033316750cfc92b02a173e1ad5771ca563453687",
+    "contract_file_sha256": "aefeada906fe1e694842a1319a2718110ed83aa4306f69e731de0a9898d4f139"
+  },
+  "command_image_locks": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "file_sha256": "a899a28bc1fc37f95d2829abb73a8964f8e50e76c86a5b32bb556efda05e2134",
+      "lock_hash": "c0954bdec2d6f3a1db3cc89aa4045eefd3260eee7ccd82d9bb1b6fb0dfd2e3f8",
+      "security_scan_file_sha256": "31af9f26e15f0b6ac6faeb4a228d634bec9517ac7b570441272e1229ff9a406e",
+      "security_scan_id": "fe2b861d0c30c41b70cc62859de54cd1b99d45998c742ae37a21dd080f79afd4",
+      "command_image": "sha256:3ba2d622fbec6891484c8529892be39db33e02127ec9aaec80381b7d87e64540"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+      "file_sha256": "a3a29f4ad2515c9502b3716e8644806154c7f9a74d388f9cd9c741d81458dc22",
+      "lock_hash": "4e6bcb561d1c631955dcf9b4a2475a0b09d5bb6bb6b98441cd20101f893400d7",
+      "security_scan_file_sha256": "6357976446539e526c15cf22a8e9616df650e4ac30117934898b7a40eb339ed1",
+      "security_scan_id": "55e94ec5fd12482534238867e109f920779685d0ef9f18b0db03e99f88be62cf",
+      "command_image": "sha256:ed935e093a8f5df4f081ee94d7fb3696335350053dd74fbbd5178b23c2fd1784"
+    }
+  ],
+  "input_locks": {
+    "training_source_image_lock_sha256": "69ddfef98824cb3cceeaa7bb6996f3dca4477a76a71fa15adbb4964ee699ff6f",
+    "validation_source_image_lock_sha256": "ab23ac165898d66c54fc165de21e3eddfadc732542d5149ad15074c368447fa8",
+    "base_model_lock_file_sha256": "fb91ef923333c0bb251ca20d09801ee66aedf4a693b3adb85bbfb60858d8368b",
+    "base_model_snapshot_hash": "fce78eefb5b60ff95c480d2fb823bb45370a4abc933d6114a84d6a321486b156",
+    "tokenizer_hash": "440110a9c8523a13003af840f2b31ce90709383488fcc7a62cfc19ab8ead6c6e"
+  },
+  "software": {
+    "model": "openai/deepseek-v4-flash",
+    "model_identity": "deepseek-v4-flash",
+    "openhands_sdk_version": "1.42.1",
+    "litellm_version": "1.93.0",
+    "tiktoken_version": "0.7.0",
+    "transformers_version": "4.57.6"
+  },
+  "schedule": {
+    "campaign_id": "openhands-hwe-v34-codex-free-required-tool-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v34-codex-free-canary-v1",
+    "task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204"
+    ],
+    "roles": ["training", "validation"],
+    "seed": 489,
+    "sample_index": 5,
+    "maximum_provider_episodes": 2
+  },
+  "runtime": {
+    "command_role": "credential_free_command_image",
+    "command_execution_backend": "episode_container_exec_v1",
+    "external_agent_process_available": false,
+    "codex_present": false,
+    "provider_credentials_in_command_container": false,
+    "network": "none"
+  },
+  "provider_budget": {
+    "temperature": 0,
+    "max_provider_calls_per_episode": 64,
+    "max_provider_tokens_per_episode": 1000000,
+    "max_context_tokens": 65536,
+    "max_output_tokens": 2048,
+    "provider_request_retries": 0,
+    "whole_episode_retries": 0
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "exact_v33_result_chain": true,
+    "exact_task_source_command_image_binding": true,
+    "stop_after_first_failed_gate": true,
+    "all_six_result_planes_required": true,
+    "runtime_network_none": true,
+    "security_scan_before_admission": true,
+    "exact_64k_no_truncation": true,
+    "decision_only_loss_mask": true,
+    "atomic_per_task_progress": true,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "invoke_provider": true,
+    "execute_fixed_two_task_canary": true,
+    "consume_additional_reserve": false,
+    "create_fallback_identity": false,
+    "start_formal_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_after_first_failed_gate_no_retry",
+  "formal_collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "720e445dee059d3a147240ff0471975f3695ee780e29f8a6417b30d3ad4a690b"
+}
