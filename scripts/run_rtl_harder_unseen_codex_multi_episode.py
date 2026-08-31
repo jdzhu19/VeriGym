@@ -1023,12 +1023,10 @@ def _resume_existing(arguments: argparse.Namespace, cell: Cell) -> int:
     plan = _read_json(smoke._regular_file(output / "plan.json", "diagnostic plan"))
     _validate_existing_plan(plan, cell)
 
-    resume_site_work = Path(
-        tempfile.mkdtemp(
-            prefix=f"{original_site_work.name}-resume-",
-            dir=original_site_work.parent,
-        )
+    resume_parent = Path(
+        tempfile.mkdtemp(prefix="rtl-harder-unseen-resume-", dir=original_site_work.parent)
     ).resolve()
+    resume_site_work = resume_parent / "site-work"
     progress_path = _campaign_progress_path(original_site_work)
     progress_mirror = output / "evidence" / "campaign-progress.json"
 
