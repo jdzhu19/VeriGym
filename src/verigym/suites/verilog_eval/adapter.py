@@ -70,6 +70,10 @@ FUNCTIONAL_AGENT_EVAL_V4_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v
 FUNCTIONAL_AGENT_EVAL_V4_ADAPTER_VERSION = "0.5.0"
 FUNCTIONAL_AGENT_EVAL_V5_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v5"
 FUNCTIONAL_AGENT_EVAL_V5_ADAPTER_VERSION = "0.6.0"
+FUNCTIONAL_AGENT_EVAL_V6_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v6"
+FUNCTIONAL_AGENT_EVAL_V6_ADAPTER_VERSION = "0.7.0"
+FUNCTIONAL_AGENT_EVAL_V7_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v7"
+FUNCTIONAL_AGENT_EVAL_V7_ADAPTER_VERSION = "0.8.0"
 _FUNCTIONAL_SMOKE_TASKS = frozenset(
     {
         "Prob038_count15",
@@ -418,6 +422,8 @@ class VerilogEvalSuite(SuiteAdapter):
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }
         functional_agent_eval = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
@@ -425,13 +431,19 @@ class VerilogEvalSuite(SuiteAdapter):
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }
         codex_patch_compatible = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }
+        functional_v7 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value
+        functional_v6 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value
         functional_v5 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value
         functional_v4 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value
         functional_v3 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value
@@ -454,7 +466,11 @@ class VerilogEvalSuite(SuiteAdapter):
             )
         )
         suite_version = (
-            FUNCTIONAL_AGENT_EVAL_V5_SUITE_VERSION
+            FUNCTIONAL_AGENT_EVAL_V7_SUITE_VERSION
+            if functional_v7
+            else FUNCTIONAL_AGENT_EVAL_V6_SUITE_VERSION
+            if functional_v6
+            else FUNCTIONAL_AGENT_EVAL_V5_SUITE_VERSION
             if functional_v5
             else FUNCTIONAL_AGENT_EVAL_V4_SUITE_VERSION
             if functional_v4
@@ -597,7 +613,11 @@ class VerilogEvalSuite(SuiteAdapter):
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "task_content_hash": problem.content_hash,
                 "adapter_version": (
-                    FUNCTIONAL_AGENT_EVAL_V5_ADAPTER_VERSION
+                    FUNCTIONAL_AGENT_EVAL_V7_ADAPTER_VERSION
+                    if functional_v7
+                    else FUNCTIONAL_AGENT_EVAL_V6_ADAPTER_VERSION
+                    if functional_v6
+                    else FUNCTIONAL_AGENT_EVAL_V5_ADAPTER_VERSION
                     if functional_v5
                     else FUNCTIONAL_AGENT_EVAL_V4_ADAPTER_VERSION
                     if functional_v4
@@ -611,7 +631,11 @@ class VerilogEvalSuite(SuiteAdapter):
                 ),
                 "synthetic_fixture": snapshot.synthetic_fixture,
                 "public_feedback_semantics": (
-                    "compile_and_independent_functional_smoke_v5"
+                    "compile_and_independent_functional_smoke_v7"
+                    if functional_v7
+                    else "compile_and_independent_functional_smoke_v6"
+                    if functional_v6
+                    else "compile_and_independent_functional_smoke_v5"
                     if functional_v5
                     else "compile_and_independent_functional_smoke_v4"
                     if functional_v4
@@ -651,6 +675,8 @@ class VerilogEvalSuite(SuiteAdapter):
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
             }
         )
 
@@ -664,6 +690,8 @@ class VerilogEvalSuite(SuiteAdapter):
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
             }
         )
 
@@ -677,7 +705,32 @@ class VerilogEvalSuite(SuiteAdapter):
         assert self._config is not None
         root = Path(__file__).parent / "assets"
         candidates = []
-        if self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value:
+        if self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value:
+            candidates.extend(
+                [
+                    root / "public_smoke_v7" / f"{native_id}.sv",
+                    root / "public_smoke_v6" / f"{native_id}.sv",
+                    root / "public_smoke_v5" / f"{native_id}.sv",
+                    root / "public_smoke_v4" / f"{native_id}.sv",
+                    root / "public_smoke_v3" / f"{native_id}.sv",
+                    root / "public_smoke_v2" / f"{native_id}.sv",
+                ]
+            )
+        elif (
+            self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value
+        ):
+            candidates.extend(
+                [
+                    root / "public_smoke_v6" / f"{native_id}.sv",
+                    root / "public_smoke_v5" / f"{native_id}.sv",
+                    root / "public_smoke_v4" / f"{native_id}.sv",
+                    root / "public_smoke_v3" / f"{native_id}.sv",
+                    root / "public_smoke_v2" / f"{native_id}.sv",
+                ]
+            )
+        elif (
+            self._config.variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value
+        ):
             candidates.extend(
                 [
                     root / "public_smoke_v5" / f"{native_id}.sv",
@@ -726,6 +779,8 @@ class VerilogEvalSuite(SuiteAdapter):
         if self._config is not None and self._config.variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }:
             return _FUNCTIONAL_SMOKE_TASKS | _FUNCTIONAL_V4_ADDITIONAL_SMOKE_TASKS
         return _FUNCTIONAL_SMOKE_TASKS

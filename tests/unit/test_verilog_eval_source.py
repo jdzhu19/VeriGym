@@ -296,6 +296,44 @@ def test_functional_v5_strengthens_only_lemmings_without_mutating_v4() -> None:
     )
 
 
+def test_functional_v6_strengthens_only_gshare_without_mutating_v5() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    v5 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5.value)
+    v6 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value)
+
+    assert v6._functional_smoke_tasks() == v5._functional_smoke_tasks()
+    for native_id in ("Prob140_fsm_hdlc", "Prob144_conwaylife", "Prob155_lemmings4"):
+        assert v6._public_smoke(native_id) == v5._public_smoke(native_id)
+    v5_gshare = v5._public_smoke("Prob153_gshare")
+    v6_gshare = v6._public_smoke("Prob153_gshare")
+    assert v5_gshare is not None and v6_gshare is not None
+    assert v6_gshare != v5_gshare
+    assert "PHT reset was not weakly not-taken" in v6_gshare
+    assert v6.source_snapshot().configuration_fingerprint != (
+        v5.source_snapshot().configuration_fingerprint
+    )
+
+
+def test_functional_v7_strengthens_only_lemmings_without_mutating_v6() -> None:
+    from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
+
+    v6 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value)
+    v7 = adapter(variant=VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value)
+
+    assert v7._functional_smoke_tasks() == v6._functional_smoke_tasks()
+    for native_id in ("Prob140_fsm_hdlc", "Prob144_conwaylife", "Prob153_gshare"):
+        assert v7._public_smoke(native_id) == v6._public_smoke(native_id)
+    v6_lemmings = v6._public_smoke("Prob155_lemmings4")
+    v7_lemmings = v7._public_smoke("Prob155_lemmings4")
+    assert v6_lemmings is not None and v7_lemmings is not None
+    assert v7_lemmings != v6_lemmings
+    assert "repeat (39) tick();" in v7_lemmings
+    assert v7.source_snapshot().configuration_fingerprint != (
+        v6.source_snapshot().configuration_fingerprint
+    )
+
+
 def test_multiple_adapter_roots_coexist_without_global_state(tmp_path: Path) -> None:
     other = copied_fixture(tmp_path)
     prompt = other / "dataset_spec-to-rtl" / "Prob900_fixture_and_prompt.txt"
