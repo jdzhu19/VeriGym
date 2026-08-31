@@ -151,10 +151,10 @@ The current OpenHands HWE campaign remains pre-canary. Five public CVA6 tasks we
 the sealed v28 evidence, v29 materialized the original static canary inputs, and v30 stopped during
 a zero-provider Docker preflight. The Codex-free command runtime is now merged. A local v31
 pre-authorization diagnostic exposed that `git diff --quiet` does not reject an untracked runner;
-it was stopped before any provider call and is not reusable. The fresh v32 authorization adds an
-explicit tracked-path gate and may only build and scan six network-disabled command images and
-materialize the successor canary contract. It does not authorize a provider canary, trajectory
-collection, SFT, inference evaluation, or held-out access.
+it was stopped before any provider call and is not reusable. The authorized v32 materialization
+then stopped fail-closed during the first command-image security scan, also before any provider
+call. It produced no image lock or successor canary contract and is not reusable. No provider
+canary, trajectory collection, SFT, inference evaluation, or held-out access is authorized.
 
 ## Run the toy RTL task
 
