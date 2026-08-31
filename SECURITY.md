@@ -115,6 +115,25 @@ and close retain the ordinary force-removal and cleanup-accounting boundary. Thi
 does not persist a writable container layer: candidate state remains only in the private workspace
 bind mount and bounded ephemeral `/tmp`.
 
+Successor command-image materialization uses a separately versioned v2 scan receipt. Every
+container assertion has a stable, non-content-bearing exit identifier. Docker create/start and
+cleanup receipts retain only exit codes, byte counts, an empty-stream SHA-256 sentinel, fixed error
+categories, and container/workspace cleanup state. Nonempty output is never hashed. Raw stdout,
+stderr, daemon errors, assertion content, container IDs, and host paths are never persisted. A
+start failure, an unknown exit, over-bound output, a
+failed assertion, or incomplete cleanup writes a failed security receipt and cannot produce an
+image lock. Historical v32 output and image tags remain frozen and cannot be promoted by the v2
+scanner.
+
+Before a successor builds a command image, a zero-provider headroom preflight checks absolute
+available-byte and available-inode thresholds for the control root, Docker data root, scratch root,
+and experiment-output filesystem. The six-image policy budgets 8 GiB per image with a two-times
+Docker staging margin (96 GiB total), plus independent 4 GiB control-root, 8 GiB scratch, and 2 GiB
+output thresholds. Percent-used values are deliberately not gates because a one-percent remainder
+on a multi-terabyte filesystem can still provide ample bounded capacity. Receipts contain roles and
+numeric capacity only, never resolved host paths or raw `docker info` output. Rejection occurs
+before image construction and does not authorize an automatic retry or successor identity.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and

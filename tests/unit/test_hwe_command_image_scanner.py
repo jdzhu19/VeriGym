@@ -1,0 +1,302 @@
+from __future__ import annotations
+
+import hashlib
+import importlib
+import json
+import os
+import subprocess
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from verigym.hwe.image_lock import build_hwe_agent_image_lock
+
+_scanner = importlib.import_module("scripts.scan_and_lock_cva6_hwe_command_image")
+
+
+def _inspection(user: str) -> dict[str, Any]:
+    return {
+        "HostConfig": {
+            "NetworkMode": "none",
+            "IpcMode": "none",
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true"],
+            "PidMode": "",
+            "Memory": 16 * 1024**3,
+            "MemorySwap": 16 * 1024**3,
+            "NanoCpus": 4_000_000_000,
+            "PidsLimit": 4096,
+        },
+        "Config": {"Env": list(_scanner._EXPECTED_IMAGE_ENVIRONMENT), "User": user},
+        "Mounts": [{"Destination": "/workspace/repository", "RW": True}],
+    }
+
+
+def _run_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    start_returncode: int,
+    container_exit_code: int,
+    stdout: bytes = b"",
+    stderr: bytes = b"",
+    create_workspace_proof: bool = False,
+):
+    workspace = tmp_path / "scan-workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(
+        _scanner.tempfile,
+        "mkdtemp",
+        lambda **_kwargs: str(workspace),
+    )
+    removed: list[str] = []
+
+    def fake_subprocess_run(arguments, **_kwargs):
+        if arguments[:2] == ["docker", "create"]:
+            return subprocess.CompletedProcess(arguments, 0, stdout=b"container-id\n", stderr=b"")
+        if arguments[:3] == ["docker", "start", "--attach"]:
+            if create_workspace_proof:
+                (workspace / "workspace-proof").write_text("ok", encoding="utf-8")
+            return subprocess.CompletedProcess(
+                arguments,
+                start_returncode,
+                stdout=stdout,
+                stderr=stderr,
+            )
+        if arguments[:4] == ["docker", "container", "rm", "--force"]:
+            removed.append(arguments[-1])
+            return subprocess.CompletedProcess(arguments, 0, stdout=b"container-id\n", stderr=b"")
+        raise AssertionError(arguments)
+
+    inspections = iter(
+        (
+            [_inspection("1000:1000")],
+            [{"State": {"ExitCode": container_exit_code}}],
+        )
+    )
+
+    def fake_run(arguments: list[str], *, timeout: int = 120):
+        assert arguments[:3] == ["docker", "container", "inspect"]
+        return subprocess.CompletedProcess(arguments, 0, stdout=json.dumps(next(inspections)))
+
+    monkeypatch.setattr(_scanner.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(_scanner, "_run", fake_run)
+    result = _scanner._container_scan(
+        "sha256:" + "1" * 64,
+        user="1000:1000",
+        rg_sha256="2" * 64,
+        artifacts=[{"path": "/usr/bin/make", "sha256": "3" * 64}],
+    )
+    return result, removed
+
+
+def test_container_assertion_failure_is_attributable_and_output_is_not_persisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sensitive = b"credential=do-not-persist"
+
+    with pytest.raises(_scanner.CommandImageScanFailure) as raised:
+        _run_scan(
+            tmp_path,
+            monkeypatch,
+            start_returncode=77,
+            container_exit_code=77,
+            stderr=sensitive,
+        )
+
+    diagnostic = raised.value.diagnostic
+    assert diagnostic["error_category"] == "container_assertion_failed"
+    assert diagnostic["assertion_id"] == "ripgrep_hash_exact"
+    assert diagnostic["exit_code"] == 77
+    assert diagnostic["container_exit_code"] == 77
+    assert diagnostic["temporary_container_removed"] is True
+    assert diagnostic["temporary_workspace_removed"] is True
+    assert diagnostic["raw_output_persisted"] is False
+    assert diagnostic["stderr_sha256"] is None
+    assert diagnostic["nonempty_output_hashed"] is False
+    assert sensitive.decode() not in json.dumps(diagnostic)
+    assert hashlib.sha256(sensitive).hexdigest() not in json.dumps(diagnostic)
+
+
+def test_docker_start_failure_is_distinct_from_inner_assertion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(_scanner.CommandImageScanFailure) as raised:
+        _run_scan(
+            tmp_path,
+            monkeypatch,
+            start_returncode=125,
+            container_exit_code=0,
+            stderr=b"daemon detail that must remain private",
+        )
+
+    diagnostic = raised.value.diagnostic
+    assert diagnostic["error_category"] == "docker_start_failed"
+    assert diagnostic["assertion_id"] is None
+    assert diagnostic["exit_code"] == 125
+    assert diagnostic["container_exit_code"] == 0
+
+
+def test_container_scan_success_records_content_free_exit_and_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (checks, diagnostic), removed = _run_scan(
+        tmp_path,
+        monkeypatch,
+        start_returncode=0,
+        container_exit_code=0,
+        create_workspace_proof=True,
+    )
+
+    assert all(checks.values())
+    assert diagnostic["status"] == "passed"
+    assert diagnostic["exit_code"] == 0
+    assert diagnostic["container_exit_code"] == 0
+    assert diagnostic["temporary_container_removed"] is True
+    assert diagnostic["temporary_workspace_removed"] is True
+    assert removed == ["container-id"]
+
+
+def test_container_scan_rejects_over_bound_diagnostic_and_still_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(_scanner.CommandImageScanFailure) as raised:
+        _run_scan(
+            tmp_path,
+            monkeypatch,
+            start_returncode=1,
+            container_exit_code=1,
+            stderr=b"x" * (_scanner._MAX_DIAGNOSTIC_BYTES + 1),
+        )
+
+    diagnostic = raised.value.diagnostic
+    assert diagnostic["error_category"] == "diagnostic_output_over_bound"
+    assert diagnostic["output_within_bound"] is False
+    assert diagnostic["temporary_container_removed"] is True
+    assert diagnostic["temporary_workspace_removed"] is True
+
+
+def test_scan_and_lock_persists_failed_diagnostic_without_writing_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task_id = "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330"
+    verifier_id = "sha256:" + "1" * 64
+    command_id = "sha256:" + "2" * 64
+    unsanitized_id = "sha256:" + "3" * 64
+    rg_sha256 = "4" * 64
+    archive_sha256 = "5" * 64
+    identity = build_hwe_agent_image_lock(
+        task_id=task_id,
+        task_hash="6" * 64,
+        source_hash="7" * 64,
+        verifier_base_image_id=verifier_id,
+        derived_agent_image_id="sha256:" + "8" * 64,
+        host_codex_sha256="9" * 64,
+        agent_codex_sha256="a" * 64,
+        agent_rg_sha256="b" * 64,
+        toolchain_profile_id="cva6-verilator-5.008-container-native-v2",
+        allowlisted_artifacts=[
+            {"path": "/usr/bin/make", "sha256": "c" * 64, "role": "build_tool"},
+            {
+                "path": "/tools/verilator/bin/verilator_bin",
+                "sha256": "d" * 64,
+                "role": "simulator",
+            },
+        ],
+        security_scan_id="e" * 64,
+    )
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(json.dumps(identity.model_dump(mode="json")), encoding="utf-8")
+    receipt = {
+        "format_id": "verigym_hwe_command_image_build_receipt_v1",
+        "task_id": task_id,
+        "verifier_base_image_id": verifier_id,
+        "derived_command_image_id": command_id,
+        "unsanitized_command_image_id": unsanitized_id,
+        "rg_version": _scanner._RG_VERSION,
+        "rg_source": _scanner._RG_SOURCE,
+        "rg_sha256": rg_sha256,
+        "rg_release_archive_sha256": archive_sha256,
+        "configuration_sanitizer_sha256": "f" * 64,
+        "codex_present": False,
+        "collection_profile_id": "hwe_standard_v2",
+        "tool_contract_id": "hwe_native_shell_v2",
+        "command_protocol": "hwe_command_image_v1",
+        "exact_image_environment": list(_scanner._EXPECTED_IMAGE_ENVIRONMENT),
+    }
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    labels = {
+        "org.verigym.runtime.role": "hwe-cva6-command",
+        "org.verigym.collection.profile": "hwe_standard_v2",
+        "org.verigym.tool.contract": "hwe_native_shell_v2",
+        "org.verigym.command.protocol": "hwe_command_image_v1",
+        "org.verigym.command.rg.version": _scanner._RG_VERSION,
+        "org.verigym.command.rg.sha256": rg_sha256,
+        "org.verigym.command.rg.release_archive.sha256": archive_sha256,
+        "org.verigym.hwe.task_id": task_id,
+        "org.verigym.cva6.verifier_base_image_id": verifier_id,
+        "org.verigym.codex.present": "absent",
+        "org.verigym.provider_credentials": "absent",
+        "org.verigym.hidden_assets": "absent",
+        "org.verigym.reference_patch": "absent",
+        "org.verigym.verifier_payload": "absent",
+    }
+    image = {
+        "Id": command_id,
+        "RootFS": {"Layers": ["sha256:" + "0" * 64]},
+        "Config": {
+            "Env": list(_scanner._EXPECTED_IMAGE_ENVIRONMENT),
+            "User": f"{os.getuid()}:{os.getgid()}",
+            "Volumes": None,
+            "Cmd": ["/usr/bin/tail", "-f", "/dev/null"],
+            "Labels": labels,
+        },
+    }
+    monkeypatch.setattr(
+        _scanner,
+        "_inspect",
+        lambda reference: (
+            image
+            if reference == command_id
+            else {"Id": unsanitized_id, "RootFS": image["RootFS"], "Config": {}}
+        ),
+    )
+    diagnostic = _scanner._empty_diagnostic()
+    diagnostic.update(
+        {
+            "status": "failed",
+            "failure_stage": "container_diagnostic_start",
+            "error_category": "docker_start_failed",
+            "exit_code": 125,
+            "temporary_container_created": True,
+            "temporary_container_removed": True,
+            "temporary_workspace_removed": True,
+        }
+    )
+    monkeypatch.setattr(
+        _scanner,
+        "_container_scan",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            _scanner.CommandImageScanFailure(_scanner._seal_diagnostic(diagnostic))
+        ),
+    )
+    security_output = tmp_path / "security.json"
+    lock_output = tmp_path / "lock.json"
+
+    with pytest.raises(RuntimeError, match="runtime security scan failed"):
+        _scanner.scan_and_lock(
+            receipt_path=receipt_path,
+            identity_lock_path=identity_path,
+            security_output=security_output,
+            lock_output=lock_output,
+        )
+
+    persisted = json.loads(security_output.read_text(encoding="utf-8"))
+    assert persisted["format_id"] == "verigym_hwe_command_image_security_scan_v2"
+    assert persisted["scan_passed"] is False
+    assert persisted["diagnostic"]["exit_code"] == 125
+    assert persisted["diagnostic"]["temporary_container_removed"] is True
+    assert not lock_output.exists()
