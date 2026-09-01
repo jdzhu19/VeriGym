@@ -218,6 +218,18 @@ network-none, atomic-write, and zero-provider boundaries. It cannot execute a ta
 start collection or training, use a GPU, or load held-out data; any provider canary requires a new
 v46 authorization.
 
+The one authorized v45 invocation completed its internal image, lock, catalog, and contract gates,
+but the independent result audit rejected the evidence root. The runtime receipt persisted the
+absolute interpreter, virtual-environment, and package roots in `materialization-progress.json`.
+Those values were useful for the in-memory launcher gate but are raw host paths and therefore are
+not export-safe provenance. V45, its result tree, and both produced image IDs are permanently
+sealed and cannot be retried, edited, or promoted. The PR-2802 task remains provider-unattempted.
+A separately versioned v46 materialization repair may repeat only the zero-provider image build
+after binding this exact failed tree and merged audit. It must validate the absolute runtime paths
+in memory while persisting only booleans, versions, and content identities; its result audit must
+scan the repository, result, predecessor, provider, and proxy values without printing or hashing
+them. The provider-canary identity is consequently deferred to v47.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
