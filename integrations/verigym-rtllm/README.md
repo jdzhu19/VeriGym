@@ -19,6 +19,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-all-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-harder-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-l2-batch1-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -63,6 +65,13 @@ the same as L2 functional feedback: only separately qualified functional variant
 repeatable public smoke. See the
 [full-corpus L1 qualification record](../../docs/audits/rtllm_full_corpus_l1_qualification_v1.md).
 
+`v2-agent-eval-functional-l2-batch1-v1` is the first evidence-selected L2 expansion. It contains
+`adder_pipe_64bit`, `LFSR`, and `serial2parallel`, each with a hash-frozen independent public
+functional smoke and four-category reference/known-bad qualification. It records
+`gym_qualification_level=L2_functional_smoke`; PPA remains disabled, so this variant exposes only
+functional iteration and a final hidden verdict. See the
+[L2 batch-one qualification](../../docs/audits/rtllm_l2_batch1_qualification_v1.md).
+
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
 `rtllm/v2-agent-eval-functional-harder-v1/<task-name>`. Each task has one repository-relative RTL
@@ -98,6 +107,8 @@ The supported functional-version matrix is intentionally partitioned:
   major version 12;
 - `v2-agent-eval-all-v1` requires the same Icarus 12 identity and provides compile-only L1 Gym
   feedback for all 50 frozen tasks;
+- `v2-agent-eval-functional-l2-batch1-v1` requires Icarus 12, provides public L2 functional
+  feedback for three tasks, and explicitly disables PPA;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and

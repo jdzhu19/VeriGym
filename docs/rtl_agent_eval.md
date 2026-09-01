@@ -9,8 +9,9 @@ contract before any model lookup.
 
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
 - RTLLM full corpus: `v2-agent-eval-all-v1` provides L1 candidate-only compile feedback for all
-  50 frozen tasks; `v2-agent-eval-functional-harder-v1` remains the separately qualified L2/L3
-  four-task diagnostic partition.
+  50 frozen tasks; `v2-agent-eval-functional-l2-batch1-v1` adds PPA-disabled L2 functional
+  feedback for three evidence-selected tasks; `v2-agent-eval-functional-harder-v1` remains the
+  separately qualified L2/L3 four-task diagnostic partition.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
   source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
@@ -29,6 +30,13 @@ the final result remains a derived diagnostic projection with the upstream task 
 The bounded [12-task L1 Codex pilot](audits/rtllm_full_l1_codex_12task_pilot_v1.md) demonstrates
 this boundary in practice: nine first-pass public compiles produced six hidden passes and three
 hidden rejections, while three no-finish episodes did not execute the hidden verifier.
+
+The separately frozen L2 batch-one projection also sets `ppa_supported=false`, but replaces the
+compile-only contract with an independent public functional smoke for `adder_pipe_64bit`, `LFSR`,
+and `serial2parallel`. Its [qualification record](audits/rtllm_l2_batch1_qualification_v1.md)
+requires reference pass plus four public/hidden negative-control rejections per task. Disabling PPA
+here means the agent has no `ppa` action and final scoring performs no synthesis; it does not mean
+that the RTL is unsynthesizable or that PPA can never be added under a later qualified variant.
 
 ## Feedback boundaries
 

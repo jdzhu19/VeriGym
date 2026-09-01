@@ -152,6 +152,112 @@ module asyn_fifo #(parameter WIDTH=8, DEPTH=16)(input wclk,rclk,wrstn,rrstn,winc
 endmodule
 """,
     },
+    "adder_pipe_64bit": {
+        "stuck-zero": """
+module adder_pipe_64bit #(parameter DATA_WIDTH=64, STG_WIDTH=16)(input clk,rst_n,i_en,
+  input [DATA_WIDTH-1:0] adda,addb,output [DATA_WIDTH:0] result,output o_en);
+  assign result=0; assign o_en=0;
+endmodule
+""",
+        "reset-error": """
+module adder_pipe_64bit #(parameter DATA_WIDTH=64, STG_WIDTH=16)(input clk,rst_n,i_en,
+  input [DATA_WIDTH-1:0] adda,addb,output reg [DATA_WIDTH:0] result,output reg o_en);
+  reg [3:0] valid;
+  always @(posedge clk) begin
+    valid <= {valid[2:0],i_en}; o_en <= valid[3]; result <= adda+addb;
+  end
+endmodule
+""",
+        "protocol-latency-error": """
+module adder_pipe_64bit #(parameter DATA_WIDTH=64, STG_WIDTH=16)(input clk,rst_n,i_en,
+  input [DATA_WIDTH-1:0] adda,addb,output [DATA_WIDTH:0] result,output o_en);
+  assign result=i_en?({1'b0,adda}+{1'b0,addb}):0; assign o_en=i_en;
+endmodule
+""",
+        "functional-error": """
+module adder_pipe_64bit #(parameter DATA_WIDTH=64, STG_WIDTH=16)(input clk,rst_n,i_en,
+  input [DATA_WIDTH-1:0] adda,addb,output [DATA_WIDTH:0] result,output o_en);
+  reg [DATA_WIDTH:0] p0,p1,p2,p3; reg [3:0] valid;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin p0<=0;p1<=0;p2<=0;p3<=0;valid<=0; end
+    else begin p0<={1'b0,adda}-{1'b0,addb};p1<=p0;p2<=p1;p3<=p2;
+      valid<={valid[2:0],i_en}; end
+  assign result=p3; assign o_en=valid[3];
+endmodule
+""",
+    },
+    "LFSR": {
+        "stuck-zero": """
+module LFSR(output [3:0] out,input clk,rst);
+  assign out=4'b0000;
+endmodule
+""",
+        "reset-error": """
+module LFSR(output reg [3:0] out,input clk,rst);
+  wire feedback=~(out[3]^out[2]);
+  always @(posedge clk or posedge rst)
+    if(rst) out<=4'b1111; else out<={out[2:0],feedback};
+endmodule
+""",
+        "protocol-latency-error": """
+module LFSR(output reg [3:0] out,input clk,rst);
+  wire feedback=~(out[3]^out[2]);
+  reg phase;
+  always @(posedge clk or posedge rst)
+    if(rst) begin out<=4'b0000;phase<=0; end
+    else begin phase<=~phase; if(phase) out<={out[2:0],feedback}; end
+endmodule
+""",
+        "functional-error": """
+module LFSR(output reg [3:0] out,input clk,rst);
+  wire feedback=~(out[3]^out[1]);
+  always @(posedge clk or posedge rst)
+    if(rst) out<=4'b0000; else out<={out[2:0],feedback};
+endmodule
+""",
+    },
+    "serial2parallel": {
+        "stuck-zero": """
+module serial2parallel(input clk,rst_n,din_serial,din_valid,
+  output [7:0] dout_parallel,output dout_valid);
+  assign dout_parallel=0; assign dout_valid=0;
+endmodule
+""",
+        "reset-error": """
+module serial2parallel(input clk,rst_n,din_serial,din_valid,
+  output reg [7:0] dout_parallel,output reg dout_valid);
+  reg [7:0] shift; reg [3:0] count;
+  always @(posedge clk or posedge rst_n)
+    if(rst_n) begin shift<=0;count<=0;dout_parallel<=0;dout_valid<=0; end
+    else if(din_valid) begin shift<={shift[6:0],din_serial};count<=count+1;
+      dout_valid<=0; end
+endmodule
+""",
+        "protocol-latency-error": """
+module serial2parallel(input clk,rst_n,din_serial,din_valid,
+  output reg [7:0] dout_parallel,output reg dout_valid);
+  reg [7:0] shift; reg [2:0] count;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin shift<=0;count<=0;dout_parallel<=0;dout_valid<=0; end
+    else begin dout_valid<=0; if(din_valid) begin shift<={shift[6:0],din_serial};
+      if(count==7) begin dout_parallel<={shift[6:0],din_serial};dout_valid<=1;count<=0; end
+      else count<=count+1; end end
+endmodule
+""",
+        "functional-error": """
+module serial2parallel(input clk,rst_n,din_serial,din_valid,
+  output reg [7:0] dout_parallel,output reg dout_valid);
+  reg [7:0] shift; reg [3:0] count;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin shift<=0;count<=0;dout_parallel<=0;dout_valid<=0; end
+    else begin
+      if(din_valid) count<=(count==8)?0:count+1; else count<=0;
+      if(din_valid && count<=7) shift<={din_serial,shift[7:1]};
+      if(count==8) begin dout_parallel<=shift;dout_valid<=1; end else dout_valid<=0;
+    end
+endmodule
+""",
+    },
 }
 
 

@@ -13,6 +13,8 @@ from verigym_rtllm import RTLLMSuite
 from verigym_rtllm.adapter import (
     ALL_AGENT_EVAL_VARIANT,
     HARDER_VARIANT,
+    L2_BATCH1_PUBLIC_SMOKE_SHA256,
+    L2_BATCH1_VARIANT,
     PINNED_COMMIT,
     _is_icarus12_version,
 )
@@ -25,6 +27,7 @@ from verigym_rtllm.manifest import (
     FROZEN_TASK_TREES,
     FROZEN_TASK_TREES_HASH,
     HARDER_TASK_NAMES,
+    L2_BATCH1_TASK_NAMES,
     TASK_MANIFESTS,
 )
 
@@ -70,6 +73,15 @@ def test_full_corpus_l1_variant_is_explicit(tmp_path: Path) -> None:
         SuiteSourceConfig(source_root=tmp_path, variant=ALL_AGENT_EVAL_VARIANT)
     )
     assert configured.validate_source().valid is False
+
+
+def test_l2_batch1_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=L2_BATCH1_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+    assert set(L2_BATCH1_PUBLIC_SMOKE_SHA256) == set(L2_BATCH1_TASK_NAMES)
+    assert all(len(digest) == 64 for digest in L2_BATCH1_PUBLIC_SMOKE_SHA256.values())
 
 
 @pytest.mark.external_benchmark
@@ -166,6 +178,10 @@ def test_frozen_manifest_covers_exactly_50_runnable_tasks_and_four_harder_tasks(
         manifest = TASK_MANIFESTS[name]
         assert manifest.root in FROZEN_TASK_TREES
         assert manifest.candidate_top == manifest.synthesis_top
+    assert L2_BATCH1_TASK_NAMES == ("adder_pipe_64bit", "LFSR", "serial2parallel")
+    assert not set(L2_BATCH1_TASK_NAMES).intersection(HARDER_TASK_NAMES)
+    for name in L2_BATCH1_TASK_NAMES:
+        assert TASK_MANIFESTS[name].root in FROZEN_TASK_TREES
 
 
 def test_harder_hidden_assets_and_candidate_paths_are_metadata_driven(tmp_path: Path) -> None:
@@ -223,6 +239,20 @@ def test_harder_tasks_require_typed_finish_before_hidden_verification() -> None:
     ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error"),
 )
 def test_harder_known_bad_controls_are_distinct_and_compile_shaped(
+    name: str, category: str
+) -> None:
+    source = known_bad_source(name, category)
+    assert f"module {name}" in source
+    assert len(source) < 4_000
+    assert len(content_hash(source)) == 64
+
+
+@pytest.mark.parametrize("name", L2_BATCH1_TASK_NAMES)
+@pytest.mark.parametrize(
+    "category",
+    ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error"),
+)
+def test_l2_batch1_known_bad_controls_are_distinct_and_compile_shaped(
     name: str, category: str
 ) -> None:
     source = known_bad_source(name, category)
@@ -334,3 +364,56 @@ def test_full_corpus_l1_discovery_loading_and_public_isolation() -> None:
         assert reference is not None
         reference_source = reference.files[f"repository/rtl/{manifest.name}.v"]
         assert f"module {manifest.candidate_top}" in reference_source
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check the L2 batch-one projection",
+)
+def test_l2_batch1_discovery_loading_feedback_and_isolation() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=L2_BATCH1_VARIANT,
+        )
+    )
+
+    assert suite.validate_source().valid
+    refs = list(suite.discover())
+    assert [ref.native_id for ref in refs] == list(L2_BATCH1_TASK_NAMES)
+    for ref in refs:
+        task = suite.load_task(ref)
+        manifest = TASK_MANIFESTS[ref.native_id]
+        assert task.id == f"rtllm/{L2_BATCH1_VARIANT}/{manifest.name}"
+        assert task.metadata["gym_qualification_level"] == "L2_functional_smoke"
+        assert task.metadata["agent_eval"]["ppa_supported"] is False
+        assert task.metadata["verification_requires_final_submission"] is True
+        assert task.metadata["diagnostic_only"] is True
+        assert task.metadata["benchmark_score_claimed"] is False
+        assert task.scoring.ppa_enabled is False
+        assert task.scoring.correctness_required_nodes == ["functional_hidden"]
+
+        assets = suite.resolve_assets(task)
+        visible = Path(assets.visible_root)
+        candidate = visible / "repository" / "rtl" / f"{manifest.name}.v"
+        assert f"module {manifest.candidate_top}" in candidate.read_text(encoding="utf-8")
+        assert len(assets.read_only_mounts) == 1
+        public_smoke = Path(assets.read_only_mounts[0].source_dir) / "assets" / "public-smoke.sv"
+        assert public_smoke.is_file()
+        visible_names = {path.relative_to(visible).as_posix() for path in visible.rglob("*")}
+        assert "verifier/testbench.v" not in visible_names
+        assert not set(manifest.auxiliary_files).intersection(visible_names)
+        assert [asset.mount_path for asset in assets.hidden_assets] == [
+            "verifier/testbench.v",
+            *manifest.auxiliary_files,
+        ]
+
+        cases = list(suite.public_conformance_cases(task))
+        assert [case.expected_resolved for case in cases] == [
+            True,
+            False,
+            False,
+            False,
+            False,
+        ]

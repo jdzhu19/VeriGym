@@ -59,6 +59,7 @@ from .manifest import (
     FROZEN_TASK_TREES,
     FROZEN_TASK_TREES_HASH,
     HARDER_TASK_NAMES,
+    L2_BATCH1_TASK_NAMES,
     TASK_MANIFESTS,
     RTLLMTaskManifest,
 )
@@ -78,6 +79,14 @@ HARDER_ADAPTER_VERSION = "0.6.0"
 ALL_AGENT_EVAL_VARIANT = "v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_ADAPTER_VERSION = "0.7.0"
+L2_BATCH1_VARIANT = "v2-agent-eval-functional-l2-batch1-v1"
+L2_BATCH1_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-l2-batch1-v1"
+L2_BATCH1_ADAPTER_VERSION = "0.8.0"
+L2_BATCH1_PUBLIC_SMOKE_SHA256 = {
+    "adder_pipe_64bit": "88adcd3f90593f9666ae41ac0da44f375f102f07e9446c077a3039a135783c83",
+    "LFSR": "9ce56236593435d22094b1389ccf8e96ffcaa1303b4671bad9ac3ecce5f513c6",
+    "serial2parallel": "c2f61e7deb14b929a3aa21e22cb018c06805317ea8764cb700970da1ed850361",
+}
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 LICENSE_SHA256 = "a32206bcfbf5d6bb23be8a876de424d8a8d2a0e30a9adc9f8e1b3139fada9176"
@@ -99,10 +108,18 @@ _SUPPORTED_VARIANTS = frozenset(
         _UP_DOWN_ICARUS_TRAINING_VARIANT,
         ALL_AGENT_EVAL_VARIANT,
         HARDER_VARIANT,
+        L2_BATCH1_VARIANT,
         *_AGENT_EVAL_VARIANTS,
         *_FUNCTIONAL_AGENT_EVAL_VARIANTS,
     }
 )
+_MULTI_TASK_VARIANTS = {
+    ALL_AGENT_EVAL_VARIANT: ALL_TASK_NAMES,
+    HARDER_VARIANT: HARDER_TASK_NAMES,
+    L2_BATCH1_VARIANT: L2_BATCH1_TASK_NAMES,
+}
+_FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset({HARDER_VARIANT, L2_BATCH1_VARIANT})
+_NO_PPA_AGENT_EVAL_VARIANTS = frozenset({ALL_AGENT_EVAL_VARIANT, L2_BATCH1_VARIANT})
 _BENCHMARK_ROOTS = ("Arithmetic", "Control", "Memory", "Miscellaneous")
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
@@ -175,6 +192,7 @@ class RTLLMSuite(SuiteAdapter):
         self._up_down_workspace_root = assets / "workspace_up_down"
         self._harder_workspace_root = assets / "workspace_harder"
         self._all_workspace_root = assets / "workspace_all"
+        self._l2_batch1_workspace_root = assets / "workspace_l2_batch1"
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._agent_workspaces: list[AgentEvalWorkspace] = []
 
@@ -190,8 +208,8 @@ class RTLLMSuite(SuiteAdapter):
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
         variant = adapter._variant()
-        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
-            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
+        if variant in _MULTI_TASK_VARIANTS:
+            names = _MULTI_TASK_VARIANTS[variant]
             return [
                 TaskRef(
                     id=f"rtllm/{variant}/{name}",
@@ -207,13 +225,14 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         harder = variant == HARDER_VARIANT
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
+        multi_task_variant = variant in _MULTI_TASK_VARIANTS
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
         agent_eval = (
-            all_agent_eval
-            or harder
-            or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
+            multi_task_variant or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
-        functional_agent_eval = harder or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        functional_agent_eval = (
+            variant in _FUNCTIONAL_MULTI_TASK_VARIANTS or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        )
         functional_v2 = variant.endswith("_agent_eval_functional_v2")
         suite_version = self._suite_version(manifest)
         candidate_path = self._candidate_path(manifest)
@@ -226,12 +245,12 @@ class RTLLMSuite(SuiteAdapter):
         )
         derived_note = (
             self._derived_projection_note(manifest, compile_only=all_agent_eval)
-            if all_agent_eval or harder
+            if multi_task_variant
             else ""
         )
         description = (
             upstream_prompt.rstrip() + "\n\n---\n\n" + derived_note.rstrip() + "\n"
-            if all_agent_eval or harder
+            if multi_task_variant
             else upstream_prompt
         )
         snapshot = self._snapshot()
@@ -241,14 +260,14 @@ class RTLLMSuite(SuiteAdapter):
             compile_smoke_feedback_contract(
                 source_paths=[f"rtl/{manifest.name}.v"],
                 top_module=manifest.candidate_top,
-                language="2012" if all_agent_eval or harder else "2005",
+                language="2012" if multi_task_variant else "2005",
                 public_testbench=public_smoke,
             )
             if public_smoke is not None
             else compile_feedback_contract(
                 source_paths=[f"rtl/{manifest.name}.v"],
                 top_module=manifest.candidate_top,
-                language="2012" if all_agent_eval or harder else "2005",
+                language="2012" if multi_task_variant else "2005",
             )
             if agent_eval
             else None
@@ -288,7 +307,7 @@ class RTLLMSuite(SuiteAdapter):
                 entrypoints=[candidate_path],
                 hidden_assets=hidden_assets,
                 max_changed_files=1,
-                max_patch_lines=4_000 if all_agent_eval or harder else 2_000,
+                max_patch_lines=4_000 if multi_task_variant else 2_000,
             ),
             interaction=InteractionSpec(
                 supported_modes=(
@@ -301,11 +320,7 @@ class RTLLMSuite(SuiteAdapter):
                     "file.list",
                     "file.read",
                     "file.apply_patch",
-                    *(
-                        ["file.apply_codex_patch"]
-                        if all_agent_eval or functional_v2 or harder
-                        else []
-                    ),
+                    *(["file.apply_codex_patch"] if multi_task_variant or functional_v2 else []),
                     "file.diff",
                     *(["repository.public_test"] if agent_eval else []),
                 ],
@@ -326,23 +341,23 @@ class RTLLMSuite(SuiteAdapter):
                 max_tool_time_s=300,
                 max_output_tokens=16_384,
                 max_output_bytes_per_tool=1_000_000,
-                max_workspace_bytes=4_000_000 if all_agent_eval or harder else 2_000_000,
+                max_workspace_bytes=4_000_000 if multi_task_variant else 2_000_000,
             ),
             verifier=self._verifier_graph(
                 manifest,
                 candidate_path=candidate_path,
                 icarus=icarus_training or agent_eval,
-                isolated_icarus=all_agent_eval or harder,
+                isolated_icarus=multi_task_variant,
             ),
             scoring=ScoringSpec(
                 correctness_required_nodes=(
                     ["functional_hidden"]
-                    if all_agent_eval or harder
+                    if multi_task_variant
                     else ["compile_hidden", "run_hidden"]
                     if icarus_training or agent_eval
                     else ["vcs_regression"]
                 ),
-                ppa_enabled=not icarus_training and not all_agent_eval,
+                ppa_enabled=(not icarus_training and variant not in _NO_PPA_AGENT_EVAL_VARIANTS),
             ),
             metadata=self._task_metadata(
                 manifest,
@@ -367,10 +382,12 @@ class RTLLMSuite(SuiteAdapter):
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
         variant = self._variant()
         agent_eval = (
-            variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
+            variant in _MULTI_TASK_VARIANTS
             or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
-        functional = variant == HARDER_VARIANT or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        functional = (
+            variant in _FUNCTIONAL_MULTI_TASK_VARIANTS or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        )
         if agent_eval:
             base_workspace = self._base_workspace(manifest)
             smoke = self._public_smoke(manifest.name) if functional else None
@@ -378,16 +395,14 @@ class RTLLMSuite(SuiteAdapter):
                 compile_smoke_feedback_contract(
                     source_paths=[f"rtl/{manifest.name}.v"],
                     top_module=manifest.candidate_top,
-                    language=(
-                        "2012" if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT} else "2005"
-                    ),
+                    language=("2012" if variant in _MULTI_TASK_VARIANTS else "2005"),
                     public_testbench=smoke,
                 )
                 if smoke is not None
                 else compile_feedback_contract(
                     source_paths=[f"rtl/{manifest.name}.v"],
                     top_module=manifest.candidate_top,
-                    language="2012" if variant == ALL_AGENT_EVAL_VARIANT else "2005",
+                    language="2012" if variant in _MULTI_TASK_VARIANTS else "2005",
                 )
             )
             materialized = materialize_agent_eval_workspace(
@@ -403,7 +418,7 @@ class RTLLMSuite(SuiteAdapter):
                     ),
                 },
                 compile_contract=contract,
-                ppa_available=variant != ALL_AGENT_EVAL_VARIANT,
+                ppa_available=variant not in _NO_PPA_AGENT_EVAL_VARIANTS,
                 public_asset_files=(
                     {"assets/public-smoke.sv": smoke} if smoke is not None else None
                 ),
@@ -437,7 +452,7 @@ class RTLLMSuite(SuiteAdapter):
             return _invalid("source_configuration", str(exc))
         issues: list[ValidationIssue] = []
         adapter._validate_expected_file(root, "LICENSE", LICENSE_SHA256, issues)
-        if adapter._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+        if adapter._variant() in _MULTI_TASK_VARIANTS:
             adapter._validate_frozen_inventory(root, issues)
         else:
             manifest = TASK_MANIFESTS[adapter._base_variant()]
@@ -499,7 +514,7 @@ class RTLLMSuite(SuiteAdapter):
             )
             categories = (
                 ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
-                if self._variant() == HARDER_VARIANT
+                if self._variant() in _FUNCTIONAL_MULTI_TASK_VARIANTS
                 else ()
                 if self._variant() == ALL_AGENT_EVAL_VARIANT
                 else ("stuck-zero",)
@@ -589,7 +604,7 @@ class RTLLMSuite(SuiteAdapter):
 
     def toolchain_profile(self, runtime: Runtime, tools: Any) -> ToolchainProfile | None:
         agent_eval = (
-            self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
+            self._variant() in _MULTI_TASK_VARIANTS
             or self._variant() in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
         if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT or agent_eval:
@@ -618,6 +633,8 @@ class RTLLMSuite(SuiteAdapter):
                 id=(
                     "rtllm-icarus12-agent-eval-harder-v1"
                     if self._variant() == HARDER_VARIANT
+                    else "rtllm-icarus12-agent-eval-l2-batch1-v1"
+                    if self._variant() == L2_BATCH1_VARIANT
                     else "rtllm-icarus12-agent-eval-all-v1"
                     if self._variant() == ALL_AGENT_EVAL_VARIANT
                     else "rtllm-icarus12-agent-eval-v1"
@@ -679,7 +696,7 @@ class RTLLMSuite(SuiteAdapter):
 
     def _base_variant(self) -> str:
         variant = self._variant()
-        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+        if variant in _MULTI_TASK_VARIANTS:
             raise ConfigurationError("the RTLLM variant contains multiple native tasks")
         if variant == _UP_DOWN_ICARUS_TRAINING_VARIANT:
             return "up_down_counter"
@@ -696,8 +713,8 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if ref.suite != "rtllm":
             raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
-        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
-            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
+        if variant in _MULTI_TASK_VARIANTS:
+            names = _MULTI_TASK_VARIANTS[variant]
             prefix = f"rtllm/{variant}/"
             if not ref.id.startswith(prefix) or ref.native_id not in names:
                 raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
@@ -712,8 +729,8 @@ class RTLLMSuite(SuiteAdapter):
         if task.suite != "rtllm":
             raise ConfigurationError(f"unknown RTLLM task: {task.id}")
         variant = self._variant()
-        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
-            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
+        if variant in _MULTI_TASK_VARIANTS:
+            names = _MULTI_TASK_VARIANTS[variant]
             prefix = f"rtllm/{variant}/"
             name = task.id.removeprefix(prefix) if task.id.startswith(prefix) else ""
             if name not in names or task.id != prefix + name:
@@ -724,13 +741,13 @@ class RTLLMSuite(SuiteAdapter):
         return TASK_MANIFESTS[self._base_variant()]
 
     def _task_id(self, manifest: RTLLMTaskManifest) -> str:
-        if self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+        if self._variant() in _MULTI_TASK_VARIANTS:
             return f"rtllm/{self._variant()}/{manifest.name}"
         return f"rtllm/{self._variant()}"
 
     def _candidate_path(self, manifest: RTLLMTaskManifest) -> str:
         agent_eval = (
-            self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
+            self._variant() in _MULTI_TASK_VARIANTS
             or self._variant() in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
         prefix = "repository/" if agent_eval else ""
@@ -742,6 +759,8 @@ class RTLLMSuite(SuiteAdapter):
             return ALL_AGENT_EVAL_SUITE_VERSION
         if variant == HARDER_VARIANT:
             return HARDER_SUITE_VERSION
+        if variant == L2_BATCH1_VARIANT:
+            return L2_BATCH1_SUITE_VERSION
         if variant.endswith("_agent_eval_functional_v2"):
             return FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION
         if variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS:
@@ -757,6 +776,8 @@ class RTLLMSuite(SuiteAdapter):
             return "workspace_all"
         if self._variant() == HARDER_VARIANT:
             return "workspace_harder"
+        if self._variant() == L2_BATCH1_VARIANT:
+            return "workspace_l2_batch1"
         return "workspace_up_down" if manifest.name == "up_down_counter" else "workspace"
 
     def _base_workspace(self, manifest: RTLLMTaskManifest) -> Path:
@@ -764,12 +785,14 @@ class RTLLMSuite(SuiteAdapter):
             return self._all_workspace_root
         if self._variant() == HARDER_VARIANT:
             return self._harder_workspace_root
+        if self._variant() == L2_BATCH1_VARIANT:
+            return self._l2_batch1_workspace_root
         if manifest.name == "up_down_counter":
             return self._up_down_workspace_root
         return self._workspace_root
 
     def _repository_readme(self, manifest: RTLLMTaskManifest) -> str:
-        if self._variant() not in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+        if self._variant() not in _MULTI_TASK_VARIANTS:
             return (self._base_workspace(manifest) / "README.md").read_text(encoding="utf-8")
         extra = (
             " The same file may define both `dual_port_RAM` and `asyn_fifo`."
@@ -817,18 +840,38 @@ class RTLLMSuite(SuiteAdapter):
                 "widths from `DEPTH`. The candidate file may contain both the FIFO and its "
                 "dual-port RAM submodule."
             ),
+            "adder_pipe_64bit": (
+                " This projection accepts an operation when `i_en` is sampled high and aligns "
+                "`result` with `o_en` on the fourth rising edge including the capture edge."
+            ),
+            "LFSR": "",
+            "serial2parallel": (
+                " This projection treats a frame as eight consecutive `din_valid` samples, "
+                "MSB first. Dropping `din_valid` discards a partial frame; the completed word "
+                "and one-cycle `dout_valid` pulse appear on the following rising edge."
+            ),
         }.get(manifest.name)
         if task_note is None:
             raise ConfigurationError("RTLLM derived projection is not declared")
         return common + task_note
 
-    @staticmethod
-    def _public_smoke(name: str) -> str:
-        folder = "public_smoke_harder" if name in HARDER_TASK_NAMES else "public_smoke"
+    def _public_smoke(self, name: str) -> str:
+        folder = (
+            "public_smoke_harder"
+            if self._variant() == HARDER_VARIANT
+            else "public_smoke_l2_batch1"
+            if self._variant() == L2_BATCH1_VARIANT
+            else "public_smoke"
+        )
         path = Path(__file__).parent / "assets" / folder / f"{name}.sv"
         if path.is_symlink() or not path.is_file():
             raise ConfigurationError("RTLLM public smoke asset is unavailable")
-        return path.read_text(encoding="utf-8")
+        smoke = path.read_text(encoding="utf-8")
+        if self._variant() == L2_BATCH1_VARIANT:
+            expected = L2_BATCH1_PUBLIC_SMOKE_SHA256.get(name)
+            if expected is None or _hash_bytes(smoke.encode("utf-8")) != expected:
+                raise ConfigurationError("RTLLM L2 public smoke differs from its frozen hash")
+        return smoke
 
     @staticmethod
     def _hidden_asset_declarations(manifest: RTLLMTaskManifest) -> list[AssetRef]:
@@ -1208,6 +1251,8 @@ class RTLLMSuite(SuiteAdapter):
         adapter_version = (
             ALL_AGENT_EVAL_ADAPTER_VERSION
             if all_agent_eval
+            else L2_BATCH1_ADAPTER_VERSION
+            if variant == L2_BATCH1_VARIANT
             else HARDER_ADAPTER_VERSION
             if harder
             else FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION
@@ -1219,6 +1264,8 @@ class RTLLMSuite(SuiteAdapter):
         evaluation_profile = (
             "icarus12-agent-eval-all-v1"
             if all_agent_eval
+            else "icarus12-agent-eval-functional-l2-batch1-v1"
+            if variant == L2_BATCH1_VARIANT
             else "icarus12-agent-eval-functional-harder-v1"
             if harder
             else "icarus12-agent-eval-functional-v2"
@@ -1236,7 +1283,9 @@ class RTLLMSuite(SuiteAdapter):
             "official_task_id": f"rtllm/{manifest.name}",
             "candidate_top": manifest.candidate_top,
             "testbench_top": manifest.testbench_top,
-            "language": ("systemverilog-2012" if all_agent_eval or harder else "verilog-2005"),
+            "language": (
+                "systemverilog-2012" if variant in _MULTI_TASK_VARIANTS else "verilog-2005"
+            ),
             "dataset_content_hash": snapshot.dataset_content_hash,
             "adapter_version": adapter_version,
             "pinned_commit": PINNED_COMMIT,
@@ -1252,12 +1301,14 @@ class RTLLMSuite(SuiteAdapter):
                     "agent_eval": {
                         "benchmark_variant": variant,
                         "compile_test_id": "compile",
-                        "ppa_supported": not all_agent_eval,
+                        "ppa_supported": variant not in _NO_PPA_AGENT_EVAL_VARIANTS,
                         "public_test_contract_hash": content_hash(public_contract),
                     },
                     "public_feedback_semantics": (
                         "candidate_only_compile_l1_v1"
                         if all_agent_eval
+                        else "compile_and_independent_functional_smoke_l2_batch1_v1"
+                        if variant == L2_BATCH1_VARIANT
                         else "compile_and_independent_functional_smoke_harder_v1"
                         if harder
                         else "compile_and_independent_functional_smoke_v2"
@@ -1270,7 +1321,9 @@ class RTLLMSuite(SuiteAdapter):
             )
             if all_agent_eval:
                 metadata["gym_qualification_level"] = "L1_compile_only"
-        if all_agent_eval or harder:
+            elif variant == L2_BATCH1_VARIANT:
+                metadata["gym_qualification_level"] = "L2_functional_smoke"
+        if variant in _MULTI_TASK_VARIANTS:
             manifest_payload = {
                 "name": manifest.name,
                 "root": manifest.root,
@@ -1421,7 +1474,7 @@ class RTLLMSuite(SuiteAdapter):
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
         variant = self._variant()
-        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+        if variant in _MULTI_TASK_VARIANTS:
             dataset_root = root
             native_layout = "RTLLM/{Arithmetic,Control,Memory,Miscellaneous}"
             dataset_hash = FROZEN_DATASET_FILES_HASH
