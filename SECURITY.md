@@ -302,6 +302,13 @@ does not authorize canary execution or collection. Any v50 provider authorizatio
 exact v49 tree, image lock, scan, catalog, contract, merged result audit, and green post-merge main
 run before attempting PR-2916 followed by PR-3204.
 
+The separately versioned v50 authorization binds that exact v49 result and the frozen v48 ordinary
+failure, and permits only PR-2916 followed by PR-3204 under protocol v22, seed 497, and sample 13.
+PR-2802 remains consumed and non-retryable. V50 stops after the first failed result plane, uses
+task-locked Codex-free command images with `network=none`, and requires exact-64K decision-only
+trajectory admission. It does not authorize formal collection, training, GPU work, or held-out
+loading; even a passing canary requires a separate merged result audit and green main workflow.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
