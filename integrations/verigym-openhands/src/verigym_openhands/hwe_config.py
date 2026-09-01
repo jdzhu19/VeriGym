@@ -23,9 +23,18 @@ from verigym_openhands.hwe_v19_protocol import (
     OPENHANDS_V19_MAX_PROVIDER_TOKENS,
     OPENHANDS_V19_TOOL_CHOICE_POLICY,
 )
+from verigym_openhands.hwe_v20_protocol import (
+    OPENHANDS_V20_MAX_PROVIDER_CALLS,
+    OPENHANDS_V20_MAX_PROVIDER_TOKENS,
+    OPENHANDS_V20_TOOL_CHOICE_POLICY,
+)
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
+_EXACT_PROVIDER_BUDGET_POLICIES = {
+    OPENHANDS_V19_TOOL_CHOICE_POLICY,
+    OPENHANDS_V20_TOOL_CHOICE_POLICY,
+}
 _OPTIONS = {
     "model_id",
     "base_url_env",
@@ -81,7 +90,7 @@ class OpenHandsHweSettings:
                 in {
                     "validated_responses_recovery_state_required_tool_v17",
                     "validated_responses_recovery_state_required_tool_v18",
-                    OPENHANDS_V19_TOOL_CHOICE_POLICY,
+                    *_EXACT_PROVIDER_BUDGET_POLICIES,
                 }
                 else "adapter_attempt_counter_v1"
             ),
@@ -108,9 +117,13 @@ class OpenHandsHweSettings:
             "tool_contract": "hwe_native_shell_v2",
             "configuration_fingerprint": self.configuration_fingerprint,
         }
-        if self.tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
+        if self.tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
             result["max_provider_billed_units"] = self.max_provider_tokens
-            result["provider_token_accounting"] = "post_response_pre_dispatch_v19"
+            result["provider_token_accounting"] = (
+                "post_response_pre_dispatch_v20"
+                if self.tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
+                else "post_response_pre_dispatch_v19"
+            )
         return result
 
 
@@ -179,22 +192,38 @@ def resolve_hwe_settings(
         "validated_responses_recovery_state_required_tool_v17",
         "validated_responses_recovery_state_required_tool_v18",
         OPENHANDS_V19_TOOL_CHOICE_POLICY,
+        OPENHANDS_V20_TOOL_CHOICE_POLICY,
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     max_provider_tokens: int | None = None
-    if tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
-        if max_iterations != OPENHANDS_V19_MAX_PROVIDER_CALLS:
-            raise ValueError("OpenHands HWE v19 freezes exactly 64 provider calls")
+    if tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
+        protocol_version = 20 if tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY else 19
+        expected_calls = (
+            OPENHANDS_V20_MAX_PROVIDER_CALLS
+            if protocol_version == 20
+            else OPENHANDS_V19_MAX_PROVIDER_CALLS
+        )
+        expected_tokens = (
+            OPENHANDS_V20_MAX_PROVIDER_TOKENS
+            if protocol_version == 20
+            else OPENHANDS_V19_MAX_PROVIDER_TOKENS
+        )
+        if max_iterations != expected_calls:
+            raise ValueError(f"OpenHands HWE v{protocol_version} freezes exactly 64 provider calls")
         if max_output_tokens != 2_048:
-            raise ValueError("OpenHands HWE v19 freezes exactly 2048 output tokens")
+            raise ValueError(
+                f"OpenHands HWE v{protocol_version} freezes exactly 2048 output tokens"
+            )
         max_provider_tokens = _integer(
-            options.get("max_provider_billed_units", OPENHANDS_V19_MAX_PROVIDER_TOKENS),
+            options.get("max_provider_billed_units", expected_tokens),
             "max_provider_billed_units",
         )
-        if max_provider_tokens != OPENHANDS_V19_MAX_PROVIDER_TOKENS:
-            raise ValueError("OpenHands HWE v19 freezes a 1000000-token provider budget")
+        if max_provider_tokens != expected_tokens:
+            raise ValueError(
+                f"OpenHands HWE v{protocol_version} freezes a 1000000-token provider budget"
+            )
     elif "max_provider_billed_units" in options:
-        raise ValueError("OpenHands HWE provider token budget is v19-only")
+        raise ValueError("OpenHands HWE provider token budget is v19/v20-only")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
         raise ValueError("OpenHands HWE campaign role is unsupported")
@@ -224,7 +253,7 @@ def resolve_hwe_settings(
             in {
                 "validated_responses_recovery_state_required_tool_v17",
                 "validated_responses_recovery_state_required_tool_v18",
-                OPENHANDS_V19_TOOL_CHOICE_POLICY,
+                *_EXACT_PROVIDER_BUDGET_POLICIES,
             }
             else "adapter_attempt_counter_v1"
         ),
@@ -250,9 +279,13 @@ def resolve_hwe_settings(
         "collection_profile_id": "hwe_production_native_shell_v2",
         "tool_contract": "hwe_native_shell_v2",
     }
-    if tool_choice_policy == OPENHANDS_V19_TOOL_CHOICE_POLICY:
+    if tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
         safe["max_provider_billed_units"] = max_provider_tokens
-        safe["provider_token_accounting"] = "post_response_pre_dispatch_v19"
+        safe["provider_token_accounting"] = (
+            "post_response_pre_dispatch_v20"
+            if tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
+            else "post_response_pre_dispatch_v19"
+        )
     return OpenHandsHweSettings(
         model_id=model_id,
         base_url_env=base_url_env,
