@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v37_provider_canary_authorization_v1",
+  "status": "authorized_pending_provider_canary",
+  "identity": "openhands-hwe-v37-provider-canary-v1",
+  "v33_materialization_evidence": {
+    "audit_merge_commit": "648fe717e88b36876245df09e73222f906f83918",
+    "audit_file_sha256": "63f814ebeee613e479db3c99f362211e6304778d11ab4cc35873c50f7750af5a",
+    "evidence_tree_hash": "62963cb8d23d48ae31b328d27648fb693d263b698be526f4b7aa4e6df4aa02e6",
+    "progress_hash": "463aa8016d62e947421379cd925009c131a589d754e0c17e7c7f83c72fef26df",
+    "progress_file_sha256": "267c8340e98b81a092216afccc5dadd0834960613920499c392f34522dd78839",
+    "catalog_hash": "05be424d40014e7ef69106f85e5ea161db2bb8e70103c8d1279e4a7c118f8e05",
+    "catalog_file_sha256": "08c31fb7ad13d96fda850f114b34688ec22c0d96a865eb21e5d19fe03df5a423"
+  },
+  "failed_v36_evidence": {
+    "audit_merge_commit": "e650953f5d508c1b53dc35c325944108d4b90420",
+    "audit_file_sha256": "58cb19ce494248ff8714a9786563b6b70b818c8d49eed5e880f169467a436ddd",
+    "evidence_tree_hash": "ccf9094dfe373587454346f5b52b4a8f7d3ade828b4f15b524c63d14a6d26f4d",
+    "report_hash": "debf637e7697c921c24898a027a907d045514c0f7f65d131ad7e3471998124d0",
+    "report_file_sha256": "9abe705efe3ddfd24c51f9261febe5349a8649037771036063b803c8523e55e8",
+    "agent_version_hash": "0f346efa5627469a7d71c595459e97b061225385d005d124816b91c8bc37ed77",
+    "agent_version_file_sha256": "43d212129f9c99c234ffe81b267a000274e299e9bba241ef77fe684cf8e8ed03",
+    "contract_receipt_hash": "07d88c51512cc57f55d857627700d3fd8fbe0e87668eb355a4bbb45068365bd7",
+    "contract_receipt_file_sha256": "70bd0f9929a3cae3acd52cd12c9cb5602232773e46ea746e13f9eab9c71a2644",
+    "preflight_receipt_hash": "fb784dbcd80a369833634edc4ccf8b875d5393984c40eedc1260e2cc689c5e68",
+    "preflight_receipt_file_sha256": "f5fae39b09cc20ca58f2b67a3e59e190738a1eb7a8ac7be6ad6390502a6b887b",
+    "attempt_file_sha256": "fa0bc526bae7d7734bec3adca53ff57d8b1f67b3fc6a7072a25e85ca9575634f",
+    "provider_episode_count": 1,
+    "provider_call_count": 1,
+    "task_attempt_count": 1,
+    "failed_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+    "failed_task_retry_authorized": false
+  },
+  "v36_root_cause_evidence": {
+    "merge_commit": "24705dff206845cb8741a7cadeeaeaa6913cc178",
+    "audit_file_sha256": "8725ef62106101b741ba371db1c60e484814ed5d4867fd9a53841806e125b352",
+    "diagnosis": "v19_rejected_single_tool_call_with_public_visible_text",
+    "successor_protocol": "required_tool_public_thought_content_recovery_v20"
+  },
+  "control_plane": {
+    "schema_version": "1.0",
+    "format_id": "verigym_openhands_hwe_v37_control_plane_contract_v1",
+    "broker_root": "/data/jzhu484/Agent/.verigym-tmp/oh-v37",
+    "maximum_encoded_broker_root_bytes": 72,
+    "mcp_pythonpath_entries": [
+      "/data/jzhu484/Agent/VeriGym/src",
+      "/data/jzhu484/Agent/VeriGym/integrations/verigym-hwe-bench/src",
+      "/data/jzhu484/Agent/VeriGym/integrations/verigym-openhands/src",
+      "/data/jzhu484/Agent/VeriGym/integrations/verigym-deepseek-harness/src"
+    ],
+    "maximum_mcp_pythonpath_entries": 16,
+    "maximum_encoded_mcp_pythonpath_bytes": 4096,
+    "paths_must_exist": true,
+    "paths_must_be_non_symlink": true,
+    "preflight_receipt_format": "verigym_openhands_hwe_v37_zero_call_preflight_v1",
+    "raw_exception_persisted": false,
+    "contract_hash": "8090871e20a77565db5b179d9730b3a21f24dcbeb15c0c6000f2b57bb84fce11"
+  },
+  "command_image_locks": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "task_hash": "47cd8b6b6964b337751528bd7479dc9fb8e7f18cbdef1bf605bd70acd6e70fad",
+      "source_hash": "b6a03041571bfbd70cbea308f358747efce9001685f1104ff411306e51bbafa9",
+      "file_sha256": "a8772638c4a34dca8d522ea0a6ba65389293f1f7c8ac4a93036c39e006fd2c59",
+      "lock_hash": "ee9ea16b67e910adb591c473d53fc6dfd73fe3935126e8a372d00be9d6159a3e",
+      "security_scan_file_sha256": "127412a7924e36d79efbabadadf912f948fd0424385fd7e71941a234e97d4c8e",
+      "security_scan_id": "e3b1ce79576cba909f0eb42d22db4a95a057754f49aabe63ee16a8008f97d9c0",
+      "command_image": "sha256:8b693c06696f4afa6c731e2c4cd98b48de8c67b50431c1fd33d5a700b555f6bb",
+      "verifier_image": "sha256:ba05f4c8a52ffe566161af9fd1b654690019837509e6d0a5797a4b4b9e959ad8"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+      "task_hash": "9322fa0b8455126e5c5f2e68ae02c47484935d5ea84bf69b9e6494658e229e86",
+      "source_hash": "15861c5f52071656a4ac8dbe7f96df49c974d24c2e3f53f9e449eba12794f02f",
+      "file_sha256": "a3a29f4ad2515c9502b3716e8644806154c7f9a74d388f9cd9c741d81458dc22",
+      "lock_hash": "4e6bcb561d1c631955dcf9b4a2475a0b09d5bb6bb6b98441cd20101f893400d7",
+      "security_scan_file_sha256": "6357976446539e526c15cf22a8e9616df650e4ac30117934898b7a40eb339ed1",
+      "security_scan_id": "55e94ec5fd12482534238867e109f920779685d0ef9f18b0db03e99f88be62cf",
+      "command_image": "sha256:ed935e093a8f5df4f081ee94d7fb3696335350053dd74fbbd5178b23c2fd1784",
+      "verifier_image": "sha256:459deab1a9b65a25be4583087238308dd12e773b818e720299cc8cafe55f4f64"
+    }
+  ],
+  "input_locks": {
+    "training_source_image_lock_sha256": "a60a4ae70d6dedcead4bf33fba431e4f07d366dc8fe5eef3cd78afd57e1a5e6a",
+    "validation_source_image_lock_sha256": "ab23ac165898d66c54fc165de21e3eddfadc732542d5149ad15074c368447fa8",
+    "base_model_lock_file_sha256": "fb91ef923333c0bb251ca20d09801ee66aedf4a693b3adb85bbfb60858d8368b",
+    "base_model_snapshot_hash": "fce78eefb5b60ff95c480d2fb823bb45370a4abc933d6114a84d6a321486b156",
+    "tokenizer_hash": "440110a9c8523a13003af840f2b31ce90709383488fcc7a62cfc19ab8ead6c6e"
+  },
+  "software": {
+    "model": "openai/deepseek-v4-flash",
+    "model_identity": "deepseek-v4-flash",
+    "openhands_sdk_version": "1.42.1",
+    "litellm_version": "1.93.0",
+    "tiktoken_version": "0.7.0",
+    "transformers_version": "4.57.6"
+  },
+  "schedule": {
+    "campaign_id": "openhands-hwe-v37-public-thought-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v37-public-thought-canary-v1",
+    "task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204"
+    ],
+    "roles": [
+      "training",
+      "validation"
+    ],
+    "seed": 490,
+    "sample_index": 6,
+    "maximum_provider_episodes": 2,
+    "pr2330_retry_authorized": false,
+    "pr3226_consumed_as_canary": true,
+    "formal_training_schedule_requires_replacement": true
+  },
+  "runtime": {
+    "command_role": "credential_free_command_image",
+    "command_execution_backend": "episode_container_exec_v1",
+    "external_agent_process_available": false,
+    "codex_present": false,
+    "provider_credentials_in_command_container": false,
+    "network": "none"
+  },
+  "provider_budget": {
+    "temperature": 0,
+    "max_provider_calls_per_episode": 64,
+    "max_provider_tokens_per_episode": 1000000,
+    "max_context_tokens": 65536,
+    "max_output_tokens": 2048,
+    "provider_request_retries": 0,
+    "whole_episode_retries": 0
+  },
+  "protocol": {
+    "profile": "required_tool_public_thought_content_recovery_v20",
+    "ordinary_tool_choice": "required",
+    "maximum_tool_calls_per_response": 1,
+    "public_visible_tool_thought_allowed": true,
+    "public_visible_tool_thought_supervised": true,
+    "private_reasoning_rejected": true,
+    "malformed_or_duplicate_json_rejected": true,
+    "safe_shape_only": true,
+    "raw_model_content_persisted": false,
+    "raw_tool_arguments_persisted": false,
+    "content_only_recovery_budget": 1
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "exact_v33_result_chain": true,
+    "exact_failed_v36_result_chain": true,
+    "exact_v36_root_cause_chain": true,
+    "fresh_tasks_only": true,
+    "explicit_command_backend_capability": true,
+    "exact_task_source_command_image_binding": true,
+    "control_plane_validated_before_output": true,
+    "redacted_zero_call_preflight_receipt": true,
+    "stop_after_first_failed_gate": true,
+    "all_six_result_planes_required": true,
+    "runtime_network_none": true,
+    "security_scan_before_admission": true,
+    "exact_64k_no_truncation": true,
+    "decision_only_loss_mask": true,
+    "atomic_per_task_progress": true,
+    "provider_values_never_persisted_or_hashed": true,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "invoke_provider": true,
+    "execute_fixed_two_task_canary": true,
+    "retry_pr2330": false,
+    "consume_pr3226_as_canary": true,
+    "consume_any_other_reserve": false,
+    "create_fallback_identity": false,
+    "start_formal_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_after_first_failed_gate_no_retry_freeze_identity",
+  "formal_collection_allowed": false,
+  "formal_collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "5b898808a9e1796e6dbff0f510545776b6b21ef961c20eea63e08878a7907b19"
+}
