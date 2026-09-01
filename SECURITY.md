@@ -228,7 +228,12 @@ A separately versioned v46 materialization repair may repeat only the zero-provi
 after binding this exact failed tree and merged audit. It must validate the absolute runtime paths
 in memory while persisting only booleans, versions, and content identities; its result audit must
 scan the repository, result, predecessor, provider, and proxy values without printing or hashing
-them. The provider-canary identity is consequently deferred to v47.
+them. The v46 checked-in authorization follows the same boundary: it records a repository-local
+isolated-runtime policy and equality requirements, not concrete repository, interpreter, prefix,
+or package-root values. Regression coverage serializes the runtime receipt and requires a
+context-aware scan against all known runtime roots to pass. V46 remains zero-provider and may only
+prepare a distinct v47 canary fixed to PR-2802 then PR-3204, seed 496 and sample 12; it does not
+authorize that canary. The provider-canary identity is consequently deferred to v47.
 
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
