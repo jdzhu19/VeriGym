@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -391,10 +395,71 @@ TASK_MANIFESTS: dict[str, RTLLMTaskManifest] = {
 }
 
 HARDER_TASK_NAMES = ("radix2_div", "multi_pipe_8bit", "LIFObuffer", "asyn_fifo")
+ADDITIONAL_TASK_CATALOG_SHA256 = "d1ebca8ae4a8ad05082c8b2ce6f37509af4d0d8e08d08ab3b9c0b5def0c737c4"
+
+
+def _load_additional_task_manifests() -> dict[str, RTLLMTaskManifest]:
+    path = Path(__file__).parent / "assets" / "rtllm_v2_additional_tasks.json"
+    catalog = path.read_bytes()
+    if hashlib.sha256(catalog).hexdigest() != ADDITIONAL_TASK_CATALOG_SHA256:
+        raise RuntimeError("RTLLM task catalog does not match its frozen hash")
+    payload: Any = json.loads(catalog)
+    if not isinstance(payload, dict) or payload.get("schema_version") != "rtllm-task-catalog-v1":
+        raise RuntimeError("RTLLM task catalog schema is unsupported")
+    raw_tasks = payload.get("tasks")
+    if not isinstance(raw_tasks, list):
+        raise RuntimeError("RTLLM task catalog lacks a task list")
+    manifests: dict[str, RTLLMTaskManifest] = {}
+    for raw in raw_tasks:
+        if not isinstance(raw, dict):
+            raise RuntimeError("RTLLM task catalog entry is malformed")
+        clocks = tuple(
+            ClockConstraint(name=clock["name"], period_ns=clock["period_ns"])
+            for clock in raw["clocks"]
+        )
+        manifest = RTLLMTaskManifest(
+            name=raw["name"],
+            root=raw["root"],
+            title=raw["title"],
+            prompt_file=raw["prompt_file"],
+            reference_file=raw["reference_file"],
+            testbench_file=raw["testbench_file"],
+            auxiliary_files=tuple(raw["auxiliary_files"]),
+            candidate_top=raw["candidate_top"],
+            reference_module=raw["reference_module"],
+            testbench_top=raw["testbench_top"],
+            pass_marker=raw["pass_marker"],
+            fail_marker=raw["fail_marker"],
+            synthesis_top=raw["synthesis_top"],
+            clocks=clocks,
+            power_base_clock=raw["power_base_clock"],
+            file_hashes=tuple((name, digest) for name, digest in raw["file_hashes"]),
+            testbench_projection=raw.get("testbench_projection", "identity-v1"),
+            testbench_projection_sha256=raw.get("testbench_projection_sha256"),
+        )
+        if manifest.name in TASK_MANIFESTS or manifest.name in manifests:
+            raise RuntimeError(f"duplicate RTLLM task manifest: {manifest.name}")
+        if manifest.root not in FROZEN_TASK_TREES:
+            raise RuntimeError(
+                f"RTLLM task manifest is outside the frozen inventory: {manifest.root}"
+            )
+        manifests[manifest.name] = manifest
+    return manifests
+
+
+TASK_MANIFESTS.update(_load_additional_task_manifests())
+ALL_TASK_NAMES = tuple(
+    manifest.name for manifest in sorted(TASK_MANIFESTS.values(), key=lambda item: item.root)
+)
+_manifest_roots = {item.root for item in TASK_MANIFESTS.values()}
+if len(TASK_MANIFESTS) != FROZEN_TASK_COUNT or _manifest_roots != set(FROZEN_TASK_TREES):
+    raise RuntimeError("RTLLM runnable task manifests do not cover the frozen 50-task inventory")
 
 
 __all__ = [
+    "ADDITIONAL_TASK_CATALOG_SHA256",
     "ClockConstraint",
+    "ALL_TASK_NAMES",
     "FROZEN_DATASET_FILES_HASH",
     "FROZEN_FILE_COUNT",
     "FROZEN_TASK_COUNT",

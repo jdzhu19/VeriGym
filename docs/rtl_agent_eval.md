@@ -8,6 +8,9 @@ contract before any model lookup.
 ## Variants
 
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
+- RTLLM full corpus: `v2-agent-eval-all-v1` provides L1 candidate-only compile feedback for all
+  50 frozen tasks; `v2-agent-eval-functional-harder-v1` remains the separately qualified L2/L3
+  four-task diagnostic partition.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
   source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
@@ -17,6 +20,12 @@ Every successful patch invalidates compile, PPA, and diff evidence. `ppa` is acc
 `compile` passes for the exact current candidate hash. Finish requires a current diff and, when
 exposed, a current compile pass. Repeating a candidate/profile PPA request uses a cache but remains
 a normal tool call. Real synthesis executions default to three and are hard-bounded to eight.
+
+The full-corpus RTLLM projection deliberately sets `ppa_supported=false` and
+`gym_qualification_level=L1_compile_only`. A successful public compile proves only syntax and
+elaboration. It does not imply public functional coverage, hidden correctness, synthesis
+qualification, or a native RTLLM score. Hidden RTLLM assets are staged only after typed `finish`;
+the final result remains a derived diagnostic projection with the upstream task identity retained.
 
 ## Feedback boundaries
 

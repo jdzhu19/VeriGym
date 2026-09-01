@@ -31,6 +31,8 @@ verigym_rtllm = [
   "assets/public_smoke/*.sv",
   "assets/public_smoke_harder/*.sv",
   "assets/workspace_harder/rtl/*.v",
+  "assets/workspace_all/README.md",
+  "assets/rtllm_v2_additional_tasks.json",
 ]
 
 [tool.pytest.ini_options]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,9 +10,15 @@ from verigym.plugin_api import ConfigurationError, SuiteSourceConfig, content_ha
 from verigym.schemas.suite import SuiteSourceSnapshot
 
 from verigym_rtllm import RTLLMSuite
-from verigym_rtllm.adapter import HARDER_VARIANT, PINNED_COMMIT, _is_icarus12_version
+from verigym_rtllm.adapter import (
+    ALL_AGENT_EVAL_VARIANT,
+    HARDER_VARIANT,
+    PINNED_COMMIT,
+    _is_icarus12_version,
+)
 from verigym_rtllm.known_bad import known_bad_source
 from verigym_rtllm.manifest import (
+    ALL_TASK_NAMES,
     FROZEN_DATASET_FILES_HASH,
     FROZEN_FILE_COUNT,
     FROZEN_TASK_COUNT,
@@ -53,6 +61,13 @@ def test_counter_family_variants_are_explicit(tmp_path: Path) -> None:
 def test_harder_variant_is_explicit(tmp_path: Path) -> None:
     configured = RTLLMSuite().with_source(
         SuiteSourceConfig(source_root=tmp_path, variant=HARDER_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+
+
+def test_full_corpus_l1_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=ALL_AGENT_EVAL_VARIANT)
     )
     assert configured.validate_source().valid is False
 
@@ -138,11 +153,14 @@ def test_agent_eval_icarus12_version_gate(version: str | None, expected: bool) -
     assert _is_icarus12_version(version) is expected
 
 
-def test_frozen_manifest_covers_exactly_50_task_trees_and_four_harder_tasks() -> None:
+def test_frozen_manifest_covers_exactly_50_runnable_tasks_and_four_harder_tasks() -> None:
     assert len(FROZEN_TASK_TREES) == FROZEN_TASK_COUNT == 50
     assert sum(tree.file_count for tree in FROZEN_TASK_TREES.values()) == FROZEN_FILE_COUNT == 207
     assert len(FROZEN_TASK_TREES_HASH) == 64
     assert len(FROZEN_DATASET_FILES_HASH) == 64
+    assert len(TASK_MANIFESTS) == len(ALL_TASK_NAMES) == FROZEN_TASK_COUNT
+    assert {manifest.root for manifest in TASK_MANIFESTS.values()} == set(FROZEN_TASK_TREES)
+    assert sum(len(manifest.file_hashes) for manifest in TASK_MANIFESTS.values()) == 207
     assert HARDER_TASK_NAMES == ("radix2_div", "multi_pipe_8bit", "LIFObuffer", "asyn_fifo")
     for name in HARDER_TASK_NAMES:
         manifest = TASK_MANIFESTS[name]
@@ -218,3 +236,101 @@ def test_asyn_fifo_workspace_exposes_both_candidate_modules() -> None:
     source = (suite._harder_workspace_root / "rtl" / "asyn_fifo.v").read_text(encoding="utf-8")
     assert "module dual_port_RAM" in source
     assert "module asyn_fifo" in source
+
+
+@pytest.mark.parametrize(
+    ("projection", "source", "expected", "reference_module", "candidate_top"),
+    [
+        (
+            "candidate-module-normalization-v1",
+            "module tb; Ref dut(); endmodule\n",
+            "module tb; Dut dut(); endmodule\n",
+            "Ref",
+            "Dut",
+        ),
+        (
+            "iverilog12-unpacked-array-race-v1",
+            "module tb;\n  reg [3:0] expected [0:1] = {4'h1, 4'h2};\n"
+            "  integer i;\n  always @(*) begin\n    i = i + 1;\n  end\nendmodule\n",
+            "module tb;\n  reg [3:0] expected [0:1];\n"
+            "  initial begin : verigym_init_expected\n"
+            "    expected[0] = 4'h1;\n    expected[1] = 4'h2;\n  end\n"
+            "  integer i;\n  always @(*) begin\n    i <= i + 1;\n  end\nendmodule\n",
+            "unused",
+            "unused",
+        ),
+        (
+            "pre-edge-clock-sampling-v1",
+            "module tb;\n  initial begin\n    repeat (2) begin // sample both edges\n"
+            "      #5; // sample\n      error = error + 1;\n    end\n  end\nendmodule\n",
+            "module tb;\n  initial begin\n    repeat (2) begin // sample both edges\n"
+            "      #4; // sample\n      error = error + 1;\n      #1;\n"
+            "    end\n  end\nendmodule\n",
+            "unused",
+            "unused",
+        ),
+    ],
+)
+def test_verifier_only_projection_is_exact_and_hash_bound(
+    projection: str,
+    source: str,
+    expected: str,
+    reference_module: str,
+    candidate_top: str,
+) -> None:
+    manifest = replace(
+        TASK_MANIFESTS["ring_counter"],
+        reference_module=reference_module,
+        candidate_top=candidate_top,
+        testbench_projection=projection,
+        testbench_projection_sha256=hashlib.sha256(expected.encode("utf-8")).hexdigest(),
+    )
+
+    assert RTLLMSuite._project_testbench(manifest, source.encode("utf-8")) == expected.encode(
+        "utf-8"
+    )
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to qualify the full-corpus L1 projection",
+)
+def test_full_corpus_l1_discovery_loading_and_public_isolation() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=ALL_AGENT_EVAL_VARIANT,
+        )
+    )
+
+    assert suite.validate_source().valid
+    refs = list(suite.discover())
+    assert len(refs) == FROZEN_TASK_COUNT
+    assert [ref.native_id for ref in refs] == list(ALL_TASK_NAMES)
+    for ref in refs:
+        task = suite.load_task(ref)
+        manifest = TASK_MANIFESTS[ref.native_id]
+        assert task.id == f"rtllm/{ALL_AGENT_EVAL_VARIANT}/{manifest.name}"
+        assert task.metadata["gym_qualification_level"] == "L1_compile_only"
+        assert task.metadata["agent_eval"]["ppa_supported"] is False
+        assert task.metadata["verification_requires_final_submission"] is True
+        assert task.scoring.ppa_enabled is False
+        assert task.scoring.correctness_required_nodes == ["functional_hidden"]
+
+        assets = suite.resolve_assets(task)
+        visible = Path(assets.visible_root)
+        candidate = visible / "repository" / "rtl" / f"{manifest.name}.v"
+        assert candidate.read_text(encoding="utf-8") == suite._candidate_stub(manifest)
+        visible_names = {path.relative_to(visible).as_posix() for path in visible.rglob("*")}
+        assert "verifier/testbench.v" not in visible_names
+        assert not set(manifest.auxiliary_files).intersection(visible_names)
+        assert [asset.mount_path for asset in assets.hidden_assets] == [
+            "verifier/testbench.v",
+            *manifest.auxiliary_files,
+        ]
+
+        reference = suite.reference_solution(task)
+        assert reference is not None
+        reference_source = reference.files[f"repository/rtl/{manifest.name}.v"]
+        assert f"module {manifest.candidate_top}" in reference_source

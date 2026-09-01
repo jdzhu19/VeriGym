@@ -47,6 +47,13 @@ candidate-only Icarus compile check. Its hidden golden/testbench mismatch regres
 PPA is always disabled, and its results are not included in native ChatEval pass@k. See
 [RTL AgentEval v1](rtl_agent_eval.md).
 
+Because every V2 task uses the same prompt/reference/testbench triplet and `TopModule` contract,
+this compile-only L1 projection discovers the full validated corpus without per-task adapter
+branches. Functional AgentEval variants remain a separately qualified subset with frozen,
+independently authored public smokes. Full-corpus discovery therefore means L1 Gym coverage, not
+full-corpus public functional feedback. VerilogEval does not gain PPA eligibility through either
+projection.
+
 The normalized candidate contract is one complete `rtl/TopModule.sv`. Raw RTL and exactly one
 fenced Verilog/SystemVerilog block are accepted by the existing single-turn parser.
 

@@ -52,6 +52,7 @@ from verigym.plugin_api import (
 
 from .known_bad import known_bad_source
 from .manifest import (
+    ALL_TASK_NAMES,
     FROZEN_DATASET_FILES_HASH,
     FROZEN_FILE_COUNT,
     FROZEN_TASK_COUNT,
@@ -74,6 +75,9 @@ FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION = "0.5.0"
 HARDER_VARIANT = "v2-agent-eval-functional-harder-v1"
 HARDER_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-harder-v1"
 HARDER_ADAPTER_VERSION = "0.6.0"
+ALL_AGENT_EVAL_VARIANT = "v2-agent-eval-all-v1"
+ALL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-all-v1"
+ALL_AGENT_EVAL_ADAPTER_VERSION = "0.7.0"
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 LICENSE_SHA256 = "a32206bcfbf5d6bb23be8a876de424d8a8d2a0e30a9adc9f8e1b3139fada9176"
@@ -93,6 +97,7 @@ _SUPPORTED_VARIANTS = frozenset(
         "counter_12",
         "up_down_counter",
         _UP_DOWN_ICARUS_TRAINING_VARIANT,
+        ALL_AGENT_EVAL_VARIANT,
         HARDER_VARIANT,
         *_AGENT_EVAL_VARIANTS,
         *_FUNCTIONAL_AGENT_EVAL_VARIANTS,
@@ -169,6 +174,7 @@ class RTLLMSuite(SuiteAdapter):
         self._workspace_root = assets / "workspace"
         self._up_down_workspace_root = assets / "workspace_up_down"
         self._harder_workspace_root = assets / "workspace_harder"
+        self._all_workspace_root = assets / "workspace_all"
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._agent_workspaces: list[AgentEvalWorkspace] = []
 
@@ -184,14 +190,15 @@ class RTLLMSuite(SuiteAdapter):
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
         variant = adapter._variant()
-        if variant == HARDER_VARIANT:
+        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
             return [
                 TaskRef(
-                    id=f"rtllm/{HARDER_VARIANT}/{name}",
+                    id=f"rtllm/{variant}/{name}",
                     suite="rtllm",
                     native_id=name,
                 )
-                for name in HARDER_TASK_NAMES
+                for name in names
             ]
         return [TaskRef(id=f"rtllm/{variant}", suite="rtllm", native_id=variant)]
 
@@ -199,8 +206,13 @@ class RTLLMSuite(SuiteAdapter):
         manifest = self._manifest_for_ref(ref)
         variant = self._variant()
         harder = variant == HARDER_VARIANT
+        all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
-        agent_eval = harder or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        agent_eval = (
+            all_agent_eval
+            or harder
+            or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
+        )
         functional_agent_eval = harder or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
         functional_v2 = variant.endswith("_agent_eval_functional_v2")
         suite_version = self._suite_version(manifest)
@@ -212,10 +224,14 @@ class RTLLMSuite(SuiteAdapter):
         upstream_prompt = _read_exact(root, f"{manifest.root}/{manifest.prompt_file}").decode(
             "utf-8"
         )
-        derived_note = self._derived_projection_note(manifest) if harder else ""
+        derived_note = (
+            self._derived_projection_note(manifest, compile_only=all_agent_eval)
+            if all_agent_eval or harder
+            else ""
+        )
         description = (
             upstream_prompt.rstrip() + "\n\n---\n\n" + derived_note.rstrip() + "\n"
-            if harder
+            if all_agent_eval or harder
             else upstream_prompt
         )
         snapshot = self._snapshot()
@@ -225,14 +241,14 @@ class RTLLMSuite(SuiteAdapter):
             compile_smoke_feedback_contract(
                 source_paths=[f"rtl/{manifest.name}.v"],
                 top_module=manifest.candidate_top,
-                language="2012" if harder else "2005",
+                language="2012" if all_agent_eval or harder else "2005",
                 public_testbench=public_smoke,
             )
             if public_smoke is not None
             else compile_feedback_contract(
                 source_paths=[f"rtl/{manifest.name}.v"],
                 top_module=manifest.candidate_top,
-                language="2012" if harder else "2005",
+                language="2012" if all_agent_eval or harder else "2005",
             )
             if agent_eval
             else None
@@ -272,7 +288,7 @@ class RTLLMSuite(SuiteAdapter):
                 entrypoints=[candidate_path],
                 hidden_assets=hidden_assets,
                 max_changed_files=1,
-                max_patch_lines=4_000 if harder else 2_000,
+                max_patch_lines=4_000 if all_agent_eval or harder else 2_000,
             ),
             interaction=InteractionSpec(
                 supported_modes=(
@@ -285,7 +301,11 @@ class RTLLMSuite(SuiteAdapter):
                     "file.list",
                     "file.read",
                     "file.apply_patch",
-                    *(["file.apply_codex_patch"] if functional_v2 or harder else []),
+                    *(
+                        ["file.apply_codex_patch"]
+                        if all_agent_eval or functional_v2 or harder
+                        else []
+                    ),
                     "file.diff",
                     *(["repository.public_test"] if agent_eval else []),
                 ],
@@ -306,23 +326,23 @@ class RTLLMSuite(SuiteAdapter):
                 max_tool_time_s=300,
                 max_output_tokens=16_384,
                 max_output_bytes_per_tool=1_000_000,
-                max_workspace_bytes=4_000_000 if harder else 2_000_000,
+                max_workspace_bytes=4_000_000 if all_agent_eval or harder else 2_000_000,
             ),
             verifier=self._verifier_graph(
                 manifest,
                 candidate_path=candidate_path,
                 icarus=icarus_training or agent_eval,
-                harder=harder,
+                isolated_icarus=all_agent_eval or harder,
             ),
             scoring=ScoringSpec(
                 correctness_required_nodes=(
                     ["functional_hidden"]
-                    if harder
+                    if all_agent_eval or harder
                     else ["compile_hidden", "run_hidden"]
                     if icarus_training or agent_eval
                     else ["vcs_regression"]
                 ),
-                ppa_enabled=not icarus_training,
+                ppa_enabled=not icarus_training and not all_agent_eval,
             ),
             metadata=self._task_metadata(
                 manifest,
@@ -347,7 +367,7 @@ class RTLLMSuite(SuiteAdapter):
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
         variant = self._variant()
         agent_eval = (
-            variant == HARDER_VARIANT
+            variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
             or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
         functional = variant == HARDER_VARIANT or variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS
@@ -358,14 +378,16 @@ class RTLLMSuite(SuiteAdapter):
                 compile_smoke_feedback_contract(
                     source_paths=[f"rtl/{manifest.name}.v"],
                     top_module=manifest.candidate_top,
-                    language="2012" if variant == HARDER_VARIANT else "2005",
+                    language=(
+                        "2012" if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT} else "2005"
+                    ),
                     public_testbench=smoke,
                 )
                 if smoke is not None
                 else compile_feedback_contract(
                     source_paths=[f"rtl/{manifest.name}.v"],
                     top_module=manifest.candidate_top,
-                    language="2005",
+                    language="2012" if variant == ALL_AGENT_EVAL_VARIANT else "2005",
                 )
             )
             materialized = materialize_agent_eval_workspace(
@@ -373,11 +395,15 @@ class RTLLMSuite(SuiteAdapter):
                 repository_files={
                     "README.md": self._repository_readme(manifest),
                     f"rtl/{manifest.name}.v": (
-                        base_workspace / "rtl" / f"{manifest.name}.v"
-                    ).read_text(encoding="utf-8"),
+                        self._candidate_stub(manifest)
+                        if variant == ALL_AGENT_EVAL_VARIANT
+                        else (base_workspace / "rtl" / f"{manifest.name}.v").read_text(
+                            encoding="utf-8"
+                        )
+                    ),
                 },
                 compile_contract=contract,
-                ppa_available=True,
+                ppa_available=variant != ALL_AGENT_EVAL_VARIANT,
                 public_asset_files=(
                     {"assets/public-smoke.sv": smoke} if smoke is not None else None
                 ),
@@ -411,7 +437,7 @@ class RTLLMSuite(SuiteAdapter):
             return _invalid("source_configuration", str(exc))
         issues: list[ValidationIssue] = []
         adapter._validate_expected_file(root, "LICENSE", LICENSE_SHA256, issues)
-        if adapter._variant() == HARDER_VARIANT:
+        if adapter._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
             adapter._validate_frozen_inventory(root, issues)
         else:
             manifest = TASK_MANIFESTS[adapter._base_variant()]
@@ -474,6 +500,8 @@ class RTLLMSuite(SuiteAdapter):
             categories = (
                 ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
                 if self._variant() == HARDER_VARIANT
+                else ()
+                if self._variant() == ALL_AGENT_EVAL_VARIANT
                 else ("stuck-zero",)
             )
             for category in categories:
@@ -491,6 +519,17 @@ class RTLLMSuite(SuiteAdapter):
                         expected_resolved=False,
                     )
                 )
+            if self._variant() == ALL_AGENT_EVAL_VARIANT:
+                cases.append(
+                    ConformanceCase(
+                        name=f"{manifest.name}-missing-module",
+                        candidate=Candidate(
+                            files={self._candidate_path(manifest): self._candidate_stub(manifest)},
+                            label="known-bad-missing-module",
+                        ),
+                        expected_resolved=False,
+                    )
+                )
         return cases
 
     def public_conformance_cases(self, task: VeriTask) -> Iterable[ConformanceCase]:
@@ -499,6 +538,22 @@ class RTLLMSuite(SuiteAdapter):
         manifest = self._manifest_for_task(task)
         reference = self.reference_solution(task)
         assert reference is not None
+        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+            return [
+                ConformanceCase(
+                    name=f"{manifest.name}-public-reference",
+                    candidate=reference,
+                    expected_resolved=True,
+                ),
+                ConformanceCase(
+                    name=f"{manifest.name}-public-missing-module",
+                    candidate=Candidate(
+                        files={self._candidate_path(manifest): self._candidate_stub(manifest)},
+                        label="known-bad-missing-module",
+                    ),
+                    expected_resolved=False,
+                ),
+            ]
         return [
             ConformanceCase(
                 name=f"{manifest.name}-public-reference",
@@ -534,7 +589,7 @@ class RTLLMSuite(SuiteAdapter):
 
     def toolchain_profile(self, runtime: Runtime, tools: Any) -> ToolchainProfile | None:
         agent_eval = (
-            self._variant() == HARDER_VARIANT
+            self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
             or self._variant() in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
         if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT or agent_eval:
@@ -563,6 +618,8 @@ class RTLLMSuite(SuiteAdapter):
                 id=(
                     "rtllm-icarus12-agent-eval-harder-v1"
                     if self._variant() == HARDER_VARIANT
+                    else "rtllm-icarus12-agent-eval-all-v1"
+                    if self._variant() == ALL_AGENT_EVAL_VARIANT
                     else "rtllm-icarus12-agent-eval-v1"
                     if agent_eval
                     else "rtllm-icarus-training-v1"
@@ -622,8 +679,8 @@ class RTLLMSuite(SuiteAdapter):
 
     def _base_variant(self) -> str:
         variant = self._variant()
-        if variant == HARDER_VARIANT:
-            raise ConfigurationError("the harder RTLLM variant contains multiple native tasks")
+        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+            raise ConfigurationError("the RTLLM variant contains multiple native tasks")
         if variant == _UP_DOWN_ICARUS_TRAINING_VARIANT:
             return "up_down_counter"
         for suffix in (
@@ -639,9 +696,10 @@ class RTLLMSuite(SuiteAdapter):
         variant = self._variant()
         if ref.suite != "rtllm":
             raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
-        if variant == HARDER_VARIANT:
-            prefix = f"rtllm/{HARDER_VARIANT}/"
-            if not ref.id.startswith(prefix) or ref.native_id not in HARDER_TASK_NAMES:
+        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
+            prefix = f"rtllm/{variant}/"
+            if not ref.id.startswith(prefix) or ref.native_id not in names:
                 raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
             if ref.id != prefix + ref.native_id:
                 raise ConfigurationError(f"unknown RTLLM task: {ref.id}")
@@ -653,10 +711,12 @@ class RTLLMSuite(SuiteAdapter):
     def _manifest_for_task(self, task: VeriTask) -> RTLLMTaskManifest:
         if task.suite != "rtllm":
             raise ConfigurationError(f"unknown RTLLM task: {task.id}")
-        if self._variant() == HARDER_VARIANT:
-            prefix = f"rtllm/{HARDER_VARIANT}/"
+        variant = self._variant()
+        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+            names = ALL_TASK_NAMES if variant == ALL_AGENT_EVAL_VARIANT else HARDER_TASK_NAMES
+            prefix = f"rtllm/{variant}/"
             name = task.id.removeprefix(prefix) if task.id.startswith(prefix) else ""
-            if name not in HARDER_TASK_NAMES or task.id != prefix + name:
+            if name not in names or task.id != prefix + name:
                 raise ConfigurationError(f"unknown RTLLM task: {task.id}")
             return TASK_MANIFESTS[name]
         if task.id != f"rtllm/{self._variant()}":
@@ -664,13 +724,13 @@ class RTLLMSuite(SuiteAdapter):
         return TASK_MANIFESTS[self._base_variant()]
 
     def _task_id(self, manifest: RTLLMTaskManifest) -> str:
-        if self._variant() == HARDER_VARIANT:
-            return f"rtllm/{HARDER_VARIANT}/{manifest.name}"
+        if self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
+            return f"rtllm/{self._variant()}/{manifest.name}"
         return f"rtllm/{self._variant()}"
 
     def _candidate_path(self, manifest: RTLLMTaskManifest) -> str:
         agent_eval = (
-            self._variant() == HARDER_VARIANT
+            self._variant() in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}
             or self._variant() in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
         )
         prefix = "repository/" if agent_eval else ""
@@ -678,6 +738,8 @@ class RTLLMSuite(SuiteAdapter):
 
     def _suite_version(self, manifest: RTLLMTaskManifest) -> str:
         variant = self._variant()
+        if variant == ALL_AGENT_EVAL_VARIANT:
+            return ALL_AGENT_EVAL_SUITE_VERSION
         if variant == HARDER_VARIANT:
             return HARDER_SUITE_VERSION
         if variant.endswith("_agent_eval_functional_v2"):
@@ -691,11 +753,15 @@ class RTLLMSuite(SuiteAdapter):
         return UP_DOWN_SUITE_VERSION if manifest.name == "up_down_counter" else SUITE_VERSION
 
     def _workspace_asset_name(self, manifest: RTLLMTaskManifest) -> str:
+        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+            return "workspace_all"
         if self._variant() == HARDER_VARIANT:
             return "workspace_harder"
         return "workspace_up_down" if manifest.name == "up_down_counter" else "workspace"
 
     def _base_workspace(self, manifest: RTLLMTaskManifest) -> Path:
+        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+            return self._all_workspace_root
         if self._variant() == HARDER_VARIANT:
             return self._harder_workspace_root
         if manifest.name == "up_down_counter":
@@ -703,25 +769,41 @@ class RTLLMSuite(SuiteAdapter):
         return self._workspace_root
 
     def _repository_readme(self, manifest: RTLLMTaskManifest) -> str:
-        if self._variant() != HARDER_VARIANT:
+        if self._variant() not in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
             return (self._base_workspace(manifest) / "README.md").read_text(encoding="utf-8")
         extra = (
             " The same file may define both `dual_port_RAM` and `asyn_fifo`."
             if manifest.name == "asyn_fifo"
             else ""
         )
-        return (
-            f"# {manifest.name}\n\n"
-            f"Implement the task in `rtl/{manifest.name}.v`.{extra}\n"
-            "Use the public test tool for candidate-only feedback before finishing.\n"
+        return f"# {manifest.name}\n\nImplement the task in `rtl/{manifest.name}.v`.{extra}\n" + (
+            "The public test is a candidate-only compile check; it does not test behavior.\n"
+            if self._variant() == ALL_AGENT_EVAL_VARIANT
+            else "Use the public test tool for candidate-only feedback before finishing.\n"
         )
 
     @staticmethod
-    def _derived_projection_note(manifest: RTLLMTaskManifest) -> str:
+    def _candidate_stub(manifest: RTLLMTaskManifest) -> str:
+        return (
+            f"// Implement `{manifest.candidate_top}` from TASK.md.\n"
+            "// This intentionally incomplete scaffold contains no hidden implementation details.\n"
+        )
+
+    @staticmethod
+    def _derived_projection_note(manifest: RTLLMTaskManifest, *, compile_only: bool = False) -> str:
         common = (
             "VeriGym derived projection: submit one repository-relative RTL entry at "
-            f"`rtl/{manifest.name}.v`. The public smoke is independently authored and "
-            "candidate-only; the final verifier remains hidden."
+            f"`rtl/{manifest.name}.v`. "
+        )
+        if compile_only:
+            return (
+                common + "The repeatable public check validates candidate-only compilation, not "
+                "functionality. The native functional verifier remains hidden and runs only "
+                "after typed finish. This L1 projection does not provide or claim PPA feedback."
+            )
+        common += (
+            "The public smoke is independently authored and candidate-only; the final verifier "
+            "remains hidden."
         )
         task_note = {
             "radix2_div": (
@@ -888,11 +970,127 @@ class RTLLMSuite(SuiteAdapter):
   end
   end
 """
+            elif projection == "iverilog12-unpacked-array-race-v1":
+                pattern = re.compile(
+                    r"(?m)^(?P<indent>\s*)"
+                    r"(?P<declaration>(?:reg|logic)\s+\[[^\n;]+?\]\s+"
+                    r"(?P<name>[A-Za-z_][A-Za-z0-9_$]*)\s+"
+                    r"\[(?P<left>\d+)\s*:\s*(?P<right>\d+)\])"
+                    r"\s*=\s*\{(?P<values>[^{}]+)\};\s*$"
+                )
+                match = pattern.search(text)
+                if match is None or pattern.search(text, match.end()) is not None:
+                    raise ConfigurationError(
+                        "RTLLM unpacked-array testbench projection no longer matches exactly"
+                    )
+                left = int(match.group("left"))
+                right = int(match.group("right"))
+                step = 1 if right >= left else -1
+                indices = list(range(left, right + step, step))
+                values = [item.strip() for item in match.group("values").split(",")]
+                if len(indices) != len(values) or any(not item for item in values):
+                    raise ConfigurationError(
+                        "RTLLM unpacked-array initializer shape is unsupported"
+                    )
+                indent = match.group("indent")
+                name = match.group("name")
+                assignments = "\n".join(
+                    f"{indent}  {name}[{index}] = {value};"
+                    for index, value in zip(indices, values, strict=True)
+                )
+                replacement = (
+                    f"{indent}{match.group('declaration')};\n"
+                    f"{indent}initial begin : verigym_init_{name}\n"
+                    f"{assignments}\n"
+                    f"{indent}end"
+                )
+                projected_text = text[: match.start()] + replacement + text[match.end() :]
+                counter_pattern = re.compile(
+                    r"(?m)^(?P<indent>\s*)(?P<counter>[A-Za-z_][A-Za-z0-9_$]*)"
+                    r"\s*=\s*(?P=counter)\s*\+\s*1\s*;\s*$"
+                )
+                counter_match = counter_pattern.search(projected_text)
+                if (
+                    counter_match is None
+                    or counter_pattern.search(projected_text, counter_match.end()) is not None
+                ):
+                    raise ConfigurationError(
+                        "RTLLM counter-race testbench projection no longer matches exactly"
+                    )
+                counter_replacement = (
+                    f"{counter_match.group('indent')}{counter_match.group('counter')} <= "
+                    f"{counter_match.group('counter')} + 1;"
+                )
+                projected_text = (
+                    projected_text[: counter_match.start()]
+                    + counter_replacement
+                    + projected_text[counter_match.end() :]
+                )
+                projected = projected_text.encode("utf-8")
+            elif projection == "candidate-module-normalization-v1":
+                pattern = re.compile(rf"\b{re.escape(manifest.reference_module)}\b")
+                matches = list(pattern.finditer(text))
+                if len(matches) != 1:
+                    raise ConfigurationError(
+                        "RTLLM candidate-module testbench projection no longer matches exactly"
+                    )
+                projected = pattern.sub(manifest.candidate_top, text, count=1).encode("utf-8")
+            elif projection == "pre-edge-clock-sampling-v1":
+                lines = text.splitlines(keepends=True)
+                sample_pattern = re.compile(
+                    r"^(?P<indent>\s*)#(?P<delay>\d+)\s*;(?P<tail>[^\n]*)(?P<newline>\n?)$"
+                )
+                samples = [
+                    (index, match)
+                    for index, line in enumerate(lines)
+                    if (match := sample_pattern.match(line)) is not None
+                ]
+                if len(samples) != 1:
+                    raise ConfigurationError("RTLLM pre-edge testbench sample point is ambiguous")
+                sample_index, sample_match = samples[0]
+                delay = int(sample_match.group("delay"))
+                if delay <= 1:
+                    raise ConfigurationError("RTLLM pre-edge sample delay is too small")
+                indent = sample_match.group("indent")
+                repeat_pattern = re.compile(
+                    r"^(?P<indent>\s*)repeat\s*\([^\n]+\)\s*begin"
+                    r"(?:\s*//[^\n]*)?\s*$"
+                )
+                starts = [
+                    (index, match)
+                    for index, line in enumerate(lines[:sample_index])
+                    if (match := repeat_pattern.match(line.rstrip("\n"))) is not None
+                    and len(match.group("indent")) < len(indent)
+                ]
+                if not starts:
+                    raise ConfigurationError("RTLLM pre-edge repeat block is ambiguous")
+                _, repeat_match = starts[-1]
+                repeat_indent = repeat_match.group("indent")
+                closes = [
+                    index
+                    for index, line in enumerate(lines[sample_index + 1 :], sample_index + 1)
+                    if line.rstrip("\n") == f"{repeat_indent}end"
+                ]
+                if not closes:
+                    raise ConfigurationError("RTLLM pre-edge repeat block is unterminated")
+                close_index = closes[0]
+                lines[sample_index] = (
+                    f"{indent}#{delay - 1};{sample_match.group('tail')}"
+                    f"{sample_match.group('newline')}"
+                )
+                newline = "\n" if lines[close_index].endswith("\n") else ""
+                lines.insert(close_index, f"{indent}#1;{newline}")
+                projected = "".join(lines).encode("utf-8")
             else:
                 raise ConfigurationError(f"unknown RTLLM testbench projection: {projection}")
-            if text.count(original) != 1:
-                raise ConfigurationError("RTLLM testbench projection no longer matches exactly")
-            projected = text.replace(original, replacement, 1).encode("utf-8")
+            if projection not in {
+                "candidate-module-normalization-v1",
+                "iverilog12-unpacked-array-race-v1",
+                "pre-edge-clock-sampling-v1",
+            }:
+                if text.count(original) != 1:
+                    raise ConfigurationError("RTLLM testbench projection no longer matches exactly")
+                projected = text.replace(original, replacement, 1).encode("utf-8")
         expected = (
             manifest.testbench_projection_sha256
             or dict(manifest.file_hashes)[manifest.testbench_file]
@@ -907,9 +1105,9 @@ class RTLLMSuite(SuiteAdapter):
         *,
         candidate_path: str,
         icarus: bool,
-        harder: bool,
+        isolated_icarus: bool,
     ) -> VerifierGraph:
-        if harder:
+        if isolated_icarus:
             return VerifierGraph(
                 nodes=[
                     VerifierNode(
@@ -1006,8 +1204,11 @@ class RTLLMSuite(SuiteAdapter):
         harder: bool,
         icarus_training: bool,
     ) -> dict[str, Any]:
+        all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
         adapter_version = (
-            HARDER_ADAPTER_VERSION
+            ALL_AGENT_EVAL_ADAPTER_VERSION
+            if all_agent_eval
+            else HARDER_ADAPTER_VERSION
             if harder
             else FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION
             if functional_v2
@@ -1016,7 +1217,9 @@ class RTLLMSuite(SuiteAdapter):
             else ADAPTER_VERSION
         )
         evaluation_profile = (
-            "icarus12-agent-eval-functional-harder-v1"
+            "icarus12-agent-eval-all-v1"
+            if all_agent_eval
+            else "icarus12-agent-eval-functional-harder-v1"
             if harder
             else "icarus12-agent-eval-functional-v2"
             if functional_v2
@@ -1033,7 +1236,7 @@ class RTLLMSuite(SuiteAdapter):
             "official_task_id": f"rtllm/{manifest.name}",
             "candidate_top": manifest.candidate_top,
             "testbench_top": manifest.testbench_top,
-            "language": "systemverilog-2012" if harder else "verilog-2005",
+            "language": ("systemverilog-2012" if all_agent_eval or harder else "verilog-2005"),
             "dataset_content_hash": snapshot.dataset_content_hash,
             "adapter_version": adapter_version,
             "pinned_commit": PINNED_COMMIT,
@@ -1049,11 +1252,13 @@ class RTLLMSuite(SuiteAdapter):
                     "agent_eval": {
                         "benchmark_variant": variant,
                         "compile_test_id": "compile",
-                        "ppa_supported": True,
+                        "ppa_supported": not all_agent_eval,
                         "public_test_contract_hash": content_hash(public_contract),
                     },
                     "public_feedback_semantics": (
-                        "compile_and_independent_functional_smoke_harder_v1"
+                        "candidate_only_compile_l1_v1"
+                        if all_agent_eval
+                        else "compile_and_independent_functional_smoke_harder_v1"
                         if harder
                         else "compile_and_independent_functional_smoke_v2"
                         if functional_v2
@@ -1063,7 +1268,9 @@ class RTLLMSuite(SuiteAdapter):
                     ),
                 }
             )
-        if harder:
+            if all_agent_eval:
+                metadata["gym_qualification_level"] = "L1_compile_only"
+        if all_agent_eval or harder:
             manifest_payload = {
                 "name": manifest.name,
                 "root": manifest.root,
@@ -1214,7 +1421,7 @@ class RTLLMSuite(SuiteAdapter):
         if not report.valid:
             raise ConfigurationError("invalid RTLLM source: " + "; ".join(report.errors[:3]))
         variant = self._variant()
-        if variant == HARDER_VARIANT:
+        if variant in {ALL_AGENT_EVAL_VARIANT, HARDER_VARIANT}:
             dataset_root = root
             native_layout = "RTLLM/{Arithmetic,Control,Memory,Miscellaneous}"
             dataset_hash = FROZEN_DATASET_FILES_HASH
@@ -1266,6 +1473,9 @@ def _invalid(code: str, message: str) -> ValidationReport:
 
 __all__ = [
     "ADAPTER_VERSION",
+    "ALL_AGENT_EVAL_ADAPTER_VERSION",
+    "ALL_AGENT_EVAL_SUITE_VERSION",
+    "ALL_AGENT_EVAL_VARIANT",
     "HARDER_ADAPTER_VERSION",
     "HARDER_SUITE_VERSION",
     "HARDER_VARIANT",

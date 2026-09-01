@@ -16,6 +16,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant up_down_counter_iverilog_training
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-all-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-harder-v1
 ```
 
@@ -38,9 +40,28 @@ feedback. RTLLM alone may opt in to Yosys/OpenSTA ATP v2 feedback or to DC/MCP f
 a resolved disposable worker. Both use `--agent-ppa-feedback`; final-PPA-only DC profiles remain
 ineligible for iteration. Final VCS/DC, Icarus/Open, and AgentEval results retain distinct
 suite/profile identities.
-Both AgentEval variants fail closed unless the resolved `iverilog` and `vvp` identities are major
-version 12. The opt-in qualification test checks the pinned image against reference and known-bad
-candidates, so an unqualified image is not silently published under the AgentEval identity.
+The Icarus AgentEval variants fail closed unless the resolved `iverilog` and `vvp` identities are
+major version 12. The opt-in qualification test checks the pinned image against reference and
+known-bad candidates, so an unqualified image is not silently published under the AgentEval
+identity.
+
+`v2-agent-eval-all-v1` is the full-corpus L1 Gym projection. It discovers all 50 frozen RTLLM 2.0
+tasks with IDs `rtllm/v2-agent-eval-all-v1/<task-name>`, materializes one intentionally incomplete
+repository-relative RTL entry per task, and exposes repeatable candidate-only compilation. It does
+not expose functional smoke or PPA feedback and records `gym_qualification_level=L1_compile_only`,
+`diagnostic_only=true`, and `benchmark_score_claimed=false`. The original hidden functional
+verifier inputs, with any declared hash-bound compatibility projection, are staged only after typed
+`finish`.
+
+All prompt, reference, testbench, auxiliary-file, DUT/top, parser, and projection identities are
+frozen in the metadata catalog. Verifier-only compatibility projections are exact and hash-bound;
+they may normalize a conflicting upstream module name or remove a simulator scheduling ambiguity,
+but never change hidden vectors, expected values, or pass/fail conditions. The opt-in Icarus 12
+qualification requires every reference to pass public compile and hidden verification and requires
+one missing-module candidate per task to be rejected by the hidden verifier. Full-corpus L1 is not
+the same as L2 functional feedback: only separately qualified functional variants may expose a
+repeatable public smoke. See the
+[full-corpus L1 qualification record](../../docs/audits/rtllm_full_corpus_l1_qualification_v1.md).
 
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
@@ -75,6 +96,8 @@ The supported functional-version matrix is intentionally partitioned:
 - original commercial RTLLM uses the exact VCS version frozen by its verifier profile;
 - `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1` require `iverilog` and `vvp`
   major version 12;
+- `v2-agent-eval-all-v1` requires the same Icarus 12 identity and provides compile-only L1 Gym
+  feedback for all 50 frozen tasks;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and
