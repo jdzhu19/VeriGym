@@ -207,6 +207,17 @@ surface and cannot start canary execution, formal collection, training, GPU work
 loading. A later PR-2802 provider attempt requires a new authorization and becomes single-use as
 soon as its first provider episode starts.
 
+The one authorized v44 invocation stopped before runner `main`, output creation, Docker, or a task
+attempt because an ambient Conda editable install resolved `verigym` from an older temporary
+checkout. V44 is permanently sealed and may not be retried. The separately versioned v45 repair
+binds that exact stop receipt, its merged audit, and the green post-merge main run. It requires the
+repository `.venv` with system site-packages disabled, prepends the current merged `src` before any
+`verigym` import, verifies the loaded package root, and regression-tests a competing stale import
+path. V45 retains the same PR-2802 input, v33 PR-3204 reuse, headroom, v2 content-free scan,
+network-none, atomic-write, and zero-provider boundaries. It cannot execute a task, call a model,
+start collection or training, use a GPU, or load held-out data; any provider canary requires a new
+v46 authorization.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
