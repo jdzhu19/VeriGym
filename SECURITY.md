@@ -244,6 +244,18 @@ authorize task execution or collection. A v47 provider authorization must bind t
 tree, image lock, scan, contract, merged result audit, and green post-merge main run before it may
 attempt PR-2802 followed by PR-3204.
 
+The separately versioned v47 authorization binds that complete v46 chain and permits only the
+PR-2802 training episode followed by PR-3204 validation under protocol v22, seed 496, and sample
+12. The host provider process is separate from both credential-free, Codex-free command images;
+each command runtime has `network=none` and uses only `episode_container_exec_v1`. Before output,
+the runner validates the clean merged source, exact public source and image locks, v33/v46 trees,
+tokenizer/model lock, dependency versions, and both command adapters with zero provider calls.
+After a task starts it is single-use with zero request and episode retries. Any infrastructure or
+security invalidity stops immediately, and any failed PR-2802 result plane prevents PR-3204 from
+starting. A two-task six-plane and exact-64K pass may set only
+`formal_collection_allowed=true`; v47 cannot start formal collection, training, GPU work, or
+held-out loading, and its result must still be independently audited and merged.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
