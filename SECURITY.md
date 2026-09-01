@@ -235,6 +235,15 @@ context-aware scan against all known runtime roots to pass. V46 remains zero-pro
 prepare a distinct v47 canary fixed to PR-2802 then PR-3204, seed 496 and sample 12; it does not
 authorize that canary. The provider-canary identity is consequently deferred to v47.
 
+The sole authorized v46 execution successfully rebuilt and v2-scanned a fresh PR-2802 command
+image while making zero provider calls. Its independent result scan covered the complete sealed
+tree and compared the known host roots and active sensitive values only in memory; it found no raw
+host path, credential, proxy value, or scanner error. The runtime receipt now exports only version,
+content hash, and equality booleans. V46 remains a zero-provider materialization and does not
+authorize task execution or collection. A v47 provider authorization must bind the complete v46
+tree, image lock, scan, contract, merged result audit, and green post-merge main run before it may
+attempt PR-2802 followed by PR-3204.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
