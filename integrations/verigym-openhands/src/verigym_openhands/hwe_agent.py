@@ -59,6 +59,8 @@ from .hwe_v20 import build_v20_protocol_receipt
 from .hwe_v20_protocol import OPENHANDS_V20_TOOL_CHOICE_POLICY
 from .hwe_v21 import build_v21_protocol_receipt
 from .hwe_v21_protocol import OPENHANDS_V21_TOOL_CHOICE_POLICY
+from .hwe_v22 import build_v22_protocol_receipt
+from .hwe_v22_protocol import OPENHANDS_V22_TOOL_CHOICE_POLICY
 from .trajectory import (
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
@@ -164,6 +166,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             OPENHANDS_V19_TOOL_CHOICE_POLICY,
             OPENHANDS_V20_TOOL_CHOICE_POLICY,
             OPENHANDS_V21_TOOL_CHOICE_POLICY,
+            OPENHANDS_V22_TOOL_CHOICE_POLICY,
         }
         path_policy_recovery = (
             settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v18"
@@ -278,6 +281,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         v20_token_budget_type: type[Exception] | None = None
         v21_protocol_type: type[Exception] | None = None
         v21_token_budget_type: type[Exception] | None = None
+        v22_protocol_type: type[Exception] | None = None
+        v22_token_budget_type: type[Exception] | None = None
         recovery_protocol_failure = False
         provider_budget_failure = False
         provider_tool_policy_failure = False
@@ -287,9 +292,12 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
         v20_token_budget_failure = False
         v21_protocol_failure = False
         v21_token_budget_failure = False
+        v22_protocol_failure = False
+        v22_token_budget_failure = False
         v19_protocol_receipt: dict[str, Any] | None = None
         v20_protocol_receipt: dict[str, Any] | None = None
         v21_protocol_receipt: dict[str, Any] | None = None
+        v22_protocol_receipt: dict[str, Any] | None = None
         failure_stage = "temporary_directory"
         failure_receipt_emitted = False
         try:
@@ -374,6 +382,18 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     llm_type = V21RequiredToolAtomicShapeRecoveryLLM
                     v21_protocol_type = V21ProtocolViolation
                     v21_token_budget_type = V21ProviderTokenBudgetExceeded
+                    provider_tool_policy_type = ProviderToolArgumentsPolicyError
+                elif settings.tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY:
+                    from .hwe_tool_choice import ProviderToolArgumentsPolicyError
+                    from .hwe_v22_protocol import (
+                        V22ProtocolViolation,
+                        V22ProviderTokenBudgetExceeded,
+                        V22RequiredToolAtomicShapeRecoveryLLM,
+                    )
+
+                    llm_type = V22RequiredToolAtomicShapeRecoveryLLM
+                    v22_protocol_type = V22ProtocolViolation
+                    v22_token_budget_type = V22ProviderTokenBudgetExceeded
                     provider_tool_policy_type = ProviderToolArgumentsPolicyError
                 elif (
                     settings.tool_choice_policy
@@ -466,12 +486,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                     OPENHANDS_V19_TOOL_CHOICE_POLICY,
                     OPENHANDS_V20_TOOL_CHOICE_POLICY,
                     OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                    OPENHANDS_V22_TOOL_CHOICE_POLICY,
                 }:
                     llm_options["recovery_state_path"] = recovery_state
                 if settings.tool_choice_policy in {
                     OPENHANDS_V19_TOOL_CHOICE_POLICY,
                     OPENHANDS_V20_TOOL_CHOICE_POLICY,
                     OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                    OPENHANDS_V22_TOOL_CHOICE_POLICY,
                 }:
                     llm_options["max_provider_tokens"] = settings.max_provider_tokens
                 llm = llm_type(
@@ -573,6 +595,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             OPENHANDS_V19_TOOL_CHOICE_POLICY,
                             OPENHANDS_V20_TOOL_CHOICE_POLICY,
                             OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                            OPENHANDS_V22_TOOL_CHOICE_POLICY,
                         }:
                             return conversation.agent.llm
                         return llm
@@ -707,6 +730,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                             failure_exc, v21_protocol_type
                         ):
                             v21_protocol_failure = True
+                        elif v22_token_budget_type is not None and _exception_chain_contains(
+                            failure_exc, v22_token_budget_type
+                        ):
+                            v22_token_budget_failure = True
+                        elif v22_protocol_type is not None and _exception_chain_contains(
+                            failure_exc, v22_protocol_type
+                        ):
+                            v22_protocol_failure = True
                         elif _exception_chain_contains(failure_exc, ProviderCallBudgetExceeded):
                             provider_budget_failure = True
                         elif provider_tool_policy_type is not None and _exception_chain_contains(
@@ -734,6 +765,8 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                         and not v20_token_budget_failure
                         and not v21_protocol_failure
                         and not v21_token_budget_failure
+                        and not v22_protocol_failure
+                        and not v22_token_budget_failure
                         and (
                             settings.tool_choice_policy
                             != "validated_responses_recovery_state_required_tool_v18"
@@ -821,6 +854,14 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                 failure_exc, v21_protocol_type
                             ):
                                 v21_protocol_failure = True
+                            elif v22_token_budget_type is not None and _exception_chain_contains(
+                                failure_exc, v22_token_budget_type
+                            ):
+                                v22_token_budget_failure = True
+                            elif v22_protocol_type is not None and _exception_chain_contains(
+                                failure_exc, v22_protocol_type
+                            ):
+                                v22_protocol_failure = True
                             elif _exception_chain_contains(failure_exc, ProviderCallBudgetExceeded):
                                 provider_budget_failure = True
                             elif (
@@ -904,6 +945,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                         OPENHANDS_V19_TOOL_CHOICE_POLICY,
                                         OPENHANDS_V20_TOOL_CHOICE_POLICY,
                                         OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                                        OPENHANDS_V22_TOOL_CHOICE_POLICY,
                                     }
                                 ),
                                 workspace_relative_constraints=(
@@ -917,6 +959,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                                         OPENHANDS_V19_TOOL_CHOICE_POLICY,
                                         OPENHANDS_V20_TOOL_CHOICE_POLICY,
                                         OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                                        OPENHANDS_V22_TOOL_CHOICE_POLICY,
                                     }
                                 ),
                             )
@@ -1026,6 +1069,24 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 )
             except ValueError:
                 v21_protocol_failure = True
+        if (
+            settings.tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
+            and not provider_tool_policy_failure
+            and not recovery_protocol_failure
+            and not v22_protocol_failure
+            and not v22_token_budget_failure
+        ):
+            try:
+                v22_protocol_receipt = build_v22_protocol_receipt(
+                    provider=provider,
+                    protocol={
+                        **_v22_protocol_counts(provider_accounting_llm),
+                        "format_recovery_count": format_recovery_count,
+                    },
+                    broker_decision_steps=stats.decision_steps,
+                )
+            except ValueError:
+                v22_protocol_failure = True
         bounded_iteration_limit_exhausted = _bounded_iteration_limit_exhausted(
             stats=stats,
             settings=settings,
@@ -1087,6 +1148,7 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
                 v19_protocol_receipt=v19_protocol_receipt,
                 v20_protocol_receipt=v20_protocol_receipt,
                 v21_protocol_receipt=v21_protocol_receipt,
+                v22_protocol_receipt=v22_protocol_receipt,
             )
 
         if stats.infrastructure_failure is not None:
@@ -1167,6 +1229,26 @@ class OpenHandsHweAgentAdapter(AgentAdapter):
             raise _termination(
                 "openhands_hwe_v21_agent_protocol",
                 "OpenHands HWE provider violated the v21 required-tool protocol",
+                infrastructure=False,
+            )
+        if v22_token_budget_failure:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
+            raise _termination(
+                "openhands_hwe_v22_provider_token_budget",
+                "OpenHands HWE v22 exceeded its cumulative provider token budget",
+                infrastructure=False,
+            )
+        if v22_protocol_failure:
+            persist_evidence(
+                trajectory_captured=False,
+                ordinary_hidden_verifier_pending=False,
+            )
+            raise _termination(
+                "openhands_hwe_v22_agent_protocol",
+                "OpenHands HWE provider violated the v22 required-tool protocol",
                 infrastructure=False,
             )
         if provider_tool_policy_failure:
@@ -1569,6 +1651,7 @@ def _identity(
         OPENHANDS_V19_TOOL_CHOICE_POLICY: "v19",
         OPENHANDS_V20_TOOL_CHOICE_POLICY: "v20",
         OPENHANDS_V21_TOOL_CHOICE_POLICY: "v21",
+        OPENHANDS_V22_TOOL_CHOICE_POLICY: "v22",
     }
     policy_version = policy_versions[settings.tool_choice_policy]
     return ExternalAgentCallIdentity(
@@ -1625,6 +1708,11 @@ def _identity(
             if settings.tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
             else "repository_action_state_machine_required_tool_atomic_shape_recovery_v21"
             if settings.tool_choice_policy == OPENHANDS_V21_TOOL_CHOICE_POLICY
+            else (
+                "repository_action_state_machine_required_tool_"
+                "sdk_normalized_empty_shape_recovery_v22"
+            )
+            if settings.tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
             else "repository_action_state_machine_validated_responses_sdk_continuation_v12"
             if settings.tool_choice_policy == "validated_responses_recovery_state_required_tool_v12"
             else "repository_action_state_machine_validated_responses_recovery_required_tool_v11"
@@ -1682,11 +1770,13 @@ def _write_evidence(
     v19_protocol_receipt: dict[str, Any] | None,
     v20_protocol_receipt: dict[str, Any] | None,
     v21_protocol_receipt: dict[str, Any] | None,
+    v22_protocol_receipt: dict[str, Any] | None,
 ) -> None:
     protocol_receipts = (
         v19_protocol_receipt,
         v20_protocol_receipt,
         v21_protocol_receipt,
+        v22_protocol_receipt,
     )
     if sum(item is not None for item in protocol_receipts) > 1:
         raise OpenHandsTrajectoryInfrastructureError(
@@ -1702,6 +1792,8 @@ def _write_evidence(
         atomic_dump_json(root / "v20-protocol-receipt.json", v20_protocol_receipt)
     if v21_protocol_receipt is not None:
         atomic_dump_json(root / "v21-protocol-receipt.json", v21_protocol_receipt)
+    if v22_protocol_receipt is not None:
+        atomic_dump_json(root / "v22-protocol-receipt.json", v22_protocol_receipt)
     protocol_summary: dict[str, Any] = {}
     if v19_protocol_receipt is not None:
         protocol_summary = {
@@ -1750,6 +1842,30 @@ def _write_evidence(
             ],
             "provider_token_budget": v21_protocol_receipt["provider_token_budget"],
             "provider_total_tokens": v21_protocol_receipt["provider_total_tokens"],
+        }
+    elif v22_protocol_receipt is not None:
+        protocol_summary = {
+            "v22_protocol_receipt_hash": v22_protocol_receipt["receipt_hash"],
+            "required_tool_request_count": v22_protocol_receipt["required_tool_request_count"],
+            "canonical_tool_response_count": v22_protocol_receipt["canonical_tool_response_count"],
+            "content_free_tool_response_count": v22_protocol_receipt[
+                "content_free_tool_response_count"
+            ],
+            "mixed_content_tool_response_count": v22_protocol_receipt[
+                "mixed_content_tool_response_count"
+            ],
+            "content_only_response_count": v22_protocol_receipt["content_only_response_count"],
+            "multi_tool_shape_recovery_count": v22_protocol_receipt[
+                "multi_tool_shape_recovery_count"
+            ],
+            "rejected_provider_tool_call_count": v22_protocol_receipt[
+                "rejected_provider_tool_call_count"
+            ],
+            "multi_tool_recovery_response_shape": v22_protocol_receipt[
+                "multi_tool_recovery_response_shape"
+            ],
+            "provider_token_budget": v22_protocol_receipt["provider_token_budget"],
+            "provider_total_tokens": v22_protocol_receipt["provider_total_tokens"],
         }
     atomic_dump_json(
         root / "summary.json",
@@ -1803,7 +1919,9 @@ def _write_evidence(
             "sdk_stop_continuation_count": sdk_stop_continuation_count,
             "sdk_continuation_tool_choice_policy": (
                 (
-                    "chat_required_validated_v21"
+                    "chat_required_validated_v22"
+                    if settings.tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
+                    else "chat_required_validated_v21"
                     if settings.tool_choice_policy == OPENHANDS_V21_TOOL_CHOICE_POLICY
                     else "chat_required_validated_v20"
                     if settings.tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
@@ -1814,6 +1932,7 @@ def _write_evidence(
                     OPENHANDS_V19_TOOL_CHOICE_POLICY,
                     OPENHANDS_V20_TOOL_CHOICE_POLICY,
                     OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                    OPENHANDS_V22_TOOL_CHOICE_POLICY,
                 }
                 else "responses_required_validated_v1"
                 if settings.tool_choice_policy
@@ -1876,6 +1995,7 @@ def _bounded_iteration_limit_exhausted(
             "validated_responses_recovery_state_required_tool_v18",
             OPENHANDS_V19_TOOL_CHOICE_POLICY,
             OPENHANDS_V20_TOOL_CHOICE_POLICY,
+            OPENHANDS_V22_TOOL_CHOICE_POLICY,
         }
         and limit
         == (
@@ -1885,6 +2005,7 @@ def _bounded_iteration_limit_exhausted(
                 OPENHANDS_V19_TOOL_CHOICE_POLICY,
                 OPENHANDS_V20_TOOL_CHOICE_POLICY,
                 OPENHANDS_V21_TOOL_CHOICE_POLICY,
+                OPENHANDS_V22_TOOL_CHOICE_POLICY,
             }
             else 200
         )
@@ -2022,6 +2143,27 @@ def _v21_protocol_counts(llm: Any) -> dict[str, Any]:
     return result
 
 
+def _v22_protocol_counts(llm: Any) -> dict[str, Any]:
+    result: dict[str, Any] = _v20_protocol_counts(llm)
+    for name in (
+        "multi_tool_shape_recovery_count",
+        "rejected_provider_tool_call_count",
+    ):
+        value = getattr(llm, name, None)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise OpenHandsTrajectoryInfrastructureError(
+                "OpenHands v22 multiple-tool recovery counter is invalid"
+            )
+        result[name] = value
+    shape = getattr(llm, "multi_tool_recovery_response_shape", None)
+    if not isinstance(shape, dict):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "OpenHands v22 multiple-tool recovery shape is invalid"
+        )
+    result["multi_tool_recovery_response_shape"] = dict(shape)
+    return result
+
+
 def _provider_response_shape(llm: Any) -> dict[str, Any]:
     value = getattr(llm, "provider_response_shape", {})
     if not isinstance(value, dict):
@@ -2091,6 +2233,7 @@ def _requires_sdk_stop_continuation(
         OPENHANDS_V19_TOOL_CHOICE_POLICY,
         OPENHANDS_V20_TOOL_CHOICE_POLICY,
         OPENHANDS_V21_TOOL_CHOICE_POLICY,
+        OPENHANDS_V22_TOOL_CHOICE_POLICY,
     }:
         return forced == 1 and validated_finish == 0 and validated_tool == 1
     return False
