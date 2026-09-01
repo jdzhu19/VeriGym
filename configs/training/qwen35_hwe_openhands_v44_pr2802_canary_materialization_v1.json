@@ -1,0 +1,201 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v44_pr2802_canary_materialization_authorization_v1",
+  "status": "authorized_pending_materialization",
+  "identity": "openhands-hwe-v44-pr2802-canary-materialization-v1",
+  "v33_materialization_evidence": {
+    "audit_merge_commit": "648fe717e88b36876245df09e73222f906f83918",
+    "audit_file_sha256": "63f814ebeee613e479db3c99f362211e6304778d11ab4cc35873c50f7750af5a",
+    "evidence_tree_hash": "62963cb8d23d48ae31b328d27648fb693d263b698be526f4b7aa4e6df4aa02e6",
+    "progress_hash": "463aa8016d62e947421379cd925009c131a589d754e0c17e7c7f83c72fef26df",
+    "progress_file_sha256": "267c8340e98b81a092216afccc5dadd0834960613920499c392f34522dd78839",
+    "catalog_hash": "05be424d40014e7ef69106f85e5ea161db2bb8e70103c8d1279e4a7c118f8e05",
+    "catalog_file_sha256": "08c31fb7ad13d96fda850f114b34688ec22c0d96a865eb21e5d19fe03df5a423",
+    "validation_lock_file_sha256": "a3a29f4ad2515c9502b3716e8644806154c7f9a74d388f9cd9c741d81458dc22",
+    "validation_scan_file_sha256": "6357976446539e526c15cf22a8e9616df650e4ac30117934898b7a40eb339ed1"
+  },
+  "failed_v43_evidence": {
+    "audit_merge_commit": "46435ca0dff824a3a65352fc65d270f2a8c21713",
+    "audit_file_sha256": "25e96d9a52c5faedb1d0b660959a91c94851ff09125965eabefad97284781591",
+    "post_merge_main_run_id": 33486581581,
+    "post_merge_main_all_eight_classes_passed": true,
+    "evidence_tree_hash": "d50e4e7958f9804a959d16540da3ea60dd9a8f777bda734ba5ea9733d081e900",
+    "report_hash": "4f4c57e373f983c45197ec87e23da8ab007d3295a504aae39fb82a007ea43425",
+    "report_file_sha256": "5889c76cb517e8d6efb17a461630ea1f33ceda3cb56ff9f3adcfbd747550ca89",
+    "attempt_file_sha256": "356412081913b385f52ad389109a1d6a7d798b3da0f5d6addf7528737f80cbc9",
+    "security_scan_file_sha256": "a3028127063c797ed147adbddefa29ca069fdde93206f5a8d29ddc05452517cd",
+    "provider_episode_count": 1,
+    "provider_call_count": 38,
+    "failed_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589",
+    "failure_category": "openhands_hwe_v22_provider_token_budget",
+    "validation_task_started": false
+  },
+  "v22_protocol_repair_evidence": {
+    "merge_commit": "299cc6212be24f12c7cb695f596e4328258e294d",
+    "audit_file_sha256": "1328c6ddcdad557311832531844a3a827ed5fbb2d8412938c8a611862be21a62",
+    "post_merge_main_run_id": 33471695480,
+    "post_merge_main_all_eight_classes_passed": true,
+    "predecessor_protocol": "required_tool_atomic_shape_recovery_v21",
+    "successor_protocol": "required_tool_atomic_shape_recovery_v22",
+    "provider_invocation_authorized_by_repair": false
+  },
+  "training_legacy_image_lock": {
+    "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802",
+    "file_sha256": "8915b86f013794853f371f4eecff9b719ca5feca19fdc58596139181d3c5c398",
+    "lock_hash": "23d6a68ff227d7781e7dda834272279f97c847acdd9d99e833de444ff812af12",
+    "task_hash": "e9bfb9718e9fe66ef83494aac697baabda2ad4aad62d4c61735fdd33f3a62e30",
+    "source_hash": "51d5b7c6cdb5cb064cee20f9bfea993594b7744ffaf679ca53505ec059129757",
+    "agent_image": "sha256:6fe007db875611a047eb1e0a653fc755f50d2bda0505cc5a039ebbd69d46ad5c",
+    "verifier_image": "sha256:88246baf91e53c45f266ef078bf62939329197366b8ac077f36cbdc1f8e05cdb"
+  },
+  "legacy_qualification_evidence": {
+    "audit_commit": "732018de738d9886b11f7d633e693847beebf0ef",
+    "audit_file_sha256": "9ee086e625ad33bed50ea7ff29bbb963d53197602dfe11f0f5eb3a09ff360ef7",
+    "security_scan_passed": true,
+    "runtime_network": "none",
+    "historical_trajectory_relabelled": false
+  },
+  "reserve_ledger": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2330",
+      "role": "training_reserve",
+      "state": "consumed_v36"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3226",
+      "role": "training_reserve",
+      "state": "consumed_v38"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3231",
+      "role": "training_reserve",
+      "state": "consumed_v39"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549",
+      "role": "training_candidate",
+      "state": "consumed_v41"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2589",
+      "role": "training_candidate",
+      "state": "consumed_v43"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2989",
+      "role": "validation_reserve",
+      "state": "unconsumed_role_frozen"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3059",
+      "role": "validation_reserve",
+      "state": "unconsumed_role_frozen"
+    },
+    {
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+      "role": "canary_validation",
+      "state": "unstarted"
+    }
+  ],
+  "headroom_policy": {
+    "policy": {
+      "absolute_thresholds": true,
+      "percentage_thresholds": false,
+      "planned_command_image_count": 6,
+      "maximum_bytes_per_command_image": 8589934592,
+      "docker_headroom_multiplier": 2
+    },
+    "requirements": [
+      {
+        "role": "control_root",
+        "minimum_free_bytes": 4294967296,
+        "minimum_free_inodes": 100000
+      },
+      {
+        "role": "docker_root",
+        "minimum_free_bytes": 103079215104,
+        "minimum_free_inodes": 250000
+      },
+      {
+        "role": "scratch_root",
+        "minimum_free_bytes": 8589934592,
+        "minimum_free_inodes": 50000
+      },
+      {
+        "role": "output_parent",
+        "minimum_free_bytes": 2147483648,
+        "minimum_free_inodes": 10000
+      }
+    ],
+    "single_image_build_uses_conservative_six_image_threshold": true,
+    "execution_gate_must_rerun": true
+  },
+  "command_image_inputs": {
+    "image_count": 1,
+    "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802",
+    "ripgrep_version": "ripgrep 15.2.0 (rev e89fff89ac)",
+    "ripgrep_binary_sha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+    "ripgrep_release_archive_sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+    "tag_namespace": "verigym/cva6-openhands-v44-command",
+    "build_network": "none",
+    "runtime_network": "none",
+    "execution_backend": "episode_container_exec_v1",
+    "security_scan_format": "verigym_hwe_command_image_security_scan_v2",
+    "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+    "codex_present": false
+  },
+  "future_canary_contract": {
+    "campaign_id": "openhands-hwe-v45-v22-required-tool-canary-v1",
+    "agent_version_id": "openhands-deepseek-v4-flash-hwe-v45-v22-canary-v1",
+    "protocol_profile": "required_tool_atomic_shape_recovery_v22",
+    "task_ids": [
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2802",
+      "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204"
+    ],
+    "roles": ["training", "validation"],
+    "seed": 495,
+    "sample_index": 11,
+    "provider_calls_during_materialization": 0,
+    "training_task_disposition_after_success": "import_canary_without_formal_reexecution"
+  },
+  "required_controls": {
+    "clean_merged_source_commit": true,
+    "exact_v33_result_chain": true,
+    "exact_failed_v43_result_chain": true,
+    "exact_v22_protocol_repair_chain": true,
+    "historical_tasks_retried": false,
+    "historical_evidence_relabelled": false,
+    "task_source_verifier_binding_exact": true,
+    "build_network_none": true,
+    "runtime_network_none": true,
+    "image_security_scan_required": true,
+    "headroom_preflight_before_image_build": true,
+    "failed_scan_diagnostic_content_free": true,
+    "validation_reserve_roles_changed": false,
+    "codex_binary_absent": true,
+    "provider_credentials_absent": true,
+    "atomic_progress": true,
+    "heldout_tasks_loaded": false
+  },
+  "authorized_actions": {
+    "consume_sealed_v33_validation_binding": true,
+    "consume_sealed_v43_failure_evidence": true,
+    "consume_legacy_pr2802_qualification": true,
+    "run_zero_provider_headroom_preflight": true,
+    "build_pr2802_command_image": true,
+    "scan_pr2802_command_image": true,
+    "materialize_v22_canary_contract": true,
+    "invoke_provider": false,
+    "execute_canary": false,
+    "start_formal_collection": false,
+    "start_training": false,
+    "load_heldout_tasks": false
+  },
+  "failure_policy": "stop_immediately_no_retry_freeze_identity",
+  "formal_collection_allowed": false,
+  "formal_collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "benchmark_score_claimed": false,
+  "authorization_hash": "0d696630052b212bd320d32b42222a7d644a77395b37a642ef64f8f292662958"
+}
