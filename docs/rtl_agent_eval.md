@@ -37,6 +37,9 @@ and `serial2parallel`. Its [qualification record](audits/rtllm_l2_batch1_qualifi
 requires reference pass plus four public/hidden negative-control rejections per task. Disabling PPA
 here means the agent has no `ppa` action and final scoring performs no synthesis; it does not mean
 that the RTL is unsynthesizable or that PPA can never be added under a later qualified variant.
+The bounded [three-task L2 Codex diagnostic](audits/rtllm_l2_batch1_codex_3_diagnostic_v1.md)
+observed fail -> repair -> public pass in all three slots, followed by two hidden passes and one
+hidden rejection, with zero retries and zero PPA evaluations.
 
 ## Feedback boundaries
 

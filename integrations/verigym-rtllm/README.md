@@ -118,5 +118,8 @@ for bounded reference/known-bad evidence. The
 [32-run harder diagnostic](../../docs/audits/rtllm_harder_multiturn_codex_32_diagnostic_v1.md)
 records the new partition's frozen campaign and its post-run integrity finding. The
 [12-task full-corpus L1 pilot](../../docs/audits/rtllm_full_l1_codex_12task_pilot_v1.md) records a
-separate compile-only Codex diagnostic and the evidence used to select the next L2 batch. These
-checks qualify bounded infrastructure or projections; they are not benchmark scores.
+separate compile-only Codex diagnostic and the evidence used to select the next L2 batch. The
+[three-task L2 diagnostic](../../docs/audits/rtllm_l2_batch1_codex_3_diagnostic_v1.md) then records
+three visible fail -> repair -> pass sequences and two hidden resolutions under the PPA-disabled
+L2 variant. These checks qualify bounded infrastructure or projections; they are not benchmark
+scores.
