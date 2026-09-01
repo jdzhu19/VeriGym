@@ -15,6 +15,8 @@ from verigym_rtllm.adapter import (
     HARDER_VARIANT,
     L2_BATCH1_PUBLIC_SMOKE_SHA256,
     L2_BATCH1_VARIANT,
+    L2_BATCH2_PUBLIC_SMOKE_SHA256,
+    L2_BATCH2_VARIANT,
     PINNED_COMMIT,
     _is_icarus12_version,
 )
@@ -28,6 +30,7 @@ from verigym_rtllm.manifest import (
     FROZEN_TASK_TREES_HASH,
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
+    L2_BATCH2_TASK_NAMES,
     TASK_MANIFESTS,
 )
 
@@ -84,6 +87,27 @@ def test_l2_batch1_variant_is_explicit(tmp_path: Path) -> None:
     assert all(len(digest) == 64 for digest in L2_BATCH1_PUBLIC_SMOKE_SHA256.values())
 
 
+def test_l2_batch2_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=L2_BATCH2_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+    assert set(L2_BATCH2_PUBLIC_SMOKE_SHA256) == set(L2_BATCH2_TASK_NAMES)
+    assert all(len(digest) == 64 for digest in L2_BATCH2_PUBLIC_SMOKE_SHA256.values())
+
+
+def test_l2_batch2_public_smoke_hash_is_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=L2_BATCH2_VARIANT)
+    )
+    monkeypatch.setitem(L2_BATCH2_PUBLIC_SMOKE_SHA256, "RAM", "0" * 64)
+
+    with pytest.raises(ConfigurationError, match="differs from its frozen hash"):
+        suite._public_smoke("RAM")
+
+
 @pytest.mark.external_benchmark
 @pytest.mark.skipif(
     not os.environ.get("VERIGYM_RTLLM_SOURCE"),
@@ -114,6 +138,31 @@ def test_historical_functional_v2_task_identity_is_unchanged(
     task = suite.load_task(next(iter(suite.discover())))
 
     assert content_hash(task) == expected_task_hash
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check batch-two task identities",
+)
+@pytest.mark.parametrize(
+    ("name", "expected_task_hash"),
+    [
+        ("sequence_detector", "a8e320c325fc11a7efb29311d16fcd56ca13ff0734ac0ec16a9de413e1625089"),
+        ("synchronizer", "719f8d7ac40b6e275b08ccc0783bfd7b7ec3aa9fd353378400284e0cdbd8cfa6"),
+        ("RAM", "2b2681969821a55c915d5521c676a9f59b9260b12824995fdb14a7c63fceadee"),
+    ],
+)
+def test_l2_batch2_task_identity_is_frozen(name: str, expected_task_hash: str) -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=L2_BATCH2_VARIANT,
+        )
+    )
+    ref = next(ref for ref in suite.discover() if ref.native_id == name)
+
+    assert content_hash(suite.load_task(ref)) == expected_task_hash
 
 
 def test_icarus_training_variant_maps_to_upstream_task(tmp_path: Path) -> None:
@@ -181,6 +230,10 @@ def test_frozen_manifest_covers_exactly_50_runnable_tasks_and_four_harder_tasks(
     assert L2_BATCH1_TASK_NAMES == ("adder_pipe_64bit", "LFSR", "serial2parallel")
     assert not set(L2_BATCH1_TASK_NAMES).intersection(HARDER_TASK_NAMES)
     for name in L2_BATCH1_TASK_NAMES:
+        assert TASK_MANIFESTS[name].root in FROZEN_TASK_TREES
+    assert L2_BATCH2_TASK_NAMES == ("sequence_detector", "synchronizer", "RAM")
+    assert not set(L2_BATCH2_TASK_NAMES).intersection({*HARDER_TASK_NAMES, *L2_BATCH1_TASK_NAMES})
+    for name in L2_BATCH2_TASK_NAMES:
         assert TASK_MANIFESTS[name].root in FROZEN_TASK_TREES
 
 
@@ -253,6 +306,20 @@ def test_harder_known_bad_controls_are_distinct_and_compile_shaped(
     ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error"),
 )
 def test_l2_batch1_known_bad_controls_are_distinct_and_compile_shaped(
+    name: str, category: str
+) -> None:
+    source = known_bad_source(name, category)
+    assert f"module {name}" in source
+    assert len(source) < 4_000
+    assert len(content_hash(source)) == 64
+
+
+@pytest.mark.parametrize("name", L2_BATCH2_TASK_NAMES)
+@pytest.mark.parametrize(
+    "category",
+    ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error"),
+)
+def test_l2_batch2_known_bad_controls_are_distinct_and_compile_shaped(
     name: str, category: str
 ) -> None:
     source = known_bad_source(name, category)
@@ -386,6 +453,59 @@ def test_l2_batch1_discovery_loading_feedback_and_isolation() -> None:
         task = suite.load_task(ref)
         manifest = TASK_MANIFESTS[ref.native_id]
         assert task.id == f"rtllm/{L2_BATCH1_VARIANT}/{manifest.name}"
+        assert task.metadata["gym_qualification_level"] == "L2_functional_smoke"
+        assert task.metadata["agent_eval"]["ppa_supported"] is False
+        assert task.metadata["verification_requires_final_submission"] is True
+        assert task.metadata["diagnostic_only"] is True
+        assert task.metadata["benchmark_score_claimed"] is False
+        assert task.scoring.ppa_enabled is False
+        assert task.scoring.correctness_required_nodes == ["functional_hidden"]
+
+        assets = suite.resolve_assets(task)
+        visible = Path(assets.visible_root)
+        candidate = visible / "repository" / "rtl" / f"{manifest.name}.v"
+        assert f"module {manifest.candidate_top}" in candidate.read_text(encoding="utf-8")
+        assert len(assets.read_only_mounts) == 1
+        public_smoke = Path(assets.read_only_mounts[0].source_dir) / "assets" / "public-smoke.sv"
+        assert public_smoke.is_file()
+        visible_names = {path.relative_to(visible).as_posix() for path in visible.rglob("*")}
+        assert "verifier/testbench.v" not in visible_names
+        assert not set(manifest.auxiliary_files).intersection(visible_names)
+        assert [asset.mount_path for asset in assets.hidden_assets] == [
+            "verifier/testbench.v",
+            *manifest.auxiliary_files,
+        ]
+
+        cases = list(suite.public_conformance_cases(task))
+        assert [case.expected_resolved for case in cases] == [
+            True,
+            False,
+            False,
+            False,
+            False,
+        ]
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check the L2 batch-two projection",
+)
+def test_l2_batch2_discovery_loading_feedback_and_isolation() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=L2_BATCH2_VARIANT,
+        )
+    )
+
+    assert suite.validate_source().valid
+    refs = list(suite.discover())
+    assert [ref.native_id for ref in refs] == list(L2_BATCH2_TASK_NAMES)
+    for ref in refs:
+        task = suite.load_task(ref)
+        manifest = TASK_MANIFESTS[ref.native_id]
+        assert task.id == f"rtllm/{L2_BATCH2_VARIANT}/{manifest.name}"
         assert task.metadata["gym_qualification_level"] == "L2_functional_smoke"
         assert task.metadata["agent_eval"]["ppa_supported"] is False
         assert task.metadata["verification_requires_final_submission"] is True

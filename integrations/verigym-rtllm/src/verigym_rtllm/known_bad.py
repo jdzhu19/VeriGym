@@ -258,6 +258,119 @@ module serial2parallel(input clk,rst_n,din_serial,din_valid,
 endmodule
 """,
     },
+    "sequence_detector": {
+        "stuck-zero": """
+module sequence_detector(input clk,rst_n,data_in,output sequence_detected);
+  assign sequence_detected=1'b0;
+endmodule
+""",
+        "reset-error": """
+module sequence_detector(input clk,rst_n,data_in,output sequence_detected);
+  reg [3:0] history;
+  always @(posedge clk or posedge rst_n)
+    if(rst_n) history<=0; else history<={history[2:0],data_in};
+  assign sequence_detected=(history==4'b1001);
+endmodule
+""",
+        "protocol-latency-error": """
+module sequence_detector(input clk,rst_n,data_in,output reg sequence_detected);
+  reg [3:0] history;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin history<=0;sequence_detected<=0; end
+    else begin history<={history[2:0],data_in};sequence_detected<=(history==4'b1001); end
+endmodule
+""",
+        "functional-error": """
+module sequence_detector(input clk,rst_n,data_in,output sequence_detected);
+  reg [3:0] history;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) history<=0; else history<={history[2:0],data_in};
+  assign sequence_detected=({history[2:0],data_in}==4'b1011);
+endmodule
+""",
+    },
+    "synchronizer": {
+        "stuck-zero": """
+module synchronizer(input clk_a,clk_b,arstn,brstn,input [3:0] data_in,input data_en,
+  output [3:0] dataout);
+  assign dataout=0;
+endmodule
+""",
+        "reset-error": """
+module synchronizer(input clk_a,clk_b,arstn,brstn,input [3:0] data_in,input data_en,
+  output reg [3:0] dataout);
+  reg [3:0] data_reg; reg en_one,en_two;
+  always @(posedge clk_a or posedge arstn)
+    if(arstn) data_reg<=0; else if(data_en) data_reg<=data_in;
+  always @(posedge clk_b or posedge brstn)
+    if(brstn) begin en_one<=0;en_two<=0;dataout<=0; end
+    else begin en_one<=data_en;en_two<=en_one;if(en_two) dataout<=data_reg; end
+endmodule
+""",
+        "protocol-latency-error": """
+module synchronizer(input clk_a,clk_b,arstn,brstn,input [3:0] data_in,input data_en,
+  output reg [3:0] dataout);
+  reg [3:0] data_reg; reg [7:0] enable_pipe;
+  always @(posedge clk_a or negedge arstn)
+    if(!arstn) data_reg<=0; else data_reg<=data_in;
+  always @(posedge clk_b or negedge brstn)
+    if(!brstn) begin enable_pipe<=0;dataout<=0; end
+    else begin enable_pipe<={enable_pipe[6:0],data_en};
+      if(enable_pipe[7]) dataout<=data_reg; end
+endmodule
+""",
+        "functional-error": """
+module synchronizer(input clk_a,clk_b,arstn,brstn,input [3:0] data_in,input data_en,
+  output reg [3:0] dataout);
+  reg [3:0] data_reg; reg en_one,en_two;
+  always @(posedge clk_a or negedge arstn)
+    if(!arstn) data_reg<=0; else data_reg<=data_in;
+  always @(posedge clk_b or negedge brstn)
+    if(!brstn) begin en_one<=0;en_two<=0;dataout<=0; end
+    else begin en_one<=data_en;en_two<=en_one;if(en_two) dataout<=~data_reg; end
+endmodule
+""",
+    },
+    "RAM": {
+        "stuck-zero": """
+module RAM(input clk,rst_n,write_en,input [7:0] write_addr,input [5:0] write_data,
+  input read_en,input [7:0] read_addr,output [5:0] read_data);
+  assign read_data=0;
+endmodule
+""",
+        "reset-error": """
+module RAM(input clk,rst_n,write_en,input [7:0] write_addr,input [5:0] write_data,
+  input read_en,input [7:0] read_addr,output reg [5:0] read_data);
+  reg [5:0] mem[0:7]; integer i;
+  always @(posedge clk or posedge rst_n)
+    if(rst_n) begin read_data<=0;for(i=0;i<8;i=i+1) mem[i]<=0; end
+    else begin if(write_en) mem[write_addr]<=write_data;
+      read_data<=read_en?mem[read_addr]:0; end
+endmodule
+""",
+        "protocol-latency-error": """
+module RAM(input clk,rst_n,write_en,input [7:0] write_addr,input [5:0] write_data,
+  input read_en,input [7:0] read_addr,output reg [5:0] read_data);
+  reg [5:0] mem[0:7]; reg pending; reg [7:0] delayed_addr; integer i;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin read_data<=0;pending<=0;delayed_addr<=0;
+      for(i=0;i<8;i=i+1) mem[i]<=0; end
+    else begin if(write_en) mem[write_addr]<=write_data;
+      if(pending) read_data<=mem[delayed_addr]; else read_data<=0;
+      pending<=read_en;delayed_addr<=read_addr; end
+endmodule
+""",
+        "functional-error": """
+module RAM(input clk,rst_n,write_en,input [7:0] write_addr,input [5:0] write_data,
+  input read_en,input [7:0] read_addr,output reg [5:0] read_data);
+  reg [5:0] mem[0:7]; integer i;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin read_data<=0;for(i=0;i<8;i=i+1) mem[i]<=0; end
+    else begin if(write_en) mem[write_addr]<=write_data+1'b1;
+      read_data<=read_en?mem[read_addr]:0; end
+endmodule
+""",
+    },
 }
 
 

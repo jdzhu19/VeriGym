@@ -452,11 +452,14 @@ ALL_TASK_NAMES = tuple(
     manifest.name for manifest in sorted(TASK_MANIFESTS.values(), key=lambda item: item.root)
 )
 L2_BATCH1_TASK_NAMES = ("adder_pipe_64bit", "LFSR", "serial2parallel")
+L2_BATCH2_TASK_NAMES = ("sequence_detector", "synchronizer", "RAM")
 _manifest_roots = {item.root for item in TASK_MANIFESTS.values()}
 if len(TASK_MANIFESTS) != FROZEN_TASK_COUNT or _manifest_roots != set(FROZEN_TASK_TREES):
     raise RuntimeError("RTLLM runnable task manifests do not cover the frozen 50-task inventory")
 if not set(L2_BATCH1_TASK_NAMES).issubset(TASK_MANIFESTS):
     raise RuntimeError("RTLLM L2 batch-one tasks are outside the frozen manifest")
+if not set(L2_BATCH2_TASK_NAMES).issubset(TASK_MANIFESTS):
+    raise RuntimeError("RTLLM L2 batch-two tasks are outside the frozen manifest")
 
 
 __all__ = [
@@ -470,6 +473,7 @@ __all__ = [
     "FROZEN_TASK_TREES_HASH",
     "HARDER_TASK_NAMES",
     "L2_BATCH1_TASK_NAMES",
+    "L2_BATCH2_TASK_NAMES",
     "RTLLMTaskManifest",
     "TASK_MANIFESTS",
 ]

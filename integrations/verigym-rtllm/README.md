@@ -21,6 +21,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-harder-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-batch1-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-l2-batch2-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -72,6 +74,14 @@ functional smoke and four-category reference/known-bad qualification. It records
 functional iteration and a final hidden verdict. See the
 [L2 batch-one qualification](../../docs/audits/rtllm_l2_batch1_qualification_v1.md).
 
+`v2-agent-eval-functional-l2-batch2-v1` applies the same no-PPA L2 contract to
+`sequence_detector`, `synchronizer`, and `RAM`. These were no-finish control outcomes in the L1
+pilot, not hidden functional failures; batch two evaluates whether task-specific functional
+feedback makes those tasks operable without reinterpreting the earlier result. Each task has a
+separate hash-frozen public smoke and the same four-category reference/known-bad qualification
+bar. See the
+[L2 batch-two qualification](../../docs/audits/rtllm_l2_batch2_qualification_v1.md).
+
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
 `rtllm/v2-agent-eval-functional-harder-v1/<task-name>`. Each task has one repository-relative RTL
@@ -109,6 +119,8 @@ The supported functional-version matrix is intentionally partitioned:
   feedback for all 50 frozen tasks;
 - `v2-agent-eval-functional-l2-batch1-v1` requires Icarus 12, provides public L2 functional
   feedback for three tasks, and explicitly disables PPA;
+- `v2-agent-eval-functional-l2-batch2-v1` requires Icarus 12, provides public L2 functional
+  feedback for three additional tasks, and explicitly disables PPA;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and

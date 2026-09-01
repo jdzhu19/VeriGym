@@ -33,6 +33,8 @@ verigym_rtllm = [
   "assets/workspace_harder/rtl/*.v",
   "assets/public_smoke_l2_batch1/*.sv",
   "assets/workspace_l2_batch1/rtl/*.v",
+  "assets/public_smoke_l2_batch2/*.sv",
+  "assets/workspace_l2_batch2/rtl/*.v",
   "assets/workspace_all/README.md",
   "assets/rtllm_v2_additional_tasks.json",
 ]

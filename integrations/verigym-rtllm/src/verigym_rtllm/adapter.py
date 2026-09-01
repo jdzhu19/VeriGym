@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,7 @@ from .manifest import (
     FROZEN_TASK_TREES_HASH,
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
+    L2_BATCH2_TASK_NAMES,
     TASK_MANIFESTS,
     RTLLMTaskManifest,
 )
@@ -87,6 +89,50 @@ L2_BATCH1_PUBLIC_SMOKE_SHA256 = {
     "LFSR": "9ce56236593435d22094b1389ccf8e96ffcaa1303b4671bad9ac3ecce5f513c6",
     "serial2parallel": "c2f61e7deb14b929a3aa21e22cb018c06805317ea8764cb700970da1ed850361",
 }
+L2_BATCH2_VARIANT = "v2-agent-eval-functional-l2-batch2-v1"
+L2_BATCH2_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-l2-batch2-v1"
+L2_BATCH2_ADAPTER_VERSION = "0.9.0"
+L2_BATCH2_PUBLIC_SMOKE_SHA256 = {
+    "sequence_detector": "822d602bc674ee5b52bd3fb419b9682e398555ada400cdd064eedacfdac724ce",
+    "synchronizer": "ce1663a66d4c9cb93f6328559bc5a6c6bc35565cfa04bcf1a4ab0b9c4dd7a296",
+    "RAM": "57b07132eaee886a2957730036fd879ea9bddc2b242aada596afdc654acba464",
+}
+
+
+@dataclass(frozen=True)
+class _FunctionalBatchSpec:
+    task_names: tuple[str, ...]
+    suite_version: str
+    adapter_version: str
+    workspace_asset: str
+    public_smoke_asset: str
+    public_smoke_sha256: dict[str, str]
+    evaluation_profile: str
+    public_feedback_semantics: str
+
+
+_FUNCTIONAL_BATCH_SPECS = {
+    L2_BATCH1_VARIANT: _FunctionalBatchSpec(
+        task_names=L2_BATCH1_TASK_NAMES,
+        suite_version=L2_BATCH1_SUITE_VERSION,
+        adapter_version=L2_BATCH1_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_batch1",
+        public_smoke_asset="public_smoke_l2_batch1",
+        public_smoke_sha256=L2_BATCH1_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-agent-eval-functional-l2-batch1-v1",
+        public_feedback_semantics="compile_and_independent_functional_smoke_l2_batch1_v1",
+    ),
+    L2_BATCH2_VARIANT: _FunctionalBatchSpec(
+        task_names=L2_BATCH2_TASK_NAMES,
+        suite_version=L2_BATCH2_SUITE_VERSION,
+        adapter_version=L2_BATCH2_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_batch2",
+        public_smoke_asset="public_smoke_l2_batch2",
+        public_smoke_sha256=L2_BATCH2_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-agent-eval-functional-l2-batch2-v1",
+        public_feedback_semantics="compile_and_independent_functional_smoke_l2_batch2_v1",
+    ),
+}
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
 LICENSE_SHA256 = "a32206bcfbf5d6bb23be8a876de424d8a8d2a0e30a9adc9f8e1b3139fada9176"
@@ -108,7 +154,7 @@ _SUPPORTED_VARIANTS = frozenset(
         _UP_DOWN_ICARUS_TRAINING_VARIANT,
         ALL_AGENT_EVAL_VARIANT,
         HARDER_VARIANT,
-        L2_BATCH1_VARIANT,
+        *_FUNCTIONAL_BATCH_SPECS,
         *_AGENT_EVAL_VARIANTS,
         *_FUNCTIONAL_AGENT_EVAL_VARIANTS,
     }
@@ -116,10 +162,10 @@ _SUPPORTED_VARIANTS = frozenset(
 _MULTI_TASK_VARIANTS = {
     ALL_AGENT_EVAL_VARIANT: ALL_TASK_NAMES,
     HARDER_VARIANT: HARDER_TASK_NAMES,
-    L2_BATCH1_VARIANT: L2_BATCH1_TASK_NAMES,
+    **{variant: spec.task_names for variant, spec in _FUNCTIONAL_BATCH_SPECS.items()},
 }
-_FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset({HARDER_VARIANT, L2_BATCH1_VARIANT})
-_NO_PPA_AGENT_EVAL_VARIANTS = frozenset({ALL_AGENT_EVAL_VARIANT, L2_BATCH1_VARIANT})
+_FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset({HARDER_VARIANT, *_FUNCTIONAL_BATCH_SPECS})
+_NO_PPA_AGENT_EVAL_VARIANTS = frozenset({ALL_AGENT_EVAL_VARIANT, *_FUNCTIONAL_BATCH_SPECS})
 _BENCHMARK_ROOTS = ("Arithmetic", "Control", "Memory", "Miscellaneous")
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
@@ -192,7 +238,10 @@ class RTLLMSuite(SuiteAdapter):
         self._up_down_workspace_root = assets / "workspace_up_down"
         self._harder_workspace_root = assets / "workspace_harder"
         self._all_workspace_root = assets / "workspace_all"
-        self._l2_batch1_workspace_root = assets / "workspace_l2_batch1"
+        self._functional_batch_workspace_roots = {
+            variant: assets / spec.workspace_asset
+            for variant, spec in _FUNCTIONAL_BATCH_SPECS.items()
+        }
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._agent_workspaces: list[AgentEvalWorkspace] = []
 
@@ -759,8 +808,8 @@ class RTLLMSuite(SuiteAdapter):
             return ALL_AGENT_EVAL_SUITE_VERSION
         if variant == HARDER_VARIANT:
             return HARDER_SUITE_VERSION
-        if variant == L2_BATCH1_VARIANT:
-            return L2_BATCH1_SUITE_VERSION
+        if batch := _FUNCTIONAL_BATCH_SPECS.get(variant):
+            return batch.suite_version
         if variant.endswith("_agent_eval_functional_v2"):
             return FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION
         if variant in _FUNCTIONAL_AGENT_EVAL_VARIANTS:
@@ -776,8 +825,8 @@ class RTLLMSuite(SuiteAdapter):
             return "workspace_all"
         if self._variant() == HARDER_VARIANT:
             return "workspace_harder"
-        if self._variant() == L2_BATCH1_VARIANT:
-            return "workspace_l2_batch1"
+        if batch := _FUNCTIONAL_BATCH_SPECS.get(self._variant()):
+            return batch.workspace_asset
         return "workspace_up_down" if manifest.name == "up_down_counter" else "workspace"
 
     def _base_workspace(self, manifest: RTLLMTaskManifest) -> Path:
@@ -785,8 +834,8 @@ class RTLLMSuite(SuiteAdapter):
             return self._all_workspace_root
         if self._variant() == HARDER_VARIANT:
             return self._harder_workspace_root
-        if self._variant() == L2_BATCH1_VARIANT:
-            return self._l2_batch1_workspace_root
+        if self._variant() in self._functional_batch_workspace_roots:
+            return self._functional_batch_workspace_roots[self._variant()]
         if manifest.name == "up_down_counter":
             return self._up_down_workspace_root
         return self._workspace_root
@@ -850,25 +899,40 @@ class RTLLMSuite(SuiteAdapter):
                 "MSB first. Dropping `din_valid` discards a partial frame; the completed word "
                 "and one-cycle `dout_valid` pulse appear on the following rising edge."
             ),
+            "sequence_detector": (
+                " This projection uses active-low `rst_n`, supports overlapping occurrences of "
+                "`1001`, and asserts `sequence_detected` in the cycle that samples the final bit."
+            ),
+            "synchronizer": (
+                " This projection samples `data_in` and `data_en` in the `clk_a` domain, passes "
+                "the enable through two `clk_b` registers, and updates `dataout` from the stable "
+                "source register when the delayed enable is observed."
+            ),
+            "RAM": (
+                " This projection uses the stated six-bit data width and eight initialized "
+                "locations at addresses 0 through 7. Reads are synchronous, and `read_data` "
+                "clears when `read_en` is low."
+            ),
         }.get(manifest.name)
         if task_note is None:
             raise ConfigurationError("RTLLM derived projection is not declared")
         return common + task_note
 
     def _public_smoke(self, name: str) -> str:
+        batch = _FUNCTIONAL_BATCH_SPECS.get(self._variant())
         folder = (
             "public_smoke_harder"
             if self._variant() == HARDER_VARIANT
-            else "public_smoke_l2_batch1"
-            if self._variant() == L2_BATCH1_VARIANT
+            else batch.public_smoke_asset
+            if batch is not None
             else "public_smoke"
         )
         path = Path(__file__).parent / "assets" / folder / f"{name}.sv"
         if path.is_symlink() or not path.is_file():
             raise ConfigurationError("RTLLM public smoke asset is unavailable")
         smoke = path.read_text(encoding="utf-8")
-        if self._variant() == L2_BATCH1_VARIANT:
-            expected = L2_BATCH1_PUBLIC_SMOKE_SHA256.get(name)
+        if batch is not None:
+            expected = batch.public_smoke_sha256.get(name)
             if expected is None or _hash_bytes(smoke.encode("utf-8")) != expected:
                 raise ConfigurationError("RTLLM L2 public smoke differs from its frozen hash")
         return smoke
@@ -1248,11 +1312,12 @@ class RTLLMSuite(SuiteAdapter):
         icarus_training: bool,
     ) -> dict[str, Any]:
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
+        batch = _FUNCTIONAL_BATCH_SPECS.get(variant)
         adapter_version = (
             ALL_AGENT_EVAL_ADAPTER_VERSION
             if all_agent_eval
-            else L2_BATCH1_ADAPTER_VERSION
-            if variant == L2_BATCH1_VARIANT
+            else batch.adapter_version
+            if batch is not None
             else HARDER_ADAPTER_VERSION
             if harder
             else FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION
@@ -1264,8 +1329,8 @@ class RTLLMSuite(SuiteAdapter):
         evaluation_profile = (
             "icarus12-agent-eval-all-v1"
             if all_agent_eval
-            else "icarus12-agent-eval-functional-l2-batch1-v1"
-            if variant == L2_BATCH1_VARIANT
+            else batch.evaluation_profile
+            if batch is not None
             else "icarus12-agent-eval-functional-harder-v1"
             if harder
             else "icarus12-agent-eval-functional-v2"
@@ -1307,8 +1372,8 @@ class RTLLMSuite(SuiteAdapter):
                     "public_feedback_semantics": (
                         "candidate_only_compile_l1_v1"
                         if all_agent_eval
-                        else "compile_and_independent_functional_smoke_l2_batch1_v1"
-                        if variant == L2_BATCH1_VARIANT
+                        else batch.public_feedback_semantics
+                        if batch is not None
                         else "compile_and_independent_functional_smoke_harder_v1"
                         if harder
                         else "compile_and_independent_functional_smoke_v2"
@@ -1321,7 +1386,7 @@ class RTLLMSuite(SuiteAdapter):
             )
             if all_agent_eval:
                 metadata["gym_qualification_level"] = "L1_compile_only"
-            elif variant == L2_BATCH1_VARIANT:
+            elif batch is not None:
                 metadata["gym_qualification_level"] = "L2_functional_smoke"
         if variant in _MULTI_TASK_VARIANTS:
             manifest_payload = {
