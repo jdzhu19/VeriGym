@@ -205,6 +205,9 @@ def test_v51_selects_only_public_pr2728_without_decoding_heldout_values(
         "OPENHANDS_V51_CANDIDATE_RECORD_SHA256",
         hashlib.sha256(public).hexdigest(),
     )
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(_qualification, "_SCRATCH_PARENT", scratch)
 
     candidate, _instance, selected, receipt = _qualification._selected_candidate(
         dataset, _approved()
