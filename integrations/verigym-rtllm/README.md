@@ -1,9 +1,10 @@
 # VeriGym RTLLM Integration
 
-This optional package exposes pinned RTLLM pilot tasks through VeriGym without redistributing the
-benchmark. It supports `Control/Counter/counter_12` and
-`Control/Counter/up_down_counter` at commit
-`41b26896e33b536940116a975626455eed3de65e` and verifies every required upstream file by SHA-256.
+This optional package exposes pinned RTLLM tasks through VeriGym without redistributing the
+benchmark. A frozen manifest inventories all 50 task directories and 207 files at commit
+`41b26896e33b536940116a975626455eed3de65e`; loading fails if the checkout tree or any qualified
+task asset drifts. Runnable variants remain an explicit, separately qualified subset of that
+inventory.
 
 ```bash
 git clone https://github.com/hkust-zhiyao/RTLLM.git /path/to/RTLLM
@@ -14,6 +15,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_counter
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant up_down_counter_iverilog_training
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-harder-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -39,6 +42,31 @@ Both AgentEval variants fail closed unless the resolved `iverilog` and `vvp` ide
 version 12. The opt-in qualification test checks the pinned image against reference and known-bad
 candidates, so an unqualified image is not silently published under the AgentEval identity.
 
+`v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
+`radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
+`rtllm/v2-agent-eval-functional-harder-v1/<task-name>`. Each task has one repository-relative RTL
+entry and an independent public candidate-only functional smoke. The public smoke is not copied
+from the upstream hidden test and may be rerun during an episode. The hidden functional verifier
+runs only after one typed `finish`; hidden auxiliary files are mounted only in the final verifier
+workspace. In particular, `asyn_fifo` keeps `wfull.txt`, `rempty.txt`, and `tdata.txt` out of the
+model workspace and persisted trajectory.
+
+The final-submission requirement is enforced by both live execution and verifier-enabled replay.
+If an episode ends without typed `finish`, the verifier DAG contains only skipped placeholders and
+no hidden asset is staged or executed.
+
+The manifest retains the exact upstream prompt and hash, and appends a separately identified
+projection note. The asynchronous FIFO projection fixes `WIDTH=8` and `DEPTH=16`, permits its RAM
+submodule in the same candidate file, and derives pointer widths from `DEPTH`. Two deterministic
+hidden-testbench compatibility projections are hash-bound: divider stimulus is edge-aligned for
+the frozen handshake contract, and the asynchronous FIFO's unsupported Icarus 12 loop `break` is
+rewritten as an equivalent named-block exit. Neither projection changes hidden vectors, expected
+outputs, or pass/fail logic. The original upstream bytes and their hashes remain in the frozen
+source manifest.
+
+Results from this harder partition must carry `diagnostic_only=true` and
+`benchmark_score_claimed=false`; they are not native RTLLM leaderboard scores.
+
 RTLLM is MIT-licensed. Synopsys tools and licenses are neither included nor required by ordinary
 VeriGym CI; commercial execution is site-local and opt-in.
 
@@ -52,5 +80,7 @@ The supported functional-version matrix is intentionally partitioned:
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and
 [the phase-one qualification](../../docs/audits/rtl_commercial_mcp_qualification_v1.md) and
 [the phase-two worker qualification](../../docs/audits/rtl_agent_dc_worker_qualification_v2.md)
-for bounded reference/known-bad evidence. These checks qualify infrastructure; they are not a
-benchmark score.
+for bounded reference/known-bad evidence. The
+[32-run harder diagnostic](../../docs/audits/rtllm_harder_multiturn_codex_32_diagnostic_v1.md)
+records the new partition's frozen campaign and its post-run integrity finding. These checks
+qualify infrastructure; they are not a benchmark score.
