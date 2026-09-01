@@ -265,6 +265,16 @@ both path values, the raw exception, command line, and provider/proxy values. An
 separately reviewed v48 identity that binds the exact stop evidence and its merged audit. Correcting
 the argument and rerunning v47 is prohibited.
 
+The separately versioned v48 authorization binds the exact v47 stop receipt, evidence tree,
+merged audit, and green post-merge main run. It additionally compares the resolved v37 and v47
+stop directories with their reviewed absolute identities before tokenizer loading or output
+creation, and regression tests require both reviewed command arguments to retain the complete
+`-pre-output-stop-v1` suffix. V48 may use only the still-unattempted PR-2802 then PR-3204 schedule
+under a fresh campaign, agent, opt-in, broker, and output identity. The provider, six-plane,
+exact-64K, zero-retry, command-image, and stop policies remain unchanged. V48 authorizes no formal
+collection, training, GPU work, or held-out loading; a successful canary still requires a separate
+result audit and green post-merge main run.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
