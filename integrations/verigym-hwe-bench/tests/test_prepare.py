@@ -83,6 +83,19 @@ def test_reference_patch_preflight_accepts_text_edits_and_additions() -> None:
     assert addition.docker_accessed is False
 
 
+def test_reference_patch_preflight_ignores_git_worktree_subdirectory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(Path(__file__).resolve().parent)
+
+    result = reference_patch_compatibility(
+        _patch_instance(patch=_TEXT_EDIT_PATCH, modified_files=["rtl/a.sv"])
+    )
+
+    assert result.compatible is True
+    assert result.patch_file_count == 1
+
+
 @pytest.mark.parametrize(
     ("patch", "modified_files", "reason"),
     [

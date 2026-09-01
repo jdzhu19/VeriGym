@@ -190,4 +190,4 @@ def test_adapter_uses_configured_tempdir_instead_of_source_parent(
     assets = suite.resolve_assets(task)
     assert Path(assets.visible_root).parent == scratch.resolve()
     assert suite.reference_solution(task) is not None
-    assert requested_parents == [None, None]
+    assert requested_parents == [None, None, None]

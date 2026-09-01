@@ -83,6 +83,8 @@ def _command(
     *,
     timeout_s: int = 300,
     input_bytes: bytes | None = None,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         return subprocess.run(
@@ -91,6 +93,8 @@ def _command(
             capture_output=True,
             check=False,
             timeout=timeout_s,
+            cwd=cwd,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise ConfigurationError(f"required executable is unavailable: {argv[0]}") from exc
@@ -144,16 +148,26 @@ def reference_patch_compatibility(instance: HweInstance) -> ReferencePatchCompat
     if any(not _safe_patch_path(path) for path in instance.modified_files):
         return _patch_compatibility_result(reason="unsafe_modified_file_path")
     patch = instance.fix_patch.encode("utf-8")
-    numstat = _command(
-        ["git", "apply", "--numstat", "-z", "-"],
-        timeout_s=60,
-        input_bytes=patch,
-    )
-    summary = _command(
-        ["git", "apply", "--summary", "-"],
-        timeout_s=60,
-        input_bytes=patch,
-    )
+    with tempfile.TemporaryDirectory(prefix="verigym-hwe-patch-metadata-") as temporary:
+        metadata_root = Path(temporary).resolve(strict=True)
+        git_environment = {
+            **os.environ,
+            "GIT_CEILING_DIRECTORIES": str(metadata_root.parent),
+        }
+        numstat = _command(
+            ["git", "apply", "--numstat", "-z", "-"],
+            timeout_s=60,
+            input_bytes=patch,
+            cwd=metadata_root,
+            env=git_environment,
+        )
+        summary = _command(
+            ["git", "apply", "--summary", "-"],
+            timeout_s=60,
+            input_bytes=patch,
+            cwd=metadata_root,
+            env=git_environment,
+        )
     if (
         numstat.returncode != 0
         or summary.returncode != 0
