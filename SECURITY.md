@@ -181,6 +181,21 @@ mandatory. V42 has no provider client or episode surface and cannot start canary
 formal collection, training, GPU work, or held-out loading. A later PR-2589 provider attempt
 requires a new authorization and becomes single-use as soon as its first provider episode starts.
 
+The separately versioned OpenHands v43 authorization may execute only the v42 PR-2589 training
+binding followed by the still-unstarted v33 PR-3204 validation binding. It directly binds the
+sealed v41 PR-2549 token-budget failure and the complete audited v42 result, including its exact
+evidence tree, catalog, contract, image locks, security scans, and green post-merge main run. V43
+uses a fresh campaign, agent-version, seed, sample, broker, output, receipt, and opt-in identity;
+no predecessor output is replayed, reconstructed, or relabelled.
+
+Both command containers remain credential-free and Codex-free with `network=none`. Before output
+and before provider construction, the runner validates all predecessor inventories, source locks,
+the tokenizer/model lock, dependency versions, and both command-runtime/adapter paths with zero
+provider calls. Each started task is single-use with zero request and episode retries. Any failed
+training plane prevents validation from starting; infrastructure or security failure stops
+immediately. A two-task pass may set only `formal_collection_allowed=true` pending a separate
+result audit. V43 cannot itself start formal collection, training, GPU work, or held-out loading.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
