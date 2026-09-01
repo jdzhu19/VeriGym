@@ -196,6 +196,17 @@ training plane prevents validation from starting; infrastructure or security fai
 immediately. A two-task pass may set only `formal_collection_allowed=true` pending a separate
 result audit. V43 cannot itself start formal collection, training, GPU work, or held-out loading.
 
+The separately versioned OpenHands v44 authorization is a zero-provider successor to the sealed
+v43 ordinary token-budget failure. It never retries or relabels PR-2589 and keeps the earlier
+PR-2549 failure immutable. Instead, it binds the complete v43 evidence tree and post-merge
+eight-class check, materializes one task-distinct PR-2802 command image from its frozen public
+task/source/verifier lock, and reuses only the still-unstarted v33 PR-3204 validation binding. The
+same v2 content-free scan, cleanup receipt, network-none runtime, exact ripgrep identity, and
+conservative six-image headroom policy remain mandatory. V44 has no provider client or episode
+surface and cannot start canary execution, formal collection, training, GPU work, or held-out
+loading. A later PR-2802 provider attempt requires a new authorization and becomes single-use as
+soon as its first provider episode starts.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
