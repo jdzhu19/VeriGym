@@ -309,6 +309,14 @@ task-locked Codex-free command images with `network=none`, and requires exact-64
 trajectory admission. It does not authorize formal collection, training, GPU work, or held-out
 loading; even a passing canary requires a separate merged result audit and green main workflow.
 
+The sole authorized v50 provider run consumed PR-2916 as an ordinary model/trajectory failure. It
+made 40 provider calls in one episode, exhausted the fixed one-million-token budget, produced no
+candidate write or patch, and failed the verifier, protocol, trajectory, and SFT-admission planes
+while infrastructure and security remained valid. PR-3204 did not start. V50, its output, and
+PR-2916 are frozen; the task cannot be retried under a larger budget, changed prompt, or successor
+identity. Any successor must bind the complete failed tree, merged audit, and green post-merge main
+run, use a new identity and unattempted training task, and preserve the same fail-closed controls.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
