@@ -142,13 +142,22 @@ def _safe_patch_path(value: str) -> bool:
     )
 
 
-def reference_patch_compatibility(instance: HweInstance) -> ReferencePatchCompatibility:
+def reference_patch_compatibility(
+    instance: HweInstance, *, temporary_root: Path | None = None
+) -> ReferencePatchCompatibility:
     """Classify reference-patch shape without touching Docker, a repository, or the network."""
 
     if any(not _safe_patch_path(path) for path in instance.modified_files):
         return _patch_compatibility_result(reason="unsafe_modified_file_path")
+    resolved_temporary_root: Path | None = None
+    if temporary_root is not None:
+        if temporary_root.is_symlink() or not temporary_root.is_dir():
+            raise ConfigurationError("reference-patch temporary root is unsafe")
+        resolved_temporary_root = temporary_root.resolve(strict=True)
     patch = instance.fix_patch.encode("utf-8")
-    with tempfile.TemporaryDirectory(prefix="verigym-hwe-patch-metadata-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="verigym-hwe-patch-metadata-", dir=resolved_temporary_root
+    ) as temporary:
         metadata_root = Path(temporary).resolve(strict=True)
         git_environment = {
             **os.environ,
