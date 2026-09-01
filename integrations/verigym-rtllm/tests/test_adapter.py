@@ -12,6 +12,10 @@ from verigym.schemas.suite import SuiteSourceSnapshot
 from verigym_rtllm import RTLLMSuite
 from verigym_rtllm.adapter import (
     ALL_AGENT_EVAL_VARIANT,
+    FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256,
+    FULL_FUNCTIONAL_TASK_IDENTITIES_SHA256,
+    FULL_FUNCTIONAL_VARIANT,
+    FULL_FUNCTIONAL_WORKSPACE_ASSETS_SHA256,
     HARDER_VARIANT,
     L2_BATCH1_PUBLIC_SMOKE_SHA256,
     L2_BATCH1_VARIANT,
@@ -31,6 +35,7 @@ from verigym_rtllm.manifest import (
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
     L2_BATCH2_TASK_NAMES,
+    L2_FULL_REMAINING_TASK_NAMES,
     TASK_MANIFESTS,
 )
 
@@ -94,6 +99,42 @@ def test_l2_batch2_variant_is_explicit(tmp_path: Path) -> None:
     assert configured.validate_source().valid is False
     assert set(L2_BATCH2_PUBLIC_SMOKE_SHA256) == set(L2_BATCH2_TASK_NAMES)
     assert all(len(digest) == 64 for digest in L2_BATCH2_PUBLIC_SMOKE_SHA256.values())
+
+
+def test_full_functional_variant_is_explicit_and_hash_complete(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=FULL_FUNCTIONAL_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+    assert set(FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256) == set(ALL_TASK_NAMES)
+    assert len(L2_FULL_REMAINING_TASK_NAMES) == 38
+    assert all(len(digest) == 64 for digest in FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256.values())
+    workspace_hashes = configured._full_workspace_asset_hashes()
+    assert set(workspace_hashes) == set(ALL_TASK_NAMES)
+    assert content_hash(workspace_hashes) == FULL_FUNCTIONAL_WORKSPACE_ASSETS_SHA256
+
+
+@pytest.mark.parametrize(
+    ("name", "projection"),
+    [
+        ("edge_detect", "edge-detection-boolean-guard-v1"),
+        ("square_wave", "square-wave-observability-guard-v1"),
+    ],
+)
+def test_full_functional_judgeability_guards_do_not_change_l1_manifest_identity(
+    tmp_path: Path, name: str, projection: str
+) -> None:
+    base = TASK_MANIFESTS[name]
+    l1 = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=ALL_AGENT_EVAL_VARIANT)
+    )
+    full = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=FULL_FUNCTIONAL_VARIANT)
+    )
+
+    assert base.testbench_projection == "identity-v1"
+    assert l1._effective_manifest(base) is base
+    assert full._effective_manifest(base).testbench_projection == projection
 
 
 def test_l2_batch2_public_smoke_hash_is_enforced(
@@ -328,6 +369,15 @@ def test_l2_batch2_known_bad_controls_are_distinct_and_compile_shaped(
     assert len(content_hash(source)) == 64
 
 
+@pytest.mark.parametrize("name", ALL_TASK_NAMES)
+def test_full_functional_known_bad_controls_are_distinct_and_compile_shaped(name: str) -> None:
+    categories = ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
+    sources = [known_bad_source(name, category) for category in categories]
+    assert len(set(sources)) == 4
+    assert all(f"module {TASK_MANIFESTS[name].candidate_top}" in source for source in sources)
+    assert all(len(source) < 4_000 for source in sources)
+
+
 def test_asyn_fifo_workspace_exposes_both_candidate_modules() -> None:
     suite = RTLLMSuite()
     source = (suite._harder_workspace_root / "rtl" / "asyn_fifo.v").read_text(encoding="utf-8")
@@ -363,6 +413,37 @@ def test_asyn_fifo_workspace_exposes_both_candidate_modules() -> None:
             "module tb;\n  initial begin\n    repeat (2) begin // sample both edges\n"
             "      #4; // sample\n      error = error + 1;\n      #1;\n"
             "    end\n  end\nendmodule\n",
+            "unused",
+            "unused",
+        ),
+        (
+            "edge-detection-boolean-guard-v1",
+            "error = (rise != 0 && down != 0) ? error+1 : error;\n"
+            "error = (rise != 1 && down != 0) ? error+1 : error;\n"
+            "error = (rise != 0 && down != 1) ? error+1 : error;\n"
+            "error = (rise != 0 && down != 0) ? error+1 : error;\n",
+            "error = (rise != 0 || down != 0) ? error+1 : error;\n"
+            "error = (rise != 1 || down != 0) ? error+1 : error;\n"
+            "error = (rise != 0 || down != 1) ? error+1 : error;\n"
+            "error = (rise != 0 || down != 0) ? error+1 : error;\n",
+            "unused",
+            "unused",
+        ),
+        (
+            "square-wave-observability-guard-v1",
+            "integer error = 0;       // Error flag\n"
+            "if (wave_out_tb == 1) begin\n"
+            "                ones_count = ones_count + 1;\n"
+            "if (error == 0) begin\n"
+            '            $display("=========== Your Design Passed ===========");\n',
+            "integer error = 0;       // Error flag\n"
+            "    integer high_samples = 0;\n"
+            "if (wave_out_tb == 1) begin\n"
+            "                ones_count = ones_count + 1;\n"
+            "                high_samples = high_samples + 1;\n"
+            "if (high_samples == 0) error = 1;\n"
+            "        if (error == 0) begin\n"
+            '            $display("=========== Your Design Passed ===========");\n',
             "unused",
             "unused",
         ),
@@ -521,6 +602,66 @@ def test_l2_batch2_discovery_loading_feedback_and_isolation() -> None:
         assert len(assets.read_only_mounts) == 1
         public_smoke = Path(assets.read_only_mounts[0].source_dir) / "assets" / "public-smoke.sv"
         assert public_smoke.is_file()
+        visible_names = {path.relative_to(visible).as_posix() for path in visible.rglob("*")}
+        assert "verifier/testbench.v" not in visible_names
+        assert not set(manifest.auxiliary_files).intersection(visible_names)
+        assert [asset.mount_path for asset in assets.hidden_assets] == [
+            "verifier/testbench.v",
+            *manifest.auxiliary_files,
+        ]
+
+        cases = list(suite.public_conformance_cases(task))
+        assert [case.expected_resolved for case in cases] == [
+            True,
+            False,
+            False,
+            False,
+            False,
+        ]
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check the full functional L2 projection",
+)
+def test_full_functional_discovery_loading_feedback_and_isolation() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=FULL_FUNCTIONAL_VARIANT,
+        )
+    )
+
+    assert suite.validate_source().valid
+    refs = list(suite.discover())
+    assert [ref.native_id for ref in refs] == list(ALL_TASK_NAMES)
+    assert (
+        content_hash({ref.native_id: content_hash(suite.load_task(ref)) for ref in refs})
+        == FULL_FUNCTIONAL_TASK_IDENTITIES_SHA256
+    )
+    for ref in refs:
+        task = suite.load_task(ref)
+        manifest = TASK_MANIFESTS[ref.native_id]
+        assert task.id == f"rtllm/{FULL_FUNCTIONAL_VARIANT}/{manifest.name}"
+        assert task.metadata["gym_qualification_level"] == "L2_functional_smoke"
+        assert task.metadata["agent_eval"]["ppa_supported"] is False
+        assert task.metadata["diagnostic_only"] is True
+        assert task.metadata["benchmark_score_claimed"] is False
+        assert task.scoring.ppa_enabled is False
+        assert task.scoring.correctness_required_nodes == ["functional_hidden"]
+
+        assets = suite.resolve_assets(task)
+        visible = Path(assets.visible_root)
+        candidate = visible / "repository" / "rtl" / f"{manifest.name}.v"
+        assert f"module {manifest.candidate_top}" in candidate.read_text(encoding="utf-8")
+        assert len(assets.read_only_mounts) == 1
+        public_smoke = Path(assets.read_only_mounts[0].source_dir) / "assets/public-smoke.sv"
+        assert public_smoke.is_file()
+        assert (
+            hashlib.sha256(public_smoke.read_bytes()).hexdigest()
+            == (FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256[manifest.name])
+        )
         visible_names = {path.relative_to(visible).as_posix() for path in visible.rglob("*")}
         assert "verifier/testbench.v" not in visible_names
         assert not set(manifest.auxiliary_files).intersection(visible_names)

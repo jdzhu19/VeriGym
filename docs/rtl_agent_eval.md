@@ -10,8 +10,10 @@ contract before any model lookup.
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
 - RTLLM full corpus: `v2-agent-eval-all-v1` provides L1 candidate-only compile feedback for all
   50 frozen tasks; `v2-agent-eval-functional-l2-batch1-v1` adds PPA-disabled L2 functional
-  feedback for three evidence-selected tasks; `v2-agent-eval-functional-harder-v1` remains the
-  separately qualified L2/L3 four-task diagnostic partition.
+  feedback for three evidence-selected tasks; `v2-agent-eval-functional-all-v1` provides a
+  separately frozen, PPA-disabled L2 projection for all 50; and
+  `v2-agent-eval-functional-harder-v1` remains the separately qualified L2/L3 four-task diagnostic
+  partition.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
   source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
@@ -30,6 +32,15 @@ the final result remains a derived diagnostic projection with the upstream task 
 The bounded [12-task L1 Codex pilot](audits/rtllm_full_l1_codex_12task_pilot_v1.md) demonstrates
 this boundary in practice: nine first-pass public compiles produced six hidden passes and three
 hidden rejections, while three no-finish episodes did not execute the hidden verifier.
+
+The later `v2-agent-eval-functional-all-v1` projection is a distinct task identity. It preserves
+the same frozen 50-task source inventory but replaces compile-only feedback with one independent,
+hash-bound candidate-only functional smoke per task. It records
+`gym_qualification_level=L2_functional_smoke`, keeps PPA disabled, and retains final-only hidden
+verification. Its [qualification record](audits/rtllm_full_corpus_l2_qualification_v1.md) covers
+50 reference candidates and 200 four-category controls through both public and hidden paths. L2
+means useful repeatable functional feedback, not exhaustive correctness, synthesis qualification,
+or a native RTLLM score.
 
 The separately frozen L2 batch-one projection also sets `ppa_supported=false`, but replaces the
 compile-only contract with an independent public functional smoke for `adder_pipe_64bit`, `LFSR`,

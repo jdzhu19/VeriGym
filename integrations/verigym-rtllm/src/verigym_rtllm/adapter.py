@@ -7,7 +7,7 @@ import json
 import re
 import subprocess
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,7 @@ from .manifest import (
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
     L2_BATCH2_TASK_NAMES,
+    L2_FULL_REMAINING_TASK_NAMES,
     TASK_MANIFESTS,
     RTLLMTaskManifest,
 )
@@ -97,6 +98,73 @@ L2_BATCH2_PUBLIC_SMOKE_SHA256 = {
     "synchronizer": "ce1663a66d4c9cb93f6328559bc5a6c6bc35565cfa04bcf1a4ab0b9c4dd7a296",
     "RAM": "57b07132eaee886a2957730036fd879ea9bddc2b242aada596afdc654acba464",
 }
+FULL_FUNCTIONAL_VARIANT = "v2-agent-eval-functional-all-v1"
+FULL_FUNCTIONAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-all-v1"
+FULL_FUNCTIONAL_ADAPTER_VERSION = "0.10.0"
+FULL_FUNCTIONAL_TASK_IDENTITIES_SHA256 = (
+    "9a36fdf432c0cbfc2dfaef7a2b067a5ef02b83578e38c0f2015113e7ae9e3d38"
+)
+FULL_FUNCTIONAL_WORKSPACE_ASSETS_SHA256 = (
+    "c66f51cdc10bb94b7f53c9dea74db243e108fa96b629dc9398941171f732de68"
+)
+FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256 = {
+    "counter_12": "4dc46ec9f47d38c1ac877e28b4e37f9dc8e3e836577d95e79531e10a78b02bb5",
+    "up_down_counter": "528429b7a76496618ffe5c737d759c894f8fcef885118dc4341e4351dc1b0d6c",
+    "radix2_div": "1e362ef8c0d2e2ab3643a01de647c906b650191d8f43ae593899a6d4d155222e",
+    "multi_pipe_8bit": "2fb805ad96b763e20ceea8a4ed684d3c3f9f1aa8986b8657e80c6e8a2849db6b",
+    "LIFObuffer": "6652bebc9e2ccdb2a0695eee18b9ada4281fc9a12f121e6206d814c1794116a5",
+    "asyn_fifo": "bb07ff20e06dfb4afa2cfa222027e5148a2b518547ea4e68ab4bb2101097f6a2",
+    **L2_BATCH1_PUBLIC_SMOKE_SHA256,
+    **L2_BATCH2_PUBLIC_SMOKE_SHA256,
+    "JC_counter": "b19679518775852fd06636a9d339a88118e11a196341dc90456b4529fe9f800f",
+    "ROM": "73d28acd24fdf491ac6a01bbdf9150a2eadaf4c1cc11170e9adae03fe293b21e",
+    "accu": "9e99742127fd926417929be05adeef6cfee03339581457b4fb026c471608ed9c",
+    "adder_16bit": "77de75833ec6731e4355b9c0035f990a39f46013a992c6f1f66e435f82c4ae66",
+    "adder_32bit": "7123539af00ac91c2ffbce02cdde0b19339abebad95d2ac0c96108b248cc6e97",
+    "adder_8bit": "ae6a0e4de0ea416aae40a6700afeaf1871bcc3e1e05ceaa9abe5262553049d57",
+    "adder_bcd": "df9347842719791d3fe30a6af165a4ed055fae4dc6babbcb57f3a75b001aa7c3",
+    "alu": "ec9d88ffd9ced1af5f7c136aa9e17cfe69f21af4b357314df6dec08e9bbed333",
+    "barrel_shifter": "f776d56e42da742c6eaef7e607df862fccc772f5dab29caf473158ce2690da80",
+    "calendar": "e81187927ea80159dff633cf4566817db2331522bb5b4c71ce6cd1e1669e1f8d",
+    "clkgenerator": "c0a2559bc60b47d5886431297b8e8309403e6be249cd6f7c511d42eb95712c23",
+    "comparator_3bit": "13517d6a327eee41159b303792285d0b38f88f41fe3ca86a6ed8ba5ae0d5a0ec",
+    "comparator_4bit": "a4039875d67c3c7979e3d2eb37ecd4f8c7ee063e72e3e41c541c97c3b767e7dd",
+    "div_16bit": "bedb9d0c31c18a4cd65ecf027d6d008e4d9c6885dfa6857cf2e10b4e2f0a4a4a",
+    "edge_detect": "e276cfc78ccdf8de9b189f1be95676d7c9d4a5e2f94b913f9450f996a1ca0a58",
+    "fixed_point_adder": "f725591c2f1072361d20ee9202b2e9447253669dc4f2260bfb0b4a9f9e1f5336",
+    "fixed_point_substractor": "9f1afe542103102ffbd8ba4890ac93b3aa39bead7e1eaf9b3df31cdcaba7b883",
+    "float_multi": "89ff830b38ef99c7860caadab06df6efc4fa1a20a98f28851d70c3e8762e078c",
+    "freq_div": "656856124074eb67251d3a6d638f5504ba33bbab1e39169032242ae5875e1458",
+    "freq_divbyeven": "d1cd58d814cdeb3b3f809d48b641909662ef17d630fa982271460d4b8ed6b3ed",
+    "freq_divbyfrac": "7f8fa3c347490ef443c6ce00ca9141f08d2af830ea1f6841ac2c8cc070cf0d51",
+    "freq_divbyodd": "b5a9ffa73873172b22d4b84c4863dce0b1db6b1da591cf5843b5ac1f8de70e88",
+    "fsm": "b9c609ddf787cbd54224f70966d4daf0aa866697eeaa3b0729eb871a6e4f2990",
+    "instr_reg": "fbec4d72d3b94b15f32fbaf6f073f9c162def62fc74e4dfbe3719b5cf872d825",
+    "multi_16bit": "9f8c35690296212984076182c51402819cafedc0e94f49e920081e9424903058",
+    "multi_8bit": "2437552d33fd1973c0e929ec0f28dbe43e6a21e061923b9bee26c7fefc2d2e3f",
+    "multi_booth_8bit": "ccb942159a37550b56c5b9f781c472ec41c1434194fad9f695a0263bd7e8aa7d",
+    "multi_pipe_4bit": "262275e5ed3c6d223c21f31123f0b7483e7130bf9274585417ee385ce7ad14c6",
+    "parallel2serial": "93d011aad03ef7316ff83479ef56eec52944f27c131174c46ceb0b8dcb79b1dc",
+    "pe": "9112876ce6ea771235626c9ebd73205b908428b54e5afa1041b6c1c538fe78ab",
+    "pulse_detect": "abe5b5d89354326164d4839c7eb48a6cb826c493007b245f2f20b5929d0a9cd8",
+    "right_shifter": "f8fca558340d8e5b6fe68decd8b03c7044879e958844d52424d51ef0b2348199",
+    "ring_counter": "1380e2bad16f8790505d0be6088491a5f57454f805201995cc37b9e2c54e6fe5",
+    "signal_generator": "448f6f958afe4ee5e5ad9efc3d551bac9534fe443d755057bcbc6ff66db4aae9",
+    "square_wave": "f004fd758f0a92160082115e03f7bf4a0e24569a725d61d6a311bd80bdf1f63d",
+    "sub_64bit": "ba7ea36c60722f4045a2fbf2675d9478614b312feeadd7b0ab5bf5dd9cddfb33",
+    "traffic_light": "86022aaa2a54e9007f012d6be77197617ad54418cc8ce7d8d3f88ad095b47456",
+    "width_8to16": "e4a3f15cdec126c0af6b88a65cc411735398501aaabdd565cd1421a9da672ade",
+}
+_FULL_FUNCTIONAL_HIDDEN_PROJECTIONS = {
+    "edge_detect": (
+        "edge-detection-boolean-guard-v1",
+        "1977e8409bdac622923e0410fe2df517497b5ca00a6245689d98b2e0decd7eda",
+    ),
+    "square_wave": (
+        "square-wave-observability-guard-v1",
+        "7aed90f4de40fdc561324c4eeb62e84ae1e85eed887c69418cf7ba540eac5c7b",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -131,6 +199,16 @@ _FUNCTIONAL_BATCH_SPECS = {
         public_smoke_sha256=L2_BATCH2_PUBLIC_SMOKE_SHA256,
         evaluation_profile="icarus12-agent-eval-functional-l2-batch2-v1",
         public_feedback_semantics="compile_and_independent_functional_smoke_l2_batch2_v1",
+    ),
+    FULL_FUNCTIONAL_VARIANT: _FunctionalBatchSpec(
+        task_names=ALL_TASK_NAMES,
+        suite_version=FULL_FUNCTIONAL_SUITE_VERSION,
+        adapter_version=FULL_FUNCTIONAL_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_full",
+        public_smoke_asset="public_smoke_l2_full",
+        public_smoke_sha256=FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-agent-eval-functional-all-v1",
+        public_feedback_semantics="compile_and_independent_functional_smoke_l2_all_v1",
     ),
 }
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
@@ -244,6 +322,7 @@ class RTLLMSuite(SuiteAdapter):
         }
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._agent_workspaces: list[AgentEvalWorkspace] = []
+        self._full_workspace_asset_hashes_cache: dict[str, str] | None = None
 
     def with_source(self, config: SuiteSourceConfig) -> RTLLMSuite:
         if config.variant not in {None, *_SUPPORTED_VARIANTS}:
@@ -825,6 +904,8 @@ class RTLLMSuite(SuiteAdapter):
             return "workspace_all"
         if self._variant() == HARDER_VARIANT:
             return "workspace_harder"
+        if self._variant() == FULL_FUNCTIONAL_VARIANT:
+            return self._full_functional_asset_folders(manifest.name)[0]
         if batch := _FUNCTIONAL_BATCH_SPECS.get(self._variant()):
             return batch.workspace_asset
         return "workspace_up_down" if manifest.name == "up_down_counter" else "workspace"
@@ -834,6 +915,9 @@ class RTLLMSuite(SuiteAdapter):
             return self._all_workspace_root
         if self._variant() == HARDER_VARIANT:
             return self._harder_workspace_root
+        if self._variant() == FULL_FUNCTIONAL_VARIANT:
+            workspace, _ = self._full_functional_asset_folders(manifest.name)
+            return Path(__file__).parent / "assets" / workspace
         if self._variant() in self._functional_batch_workspace_roots:
             return self._functional_batch_workspace_roots[self._variant()]
         if manifest.name == "up_down_counter":
@@ -913,9 +997,39 @@ class RTLLMSuite(SuiteAdapter):
                 "locations at addresses 0 through 7. Reads are synchronous, and `read_data` "
                 "clears when `read_en` is low."
             ),
-        }.get(manifest.name)
-        if task_note is None:
-            raise ConfigurationError("RTLLM derived projection is not declared")
+            "accu": (
+                " This projection checks groups of four consecutive `valid_in` samples and the "
+                "associated `valid_out` result pulse."
+            ),
+            "fixed_point_adder": " This projection uses the upstream sign-magnitude encoding.",
+            "fixed_point_substractor": (
+                " The task path retains the upstream `substractor` spelling; the required DUT "
+                "module is `fixed_point_subtractor` and uses the upstream sign-magnitude encoding."
+            ),
+            "multi_pipe_4bit": (
+                " This projection fixes `size=4` and checks the upstream two-edge pipeline timing."
+            ),
+            "float_multi": (
+                " This projection checks normal finite IEEE-754 single-precision products at the "
+                "upstream staged output timing."
+            ),
+            "freq_divbyeven": (
+                " The task path retains the upstream `freq_divbyeven` spelling; the required DUT "
+                "module is `freq_diveven`."
+            ),
+            "clkgenerator": (
+                " Because the upstream source does not declare a timescale, the public smoke "
+                "checks stable, equal, nonzero half-periods rather than an absolute time unit."
+            ),
+            "parallel2serial": (
+                " This projection checks the upstream load/shift cadence and serialized bit order."
+            ),
+            "alu": (
+                " The public smoke exercises the result, zero, and comparison behavior that the "
+                "upstream reference drives; final correctness remains determined by the hidden "
+                "verifier."
+            ),
+        }.get(manifest.name, "")
         return common + task_note
 
     def _public_smoke(self, name: str) -> str:
@@ -923,6 +1037,8 @@ class RTLLMSuite(SuiteAdapter):
         folder = (
             "public_smoke_harder"
             if self._variant() == HARDER_VARIANT
+            else self._full_functional_asset_folders(name)[1]
+            if self._variant() == FULL_FUNCTIONAL_VARIANT
             else batch.public_smoke_asset
             if batch is not None
             else "public_smoke"
@@ -938,9 +1054,40 @@ class RTLLMSuite(SuiteAdapter):
         return smoke
 
     @staticmethod
-    def _hidden_asset_declarations(manifest: RTLLMTaskManifest) -> list[AssetRef]:
-        hashes = dict(manifest.file_hashes)
-        testbench_hash = manifest.testbench_projection_sha256 or hashes[manifest.testbench_file]
+    def _full_functional_asset_folders(name: str) -> tuple[str, str]:
+        if name in {"counter_12", "up_down_counter"}:
+            workspace = "workspace_up_down" if name == "up_down_counter" else "workspace"
+            return workspace, "public_smoke"
+        if name in HARDER_TASK_NAMES:
+            return "workspace_harder", "public_smoke_harder"
+        if name in L2_BATCH1_TASK_NAMES:
+            return "workspace_l2_batch1", "public_smoke_l2_batch1"
+        if name in L2_BATCH2_TASK_NAMES:
+            return "workspace_l2_batch2", "public_smoke_l2_batch2"
+        if name in L2_FULL_REMAINING_TASK_NAMES:
+            return "workspace_l2_full", "public_smoke_l2_full"
+        raise ConfigurationError(f"unknown RTLLM full functional task: {name}")
+
+    def _full_workspace_asset_hashes(self) -> dict[str, str]:
+        if self._full_workspace_asset_hashes_cache is not None:
+            return dict(self._full_workspace_asset_hashes_cache)
+        assets = Path(__file__).parent / "assets"
+        hashes: dict[str, str] = {}
+        for name in ALL_TASK_NAMES:
+            workspace, _ = self._full_functional_asset_folders(name)
+            path = assets / workspace / "rtl" / f"{name}.v"
+            if path.is_symlink() or not path.is_file():
+                raise ConfigurationError("RTLLM full functional workspace asset is unavailable")
+            hashes[name] = _hash_bytes(path.read_bytes())
+        if content_hash(hashes) != FULL_FUNCTIONAL_WORKSPACE_ASSETS_SHA256:
+            raise ConfigurationError("RTLLM full functional workspace assets differ from identity")
+        self._full_workspace_asset_hashes_cache = hashes
+        return dict(hashes)
+
+    def _hidden_asset_declarations(self, manifest: RTLLMTaskManifest) -> list[AssetRef]:
+        effective = self._effective_manifest(manifest)
+        hashes = dict(effective.file_hashes)
+        testbench_hash = effective.testbench_projection_sha256 or hashes[effective.testbench_file]
         return [
             AssetRef(
                 kind="inline",
@@ -958,12 +1105,24 @@ class RTLLMSuite(SuiteAdapter):
     ) -> AssetRef:
         content = _read_exact(self._source_root(), f"{manifest.root}/{source_name}")
         if source_name == manifest.testbench_file:
-            content = self._project_testbench(manifest, content)
+            content = self._project_testbench(self._effective_manifest(manifest), content)
         return AssetRef(
             kind="inline",
             content=content.decode("utf-8"),
             content_hash=_hash_bytes(content),
             mount_path=mount_path,
+        )
+
+    def _effective_manifest(self, manifest: RTLLMTaskManifest) -> RTLLMTaskManifest:
+        if self._variant() != FULL_FUNCTIONAL_VARIANT:
+            return manifest
+        projection = _FULL_FUNCTIONAL_HIDDEN_PROJECTIONS.get(manifest.name)
+        if projection is None:
+            return manifest
+        return replace(
+            manifest,
+            testbench_projection=projection[0],
+            testbench_projection_sha256=projection[1],
         )
 
     @staticmethod
@@ -1188,12 +1347,63 @@ class RTLLMSuite(SuiteAdapter):
                 newline = "\n" if lines[close_index].endswith("\n") else ""
                 lines.insert(close_index, f"{indent}#1;{newline}")
                 projected = "".join(lines).encode("utf-8")
+            elif projection == "edge-detection-boolean-guard-v1":
+                pattern = re.compile(
+                    r"error = \(rise != (?P<rise>[01]) && down != (?P<down>[01])\) "
+                    r"\? error\+1 : error;"
+                )
+                matches = list(pattern.finditer(text))
+                if len(matches) != 4:
+                    raise ConfigurationError(
+                        "RTLLM edge-detection guard projection no longer matches exactly"
+                    )
+                projected = pattern.sub(
+                    lambda match: (
+                        f"error = (rise != {match.group('rise')} || "
+                        f"down != {match.group('down')}) ? error+1 : error;"
+                    ),
+                    text,
+                ).encode("utf-8")
+            elif projection == "square-wave-observability-guard-v1":
+                declaration = "integer error = 0;       // Error flag"
+                high_branch = """if (wave_out_tb == 1) begin
+                ones_count = ones_count + 1;"""
+                summary = """if (error == 0) begin
+            $display("=========== Your Design Passed ===========");"""
+                if (
+                    text.count(declaration) != 1
+                    or text.count(high_branch) != 1
+                    or text.count(summary) != 1
+                ):
+                    raise ConfigurationError(
+                        "RTLLM square-wave guard projection no longer matches exactly"
+                    )
+                projected_text = (
+                    text.replace(
+                        declaration,
+                        declaration + "\n    integer high_samples = 0;",
+                        1,
+                    )
+                    .replace(
+                        high_branch,
+                        high_branch + "\n                high_samples = high_samples + 1;",
+                        1,
+                    )
+                    .replace(
+                        summary,
+                        "if (high_samples == 0) error = 1;\n        " + summary,
+                        1,
+                    )
+                )
+                projected = projected_text.encode("utf-8")
             else:
                 raise ConfigurationError(f"unknown RTLLM testbench projection: {projection}")
             if projection not in {
                 "candidate-module-normalization-v1",
                 "iverilog12-unpacked-array-race-v1",
                 "pre-edge-clock-sampling-v1",
+                "edge-detection-boolean-guard-v1",
+                "square-wave-observability-guard-v1",
             }:
                 if text.count(original) != 1:
                     raise ConfigurationError("RTLLM testbench projection no longer matches exactly")
@@ -1311,6 +1521,7 @@ class RTLLMSuite(SuiteAdapter):
         harder: bool,
         icarus_training: bool,
     ) -> dict[str, Any]:
+        identity_manifest = self._effective_manifest(manifest)
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
         batch = _FUNCTIONAL_BATCH_SPECS.get(variant)
         adapter_version = (
@@ -1399,9 +1610,9 @@ class RTLLMSuite(SuiteAdapter):
                 "candidate_top": manifest.candidate_top,
                 "reference_module": manifest.reference_module,
                 "testbench_top": manifest.testbench_top,
-                "testbench_projection": manifest.testbench_projection,
+                "testbench_projection": identity_manifest.testbench_projection,
                 "testbench_projection_sha256": (
-                    manifest.testbench_projection_sha256
+                    identity_manifest.testbench_projection_sha256
                     or dict(manifest.file_hashes)[manifest.testbench_file]
                 ),
                 "synthesis_top": manifest.synthesis_top,
@@ -1427,6 +1638,10 @@ class RTLLMSuite(SuiteAdapter):
                     "power_base_clock": manifest.power_base_clock,
                 }
             )
+        if variant == FULL_FUNCTIONAL_VARIANT:
+            metadata["workspace_scaffold_sha256"] = self._full_workspace_asset_hashes()[
+                manifest.name
+            ]
         return metadata
 
     @staticmethod

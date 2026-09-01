@@ -329,6 +329,8 @@ provides `synopsys.formality.equivalence` for verifier-only RTL equivalence chec
 ```bash
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_12
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_counter
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-all-v1
 verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
   --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
   --verifier-profile rtllm-counter-vcs-client-v1 \

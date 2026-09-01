@@ -23,6 +23,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-batch1-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-batch2-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-all-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -58,9 +60,12 @@ verifier inputs, with any declared hash-bound compatibility projection, are stag
 `finish`.
 
 All prompt, reference, testbench, auxiliary-file, DUT/top, parser, and projection identities are
-frozen in the metadata catalog. Verifier-only compatibility projections are exact and hash-bound;
-they may normalize a conflicting upstream module name or remove a simulator scheduling ambiguity,
-but never change hidden vectors, expected values, or pass/fail conditions. The opt-in Icarus 12
+frozen in the metadata catalog. Verifier-only projections are exact and hash-bound. Most normalize
+a conflicting upstream module name or remove a simulator scheduling ambiguity. The full L2 variant
+also declares two judgeability guards for underconstrained upstream tests: `edge_detect` corrects
+four conjunctions that otherwise accept a wrong single output, and `square_wave` requires at least
+one observed high sample. Neither guard changes stimulus vectors or expected RTL values. The
+opt-in Icarus 12
 qualification requires every reference to pass public compile and hidden verification and requires
 one missing-module candidate per task to be rejected by the hidden verifier. Full-corpus L1 is not
 the same as L2 functional feedback: only separately qualified functional variants may expose a
@@ -81,6 +86,16 @@ feedback makes those tasks operable without reinterpreting the earlier result. E
 separate hash-frozen public smoke and the same four-category reference/known-bad qualification
 bar. See the
 [L2 batch-two qualification](../../docs/audits/rtllm_l2_batch2_qualification_v1.md).
+
+`v2-agent-eval-functional-all-v1` is the unified 50-task L2 Gym projection. It reuses the twelve
+previously qualified functional assets and adds independent, hash-frozen public smokes and
+candidate skeletons for the remaining 38 tasks. Every task exposes repeatable candidate-only
+functional feedback and one final verifier-only hidden verdict. The variant records
+`gym_qualification_level=L2_functional_smoke`, `diagnostic_only=true`, and
+`benchmark_score_claimed=false`; PPA is disabled. Qualification requires every upstream reference
+to pass and four independently authored controls per task to be rejected by both public and hidden
+paths. See the
+[full L2 qualification](../../docs/audits/rtllm_full_corpus_l2_qualification_v1.md).
 
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
@@ -121,6 +136,8 @@ The supported functional-version matrix is intentionally partitioned:
   feedback for three tasks, and explicitly disables PPA;
 - `v2-agent-eval-functional-l2-batch2-v1` requires Icarus 12, provides public L2 functional
   feedback for three additional tasks, and explicitly disables PPA;
+- `v2-agent-eval-functional-all-v1` requires Icarus 12, provides public L2 functional feedback
+  for all 50 frozen tasks, and explicitly disables PPA;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and

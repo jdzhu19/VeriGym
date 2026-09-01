@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from verigym.plugin_api import ConfigurationError
 
 _COUNTER_BAD = {
@@ -19,8 +22,15 @@ _BAD: dict[str, dict[str, str]] = {
     "radix2_div": {
         "stuck-zero": """
 module radix2_div(input clk, rst, input [7:0] dividend, divisor, input sign, opn_valid,
-                  output res_valid, input res_ready, output [15:0] result);
-  assign res_valid = 1'b0; assign result = 16'b0;
+                  output reg res_valid, input res_ready, output [15:0] result);
+  reg [1:0] wait_count;
+  assign result = 16'b0;
+  always @(posedge clk) begin
+    if (rst) begin res_valid<=0;wait_count<=0; end
+    else if(opn_valid && !res_valid) wait_count<=1;
+    else if(wait_count==1) begin wait_count<=0;res_valid<=1; end
+    else if(res_valid && res_ready) res_valid<=0;
+  end
 endmodule
 """,
         "reset-error": """
@@ -33,9 +43,13 @@ endmodule
 """,
         "protocol-latency-error": """
 module radix2_div(input clk, rst, input [7:0] dividend, divisor, input sign, opn_valid,
-                  output res_valid, input res_ready, output [15:0] result);
-  assign res_valid = opn_valid;
+                  output reg res_valid, input res_ready, output [15:0] result);
   assign result = {dividend % divisor, dividend / divisor};
+  always @(posedge clk) begin
+    if(rst) res_valid<=0;
+    else if(opn_valid) res_valid<=1;
+    else if(res_valid && res_ready) res_valid<=0;
+  end
 endmodule
 """,
         "functional-error": """
@@ -57,8 +71,12 @@ endmodule
     "multi_pipe_8bit": {
         "stuck-zero": """
 module multi_pipe_8bit #(parameter size=8)(input clk, rst_n, input [size-1:0] mul_a, mul_b,
-  input mul_en_in, output mul_en_out, output [size*2-1:0] mul_out);
-  assign mul_en_out = 0; assign mul_out = 0;
+  input mul_en_in, output reg mul_en_out, output [size*2-1:0] mul_out);
+  reg [2:0] valid;
+  assign mul_out = 0;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin valid<=0;mul_en_out<=0; end
+    else begin valid<={valid[1:0],mul_en_in};mul_en_out<=valid[2]; end
 endmodule
 """,
         "reset-error": """
@@ -155,8 +173,12 @@ endmodule
     "adder_pipe_64bit": {
         "stuck-zero": """
 module adder_pipe_64bit #(parameter DATA_WIDTH=64, STG_WIDTH=16)(input clk,rst_n,i_en,
-  input [DATA_WIDTH-1:0] adda,addb,output [DATA_WIDTH:0] result,output o_en);
-  assign result=0; assign o_en=0;
+  input [DATA_WIDTH-1:0] adda,addb,output [DATA_WIDTH:0] result,output reg o_en);
+  reg [3:0] valid;
+  assign result=0;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin valid<=0;o_en<=0; end
+    else begin valid<={valid[2:0],i_en};o_en<=valid[3]; end
 endmodule
 """,
         "reset-error": """
@@ -219,18 +241,26 @@ endmodule
     "serial2parallel": {
         "stuck-zero": """
 module serial2parallel(input clk,rst_n,din_serial,din_valid,
-  output [7:0] dout_parallel,output dout_valid);
-  assign dout_parallel=0; assign dout_valid=0;
+  output [7:0] dout_parallel,output reg dout_valid);
+  reg [3:0] count;
+  assign dout_parallel=0;
+  always @(posedge clk or negedge rst_n)
+    if(!rst_n) begin count<=0;dout_valid<=0; end
+    else if(!din_valid) begin count<=0;dout_valid<=0; end
+    else if(!dout_valid && count==7) begin count<=0;dout_valid<=1; end
+    else if(!dout_valid) count<=count+1;
 endmodule
 """,
         "reset-error": """
 module serial2parallel(input clk,rst_n,din_serial,din_valid,
   output reg [7:0] dout_parallel,output reg dout_valid);
-  reg [7:0] shift; reg [3:0] count;
-  always @(posedge clk or posedge rst_n)
-    if(rst_n) begin shift<=0;count<=0;dout_parallel<=0;dout_valid<=0; end
-    else if(din_valid) begin shift<={shift[6:0],din_serial};count<=count+1;
-      dout_valid<=0; end
+  reg [3:0] count;
+  initial begin count=0;dout_valid=0;dout_parallel=0; end
+  always @(posedge clk) begin
+    if(!din_valid) begin count<=0;dout_valid<=0; end
+    else if(!dout_valid && count==7) begin count<=0;dout_valid<=1;dout_parallel<=8'hff; end
+    else if(!dout_valid) count<=count+1;
+  end
 endmodule
 """,
         "protocol-latency-error": """
@@ -239,9 +269,10 @@ module serial2parallel(input clk,rst_n,din_serial,din_valid,
   reg [7:0] shift; reg [2:0] count;
   always @(posedge clk or negedge rst_n)
     if(!rst_n) begin shift<=0;count<=0;dout_parallel<=0;dout_valid<=0; end
-    else begin dout_valid<=0; if(din_valid) begin shift<={shift[6:0],din_serial};
-      if(count==7) begin dout_parallel<={shift[6:0],din_serial};dout_valid<=1;count<=0; end
-      else count<=count+1; end end
+    else if(!din_valid) begin count<=0;dout_valid<=0; end
+    else if(!dout_valid) begin shift<={shift[6:0],din_serial};
+      if(count==3) begin dout_parallel<={shift[6:0],din_serial};dout_valid<=1;count<=0; end
+      else count<=count+1; end
 endmodule
 """,
         "functional-error": """
@@ -373,10 +404,176 @@ endmodule
     },
 }
 
+# These controls deliberately stay small and independent of the upstream implementation.  The
+# reset-error category is an initial/reset-boundary error for combinational tasks.  The protocol
+# category is a clock-driven free-running response for sequential tasks and an input-wiring error
+# for combinational tasks.  Each is compile-shaped but observably wrong under both public and
+# hidden qualification.
+_GENERATED_CONTROL_SHAPES: dict[str, tuple[tuple[str, ...], str | None, str | None]] = {
+    "counter_12": (("out",), "clk", "valid_count"),
+    "up_down_counter": (("count",), "clk", "up_down"),
+    "accu": (("valid_out", "data_out"), "clk", "data_in"),
+    "adder_16bit": (("y", "Co"), None, "a"),
+    "adder_32bit": (("S", "C32"), None, "A"),
+    "adder_8bit": (("sum", "cout"), None, "a"),
+    "adder_bcd": (("Sum", "Cout"), None, "A"),
+    "comparator_3bit": (("A_greater", "A_equal", "A_less"), None, "A"),
+    "comparator_4bit": (("A_greater", "A_equal", "A_less"), None, "A"),
+    "div_16bit": (("result", "odd"), None, "A"),
+    "multi_16bit": (("yout", "done"), "clk", "ain"),
+    "multi_8bit": (("product",), None, "A"),
+    "multi_booth_8bit": (("p", "rdy"), "clk", "a"),
+    "multi_pipe_4bit": (("mul_out",), "clk", "mul_a"),
+    "fixed_point_adder": (("c",), None, "a"),
+    "fixed_point_substractor": (("c",), None, "a"),
+    "float_multi": (("z",), "clk", "a"),
+    "sub_64bit": (("result", "overflow"), None, "A"),
+    "JC_counter": (("Q",), "clk", "rst_n"),
+    "ring_counter": (("out",), "clk", "reset"),
+    "fsm": (("MATCH",), "CLK", "IN"),
+    "barrel_shifter": (("out",), None, "in"),
+    "right_shifter": (("q",), "clk", "d"),
+    "freq_div": (("CLK_50", "CLK_10", "CLK_1"), "CLK_in", "RST"),
+    "freq_divbyeven": (("clk_div",), "clk", "rst_n"),
+    "freq_divbyfrac": (("clk_div",), "clk", "rst_n"),
+    "freq_divbyodd": (("clk_div",), "clk", "rst_n"),
+    "calendar": (("Hours", "Mins", "Secs"), "CLK", "RST"),
+    "edge_detect": (("rise", "down"), "clk", "a"),
+    "parallel2serial": (("valid_out", "dout"), "clk", "d"),
+    "pulse_detect": (("data_out",), "clk", "data_in"),
+    "traffic_light": (("clock", "red", "yellow", "green"), "clk", "pass_request"),
+    "width_8to16": (("valid_out", "data_out"), "clk", "data_in"),
+    "ROM": (("dout",), None, "addr"),
+    "alu": (("r", "zero", "carry", "negative", "overflow", "flag"), None, "a"),
+    "clkgenerator": (("clk",), None, None),
+    "instr_reg": (("ins", "ad1", "ad2"), "clk", "data"),
+    "pe": (("c",), "clk", "a"),
+    "signal_generator": (("wave",), "clk", "rst_n"),
+    "square_wave": (("wave_out",), "clk", "freq"),
+}
+
+
+def _control_scaffold(name: str) -> str:
+    assets = Path(__file__).parent / "assets"
+    if name == "counter_12":
+        path = assets / "workspace" / "rtl" / "counter_12.v"
+    elif name == "up_down_counter":
+        path = assets / "workspace_up_down" / "rtl" / "up_down_counter.v"
+    else:
+        path = assets / "workspace_l2_full" / "rtl" / f"{name}.v"
+    source = path.read_text(encoding="utf-8")
+    match = re.fullmatch(r"(?s)(.*?\);\s*).*?endmodule\s*", source)
+    if match is None:
+        raise ConfigurationError(f"RTLLM control scaffold is malformed: {name}")
+    return match.group(1).replace("output reg", "output wire")
+
+
+def _generated_control_source(name: str, category: str) -> str:
+    outputs, clock, probe = _GENERATED_CONTROL_SHAPES[name]
+    header = _control_scaffold(name)
+    if category == "stuck-zero" and name == "multi_booth_8bit":
+        body = [
+            "    reg [2:0] control_count;",
+            "    initial control_count = 0;",
+            "    always @(posedge clk) begin",
+            "        if (reset) control_count <= 0;",
+            "        else if (control_count < 3) control_count <= control_count + 1'b1;",
+            "    end",
+            "    assign p = '0;",
+            "    assign rdy = control_count == 2;",
+        ]
+    elif category == "stuck-zero" and name == "parallel2serial":
+        body = [
+            "    reg [2:0] control_phase;",
+            "    always @(posedge clk or negedge rst_n)",
+            "        if (!rst_n) control_phase <= 0;",
+            "        else if (control_phase == 4) control_phase <= 0;",
+            "        else control_phase <= control_phase + 1'b1;",
+            "    assign valid_out = control_phase == 0;",
+            "    assign dout = 1'b0;",
+        ]
+    elif category == "stuck-zero":
+        body = [f"    assign {output} = '0;" for output in outputs]
+    elif category == "reset-error" and name.startswith("comparator_"):
+        body = [
+            "    assign A_greater = 1'b0;",
+            "    assign A_equal = 1'b0;",
+            "    assign A_less = 1'b1;",
+        ]
+    elif category == "reset-error":
+        body = [f"    assign {output} = '1;" for output in outputs]
+    elif category == "protocol-latency-error" and name == "square_wave":
+        body = [
+            "    reg [4:0] control_state;",
+            "    initial control_state = 0;",
+            "    always @(posedge clk) begin",
+            "        if (control_state == 15) control_state <= 0;",
+            "        else control_state <= control_state + 1'b1;",
+            "    end",
+            "    assign wave_out = control_state < 12;",
+        ]
+    elif category == "protocol-latency-error" and clock is not None:
+        body = [
+            "    reg [63:0] control_state;",
+            "    initial control_state = 64'h0123456789abcdef;",
+            f"    always @(posedge {clock}) control_state <= control_state + 64'd1;",
+            *[f"    assign {output} = control_state;" for output in outputs],
+        ]
+    elif category == "protocol-latency-error" and probe is not None:
+        if name in {"fixed_point_adder", "fixed_point_substractor"}:
+            body = [f"    assign {outputs[0]} = 32'h12345678;"]
+        else:
+            body = [
+                f"    wire control_probe = ^{probe};",
+                *[f"    assign {output} = {{64{{control_probe}}}};" for output in outputs],
+            ]
+    elif category == "protocol-latency-error":
+        body = [
+            "    reg control_clock;",
+            "    initial begin control_clock = 1'b0; forever begin",
+            "        #1 control_clock = ~control_clock; #2 control_clock = ~control_clock;",
+            "    end end",
+            *[f"    assign {output} = control_clock;" for output in outputs],
+        ]
+    elif category == "functional-error":
+        if name == "multi_booth_8bit":
+            body = [
+                "    reg [2:0] control_count;",
+                "    initial control_count = 0;",
+                "    always @(posedge clk) begin",
+                "        if (reset) control_count <= 0;",
+                "        else if (control_count < 3) control_count <= control_count + 1'b1;",
+                "    end",
+                "    assign p = 16'h5555;",
+                "    assign rdy = control_count == 2;",
+            ]
+        elif name == "parallel2serial":
+            body = [
+                "    reg [2:0] control_phase;",
+                "    always @(posedge clk or negedge rst_n)",
+                "        if (!rst_n) control_phase <= 0;",
+                "        else if (control_phase == 4) control_phase <= 0;",
+                "        else control_phase <= control_phase + 1'b1;",
+                "    assign valid_out = control_phase == 0;",
+                "    assign dout = ~d[control_phase[1:0]];",
+            ]
+        else:
+            body = [
+                f"    assign {output} = 64'h{('55' if index % 2 == 0 else 'aa') * 8};"
+                for index, output in enumerate(outputs)
+            ]
+    else:
+        raise ConfigurationError(f"RTLLM known-bad category is unknown: {category}")
+    return header + "\n" + "\n".join(body) + "\nendmodule\n"
+
 
 def known_bad_source(name: str, category: str) -> str:
     if name in _COUNTER_BAD and category == "stuck-zero":
         return _COUNTER_BAD[name]
+    if name in _GENERATED_CONTROL_SHAPES and name not in _BAD:
+        return _generated_control_source(name, category)
+    if name in _COUNTER_BAD:
+        return _generated_control_source(name, category)
     try:
         return _BAD[name][category].lstrip()
     except KeyError as exc:
