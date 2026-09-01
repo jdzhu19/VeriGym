@@ -155,6 +155,22 @@ only one image is constructed. A successful future PR-2549 canary must be import
 re-execution; a failed canary freezes the task and identity. V40 itself has no provider or episode
 surface and cannot start canary execution, formal collection, training, or held-out access.
 
+The separately versioned OpenHands v41 authorization may execute only the v40 PR-2549 training
+binding followed by the still-unstarted v33 PR-3204 validation binding. It binds the sealed v39
+failure, the merged v22 SDK-normalized empty-content repair, the complete v40 result chain, exact
+host dependencies, and a distinct seed/sample/runtime identity. The command containers retain
+`network=none`, contain no provider credentials or Codex, and expose no external-agent process.
+Before output and before provider construction, the runner revalidates the merged source and all
+predecessor evidence, then starts both command runtimes and adapters under a zero-call preflight.
+Any drift or preflight failure stops without consuming a task.
+
+Once a provider episode starts, its task is single-use. All six result planes plus v22 trajectory,
+decision, exact-64K/no-truncation, decision-only-mask, and security receipts are mandatory. A
+failed training plane prevents validation from starting; no retry, fallback identity, reserve
+substitution, historical relabeling, or PR-2549 formal re-execution is implicit. Even a two-task
+pass authorizes only the later audited readiness work: v41 cannot start formal collection,
+training, GPU work, or held-out loading.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
