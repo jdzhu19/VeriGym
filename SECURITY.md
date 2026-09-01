@@ -256,6 +256,15 @@ starting. A two-task six-plane and exact-64K pass may set only
 `formal_collection_allowed=true`; v47 cannot start formal collection, training, GPU work, or
 held-out loading, and its result must still be independently audited and merged.
 
+The sole authorized v47 launch stopped before output, runtime preflight, provider construction, or
+task loading because its `--stopped-v37-canary-root` argument selected a nonexistent sibling rather
+than the sealed predecessor root. V47 is frozen even though it made zero provider calls and
+consumed neither PR-2802 nor PR-3204. Its content-free stop receipt records only the failed
+argument name, normalized error category, zero accounting, and non-authorization flags; it omits
+both path values, the raw exception, command line, and provider/proxy values. Any repair requires a
+separately reviewed v48 identity that binds the exact stop evidence and its merged audit. Correcting
+the argument and rerunning v47 is prohibited.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
