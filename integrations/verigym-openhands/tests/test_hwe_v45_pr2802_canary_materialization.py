@@ -90,10 +90,10 @@ def test_v45_authorization_is_exact_hash_bound_and_zero_provider() -> None:
         "include_system_site_packages": False,
         "pyvenv_config_sha256": _materialize._REPOSITORY_VENV_CONFIG_SHA256,
         "python_version": "3.12.13",
-        "repository_python": str(_REPOSITORY / ".venv/bin/python"),
+        "repository_python": str(_materialize._AUTHORIZED_REPOSITORY_PYTHON),
         "repository_src_precedes_site_packages": True,
-        "repository_venv": str(_REPOSITORY / ".venv"),
-        "verigym_package_root": str(_REPOSITORY / "src/verigym"),
+        "repository_venv": str(_materialize._AUTHORIZED_REPOSITORY_VENV),
+        "verigym_package_root": str(_materialize._AUTHORIZED_REPOSITORY / "src/verigym"),
     }
 
 
@@ -112,6 +112,19 @@ def test_v45_authorization_rejects_provider_role_or_retry_drift() -> None:
         changed["authorization_hash"] = content_hash(base)
         with pytest.raises(ConfigurationError, match="authorization"):
             _materialize._validated_authorization(changed)
+
+
+def test_v45_authorization_is_independent_of_the_ci_checkout_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    expected = _materialize._expected_authorization()
+
+    monkeypatch.setattr(_materialize, "_REPOSITORY", tmp_path / "ci-checkout")
+
+    assert _materialize._expected_authorization() == expected
+    assert expected["launcher_isolation"]["repository_venv"] == (
+        "/data/jzhu484/Agent/VeriGym/.venv"
+    )
 
 
 def test_v45_contract_uses_v22_and_never_reexecutes_successful_training_canary() -> None:

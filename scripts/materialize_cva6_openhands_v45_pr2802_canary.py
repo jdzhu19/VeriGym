@@ -56,6 +56,9 @@ OPENHANDS_V45_CAMPAIGN_ID = "openhands-hwe-v46-v22-required-tool-canary-v1"
 OPENHANDS_V45_AGENT_VERSION_ID = "openhands-deepseek-v4-flash-hwe-v46-v22-canary-v1"
 OPENHANDS_V45_APPROVAL_HASH = "933e4a43c4d67c74c1a891db0420ca550c2c6c3707576d69f4a2ff601fa82bbb"
 
+_AUTHORIZED_REPOSITORY = Path("/data/jzhu484/Agent/VeriGym")
+_AUTHORIZED_REPOSITORY_VENV = _AUTHORIZED_REPOSITORY / ".venv"
+_AUTHORIZED_REPOSITORY_PYTHON = _AUTHORIZED_REPOSITORY_VENV / "bin/python"
 _REPOSITORY_VENV = _REPOSITORY / ".venv"
 _REPOSITORY_PYTHON = _REPOSITORY_VENV / "bin/python"
 _REPOSITORY_VENV_CONFIG_SHA256 = "784bdfbe2c09a7a284dd3a39b1ab5d1e9a6bd5324a345fd5539e7a223a33b4df"
@@ -824,13 +827,13 @@ def _expected_authorization() -> dict[str, Any]:
             "execution_gate_must_rerun": True,
         },
         "launcher_isolation": {
-            "repository_venv": str(_REPOSITORY_VENV),
-            "repository_python": str(_REPOSITORY_PYTHON),
+            "repository_venv": str(_AUTHORIZED_REPOSITORY_VENV),
+            "repository_python": str(_AUTHORIZED_REPOSITORY_PYTHON),
             "python_version": ".".join(str(part) for part in _REPOSITORY_PYTHON_VERSION),
             "pyvenv_config_sha256": _REPOSITORY_VENV_CONFIG_SHA256,
             "include_system_site_packages": False,
             "repository_src_precedes_site_packages": True,
-            "verigym_package_root": str(_REPOSITORY_SRC / "verigym"),
+            "verigym_package_root": str(_AUTHORIZED_REPOSITORY / "src/verigym"),
             "ambient_interpreter_allowed": False,
             "competing_editable_path_regression_required": True,
         },
@@ -1182,7 +1185,8 @@ def _require_repository_runtime() -> dict[str, object]:
     executable = Path(sys.executable)
     config = _safe_file(_REPOSITORY_VENV / "pyvenv.cfg")
     if (
-        Path(sys.prefix).resolve() != expected_prefix
+        _REPOSITORY != _AUTHORIZED_REPOSITORY
+        or Path(sys.prefix).resolve() != expected_prefix
         or executable != _REPOSITORY_PYTHON
         or sys.version_info[:3] != _REPOSITORY_PYTHON_VERSION
         or hash_bytes(config.read_bytes()) != _REPOSITORY_VENV_CONFIG_SHA256

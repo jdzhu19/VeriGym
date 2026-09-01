@@ -102,11 +102,11 @@ before any v46 provider authorization can be proposed.
 
 Credential-free local verification passed:
 
-- focused v45 tests with exact v43, v44-stop, and PR-2802 evidence: 13 passed, including separate
+- focused v45 tests with exact v43, v44-stop, and PR-2802 evidence: 14 passed, including separate
   subprocesses for a competing stale path and an already-loaded foreign `verigym`;
 - core pytest: 1,065 passed and one explicit real-Codex opt-in skipped;
 - HWE plugin pytest: 51 passed;
-- frozen OpenHands Python 3.12 zero-model pytest: 464 passed, with 34 external-evidence opt-ins
+- frozen OpenHands Python 3.12 zero-model pytest: 465 passed, with 34 external-evidence opt-ins
   skipped;
 - audit/schema contracts: 13 passed and two unrelated selections deselected;
 - Ruff lint and format over 728 tracked and new Python files;
@@ -119,6 +119,15 @@ field. The isolated runtime gate passed under `.venv/bin/python` and rejected th
 interpreter. The initial HWE test command omitted the plugin's local `src` from `PYTHONPATH` and
 therefore stopped during test discovery; the exact repository plugin path was then supplied and
 all 51 tests passed. No dependency or environment was installed, removed, or changed.
+
+The first GitHub PR run exposed one additional deterministic test defect: the authorization
+generator derived the frozen execution path from the current checkout, so its policy differed on
+GitHub's `/home/runner/...` checkout even though the checked-in authorization correctly named the
+approved `/data/...` runtime. The repair separates immutable authorized-path constants from the
+dynamic source path used by bootstrap tests and adds an explicit checkout-independence regression.
+The authorization bytes and hash did not change because the approved local values were already
+correct. The failed CI jobs stopped in zero-model pytest; lint, mypy, and all earlier steps passed,
+and no execution surface was enabled.
 
 These checks created no authorized output, provider episode or call, Docker image, model process,
 formal collection, training run, GPU work, or held-out access. The GitHub authorization PR and its
