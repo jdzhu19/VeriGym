@@ -29,6 +29,9 @@ The committed [real DC v2 smoke](audits/real_dc_v2_smoke.md) demonstrates mapped
 and `report_qor` generation without publishing the site DB, raw logs, or license configuration.
 It is historical v2 evidence and does not contain a power result. New explicit-power v4 profiles
 run `compile_ultra` followed by `report_area`, `report_timing`, `report_power`, and `report_qor`.
+Explicit multi-clock profiles use the distinct v5 flow, which aggregates the maximum arrival time
+and worst slack across the timing paths returned for asynchronous clock groups. Single-clock v4
+flow identity and generated script bytes are preserved.
 The [NanGate45 synthesis PPA smoke](audits/nangate45_synthesis_ppa_smoke.md) covers both the open
 and commercial paths.
 

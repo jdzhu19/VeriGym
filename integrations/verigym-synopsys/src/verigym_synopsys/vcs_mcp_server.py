@@ -94,6 +94,7 @@ class VcsMcpSimulationRequest(VcsProfileIdentityRequest):
     candidate_hash: str
     sources: list[McpVcsSource] = Field(min_length=1, max_length=64)
     testbench_mount_path: str = Field(min_length=1, max_length=4096)
+    auxiliary_files: list[str] = Field(default_factory=list, max_length=64)
     top: str = Field(min_length=1, max_length=256)
     pass_marker: str = Field(min_length=1, max_length=256)
     fail_marker: str = Field(min_length=1, max_length=256)
@@ -102,6 +103,14 @@ class VcsMcpSimulationRequest(VcsProfileIdentityRequest):
     @classmethod
     def validate_testbench_mount_path(cls, value: str) -> str:
         return safe_relative_path(value)
+
+    @field_validator("auxiliary_files")
+    @classmethod
+    def validate_auxiliary_files(cls, value: list[str]) -> list[str]:
+        normalized = [safe_relative_path(item) for item in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("VCS MCP auxiliary mount paths must be unique")
+        return normalized
 
     @field_validator("candidate_hash")
     @classmethod
@@ -154,6 +163,11 @@ def _identity_schema(*, simulate: bool) -> dict[str, Any]:
                     },
                 },
                 "testbench_mount_path": {"type": "string"},
+                "auxiliary_files": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {"type": "string"},
+                },
                 "top": {"type": "string"},
                 "pass_marker": {"type": "string"},
                 "fail_marker": {"type": "string"},
@@ -165,6 +179,7 @@ def _identity_schema(*, simulate: bool) -> dict[str, Any]:
                 "candidate_hash",
                 "sources",
                 "testbench_mount_path",
+                "auxiliary_files",
                 "top",
                 "pass_marker",
                 "fail_marker",
@@ -215,7 +230,7 @@ class VcsMcpService:
             profile = load_vcs_server_profile(path)
             if profile.id in self._profiles:
                 raise ConfigurationError(f"duplicate VCS MCP profile ID: {profile.id}")
-            self._validate_testbench(profile)
+            self._validate_hidden_assets(profile)
             self._profiles[profile.id] = profile
 
     def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -257,7 +272,7 @@ class VcsMcpService:
             raise VcsMcpRequestError("declared profile hash differs from the server profile")
         if profile.contract_hash != request.contract_hash:
             raise VcsMcpRequestError("public contract hash differs from the server profile")
-        self._validate_testbench(profile)
+        self._validate_hidden_assets(profile)
         health = probe_vcs(profile.executable)
         if not health.healthy or health.version is None:
             raise VcsMcpRequestError("approved VCS executable failed its identity probe")
@@ -288,6 +303,7 @@ class VcsMcpService:
             raise VcsMcpRequestError("source list differs from the fixed VCS profile")
         if (
             request.testbench_mount_path != profile.testbench_mount_path
+            or request.auxiliary_files != [item.mount_path for item in profile.auxiliary_files]
             or request.top != profile.top
             or request.pass_marker != profile.pass_marker
             or request.fail_marker != profile.fail_marker
@@ -306,6 +322,7 @@ class VcsMcpService:
         if request.candidate_hash != content_hash({"sources": identities}):
             raise VcsMcpRequestError("candidate hash differs from the submitted source identities")
         testbench_payload = self._testbench_bytes(profile)
+        auxiliary_payloads = self._auxiliary_bytes(profile)
         with tempfile.TemporaryDirectory(
             prefix="verigym-vcs-mcp-",
             dir=self._work_root,
@@ -319,6 +336,10 @@ class VcsMcpService:
             testbench_target = staging / profile.testbench_mount_path
             testbench_target.parent.mkdir(parents=True, exist_ok=True)
             testbench_target.write_bytes(testbench_payload)
+            for relative, payload in auxiliary_payloads:
+                auxiliary_target = staging / relative
+                auxiliary_target.parent.mkdir(parents=True, exist_ok=True)
+                auxiliary_target.write_bytes(payload)
             runtime = LocalRuntime()
             session = None
             try:
@@ -334,6 +355,7 @@ class VcsMcpService:
                     {
                         "sources": profile.sources,
                         "testbench": profile.testbench_mount_path,
+                        "auxiliary_files": [item.mount_path for item in profile.auxiliary_files],
                         "top": profile.top,
                         "pass_marker": profile.pass_marker,
                         "fail_marker": profile.fail_marker,
@@ -355,8 +377,9 @@ class VcsMcpService:
         }
 
     @staticmethod
-    def _validate_testbench(profile: VcsMcpServerProfile) -> None:
+    def _validate_hidden_assets(profile: VcsMcpServerProfile) -> None:
         VcsMcpService._testbench_bytes(profile)
+        VcsMcpService._auxiliary_bytes(profile)
 
     @staticmethod
     def _testbench_bytes(profile: VcsMcpServerProfile) -> bytes:
@@ -369,6 +392,23 @@ class VcsMcpService:
         if len(payload) > _MAX_SOURCE_BYTES or hash_bytes(payload) != profile.testbench_sha256:
             raise ConfigurationError("approved VCS testbench differs from its profile hash")
         return payload
+
+    @staticmethod
+    def _auxiliary_bytes(profile: VcsMcpServerProfile) -> list[tuple[str, bytes]]:
+        records: list[tuple[str, bytes]] = []
+        total = 0
+        for item in profile.auxiliary_files:
+            path = Path(item.path)
+            if path.is_symlink() or not path.is_file():
+                raise ConfigurationError("approved VCS auxiliary input is unavailable")
+            if path.stat().st_size > _MAX_SOURCE_BYTES:
+                raise ConfigurationError("approved VCS auxiliary input exceeds the byte bound")
+            payload = path.read_bytes()
+            total += len(payload)
+            if total > _MAX_SOURCE_TOTAL_BYTES or hash_bytes(payload) != item.sha256:
+                raise ConfigurationError("approved VCS auxiliary input differs from its profile")
+            records.append((item.mount_path, payload))
+        return records
 
 
 def _validate(model: type[StrictModel], arguments: dict[str, Any]) -> Any:

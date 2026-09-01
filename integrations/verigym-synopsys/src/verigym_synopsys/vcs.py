@@ -47,6 +47,7 @@ _VERSION = re.compile(
 class VcsSimulationRequest(StrictModel):
     sources: list[str] = Field(min_length=1, max_length=64)
     testbench: str
+    auxiliary_files: list[str] = Field(default_factory=list, max_length=64)
     top: str | None = None
     pass_marker: str = "VERIGYM_PASS"
     fail_marker: str = "VERIGYM_FAIL"
@@ -71,6 +72,17 @@ class VcsSimulationRequest(StrictModel):
             raise ValueError("the VCS testbench must use a .v or .sv filename")
         return normalized
 
+    @field_validator("auxiliary_files")
+    @classmethod
+    def validate_auxiliary_files(cls, value: list[str]) -> list[str]:
+        normalized = [safe_relative_path(item) for item in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("VCS auxiliary files must not contain duplicates")
+        reserved = {".verigym_internal", "csrc", "input", "out"}
+        if any(Path(item).parts[0] in reserved for item in normalized):
+            raise ValueError("VCS auxiliary files collide with private build paths")
+        return normalized
+
     @field_validator("top")
     @classmethod
     def validate_top(cls, value: str | None) -> str | None:
@@ -92,8 +104,9 @@ class VcsSimulationRequest(StrictModel):
 
     @model_validator(mode="after")
     def testbench_is_distinct(self) -> VcsSimulationRequest:
-        if self.testbench in self.sources:
-            raise ValueError("testbench must be separate from candidate sources")
+        paths = [*self.sources, self.testbench, *self.auxiliary_files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("testbench, candidate sources, and auxiliary files must be distinct")
         if self.pass_marker == self.fail_marker:
             raise ValueError("pass and fail markers must differ")
         return self
@@ -192,6 +205,12 @@ class VcsSimulationTool(ToolPlugin):
             target = f"{stage}/input/{index:03d}{suffix}"
             context.session.write_file(target, payload)
             staged.append(f"input/{index:03d}{suffix}")
+        for relative in request.auxiliary_files:
+            payload = _bounded_file(context.session.root, relative)
+            total += len(payload)
+            if total > _MAX_TOTAL_SOURCE_BYTES:
+                raise ValueError("VCS inputs exceed the aggregate byte limit")
+            context.session.write_file(f"{stage}/{relative}", payload)
         context.session.write_file(f"{stage}/out/.verigym_keep", b"")
         requested = (
             os.environ.get("VERIGYM_VCS_EXECUTABLE", request.executable)

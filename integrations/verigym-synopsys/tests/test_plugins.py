@@ -5,11 +5,14 @@ from pathlib import Path
 
 import pytest
 from verigym.plugin_api import CompletedCommand, ErrorCategory, RuntimeSession, ToolContext
+from verigym.profiles.registry import ToolchainProfileRegistry
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
 
 from verigym_synopsys.dc import (
     AREA_TIMING_FLOW_TEMPLATE_ID,
+    MULTICLOCK_FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID,
     DesignCompilerSynthesisTool,
     _generated_script_hash,
     _parse_power_report,
@@ -67,6 +70,59 @@ def test_prepare_profile_requires_exactly_one_db_path(tmp_path: Path) -> None:
                 str(tmp_path / "converted.db"),
             ]
         )
+
+
+def test_prepare_multiclock_profile_freezes_distinct_flow_identity(tmp_path: Path) -> None:
+    liberty = tmp_path / "cells.lib"
+    liberty.write_text("library (cells) {}\n", encoding="utf-8")
+    database = tmp_path / "cells.db"
+    database.write_bytes(b"db")
+    sdc = tmp_path / "design.sdc"
+    sdc.write_text(
+        "create_clock -name wclk -period 10 [get_ports wclk]\n"
+        "create_clock -name rclk -period 14 [get_ports rclk]\n"
+        "set_clock_groups -asynchronous -group [get_clocks wclk] "
+        "-group [get_clocks rclk]\n",
+        encoding="utf-8",
+    )
+    executable = tmp_path / "dc_shell"
+    executable.write_text(
+        "#!/bin/sh\necho 'Design Compiler T-2022.03-SP1'\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    output = tmp_path / "profile.yaml"
+
+    assert (
+        prepare_profile(
+            [
+                "--liberty",
+                str(liberty),
+                "--sdc",
+                str(sdc),
+                "--input-db",
+                str(database),
+                "--output-profile",
+                str(output),
+                "--source",
+                "rtl/asyn_fifo.v",
+                "--top",
+                "asyn_fifo",
+                "--clock-period",
+                "10",
+                "--power-base-clock",
+                "wclk",
+                "--dc-shell",
+                str(executable),
+                "--multi-clock",
+            ]
+        )
+        == 0
+    )
+    profile = ToolchainProfileRegistry().load_file(output)
+    assert profile.flow is not None
+    assert profile.flow.template_id == MULTICLOCK_FLOW_TEMPLATE_ID
+    assert profile.scripts[0].content_hash == MULTICLOCK_FLOW_TEMPLATE_HASH
 
 
 def test_vcs_stages_testbench_first_and_redacts_license(
@@ -283,6 +339,45 @@ def test_dc_v2_script_remains_area_timing_only() -> None:
     assert "VERIGYM_DC_METRICS_V2" in script
     assert "report_qor > out/qor.rpt" in script
     assert "report_power" not in script
+
+
+def test_dc_multiclock_script_aggregates_clock_group_paths() -> None:
+    script = _script(
+        sources=["rtl/asyn_fifo.v"],
+        top="asyn_fifo",
+        clock_period=10.0,
+        timing_unit="ns",
+        constraints_hash="a" * 64,
+        emit_netlist=True,
+        power_unit="uW",
+        power_activity_mode="global_clock_relative",
+        power_activity=0.1,
+        power_static_probability=0.5,
+        power_base_clock="wclk",
+        template_id=MULTICLOCK_FLOW_TEMPLATE_ID,
+    )
+    assert "VERIGYM_DC_METRICS_V5" in script
+    assert "[sizeof_collection $vg_paths] < 1" in script
+    assert "foreach_in_collection vg_path $vg_paths" in script
+    assert "$vg_path_arrival > $vg_arrival" in script
+    assert "$vg_path_slack < $vg_slack" in script
+
+    legacy = _script(
+        sources=["rtl/counter.v"],
+        top="counter",
+        clock_period=10.0,
+        timing_unit="ns",
+        constraints_hash="a" * 64,
+        emit_netlist=True,
+        power_unit="uW",
+        power_activity_mode="global_clock_relative",
+        power_activity=0.1,
+        power_static_probability=0.5,
+        power_base_clock="clk",
+    )
+    assert "VERIGYM_DC_METRICS_V4" in legacy
+    assert "[sizeof_collection $vg_paths] != 1" in legacy
+    assert "foreach_in_collection vg_path $vg_paths" not in legacy
 
 
 @pytest.mark.parametrize(("status", "success"), [("equivalent", True), ("non_equivalent", False)])

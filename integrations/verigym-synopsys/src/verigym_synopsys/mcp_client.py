@@ -58,6 +58,8 @@ from .dc import (
     FLOW_TEMPLATE_ID,
     LEGACY_FLOW_TEMPLATE_HASH,
     LEGACY_FLOW_TEMPLATE_ID,
+    MULTICLOCK_FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID,
     VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     VECTORLESS_POWER_FLOW_TEMPLATE_ID,
     _read_session_file,
@@ -88,6 +90,7 @@ _TEMPLATE_HASHES = {
     AREA_TIMING_FLOW_TEMPLATE_ID: AREA_TIMING_FLOW_TEMPLATE_HASH,
     VECTORLESS_POWER_FLOW_TEMPLATE_ID: VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID: MULTICLOCK_FLOW_TEMPLATE_HASH,
 }
 _MCP_TOOL_ERROR_SUBCATEGORIES = {
     "agent feedback requires a configured disposable worker": "agent_worker_configuration",
@@ -661,6 +664,7 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         power_flow = profile.flow.template_id in {
             VECTORLESS_POWER_FLOW_TEMPLATE_ID,
             FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
         }
         expected_scope = "synthesis_area_timing_power" if power_flow else "synthesis_area_timing"
         if profile.metrics.scope != expected_scope:
@@ -820,7 +824,10 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             errors.append("delay and worst-negative-slack units must match")
         if power_flow and not profile.metrics.power.enabled:
             errors.append("remote power flow requires an enabled power metric")
-        if profile.flow.template_id == FLOW_TEMPLATE_ID:
+        if profile.flow.template_id in {
+            FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
+        }:
             if profile.metadata.get("power_activity_mode") != "global_clock_relative":
                 errors.append("remote DC v4 profile requires explicit clock-relative activity")
             for name in ("power_activity", "power_static_probability", "power_base_clock"):

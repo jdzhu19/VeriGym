@@ -238,7 +238,12 @@ def test_historical_v1_feedback_evaluation_shape_is_unchanged() -> None:
     assert evaluation.model_dump(mode="json") == payload
 
 
-def _commercial_profile(*, isolated: bool, release: bool = False) -> Any:
+def _commercial_profile(
+    *,
+    isolated: bool,
+    release: bool = False,
+    flow_template_id: str = "synopsys-dc-area-timing-power-explicit-v4",
+) -> Any:
     metadata: dict[str, Any] = {}
     if isolated:
         metadata = {
@@ -259,7 +264,7 @@ def _commercial_profile(*, isolated: bool, release: bool = False) -> Any:
                 }
             )
     return SimpleNamespace(
-        flow_template_id="synopsys-dc-area-timing-power-explicit-v4",
+        flow_template_id=flow_template_id,
         metric_scope="synthesis_area_timing_power",
         metadata=metadata,
         top_module="counter_wrap",
@@ -290,12 +295,21 @@ def test_feedback_resolution_rejects_unsupported_and_unisolated_commercial_ppa()
         )
 
 
-def test_feedback_resolution_accepts_hash_bound_isolated_dc_mcp() -> None:
+@pytest.mark.parametrize(
+    "flow_template_id",
+    [
+        "synopsys-dc-area-timing-power-explicit-v4",
+        "synopsys-dc-area-timing-power-multiclock-explicit-v5",
+    ],
+)
+def test_feedback_resolution_accepts_hash_bound_isolated_dc_mcp(
+    flow_template_id: str,
+) -> None:
     contract = resolve_agent_feedback_contract(
         task=_declared_task(ppa_supported=True),
         ppa_enabled=True,
         ppa_max_executions=3,
-        resolved_profile=_commercial_profile(isolated=True),
+        resolved_profile=_commercial_profile(isolated=True, flow_template_id=flow_template_id),
         profile_backend="synopsys.dc.mcp",
     )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
 from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
+from verigym.schemas.run import RunConfig
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.tools.base import ToolContext, VerifierBackendPlugin
@@ -176,3 +178,38 @@ def test_verifier_profile_loader_rejects_duplicate_keys_and_symlinks(tmp_path: P
     link.symlink_to(profile_path)
     with pytest.raises(ConfigurationError, match="regular, non-symlink"):
         load_verifier_profile(link)
+
+
+def test_only_remote_mcp_may_use_local_controller_transport_for_docker(tmp_path: Path) -> None:
+    from verigym.core.orchestrator import _uses_controller_verifier_transport
+
+    profile, _ = _profile(tmp_path)
+    config = RunConfig(
+        task_id=profile.task_id,
+        runtime="docker",
+        verifier_profile_id=profile.id,
+        verifier_profile=profile,
+    )
+    backend = _FakeVerifierBackend()
+
+    assert not _uses_controller_verifier_transport(config, backend)
+    backend.descriptor = backend.descriptor.model_copy(
+        update={"capabilities": ["fixed_profile", "remote_mcp"]}
+    )
+    assert _uses_controller_verifier_transport(config, backend)
+    assert not _uses_controller_verifier_transport(
+        config.model_copy(update={"runtime": "local"}), backend
+    )
+
+
+def test_hidden_verification_can_require_a_typed_final_submission() -> None:
+    from verigym.core.orchestrator import _verification_requires_final_submission
+
+    assert not _verification_requires_final_submission(SimpleNamespace(metadata={}))
+    assert _verification_requires_final_submission(
+        SimpleNamespace(metadata={"verification_requires_final_submission": True})
+    )
+    with pytest.raises(ConfigurationError, match="must be a boolean"):
+        _verification_requires_final_submission(
+            SimpleNamespace(metadata={"verification_requires_final_submission": "true"})
+        )

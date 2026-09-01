@@ -35,7 +35,6 @@ from .mcp_client import (
     _mcp_messages,
     _parse_rpc_responses,
     _run_stdio,
-    _transport_environment,
     _transport_identity,
 )
 from .vcs import VcsSimulationRequest, _bounded_file
@@ -49,6 +48,11 @@ from .vcs_mcp_profile import (
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
 
 
+class VcsAuxiliaryIdentity(StrictModel):
+    mount_path: str
+    sha256: str
+
+
 class VcsProfileSummary(StrictModel):
     service_protocol: Literal["verigym.synopsys.vcs.mcp.v1"]
     server_version: str
@@ -59,6 +63,7 @@ class VcsProfileSummary(StrictModel):
     sources: list[str]
     testbench_mount_path: str
     testbench_sha256: str
+    auxiliary_files: list[VcsAuxiliaryIdentity]
     top: str
     pass_marker: str
     fail_marker: str
@@ -276,6 +281,13 @@ class McpVcsSimulationTool(VerifierBackendPlugin):
                     }
                 )
             testbench = _bounded_file(context.session.root, request.testbench)
+            auxiliary_identities: list[dict[str, str]] = []
+            for relative in request.auxiliary_files:
+                payload = _bounded_file(context.session.root, relative)
+                total += len(payload)
+                if total > _MAX_SOURCE_TOTAL_BYTES:
+                    raise ConfigurationError("VCS MCP inputs exceed the aggregate byte bound")
+                auxiliary_identities.append({"mount_path": relative, "sha256": hash_bytes(payload)})
             executable, _ = _transport_identity(
                 profile.transport_executable,
                 profile.transport_sha256,
@@ -290,18 +302,17 @@ class McpVcsSimulationTool(VerifierBackendPlugin):
                 "candidate_hash": candidate_hash,
                 "sources": sources,
                 "testbench_mount_path": request.testbench,
+                "auxiliary_files": request.auxiliary_files,
                 "top": request.top,
                 "pass_marker": request.pass_marker,
                 "fail_marker": request.fail_marker,
             }
-            command = CommandSpec(
-                argv=[executable],
-                cwd=".",
-                env=_transport_environment(profile.transport_environment),
+            completed_transport = _run_stdio(
+                executable,
+                _mcp_messages(SIMULATE_TOOL, arguments),
+                environment_names=profile.transport_environment,
                 timeout_s=request.timeout_s + 30,
-                stdin=_mcp_messages(SIMULATE_TOOL, arguments),
             )
-            completed_transport = context.session.execute(command)
             response = VcsSimulationResponse.model_validate(
                 _tool_response(completed_transport, profile.server_version)
             )
@@ -311,6 +322,8 @@ class McpVcsSimulationTool(VerifierBackendPlugin):
                 != resolved.server_resolved_profile_hash
                 or response.candidate_hash != candidate_hash
                 or response.profile.testbench_sha256 != hash_bytes(testbench)
+                or [item.model_dump() for item in response.profile.auxiliary_files]
+                != auxiliary_identities
                 or response.profile.sources != request.sources
                 or response.profile.testbench_mount_path != request.testbench
                 or response.profile.top != request.top

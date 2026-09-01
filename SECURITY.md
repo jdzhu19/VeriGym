@@ -42,6 +42,12 @@ with `.verigym_internal/` as its writable build area. Hidden inputs are hashed b
 verification. This combined verifier-only tree is a deliberate compatibility tradeoff for Icarus;
 it is never shared with the live agent and is removed after required artifacts are persisted.
 
+A task may additionally set the strict boolean `verification_requires_final_submission` metadata
+gate. For such tasks, any termination reason other than typed `FINAL_SUBMISSION` produces only
+skipped verifier placeholders: neither live execution nor verifier-enabled replay stages or runs
+hidden assets. This is used by scoring-only AgentEval variants where an unverified agent stop must
+remain distinct from a submitted candidate.
+
 The Docker CLI backend uses argument arrays with `shell=False`, bounded control-plane calls, and
 no tar extraction. It never mounts the repository root, host home, Docker socket, or an external
 benchmark checkout. Artifact acceptance rejects absolute paths, parent traversal, symlinked path
@@ -307,13 +313,23 @@ never enter the agent container.
 
 The VCS stdio service approves task-bound profiles at startup and exposes only list, resolve, and
 simulate operations. The server owns the exact source order, task ID, top, hidden-testbench bytes
-and hash, pass/fail markers, timeout, VCS executable, and accepted tool version. Simulation accepts
-only bounded, hash-checked candidate sources for that contract. It has no command, shell, flag,
-environment, testbench, report, artifact-return, or license field. The client accepts no raw
+and hash, optional hidden auxiliary files and hashes, pass/fail markers, timeout, VCS executable,
+and accepted tool version. Auxiliary identities expose only normalized verifier mount paths and
+SHA-256 values; source paths and bytes remain server-private. Simulation accepts only bounded,
+hash-checked candidate sources for that contract. It has no command, shell, flag, environment,
+testbench or auxiliary bytes, report, artifact-return, or license field. The client accepts no raw
 stdout, stderr, log, diagnostic, hidden RTL, license value, or server path; it validates the fixed
 wrapper hash, protocol/server versions, declared/resolved server identities, public contract,
-task, candidate, hidden-testbench result identity, and exact VCS version. License failures remain
-infrastructure failures rather than candidate rejections.
+task, candidate, every hidden-asset result identity, and exact VCS version. Hidden auxiliary files
+are staged read-only only in the final verifier workspace and never enter model workspaces, public
+smokes, traces, or persisted VCS results. License failures remain infrastructure failures rather
+than candidate rejections.
+
+For Docker AgentEval, `synopsys.vcs.mcp` uses the same narrow controller-transport exception as
+the DC MCP path below. The run runtime may be `docker` while a verifier-only `remote_mcp` profile
+is `local`: candidate bytes are read from the policy-checked, separate verifier session, while the
+fixed wrapper executes on the trusted host control plane. Other runtime mismatches still fail
+closed. This exception adds no agent-container network, mount, executable, or model-visible tool.
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
 verifier host; it is not a model-visible tool or a general remote shell. The control plane launches

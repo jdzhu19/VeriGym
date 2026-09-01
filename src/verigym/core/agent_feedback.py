@@ -29,7 +29,12 @@ _DECLARATION_KEY = "agent_eval"
 _OPEN_PPA_FLOW = "verigym-yosys-opensta-atp-v2"
 _OPEN_PPA_BACKENDS = frozenset({"yosys.synth", "yosys.stat"})
 _COMMERCIAL_PPA_BACKEND = "synopsys.dc.mcp"
-_COMMERCIAL_PPA_FLOW = "synopsys-dc-area-timing-power-explicit-v4"
+_COMMERCIAL_PPA_FLOWS = frozenset(
+    {
+        "synopsys-dc-area-timing-power-explicit-v4",
+        "synopsys-dc-area-timing-power-multiclock-explicit-v5",
+    }
+)
 AGENT_FEEDBACK_INFRASTRUCTURE_SUBCATEGORIES = frozenset(
     {
         "agent_feedback_dispatch_internal",
@@ -130,7 +135,7 @@ def resolve_agent_feedback_contract(
                 and all(character in "0123456789abcdef" for character in commercial_release_hash)
             )
             if (
-                resolved_profile.flow_template_id != _COMMERCIAL_PPA_FLOW
+                resolved_profile.flow_template_id not in _COMMERCIAL_PPA_FLOWS
                 or resolved_profile.metric_scope != "synthesis_area_timing_power"
                 or not isinstance(commercial_worker_hash, str)
                 or len(commercial_worker_hash) != 64

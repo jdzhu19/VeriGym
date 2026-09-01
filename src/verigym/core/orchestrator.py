@@ -80,7 +80,7 @@ from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext, VerifierBackendPlugin
 from verigym.version import __version__
 
 
@@ -108,6 +108,15 @@ def _external_agent_isolation_label(agent_name: str, execution_backend: str) -> 
     return "codex_cli_sandbox_on_trusted_host"
 
 
+def _verification_requires_final_submission(task: VeriTask) -> bool:
+    value = task.metadata.get("verification_requires_final_submission", False)
+    if not isinstance(value, bool):
+        raise ConfigurationError(
+            "task verification_requires_final_submission metadata must be a boolean"
+        )
+    return value
+
+
 def _configured_observation_policy(
     options: dict[str, Any],
     *,
@@ -122,6 +131,18 @@ def _configured_observation_policy(
     ):
         raw = "repository_observation_v1"
     return resolve_repository_observation_policy(raw)
+
+
+def _uses_controller_verifier_transport(config: RunConfig, verifier_backend: Any) -> bool:
+    """Allow only a Docker verifier staging tree to feed a fixed host-side MCP transport."""
+
+    return bool(
+        isinstance(verifier_backend, VerifierBackendPlugin)
+        and "remote_mcp" in verifier_backend.descriptor.capabilities
+        and config.runtime == "docker"
+        and config.verifier_profile is not None
+        and config.verifier_profile.runtime == "local"
+    )
 
 
 class VeriGym:
@@ -167,7 +188,9 @@ class VeriGym:
             suite, task, assets = self.load_task(config.task_id, config.suite_source)
         resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
         if config.verifier_profile is not None:
-            if config.runtime != config.verifier_profile.runtime:
+            verifier_backend = self.registries.tools.get(config.verifier_profile.target_plugin)
+            controller_transport = _uses_controller_verifier_transport(config, verifier_backend)
+            if config.runtime != config.verifier_profile.runtime and not controller_transport:
                 raise ConfigurationError(
                     "verifier profile requires the local control-plane runtime"
                 )
@@ -860,6 +883,11 @@ class VeriGym:
             )
             trace.emit("verifier_started", {"graph_hash": verifier_hash})
             verifier_started = time.monotonic()
+            final_submission_required = _verification_requires_final_submission(task)
+            final_submission_missing = (
+                final_submission_required
+                and env.termination_reason != TerminationReason.FINAL_SUBMISSION
+            )
             if external_workspace_rejected:
                 verifier_results = [
                     VerifierResult(
@@ -872,6 +900,25 @@ class VeriGym:
                     )
                     for node in task.verifier.nodes
                 ]
+            elif final_submission_missing:
+                verifier_results = [
+                    VerifierResult(
+                        node_id=node.id,
+                        plugin=node.plugin,
+                        status=VerifierStatus.SKIPPED,
+                        error_category=ErrorCategory.SUCCESS,
+                        message="typed final submission required before hidden verification",
+                        request=node.request,
+                    )
+                    for node in task.verifier.nodes
+                ]
+                trace.emit(
+                    "verifier_skipped",
+                    {
+                        "reason": "typed_final_submission_required",
+                        "termination_reason": env.termination_reason.value,
+                    },
+                )
             else:
                 verifier_results = self._verify_candidate(
                     suite=suite,

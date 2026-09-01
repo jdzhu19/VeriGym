@@ -25,6 +25,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--server-declared-profile-hash", required=True)
     parser.add_argument("--server-contract-hash", required=True)
     parser.add_argument("--task-id", required=True)
+    parser.add_argument(
+        "--source-plugin",
+        choices=["synopsys.vcs.simulate", "iverilog.simulate"],
+        default="synopsys.vcs.simulate",
+        help="Exact verifier DAG plugin replaced by the VCS MCP profile.",
+    )
     parser.add_argument("--transport-executable", type=Path, required=True)
     parser.add_argument("--transport-environment", action="append", default=[])
     parser.add_argument("--output-profile", type=Path, required=True)
@@ -62,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         version="1.0.0",
         description="Fixed verifier-only VCS MCP profile; no commercial assets are embedded.",
         task_id=arguments.task_id,
-        source_plugin="synopsys.vcs.simulate",
+        source_plugin=arguments.source_plugin,
         target_plugin="synopsys.vcs.mcp",
         runtime="local",
         transport_executable=executable,

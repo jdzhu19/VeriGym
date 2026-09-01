@@ -25,6 +25,40 @@ _LICENSE_ENVIRONMENT = frozenset({"SNPSLMD_LICENSE_FILE", "LM_LICENSE_FILE", "VC
 _MAX_PROFILE_BYTES = 1024 * 1024
 
 
+class VcsMcpAuxiliaryFile(StrictModel):
+    """One server-owned verifier asset identified publicly by mount path and hash."""
+
+    path: str
+    mount_path: str
+    sha256: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            raise ValueError("server auxiliary files must use absolute paths")
+        return str(path)
+
+    @field_validator("mount_path")
+    @classmethod
+    def validate_mount_path(cls, value: str) -> str:
+        normalized = safe_relative_path(value)
+        if Path(normalized).parts[0] in {".verigym_internal", "csrc", "input", "out"}:
+            raise ValueError("VCS auxiliary mount collides with private build paths")
+        return normalized
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("auxiliary-file identity must be a lowercase SHA-256")
+        return value
+
+    def contract_payload(self) -> dict[str, str]:
+        return {"mount_path": self.mount_path, "sha256": self.sha256}
+
+
 class VcsMcpServerProfile(StrictModel):
     """Private site profile; testbench location never crosses the MCP boundary."""
 
@@ -39,6 +73,7 @@ class VcsMcpServerProfile(StrictModel):
     testbench: str
     testbench_mount_path: str = "verifier/testbench.v"
     testbench_sha256: str
+    auxiliary_files: list[VcsMcpAuxiliaryFile] = Field(default_factory=list, max_length=64)
     top: str
     pass_marker: str = "VERIGYM_PASS"
     fail_marker: str = "VERIGYM_FAIL"
@@ -122,6 +157,11 @@ class VcsMcpServerProfile(StrictModel):
     def validate_contract(self) -> VcsMcpServerProfile:
         if self.pass_marker == self.fail_marker:
             raise ValueError("VCS pass and fail markers must differ")
+        mounts = [item.mount_path for item in self.auxiliary_files]
+        if len(mounts) != len(set(mounts)):
+            raise ValueError("VCS auxiliary mount paths must be unique")
+        if self.testbench_mount_path in mounts or any(source in mounts for source in self.sources):
+            raise ValueError("VCS auxiliary mounts must be distinct from RTL inputs")
         return self
 
     def contract_payload(self) -> dict[str, object]:
@@ -137,6 +177,7 @@ class VcsMcpServerProfile(StrictModel):
             "sources": self.sources,
             "testbench_mount_path": self.testbench_mount_path,
             "testbench_sha256": self.testbench_sha256,
+            "auxiliary_files": [item.contract_payload() for item in self.auxiliary_files],
             "top": self.top,
             "pass_marker": self.pass_marker,
             "fail_marker": self.fail_marker,
@@ -201,6 +242,10 @@ def load_vcs_server_profile(path: Path) -> VcsMcpServerProfile:
     testbench = Path(profile.testbench)
     if testbench.is_symlink() or not testbench.is_file():
         raise ConfigurationError("VCS MCP testbench must be a regular non-symlink file")
+    for item in profile.auxiliary_files:
+        auxiliary = Path(item.path)
+        if auxiliary.is_symlink() or not auxiliary.is_file():
+            raise ConfigurationError("VCS MCP auxiliary input must be a regular non-symlink file")
     return profile
 
 
@@ -210,6 +255,7 @@ __all__ = [
     "LIST_PROFILES_TOOL",
     "RESOLVE_PROFILE_TOOL",
     "SIMULATE_TOOL",
+    "VcsMcpAuxiliaryFile",
     "VcsMcpServerProfile",
     "load_vcs_server_profile",
 ]

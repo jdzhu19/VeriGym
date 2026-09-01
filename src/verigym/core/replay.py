@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from verigym.core.agent_feedback import task_with_agent_feedback_contract
+from verigym.core.episode import TerminationReason
 from verigym.core.errors import ArtifactIntegrityError, ReplayError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.loaders import dump_json, load_model
-from verigym.core.orchestrator import VeriGym
+from verigym.core.orchestrator import VeriGym, _verification_requires_final_submission
 from verigym.core.repository_candidate import (
     repository_plan_identity,
     verify_frozen_repository_candidate_offline,
@@ -290,7 +291,12 @@ def replay_run(
     replay_candidate_synthesis: SynthesisMetrics | None = None
     replay_reference_synthesis: SynthesisMetrics | None = None
     policy_quarantined = _is_external_workspace_quarantine(scorecard)
-    if verify and not policy_quarantined:
+    final_submission_missing = bool(
+        _verification_requires_final_submission(task)
+        and scorecard.termination_reason != TerminationReason.FINAL_SUBMISSION.value
+    )
+    verification_suppressed = policy_quarantined or final_submission_missing
+    if verify and not verification_suppressed:
         service = service or VeriGym()
         suite_id = manifest.task_id.split("/", 1)[0]
         suite = service.registries.suites.get(suite_id)

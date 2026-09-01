@@ -28,6 +28,13 @@ verigym-synopsys-vcs-mcp-server \
   --work-root /private/verigym-vcs-work
 ```
 
+Tasks may declare additional verifier-only inputs with repeatable
+`--auxiliary-file MOUNT_PATH=SOURCE_PATH`. The server profile publishes only each normalized mount
+path and SHA-256; the source path remains private. The client revalidates those identities on
+resolve and simulate, while the server stages the files only beside the hidden testbench in the
+private VCS workspace. Auxiliary bytes and paths must never enter a candidate workspace, model
+trace, public smoke, or result artifact.
+
 The client transport must be one executable regular file that accepts no arguments and connects
 stdin/stdout to that exact service command. Export a sanitized client profile after recording the
 server-declared and public-contract hashes returned by the service:
@@ -53,9 +60,14 @@ verigym run --suite rtllm --task counter_12 --suite-source /datasets/RTLLM \
   --output runs/
 ```
 
-`--runtime local` runs only the fixed transport in the trusted control plane. It does not make
-VCS or commercial assets visible to a model. Replay re-resolves the transport, server, profile,
-contract, and exact VCS version before re-executing the frozen candidate.
+`--runtime local` runs only the fixed transport in the trusted control plane. For a Docker-backed
+agent, this is the one permitted runtime mismatch: a verifier-only backend advertising
+`remote_mcp` may use a local verifier profile while candidate bytes are read from the separate
+Docker verifier staging tree. The hash-bound wrapper still executes on the trusted controller;
+there is no container network exception or executable lookup inside the agent image. This does
+not make VCS or commercial assets visible to a model. Replay re-resolves the transport, server,
+profile, contract, hidden auxiliary identities, and exact VCS version before re-executing the
+frozen candidate.
 
 ## Freeze it in an experiment
 
@@ -106,11 +118,12 @@ the immutable Docker image identity for published runs.
 
 The VCS MCP service exposes only list, resolve, and simulate. Simulation accepts a task/profile
 identity and bounded candidate RTL for the exact ordered source list. Top, testbench mount,
-pass/fail markers, timeout, hidden testbench hash, and VCS executable are server-owned. The API has
-no arbitrary command, shell, flags, environment, testbench bytes, report, or artifact-return field.
+auxiliary mounts, pass/fail markers, timeout, hidden asset hashes, and VCS executable are
+server-owned. The API has no arbitrary command, shell, flags, environment, testbench or auxiliary
+bytes, report, or artifact-return field.
 
 The client rejects transport-hash, protocol, server-version, profile, contract, task, VCS-version,
-candidate, hidden-testbench, and replay-identity mismatches. Successful and candidate-failure
+candidate, hidden-testbench, auxiliary-file, and replay-identity mismatches. Successful and candidate-failure
 responses contain no stdout, stderr, diagnostics, artifacts, VCS log, hidden RTL, license value, or
 server path. License absence remains `license_unavailable`; transport failure is infrastructure,
 not a candidate rejection.

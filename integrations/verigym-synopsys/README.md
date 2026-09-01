@@ -22,9 +22,12 @@ mapped area, maximum-path delay, worst-negative slack, and estimated power from 
 SDC pair. The current explicit-power v4 flow runs `compile_ultra`, records mapped cell count, and
 retains `report_area`, `report_timing`, `report_power`, and `report_qor` artifacts. It annotates
 non-clock primary inputs with a frozen clock-relative toggle rate and static probability. Power is
-normalized as total dynamic plus cell leakage power. The v1/v2 area/timing flows and v3 legacy
-vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same DC
-metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
+normalized as total dynamic plus cell leakage power. The multi-clock explicit-power v5 flow keeps
+those semantics but evaluates every maximum timing path returned across asynchronous clock groups,
+reporting the largest arrival time and worst slack. Select it explicitly with `--multi-clock`; v4
+bytes and identity remain unchanged for single-clock replay. The v1/v2 area/timing flows and v3
+legacy vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same
+DC metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
 compares separately staged reference and implementation RTL, supports Verilog and SystemVerilog,
 and emits a script-bound structured equivalence result. All plugins are verifier-only and intended
 for site-controlled runtimes. Detailed Formality point reports are not exported because they can

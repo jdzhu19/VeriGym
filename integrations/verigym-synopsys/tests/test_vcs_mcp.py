@@ -18,6 +18,7 @@ from verigym.plugin_api import (
     content_hash,
     hash_bytes,
 )
+from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.registry.base import PluginRegistry
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
@@ -33,10 +34,12 @@ from verigym.schemas.task import (
 from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.tools.base import ToolPlugin
 
+from verigym_synopsys.export_vcs_mcp_profile import main as export_vcs_profile
 from verigym_synopsys.vcs_mcp_client import McpVcsSimulationTool
 from verigym_synopsys.vcs_mcp_profile import (
     SERVER_VERSION,
     SERVICE_PROTOCOL,
+    VcsMcpAuxiliaryFile,
     VcsMcpServerProfile,
 )
 from verigym_synopsys.vcs_mcp_server import (
@@ -109,6 +112,36 @@ def _client_profile(server: VcsMcpServerProfile, wrapper: Path) -> VerifierToolP
         server_contract_hash=server.contract_hash,
         accepted_tool_version=server.accepted_tool_version,
     )
+
+
+def test_vcs_exporter_can_replace_an_iverilog_hidden_node(tmp_path: Path) -> None:
+    server, _server_path, wrapper = _fixture(tmp_path)
+    output = tmp_path / "client-profile.yaml"
+
+    assert (
+        export_vcs_profile(
+            [
+                "--id",
+                "rtllm-harder-vcs-client-v1",
+                "--server-profile-id",
+                server.id,
+                "--server-declared-profile-hash",
+                content_hash(server),
+                "--server-contract-hash",
+                server.contract_hash,
+                "--task-id",
+                server.task_id,
+                "--source-plugin",
+                "iverilog.simulate",
+                "--transport-executable",
+                str(wrapper),
+                "--output-profile",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert load_verifier_profile(output).source_plugin == "iverilog.simulate"
 
 
 def test_vcs_mcp_surface_is_fixed_and_response_is_sanitized(tmp_path: Path) -> None:
@@ -244,3 +277,58 @@ def test_vcs_mcp_client_resolves_executes_and_binds_task_graph(tmp_path: Path) -
     wrapper.write_bytes(changed)
     with __import__("pytest").raises(Exception, match="hash differs"):
         plugin.resolve_verifier_profile(client)
+
+
+def test_vcs_mcp_stages_server_owned_auxiliary_files_without_exposing_paths(
+    tmp_path: Path,
+) -> None:
+    base, _, _ = _fixture(tmp_path)
+    auxiliary = tmp_path / "private-wfull.txt"
+    auxiliary.write_text("0\n1\n", encoding="utf-8")
+    profile = base.model_copy(
+        update={
+            "auxiliary_files": [
+                VcsMcpAuxiliaryFile(
+                    path=str(auxiliary),
+                    mount_path="wfull.txt",
+                    sha256=hash_bytes(auxiliary.read_bytes()),
+                )
+            ]
+        },
+        deep=True,
+    )
+    profile_path = tmp_path / "server-profile-with-aux.yaml"
+    profile_path.write_text(
+        yaml.safe_dump(profile.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    rtl = b"module counter_12; endmodule\n"
+    source_hash = hash_bytes(rtl)
+    response = VcsMcpService([profile_path], tmp_path / "aux-work").call(
+        SIMULATE_TOOL,
+        {
+            "profile_id": profile.id,
+            "declared_profile_hash": content_hash(profile),
+            "contract_hash": profile.contract_hash,
+            "task_id": profile.task_id,
+            "candidate_hash": content_hash({"sources": {"rtl/counter_12.v": source_hash}}),
+            "sources": [
+                {
+                    "path": "rtl/counter_12.v",
+                    "sha256": source_hash,
+                    "content_base64": __import__("base64").b64encode(rtl).decode(),
+                }
+            ],
+            "testbench_mount_path": "verifier/testbench.v",
+            "auxiliary_files": ["wfull.txt"],
+            "top": "tb",
+            "pass_marker": "VERIGYM_PASS",
+            "fail_marker": "VERIGYM_FAIL",
+        },
+    )
+
+    assert response["profile"]["auxiliary_files"] == [
+        {"mount_path": "wfull.txt", "sha256": hash_bytes(auxiliary.read_bytes())}
+    ]
+    serialized = json.dumps(response)
+    assert str(auxiliary) not in serialized
+    assert str(tmp_path) not in serialized
