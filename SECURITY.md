@@ -317,6 +317,19 @@ PR-2916 are frozen; the task cannot be retried under a larger budget, changed pr
 identity. Any successor must bind the complete failed tree, merged audit, and green post-merge main
 run, use a new identity and unattempted training task, and preserve the same fail-closed controls.
 
+The separately versioned v51 authorization adds only public CVA6 PR-2728 as an unattempted
+training candidate and permits one zero-model base-FAIL/reference-PASS qualification. It binds the
+complete v50 terminal evidence and green audit merge, the official dataset and selected-record
+hashes, and a content-free compatible one-file patch-shape receipt. Dataset scanning extracts only
+top-level PR numbers until the selected public row is found; held-out row values are never decoded,
+selected into the temporary one-row dataset, loaded into Docker, or copied to output. Candidate
+transfer alone may use `verigym-hwe-net`; verification remains `network=none`. Clean merged source,
+Docker-root headroom, digest/config/tarball identities, non-root read-only transfer containers,
+bounded content-free diagnostics, atomic progress, cleanup, and zero retries remain mandatory.
+V51 has no provider, command-image build, canary, collection, training, GPU, or held-out authority.
+Either an ordinary qualification mismatch or an infrastructure/security stop permanently consumes
+the v51 attempt; a successful result still needs a separate audit before command-image work.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and

@@ -96,6 +96,25 @@ def test_reference_patch_preflight_ignores_git_worktree_subdirectory(
     assert result.patch_file_count == 1
 
 
+def test_reference_patch_preflight_uses_explicit_scratch_root(tmp_path: Path) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    result = reference_patch_compatibility(
+        _patch_instance(patch=_TEXT_EDIT_PATCH, modified_files=["rtl/a.sv"]),
+        temporary_root=scratch,
+    )
+
+    assert result.compatible is True
+    assert list(scratch.iterdir()) == []
+
+    with pytest.raises(ConfigurationError, match="temporary root is unsafe"):
+        reference_patch_compatibility(
+            _patch_instance(patch=_TEXT_EDIT_PATCH, modified_files=["rtl/a.sv"]),
+            temporary_root=tmp_path / "missing",
+        )
+
+
 @pytest.mark.parametrize(
     ("patch", "modified_files", "reason"),
     [
