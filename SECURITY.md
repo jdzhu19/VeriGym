@@ -145,6 +145,16 @@ progress. A missing or malformed receipt, insufficient capacity, unexpected file
 or binding mismatch stops the identity without retry. This authorization does not permit provider
 access, canary execution, trajectory collection, SFT, inference evaluation, or held-out access.
 
+The separately versioned OpenHands v40 authorization materializes one new PR-2549 training-canary
+command image after all three v33 training reserves were consumed by frozen successor canaries. It
+does not change the PR-2989 or PR-3059 validation-reserve roles and reuses only the unstarted v33
+PR-3204 validation binding in its static successor contract. The runner binds the exact v33 and
+v39 evidence, v22 protocol repair, historical PR-2549 v2 task/source/verifier lock, and independently
+acquired ripgrep release. It retains the conservative six-image absolute headroom gate even though
+only one image is constructed. A successful future PR-2549 canary must be imported without formal
+re-execution; a failed canary freezes the task and identity. V40 itself has no provider or episode
+surface and cannot start canary execution, formal collection, training, or held-out access.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
