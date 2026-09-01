@@ -275,6 +275,24 @@ exact-64K, zero-retry, command-image, and stop policies remain unchanged. V48 au
 collection, training, GPU work, or held-out loading; a successful canary still requires a separate
 result audit and green post-merge main run.
 
+The sole authorized v48 provider run consumed PR-2802 as an ordinary model/trajectory failure. It
+made 43 provider calls in one episode, exhausted the fixed one-million-token budget, produced no
+candidate write or patch, and failed the verifier, protocol, trajectory, and SFT-admission planes
+while infrastructure and security remained valid. PR-3204 did not start. V48, its output, and
+PR-2802 are frozen; the task cannot be retried under a larger budget, changed prompt, or successor
+identity.
+
+The separately versioned v49 authorization is a zero-provider replacement materialization. It
+binds the complete v48 failed tree, attempt and security receipts, merged audit, green post-merge
+main run, and `failed_task_retry_authorized=false`. It builds and v2-scans one fresh PR-2916
+command image from that task's frozen public task/source/verifier lock and reuses only the
+still-unstarted v33 PR-3204 validation binding. The repository-local isolated runtime,
+export-safe receipt, conservative six-image headroom threshold, network-none, cleanup, atomic
+progress, and no-Codex/no-credential controls remain mandatory. V49 has no provider or episode
+surface and cannot execute a benchmark task, start collection or training, use a GPU, or load
+held-out data. A future v50 canary requires a separate authorization after the v49 result audit
+and may use only PR-2916 then PR-3204 with protocol v22, seed 497, and sample 13.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
