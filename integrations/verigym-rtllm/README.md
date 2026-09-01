@@ -105,5 +105,7 @@ See [verifier backend profiles](../../docs/verifier_profiles.md) for configurati
 [the phase-two worker qualification](../../docs/audits/rtl_agent_dc_worker_qualification_v2.md)
 for bounded reference/known-bad evidence. The
 [32-run harder diagnostic](../../docs/audits/rtllm_harder_multiturn_codex_32_diagnostic_v1.md)
-records the new partition's frozen campaign and its post-run integrity finding. These checks
-qualify infrastructure; they are not a benchmark score.
+records the new partition's frozen campaign and its post-run integrity finding. The
+[12-task full-corpus L1 pilot](../../docs/audits/rtllm_full_l1_codex_12task_pilot_v1.md) records a
+separate compile-only Codex diagnostic and the evidence used to select the next L2 batch. These
+checks qualify bounded infrastructure or projections; they are not benchmark scores.

@@ -26,6 +26,9 @@ The full-corpus RTLLM projection deliberately sets `ppa_supported=false` and
 elaboration. It does not imply public functional coverage, hidden correctness, synthesis
 qualification, or a native RTLLM score. Hidden RTLLM assets are staged only after typed `finish`;
 the final result remains a derived diagnostic projection with the upstream task identity retained.
+The bounded [12-task L1 Codex pilot](audits/rtllm_full_l1_codex_12task_pilot_v1.md) demonstrates
+this boundary in practice: nine first-pass public compiles produced six hidden passes and three
+hidden rejections, while three no-finish episodes did not execute the hidden verifier.
 
 ## Feedback boundaries
 
