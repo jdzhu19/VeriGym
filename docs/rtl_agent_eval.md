@@ -42,6 +42,13 @@ verification. Its [qualification record](audits/rtllm_full_corpus_l2_qualificati
 means useful repeatable functional feedback, not exhaustive correctness, synthesis qualification,
 or a native RTLLM score.
 
+The bounded [12-task full-L2 contrast](audits/rtllm_full_l2_codex_12task_contrast_v1.md) reuses
+the exact task order, GPT-5.4/xhigh request, seed, serial policy, and zero-retry/no-PPA dimensions
+from the earlier L1 pilot. It produced 9/12 resolved, 11 typed finishes, and five visible
+fail -> repair -> public-pass sequences; replay, leakage, and redaction audits passed. The
+functional-v3 prompt/tool identity is separately frozen for L2, so the paired single observations
+are diagnostic evidence rather than a pure single-variable causal estimate.
+
 The separately frozen L2 batch-one projection also sets `ppa_supported=false`, but replaces the
 compile-only contract with an independent public functional smoke for `adder_pipe_64bit`, `LFSR`,
 and `serial2parallel`. Its [qualification record](audits/rtllm_l2_batch1_qualification_v1.md)
