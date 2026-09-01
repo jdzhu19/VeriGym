@@ -293,6 +293,15 @@ surface and cannot execute a benchmark task, start collection or training, use a
 held-out data. A future v50 canary requires a separate authorization after the v49 result audit
 and may use only PR-2916 then PR-3204 with protocol v22, seed 497, and sample 13.
 
+The sole authorized v49 execution successfully built and v2-scanned that fresh PR-2916 command
+image while making zero provider calls and executing zero benchmark tasks. Its independent result
+scan covered the complete seven-file tree, compared active sensitive values and execution roots
+only in memory, and found no credential, proxy value, raw host path, unsafe filesystem entry, or
+scanner error. No command container remains. V49 stays a sealed zero-provider materialization and
+does not authorize canary execution or collection. Any v50 provider authorization must bind the
+exact v49 tree, image lock, scan, catalog, contract, merged result audit, and green post-merge main
+run before attempting PR-2916 followed by PR-3204.
+
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
 including the bounded exec-server `process/start` through `process/output`, `process/exited`, and
