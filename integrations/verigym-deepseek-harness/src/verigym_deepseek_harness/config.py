@@ -18,7 +18,7 @@ from verigym.hwe.deepseek_harness import (
 from verigym.hwe.profiles import HWE_COLLECTION_PROFILE_V2_ID
 
 DEEPSEEK_HARNESS_SOURCE_ROOT = Path(
-    "/data/jzhu484/Agent/datasets/deepseek-harness/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+    "/data2/jiadongzhu/Agent/datasets/deepseek-harness/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
 )
 DEEPSEEK_HARNESS_VERSION = "0.1.1-rc.2"
 CONTROLLER_IMAGE_ID = "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8"
@@ -28,6 +28,8 @@ CONTROLLER_IMAGE_REPO_DIGEST = (
 CONTROLLER_NETWORK = "verigym-hwe-net"
 API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
+MAX_PROVIDER_CALLS = 64
+MAX_PROVIDER_TOKENS = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,8 @@ def resolve_settings(
         "max_parallel_tool_calls": 1,
         "provider_request_retries": 0,
         "whole_episode_retries": 0,
+        "max_provider_calls": MAX_PROVIDER_CALLS,
+        "max_provider_tokens": MAX_PROVIDER_TOKENS,
         "controller_network": CONTROLLER_NETWORK,
         "credential_environment_name": API_KEY_ENV,
         "base_url_environment_name": BASE_URL_ENV,
@@ -218,6 +222,8 @@ __all__ = [
     "CONTROLLER_NETWORK",
     "DEEPSEEK_HARNESS_SOURCE_ROOT",
     "DEEPSEEK_HARNESS_VERSION",
+    "MAX_PROVIDER_CALLS",
+    "MAX_PROVIDER_TOKENS",
     "DeepSeekHarnessSettings",
     "require_provider_environment",
     "resolve_settings",

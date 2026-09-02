@@ -7,18 +7,22 @@ import verigym_deepseek_harness
 from verigym_deepseek_harness.agent import (
     DeepSeekHarnessHweAgentAdapter,
     DeepSeekHarnessHweAgentV3Adapter,
+    DeepSeekHarnessHweAgentV4Adapter,
 )
 from verigym_deepseek_harness.config import (
     CONTROLLER_IMAGE_ID,
     CONTROLLER_NETWORK,
+    DEEPSEEK_HARNESS_SOURCE_ROOT,
     DEEPSEEK_HARNESS_VERSION,
+    MAX_PROVIDER_CALLS,
+    MAX_PROVIDER_TOKENS,
 )
 
 from verigym.hwe.deepseek_harness import DEEPSEEK_HARNESS_TOOL_NAMES
 
 
 def test_frozen_package_and_controller_contract() -> None:
-    assert verigym_deepseek_harness.__version__ == "0.2.0"
+    assert verigym_deepseek_harness.__version__ == "0.3.0"
     assert DEEPSEEK_HARNESS_VERSION == "0.1.1-rc.2"
     assert CONTROLLER_IMAGE_ID == (
         "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8"
@@ -28,6 +32,13 @@ def test_frozen_package_and_controller_contract() -> None:
     assert DeepSeekHarnessHweAgentAdapter.descriptor.version == "0.1.0"
     assert DeepSeekHarnessHweAgentV3Adapter.descriptor.version == "0.2.0"
     assert DeepSeekHarnessHweAgentV3Adapter.format_repair_budget == 1
+    assert DeepSeekHarnessHweAgentV4Adapter.descriptor.name == ("deepseek-harness-hwe-agent-v4")
+    assert DeepSeekHarnessHweAgentV4Adapter.descriptor.version == "0.3.0"
+    assert DeepSeekHarnessHweAgentV4Adapter.bounded_progress_controls is True
+    assert DeepSeekHarnessHweAgentV4Adapter.enforce_provider_budget is True
+    assert MAX_PROVIDER_CALLS == 64
+    assert MAX_PROVIDER_TOKENS == 1_000_000
+    assert str(DEEPSEEK_HARNESS_SOURCE_ROOT).startswith("/data2/jiadongzhu/Agent/")
     assert DEEPSEEK_HARNESS_TOOL_NAMES == (
         "apply_patch",
         "finish",
@@ -51,13 +62,15 @@ def test_runtime_assets_disable_compaction_and_keep_controller_interactive() -> 
     assert tools.count("ctx.tools.register") == 1
     assert "temperature: 0" in tools
     assert "reasoningEffort: 'off'" in tools
+    assert "providerCalls >= MAX_PROVIDER_CALLS" in tools
+    assert "VERIGYM_HWE_PROVIDER_CALL_BUDGET_EXHAUSTED" in tools
 
 
 def test_helper_rejects_symlink_directories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source_root = Path(
-        "/data/jzhu484/Agent/datasets/deepseek-harness/"
+        "/data2/jiadongzhu/Agent/datasets/deepseek-harness/"
         "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/python/sdk/src"
     )
     if not source_root.is_dir():
