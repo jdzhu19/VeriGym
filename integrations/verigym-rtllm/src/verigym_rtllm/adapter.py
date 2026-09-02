@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from collections.abc import Iterable
@@ -67,6 +68,13 @@ from .manifest import (
     PPA_DIAGNOSTIC3_TASK_NAMES,
     TASK_MANIFESTS,
     RTLLMTaskManifest,
+)
+from .ppa import PPA47_BINDINGS_SHA256, PPA47_TASK_NAMES, PPA_TASK_BINDINGS
+from .qualification import (
+    FEEDBACK_V2_CATALOG_SHA256,
+    MUTATION_CONTROLS,
+    SPECIFICATION_OBLIGATIONS,
+    feedback_v2_mutant_source,
 )
 
 ADAPTER_VERSION = "0.3.0"
@@ -179,6 +187,73 @@ FULL_FUNCTIONAL_PUBLIC_SMOKE_SHA256 = {
     "traffic_light": "86022aaa2a54e9007f012d6be77197617ad54418cc8ce7d8d3f88ad095b47456",
     "width_8to16": "e4a3f15cdec126c0af6b88a65cc411735398501aaabdd565cd1421a9da672ade",
 }
+FEEDBACK_V2_VARIANT = "v2-agent-eval-functional-all-v2"
+FEEDBACK_V2_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-all-v2"
+FEEDBACK_V2_ADAPTER_VERSION = "0.13.0"
+FEEDBACK_V2_TASK_IDENTITIES_SHA256 = (
+    "19af76003b0c33f1e84b295d3a81fb16a1e43bc7001e92cf0fa8fa41532d75fb"
+)
+FEEDBACK_V2_WORKSPACE_ASSETS_SHA256 = FULL_FUNCTIONAL_WORKSPACE_ASSETS_SHA256
+FEEDBACK_V2_PUBLIC_SMOKE_SHA256 = {
+    "accu": "50c341321337b2bd067a9c5ef5b4b10633ef74ebdcb8a8ca3e83c147848b866b",
+    "adder_16bit": "c3210cf1610da10720f70b6d38b39bb8e3133b989f296179fe771f352ab242d4",
+    "adder_32bit": "47a2d52021b16709a8238946e96786b5aa68c4bf087a02d0b7fabef0aa636f0c",
+    "adder_8bit": "c03c8746a2e3e18a994f1afc77c8b6532495b657b0ac1f33d22b215afbd70b38",
+    "adder_bcd": "ce4bd4d5d94701f2fe232d07364de19a69326de9731d9b044dd6ff64842296a5",
+    "adder_pipe_64bit": "771f529b6594bb35f1ea8dc74cbe4874c202791aa02fd992e56eadc42443af18",
+    "comparator_3bit": "db3f000a9d6fb4a63380d0a1e44734fff4c24251eb4f95afe1a73927fdfdafa9",
+    "comparator_4bit": "16283fa34b46a43b72d27f53561d9a6dec49a59bb08a7d1d9b181472552316df",
+    "div_16bit": "41a388c0f3dd9ede9e8e805b9db17108cf5c3f38e31ea27bc9e38b1a7f6cc451",
+    "radix2_div": "9f3b4420555d075a0f33830602c2ad5e59c1b2a05b6b509f473e9408f1f430bf",
+    "multi_16bit": "b500a49ec6955baa04a71796b2a1bc4c8693c6686ef9ad6788321afb4df641b3",
+    "multi_8bit": "15016b6309192746295f0088bd90dc43eaa21798d4e8d1abf1d9081ab712780a",
+    "multi_booth_8bit": "44397cae551291df2054669304851d1a31461f939d8b2ff9110004df61186c8f",
+    "multi_pipe_4bit": "4f88d4d6ea3760b3371eb7f9bc7b205b98c1f9683ed762889793557dd765bcce",
+    "multi_pipe_8bit": "dc7f79025585ac47f9cc9230561422febf52ce6dd176bc0e922b77cb0e4bb472",
+    "fixed_point_adder": "c182890c8257927c9a544e134b94484326f9a277dc688b344b1d19c38e998457",
+    "fixed_point_substractor": "fa64307bd27e0c6060610b9e053aefe469538666dda7cf3508ccbe4666a3afbb",
+    "float_multi": "5ca246ec1f0167d25e8fa0e68b18fb9e465172ad9bdc954693c9ccbb5267b512",
+    "sub_64bit": "b1c2c6fc8cd057f4a3ec1ad394d6ced667b080c062257c57b128aa5d3c1dbf61",
+    "JC_counter": "519d5ab66d7b1299aa271dc7330eeb8fe6aa0fa5886254a2de9447ebe27989af",
+    "counter_12": "fe32e29c3f71df7dea28298f222459fff0fd9e2d964d0dd460fbcdad6a9c9187",
+    "ring_counter": "3d580d1fa78dce9187f4159dd2378cb1f9499d42d78e08bc90e9b2f2b888b6ad",
+    "up_down_counter": "f7f195da0685d191e2d8737543512797a14631d4306e21a29741798cce4d0501",
+    "fsm": "7419e76160ccc90a533f671bba63c2ce3b89ee194c75e34c578084b6853fa18e",
+    "sequence_detector": "0c6dc64ac52a635ed911c61fb318d1df1a8d0df924053444b17a5b09125559ed",
+    "asyn_fifo": "8cd60f6b52ba4cf4e22d8961c15ce59bc2798f2b23c520f581b552a0f02917c8",
+    "LIFObuffer": "dc0644c4872164dea4f5c5d6e85784acb1b07f77623f32cccdba1ae3211217ce",
+    "LFSR": "7f5fead2bf70dedd5b6a8a14f027bb00274c867ce80e9596aa2f94f0f576b0f2",
+    "barrel_shifter": "bf31beb6e97c54ecaa14dae615bdfd81b5acf26b0dfd1cdf07f9ffcab3de8a19",
+    "right_shifter": "a8d4296186acc3ff1b1d8c0eda763f779baec3adaebb491f53b3c2a4d9baf304",
+    "freq_div": "1132c91eda185a8f1e95e3fc2e403918b7b8f6284ede8511c6389d4448c8c081",
+    "freq_divbyeven": "50af8f3bd39d51de02eb638c2869df5dbbaa2400a92883edb0ae5b8e9b8cba29",
+    "freq_divbyfrac": "024ef2a7068244b9fa0a03cecefa35ea2f610eb0a1c06c3f7fe6994c0500708a",
+    "freq_divbyodd": "09378c742a63bd5f43a1a7166ab4da11a915045aadaebe01b98d7d4ee800b530",
+    "calendar": "0368bf20a4e39b3675f41c551532229f37a3c007a816678686cf9a874832b0aa",
+    "edge_detect": "759a05feab1e031eb5b58e9a8884e5b4b0c2aa214efa9c3e95c94e536648b556",
+    "parallel2serial": "7b554a20af6c13f6709fabc8e47041c9170c3456757b4e9827f0a81190ee0433",
+    "pulse_detect": "55bff2af8630961aef50b404c4278ae2e0ddf15d85e01bc034bc17620a6036a5",
+    "serial2parallel": "801b06c078a3de115060df40ac56fe2b7a1f373912367f9d840e9a6b44ed4a96",
+    "synchronizer": "d4a9acb224738d07932580c2f3ff9f56a531283c63cb29568b6c160e6442855b",
+    "traffic_light": "3598d6a583032a5caf5fa7758a9fd06d49ab059ec4d557d84491b14c6ddb3c3a",
+    "width_8to16": "72d6518aee7188b181d91f8daf9e56ad455303353b7ed6870d0cc6c4f643ad33",
+    "RAM": "79b20c0c129802cedaa16f58f3c79c4445e4f49f1e3f4eb50fec0a0462eab18b",
+    "ROM": "3e6aafe12e6348fa4450889e5970885e77451703cdc352db615e5d99f849675b",
+    "alu": "10289a81946f5f4f5b4bca50ae9fd9570b5060f746906d116599d3ea38077f96",
+    "clkgenerator": "2880d6801ad72e414578445eef088dec81b4d8201f46b774ac6583c9279960a6",
+    "instr_reg": "9996a11b69a8a54ecf0c9bf2fbbace4d07d3a6fb1dcab6aadd7b2f0d03b61fa9",
+    "pe": "1fe9949d3169151fc28d6440c5da640c9e7b742cb70c08530dbcb177612bd97e",
+    "signal_generator": "663eb20319f9c8899362c07910f9c038629b9d2c9df36c180bc818c2f50ba65d",
+    "square_wave": "cb80d48f75bc9dad1e0e827ab974fad988d6527805411541c16e147da31e7aac",
+}
+PPA47_VARIANT = "v2-agent-eval-functional-ppa47-v1"
+PPA47_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-ppa47-v1"
+PPA47_ADAPTER_VERSION = "0.14.0"
+PPA47_TASK_IDENTITIES_SHA256 = "e999360992f388cea2e43b0b8dc54087c11341c97e974d05c9262e44a087fb10"
+FIFO_BEHAVIOR_CHECKER_SHA256 = "055ed0703bda4ce358fdc57b739b89388c26a666e1b39a2aa0b371aa23ffd1f5"
+FIFO_BEHAVIOR_CHECKER_PROJECTION = "behavior-scoreboard-cdc-window-v2"
+FIFO_BEHAVIOR_CHECKER_ENVIRONMENT = "VERIGYM_RTLLM_FIFO_BEHAVIOR_CHECKER_V2"
+_FEEDBACK_V2_VARIANTS = frozenset({FEEDBACK_V2_VARIANT, PPA47_VARIANT})
 _FULL_FUNCTIONAL_HIDDEN_PROJECTIONS = {
     "edge_detect": (
         "edge-detection-boolean-guard-v1",
@@ -201,6 +276,7 @@ class _FunctionalBatchSpec:
     public_smoke_sha256: dict[str, str]
     evaluation_profile: str
     public_feedback_semantics: str
+    feedback_v2: bool = False
 
 
 _FUNCTIONAL_BATCH_SPECS = {
@@ -246,6 +322,30 @@ _FUNCTIONAL_BATCH_SPECS = {
         evaluation_profile="icarus12-agent-eval-functional-all-v1",
         public_feedback_semantics="compile_and_independent_functional_smoke_l2_all_v1",
     ),
+    FEEDBACK_V2_VARIANT: _FunctionalBatchSpec(
+        task_names=ALL_TASK_NAMES,
+        suite_version=FEEDBACK_V2_SUITE_VERSION,
+        adapter_version=FEEDBACK_V2_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_full",
+        public_smoke_asset="public_smoke_l2_full",
+        public_smoke_sha256=FEEDBACK_V2_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-agent-eval-functional-all-v2",
+        public_feedback_semantics="compile_and_mutation_qualified_functional_smoke_l2_all_v2",
+        feedback_v2=True,
+    ),
+    PPA47_VARIANT: _FunctionalBatchSpec(
+        task_names=PPA47_TASK_NAMES,
+        suite_version=PPA47_SUITE_VERSION,
+        adapter_version=PPA47_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_full",
+        public_smoke_asset="public_smoke_l2_full",
+        public_smoke_sha256=FEEDBACK_V2_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-functional-opensta-dc-ppa47-v1",
+        public_feedback_semantics=(
+            "compile_mutation_qualified_smoke_and_candidate_only_ppa_feedback_ppa47_v1"
+        ),
+        feedback_v2=True,
+    ),
 }
 PINNED_COMMIT = "41b26896e33b536940116a975626455eed3de65e"
 CANONICAL_REMOTE = "https://github.com/hkust-zhiyao/RTLLM.git"
@@ -283,7 +383,12 @@ _MULTI_TASK_VARIANTS = {
 _FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset(
     {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT, *_FUNCTIONAL_BATCH_SPECS}
 )
-_NO_PPA_AGENT_EVAL_VARIANTS = frozenset({ALL_AGENT_EVAL_VARIANT, *_FUNCTIONAL_BATCH_SPECS})
+_NO_PPA_AGENT_EVAL_VARIANTS = frozenset(
+    {
+        ALL_AGENT_EVAL_VARIANT,
+        *(variant for variant in _FUNCTIONAL_BATCH_SPECS if variant != PPA47_VARIANT),
+    }
+)
 _BENCHMARK_ROOTS = ("Arithmetic", "Control", "Memory", "Miscellaneous")
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
@@ -390,6 +495,7 @@ class RTLLMSuite(SuiteAdapter):
 
     def load_task(self, ref: TaskRef) -> VeriTask:
         manifest = self._manifest_for_ref(ref)
+        verifier_manifest = self._effective_manifest(manifest)
         variant = self._variant()
         harder = variant in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
@@ -512,7 +618,7 @@ class RTLLMSuite(SuiteAdapter):
                 max_workspace_bytes=4_000_000 if multi_task_variant else 2_000_000,
             ),
             verifier=self._verifier_graph(
-                manifest,
+                verifier_manifest,
                 candidate_path=candidate_path,
                 icarus=icarus_training or agent_eval,
                 isolated_icarus=multi_task_variant,
@@ -599,11 +705,12 @@ class RTLLMSuite(SuiteAdapter):
         else:
             visible_root = str(self._base_workspace(manifest).resolve(strict=True))
             read_only_mounts = []
+        effective_manifest = self._effective_manifest(manifest)
         hidden = [
             self._resolved_hidden_asset(manifest, manifest.testbench_file, "verifier/testbench.v"),
             *(
                 self._resolved_hidden_asset(manifest, name, name)
-                for name in manifest.auxiliary_files
+                for name in effective_manifest.auxiliary_files
             ),
         ]
         return ResolvedTaskAssets(
@@ -659,9 +766,62 @@ class RTLLMSuite(SuiteAdapter):
             source, replacements = pattern.subn(rf"\1{manifest.candidate_top}", source, count=1)
             if replacements != 1 or pattern.search(source) is not None:
                 raise ConfigurationError("RTLLM reference module normalization is no longer exact")
+        label = "pinned-upstream-reference"
+        if self._variant() == PPA47_VARIANT:
+            binding = PPA_TASK_BINDINGS[manifest.name]
+            if binding.reference_normalization is not None:
+                if binding.reference_normalization == (
+                    "dc_ver134_combinational_blocking_assignment_v1"
+                ):
+                    replacements = source.count("\t    next_state <= IDLE;")
+                    source = source.replace(
+                        "\t    next_state <= IDLE;",
+                        "\t    next_state = IDLE;",
+                        1,
+                    )
+                elif binding.reference_normalization == "dc_ver281_fixed_rom_case_v1":
+                    original = (
+                        "    // Declare a memory array of 256 locations, each 16 bits wide, "
+                        "initialized with fixed data\n"
+                        "    reg [15:0] mem [0:255];\n\n"
+                        "    // Initial block to initialize the ROM with data\n"
+                        "    initial begin\n"
+                        "        mem[0] = 16'hA0A0;\n"
+                        "        mem[1] = 16'hB1B1;\n"
+                        "        mem[2] = 16'hC2C2;\n"
+                        "        mem[3] = 16'hD3D3;\n"
+                        "        // Initialize other memory locations as needed\n"
+                        "    end\n\n"
+                        "    // Combinational logic: Read data from the ROM at the specified "
+                        "address\n"
+                        "    always @(*) begin\n"
+                        "        dout = mem[addr];\n"
+                        "    end\n"
+                    )
+                    replacement = (
+                        "    // PPA47 synthesis projection of the four fixed public ROM words.\n"
+                        "    always @(*) begin\n"
+                        "        case (addr)\n"
+                        "            8'h00: dout = 16'hA0A0;\n"
+                        "            8'h01: dout = 16'hB1B1;\n"
+                        "            8'h02: dout = 16'hC2C2;\n"
+                        "            8'h03: dout = 16'hD3D3;\n"
+                        "            default: dout = 16'hxxxx;\n"
+                        "        endcase\n"
+                        "    end\n"
+                    )
+                    replacements = source.count(original)
+                    source = source.replace(original, replacement, 1)
+                else:
+                    raise ConfigurationError("unknown RTLLM PPA reference normalization")
+                if replacements != 1 or _hash_bytes(source.encode()) != (
+                    binding.reference_normalized_sha256
+                ):
+                    raise ConfigurationError("RTLLM PPA reference normalization is no longer exact")
+                label = "pinned-upstream-reference-ppa-normalized"
         return Candidate(
             files={self._candidate_path(manifest): source},
-            label="pinned-upstream-reference",
+            label=label,
         )
 
     def conformance_cases(self) -> Iterable[ConformanceCase]:
@@ -681,7 +841,9 @@ class RTLLMSuite(SuiteAdapter):
                 )
             )
             categories = (
-                ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
+                tuple(item.mutation_id for item in MUTATION_CONTROLS[manifest.name])
+                if self._variant() in _FEEDBACK_V2_VARIANTS
+                else ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
                 if self._variant() in _FUNCTIONAL_MULTI_TASK_VARIANTS
                 else ()
                 if self._variant() == ALL_AGENT_EVAL_VARIANT
@@ -693,8 +855,10 @@ class RTLLMSuite(SuiteAdapter):
                         name=f"{manifest.name}-{category}",
                         candidate=Candidate(
                             files={
-                                self._candidate_path(manifest): known_bad_source(
-                                    manifest.name, category
+                                self._candidate_path(manifest): (
+                                    feedback_v2_mutant_source(manifest.name, category)
+                                    if self._variant() in _FEEDBACK_V2_VARIANTS
+                                    else known_bad_source(manifest.name, category)
                                 )
                             },
                             label=f"known-bad-{category}",
@@ -737,6 +901,16 @@ class RTLLMSuite(SuiteAdapter):
                     expected_resolved=False,
                 ),
             ]
+        categories = (
+            tuple(item.mutation_id for item in MUTATION_CONTROLS[manifest.name])
+            if self._variant() in _FEEDBACK_V2_VARIANTS
+            else (
+                "stuck-zero",
+                "reset-error",
+                "protocol-latency-error",
+                "functional-error",
+            )
+        )
         return [
             ConformanceCase(
                 name=f"{manifest.name}-public-reference",
@@ -748,20 +922,17 @@ class RTLLMSuite(SuiteAdapter):
                     name=f"{manifest.name}-public-{category}",
                     candidate=Candidate(
                         files={
-                            self._candidate_path(manifest): known_bad_source(
-                                manifest.name, category
+                            self._candidate_path(manifest): (
+                                feedback_v2_mutant_source(manifest.name, category)
+                                if self._variant() in _FEEDBACK_V2_VARIANTS
+                                else known_bad_source(manifest.name, category)
                             )
                         },
                         label=f"known-bad-{category}",
                     ),
                     expected_resolved=False,
                 )
-                for category in (
-                    "stuck-zero",
-                    "reset-error",
-                    "protocol-latency-error",
-                    "functional-error",
-                )
+                for category in categories
             ),
         ]
 
@@ -948,7 +1119,7 @@ class RTLLMSuite(SuiteAdapter):
             return "workspace_all"
         if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return "workspace_harder"
-        if self._variant() == FULL_FUNCTIONAL_VARIANT:
+        if self._variant() in {FULL_FUNCTIONAL_VARIANT, *_FEEDBACK_V2_VARIANTS}:
             return self._full_functional_asset_folders(manifest.name)[0]
         if batch := _FUNCTIONAL_BATCH_SPECS.get(self._variant()):
             return batch.workspace_asset
@@ -959,7 +1130,7 @@ class RTLLMSuite(SuiteAdapter):
             return self._all_workspace_root
         if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return self._harder_workspace_root
-        if self._variant() == FULL_FUNCTIONAL_VARIANT:
+        if self._variant() in {FULL_FUNCTIONAL_VARIANT, *_FEEDBACK_V2_VARIANTS}:
             workspace, _ = self._full_functional_asset_folders(manifest.name)
             return Path(__file__).parent / "assets" / workspace
         if self._variant() in self._functional_batch_workspace_roots:
@@ -1006,6 +1177,16 @@ class RTLLMSuite(SuiteAdapter):
             "The public smoke is independently authored and candidate-only; the final verifier "
             "remains hidden."
         )
+        if self._variant() in _FEEDBACK_V2_VARIANTS and manifest.name == "asyn_fifo":
+            return common + (
+                " This derived contract fixes WIDTH=8 and DEPTH=16. Writes and synchronous "
+                "reads are accepted on wclk and rclk respectively only when the corresponding "
+                "full or empty flag permits them, and accepted data retains FIFO ordering. "
+                "wrstn and rrstn are active-low asynchronous domain resets. A single-domain "
+                "reset invalidates queued contents; coordinated reset is required before reuse. "
+                "A remote pointer may affect the target-domain flag two through four target "
+                "clock edges later, so no internal pointer or exact golden-cycle trace is required."
+            )
         if self._variant() == L2_DIAGNOSTIC3_VARIANT:
             diagnostic_note = {
                 "div_16bit": (
@@ -1102,8 +1283,13 @@ class RTLLMSuite(SuiteAdapter):
 
     def _public_smoke(self, name: str) -> str:
         batch = _FUNCTIONAL_BATCH_SPECS.get(self._variant())
+        feedback_v2 = self._variant() in _FEEDBACK_V2_VARIANTS
         folder = (
-            "public_smoke_harder"
+            "public_smoke_v2"
+            if feedback_v2 and name == "asyn_fifo"
+            else self._full_functional_asset_folders(name)[1]
+            if feedback_v2
+            else "public_smoke_harder"
             if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}
             else self._full_functional_asset_folders(name)[1]
             if self._variant() == FULL_FUNCTIONAL_VARIANT
@@ -1115,6 +1301,11 @@ class RTLLMSuite(SuiteAdapter):
         if path.is_symlink() or not path.is_file():
             raise ConfigurationError("RTLLM public smoke asset is unavailable")
         smoke = path.read_text(encoding="utf-8")
+        if feedback_v2 and name != "asyn_fifo":
+            smoke += (
+                "\n// RTLLM feedback-v2 public vector partition.\n"
+                f"// task={name} seed=0x50554232 mutation_gate=12\n"
+            )
         if self._variant() == PPA_DIAGNOSTIC3_VARIANT:
             expected = PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256.get(name)
             if expected is None or _hash_bytes(smoke.encode("utf-8")) != expected:
@@ -1168,16 +1359,38 @@ class RTLLMSuite(SuiteAdapter):
             ),
             *(
                 AssetRef(kind="inline", content_hash=hashes[name], mount_path=name)
-                for name in manifest.auxiliary_files
+                for name in effective.auxiliary_files
             ),
         ]
 
     def _resolved_hidden_asset(
         self, manifest: RTLLMTaskManifest, source_name: str, mount_path: str
     ) -> AssetRef:
+        effective = self._effective_manifest(manifest)
+        if (
+            effective.testbench_projection == FIFO_BEHAVIOR_CHECKER_PROJECTION
+            and source_name == manifest.testbench_file
+        ):
+            configured = os.environ.get(FIFO_BEHAVIOR_CHECKER_ENVIRONMENT)
+            if configured is None:
+                raise ConfigurationError(
+                    f"set {FIFO_BEHAVIOR_CHECKER_ENVIRONMENT} to the verifier-only FIFO checker"
+                )
+            path = Path(configured).expanduser()
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_SOURCE_BYTES:
+                raise ConfigurationError("RTLLM FIFO behavior checker is unavailable")
+            content = path.read_bytes()
+            if _hash_bytes(content) != FIFO_BEHAVIOR_CHECKER_SHA256:
+                raise ConfigurationError("RTLLM FIFO behavior checker differs from its identity")
+            return AssetRef(
+                kind="inline",
+                content=content.decode("utf-8"),
+                content_hash=FIFO_BEHAVIOR_CHECKER_SHA256,
+                mount_path=mount_path,
+            )
         content = _read_exact(self._source_root(), f"{manifest.root}/{source_name}")
         if source_name == manifest.testbench_file:
-            content = self._project_testbench(self._effective_manifest(manifest), content)
+            content = self._project_testbench(effective, content)
         return AssetRef(
             kind="inline",
             content=content.decode("utf-8"),
@@ -1186,7 +1399,14 @@ class RTLLMSuite(SuiteAdapter):
         )
 
     def _effective_manifest(self, manifest: RTLLMTaskManifest) -> RTLLMTaskManifest:
-        if self._variant() != FULL_FUNCTIONAL_VARIANT:
+        if self._variant() in _FEEDBACK_V2_VARIANTS and manifest.name == "asyn_fifo":
+            return replace(
+                manifest,
+                auxiliary_files=(),
+                testbench_projection=FIFO_BEHAVIOR_CHECKER_PROJECTION,
+                testbench_projection_sha256=FIFO_BEHAVIOR_CHECKER_SHA256,
+            )
+        if self._variant() not in {FULL_FUNCTIONAL_VARIANT, *_FEEDBACK_V2_VARIANTS}:
             return manifest
         projection = _FULL_FUNCTIONAL_HIDDEN_PROJECTIONS.get(manifest.name)
         if projection is None:
@@ -1675,7 +1895,7 @@ class RTLLMSuite(SuiteAdapter):
             )
             if all_agent_eval:
                 metadata["gym_qualification_level"] = "L1_compile_only"
-            elif variant == PPA_DIAGNOSTIC3_VARIANT:
+            elif variant in {PPA_DIAGNOSTIC3_VARIANT, PPA47_VARIANT}:
                 metadata["gym_qualification_level"] = "L4_correctness_gated_final_ppa"
                 metadata["gym_qualification_levels"] = [
                     "L2_functional_smoke",
@@ -1685,14 +1905,51 @@ class RTLLMSuite(SuiteAdapter):
                 metadata["ppa_backend_partitions"] = ["yosys_opensta", "synopsys_dc_mcp"]
             elif batch is not None:
                 metadata["gym_qualification_level"] = "L2_functional_smoke"
+        if variant in _FEEDBACK_V2_VARIANTS:
+            metadata.update(
+                {
+                    "feedback_v2_catalog_sha256": FEEDBACK_V2_CATALOG_SHA256,
+                    "public_vector_partition": "public-spec-vectors-seed-0x50554232",
+                    "hidden_vector_partition": "verifier-only-vectors-seed-0x48494432",
+                    "specification_obligations": [
+                        item.kind for item in SPECIFICATION_OBLIGATIONS[manifest.name]
+                    ],
+                    "mutation_controls": [
+                        item.mutation_id for item in MUTATION_CONTROLS[manifest.name]
+                    ],
+                    "mutation_control_count": len(MUTATION_CONTROLS[manifest.name]),
+                }
+            )
+        if variant == PPA47_VARIANT:
+            binding = PPA_TASK_BINDINGS[manifest.name]
+            metadata.update(
+                {
+                    "ppa47_bindings_sha256": PPA47_BINDINGS_SHA256,
+                    "ppa_task_binding": {
+                        "top": binding.top,
+                        "source_path": binding.source_path,
+                        "clock_mode": binding.clock_mode,
+                        "clocks": [
+                            {"name": name, "period_ns": period} for name, period in binding.clocks
+                        ],
+                        "sdc_sha256": _hash_bytes((binding.sdc or "").encode()),
+                        "power_base_clock": binding.power_base_clock,
+                        "eligible": binding.eligible,
+                        "exclusion_reason": binding.exclusion_reason,
+                        "reference_normalization": binding.reference_normalization,
+                        "reference_normalized_sha256": binding.reference_normalized_sha256,
+                    },
+                }
+            )
         if variant in _MULTI_TASK_VARIANTS:
+            ppa_binding = PPA_TASK_BINDINGS.get(manifest.name) if variant == PPA47_VARIANT else None
             manifest_payload = {
                 "name": manifest.name,
                 "root": manifest.root,
                 "prompt_file": manifest.prompt_file,
                 "reference_file": manifest.reference_file,
                 "testbench_file": manifest.testbench_file,
-                "auxiliary_files": list(manifest.auxiliary_files),
+                "auxiliary_files": list(identity_manifest.auxiliary_files),
                 "candidate_top": manifest.candidate_top,
                 "reference_module": manifest.reference_module,
                 "testbench_top": manifest.testbench_top,
@@ -1702,12 +1959,21 @@ class RTLLMSuite(SuiteAdapter):
                     or dict(manifest.file_hashes)[manifest.testbench_file]
                 ),
                 "synthesis_top": manifest.synthesis_top,
-                "clocks": [
-                    {"name": clock.name, "period_ns": clock.period_ns} for clock in manifest.clocks
-                ],
-                "power_base_clock": manifest.power_base_clock,
+                "clocks": (
+                    [{"name": name, "period_ns": period} for name, period in ppa_binding.clocks]
+                    if ppa_binding is not None
+                    else []
+                ),
+                "power_base_clock": (
+                    ppa_binding.power_base_clock if ppa_binding is not None else None
+                ),
                 "file_hashes": dict(manifest.file_hashes),
             }
+            if ppa_binding is None:
+                manifest_payload["clocks"] = [
+                    {"name": clock.name, "period_ns": clock.period_ns} for clock in manifest.clocks
+                ]
+                manifest_payload["power_base_clock"] = manifest.power_base_clock
             metadata.update(
                 {
                     "diagnostic_only": True,
@@ -1721,10 +1987,10 @@ class RTLLMSuite(SuiteAdapter):
                     "frozen_task_trees_hash": FROZEN_TASK_TREES_HASH,
                     "frozen_dataset_files_hash": FROZEN_DATASET_FILES_HASH,
                     "clock_constraints": manifest_payload["clocks"],
-                    "power_base_clock": manifest.power_base_clock,
+                    "power_base_clock": manifest_payload["power_base_clock"],
                 }
             )
-        if variant == FULL_FUNCTIONAL_VARIANT:
+        if variant in {FULL_FUNCTIONAL_VARIANT, *_FEEDBACK_V2_VARIANTS}:
             metadata["workspace_scaffold_sha256"] = self._full_workspace_asset_hashes()[
                 manifest.name
             ]

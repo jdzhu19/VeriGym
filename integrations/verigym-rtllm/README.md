@@ -29,6 +29,10 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-diagnostic3-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-ppa3-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-all-v2
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-ppa47-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -113,6 +117,27 @@ and Design Compiler/MCP are distinct, non-comparable partitions. `asyn_fifo` is 
 resolution of its repeated public/hidden functional gap. See the
 [dual-backend PPA qualification](../../docs/audits/rtllm_ppa3_dual_backend_qualification_v1.md).
 
+`v2-agent-eval-functional-all-v2` keeps the 50-task, multi-turn L2 surface while freezing a
+12-control public-spec mutation contract per task. Public and hidden qualification use different
+partition IDs and seeds. The catalog identity and a separate 600-source digest map bind the
+obligation metadata and the actual compile-shaped controls independently. The asynchronous FIFO
+uses an independent queue scoreboard with bounded CDC visibility instead of the upstream
+cycle-exact trace comparison. Its verifier-only checker is site supplied through
+`VERIGYM_RTLLM_FIFO_BEHAVIOR_CHECKER_V2`; the checker hash is public, but its bytes and path are
+never added to a task workspace or repository. PPA remains disabled for this 50-task variant.
+
+`v2-agent-eval-functional-ppa47-v1` is a separate PPA-enabled projection of the 47 references with
+valid synthesis models. It binds every task to one top, source, SDC, clock mode, and power-base
+clock. Single-clock tasks use 10 ns, `asyn_fifo` uses 10 ns `wclk` and 14 ns `rclk` with
+asynchronous groups, and combinational tasks use a 10 ns virtual clock with frozen 1 ns I/O delays.
+`float_multi`, `synchronizer`, and `clkgenerator` remain in the 50-task L2 variant but are excluded
+from PPA47 with stable reason codes. OpenSTA and DC/MCP remain separate non-comparable profile
+partitions. The `sequence_detector` and `ROM` bindings apply explicit, hash-checked, PPA-only
+synthesis normalizations; the upstream goldens, L2 task identities, and candidate source paths are
+unchanged. See the [feedback-v2 mutation audit](../../docs/audits/rtllm_feedback_v2_mutation_matrix.md),
+[FIFO contract audit](../../docs/audits/rtllm_asyn_fifo_behavior_contract_v2.md), and
+[PPA47 qualification audit](../../docs/audits/rtllm_ppa47_dual_backend_qualification_v1.md).
+
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
 `rtllm/v2-agent-eval-functional-harder-v1/<task-name>`. Each task has one repository-relative RTL
@@ -156,6 +181,10 @@ The supported functional-version matrix is intentionally partitioned:
   for all 50 frozen tasks, and explicitly disables PPA;
 - `v2-agent-eval-functional-ppa3-v1` requires Icarus 12 and a separately resolved task-bound
   OpenSTA or DC profile, and enables PPA only for its three qualified tasks;
+- `v2-agent-eval-functional-all-v2` requires Icarus 12 and an external hash-matched FIFO checker,
+  provides 50-task L2 feedback with 12 mutation controls per task, and disables PPA;
+- `v2-agent-eval-functional-ppa47-v1` uses the same functional contract and enables PPA only for
+  the 47 explicitly eligible task bindings;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and

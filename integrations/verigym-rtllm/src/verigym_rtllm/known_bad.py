@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -450,6 +451,19 @@ _GENERATED_CONTROL_SHAPES: dict[str, tuple[tuple[str, ...], str | None, str | No
     "pe": (("c",), "clk", "a"),
     "signal_generator": (("wave",), "clk", "rst_n"),
     "square_wave": (("wave_out",), "clk", "freq"),
+    # The following tasks have hand-written historical controls in ``_BAD``.  Their interface
+    # shapes are also frozen here so feedback-v2 can build additional independent controls from
+    # the public scaffold without reading the upstream reference implementation.
+    "radix2_div": (("res_valid", "result"), "clk", "dividend"),
+    "multi_pipe_8bit": (("mul_en_out", "mul_out"), "clk", "mul_a"),
+    "LIFObuffer": (("EMPTY", "FULL", "dataOut"), "Clk", "dataIn"),
+    "asyn_fifo": (("wfull", "rempty", "rdata"), "wclk", "wdata"),
+    "adder_pipe_64bit": (("result", "o_en"), "clk", "adda"),
+    "LFSR": (("out",), "clk", "rst"),
+    "serial2parallel": (("dout_parallel", "dout_valid"), "clk", "din_serial"),
+    "sequence_detector": (("sequence_detected",), "clk", "data_in"),
+    "synchronizer": (("dataout",), "clk_b", "data_in"),
+    "RAM": (("read_data",), "clk", "write_data"),
 }
 
 
@@ -567,6 +581,85 @@ def _generated_control_source(name: str, category: str) -> str:
     return header + "\n" + "\n".join(body) + "\nendmodule\n"
 
 
+def task_specific_bad_source(
+    name: str,
+    *,
+    mutation_id: str,
+    obligation: str,
+    base_control: str,
+) -> str:
+    """Build an observable task-interface mutant without consulting the golden RTL."""
+
+    try:
+        outputs, clock, _ = _GENERATED_CONTROL_SHAPES[name]
+    except KeyError as exc:
+        raise ConfigurationError(f"RTLLM task-specific control shape is unknown: {name}") from exc
+    source = known_bad_source(name, base_control)
+    header_end = source.find(");")
+    if header_end < 0:
+        raise ConfigurationError(f"RTLLM task-specific control source is malformed: {name}")
+    header_end += 2
+    tag = int.from_bytes(hashlib.sha256(f"{name}/{mutation_id}".encode()).digest()[:8], "big")
+    corruption = tag | 1
+    corruption_literal = f"64'h{corruption:016x}"
+
+    support = [f"    // Observable {obligation} mutation: {mutation_id}."]
+    if name == "square_wave":
+        activation = tag & 0xFF
+        support.extend(
+            (
+                "    wire [63:0] verigym_control_value;",
+                (
+                    "    assign verigym_control_value = "
+                    f"(freq == 8'h{activation:02x}) ? {corruption_literal} : 64'd0;"
+                ),
+            )
+        )
+    elif clock is None:
+        support.extend(
+            (
+                "    wire [63:0] verigym_control_value;",
+                f"    assign verigym_control_value = {corruption_literal};",
+            )
+        )
+    else:
+        support.extend(
+            (
+                "    reg [63:0] verigym_control_value;",
+                f"    initial verigym_control_value = {corruption_literal};",
+                f"    always @(posedge {clock})",
+                "        verigym_control_value <= verigym_control_value + 64'd1;",
+            )
+        )
+    signal = "verigym_control_value"
+
+    status_fragments = ("valid", "en", "done", "rdy", "full", "empty", "flag", "clock")
+    target = min(
+        outputs,
+        key=lambda output: (any(fragment in output.lower() for fragment in status_fragments),),
+    )
+    body = source[header_end:]
+    patterns = (
+        rf"(\bassign\s+{re.escape(target)}\s*=\s*)([^;]+)(;)",
+        rf"(\b{re.escape(target)}\s*<=\s*)([^;]+)(;)",
+        rf"(\b{re.escape(target)}\s*=\s*)([^;]+)(;)",
+    )
+    replacements = 0
+    for pattern in patterns:
+        matches = list(re.finditer(pattern, body))
+        if matches:
+            match = matches[-1]
+            replacement = f"{match.group(1)}({match.group(2)}) ^ {signal}{match.group(3)}"
+            body = body[: match.start()] + replacement + body[match.end() :]
+            replacements = 1
+            break
+    if replacements != 1:
+        raise ConfigurationError(
+            f"RTLLM task-specific control output is not assignable: {name}/{target}"
+        )
+    return source[:header_end] + "\n" + "\n".join(support) + "\n" + body
+
+
 def known_bad_source(name: str, category: str) -> str:
     if name in _COUNTER_BAD and category == "stuck-zero":
         return _COUNTER_BAD[name]
@@ -582,4 +675,4 @@ def known_bad_source(name: str, category: str) -> str:
         ) from exc
 
 
-__all__ = ["known_bad_source"]
+__all__ = ["known_bad_source", "task_specific_bad_source"]
