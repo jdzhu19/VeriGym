@@ -8,7 +8,9 @@ from pydantic import ValidationError
 from verigym.core.hashing import content_hash
 from verigym.hwe.image_lock import (
     HweCommandImageLock,
+    HweCommandSourceLock,
     build_hwe_command_image_lock,
+    build_hwe_command_source_lock,
 )
 
 
@@ -56,6 +58,31 @@ def test_command_image_lock_tampering_fails_closed() -> None:
     changed["rg_sha256"] = "a" * 64
     with pytest.raises(ValidationError, match="identity changed"):
         HweCommandImageLock.model_validate(changed)
+
+
+def test_command_source_lock_seals_qualified_source_and_verifier() -> None:
+    lock = build_hwe_command_source_lock(
+        task_id="hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2728",
+        task_hash="1" * 64,
+        source_hash="2" * 64,
+        prepared_source_image_lock_sha256="3" * 64,
+        verifier_base_image_id=f"sha256:{'4' * 64}",
+        toolchain_profile_id="cva6-verilator-5.008-container-native-v2",
+        allowlisted_artifacts=[
+            {"path": "/usr/bin/make", "sha256": "5" * 64, "role": "build_tool"},
+            {
+                "path": "/tools/verilator/bin/verilator_bin",
+                "sha256": "6" * 64,
+                "role": "simulator",
+            },
+        ],
+    )
+
+    assert HweCommandSourceLock.model_validate(lock.model_dump(mode="json")) == lock
+    changed = lock.model_dump(mode="json")
+    changed["source_hash"] = "7" * 64
+    with pytest.raises(ValidationError, match="identity changed"):
+        HweCommandSourceLock.model_validate(changed)
 
 
 def test_command_image_builder_rejects_codex_bundled_rg_and_sanitizes_environment() -> None:

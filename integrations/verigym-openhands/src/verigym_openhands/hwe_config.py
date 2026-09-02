@@ -38,6 +38,11 @@ from verigym_openhands.hwe_v22_protocol import (
     OPENHANDS_V22_MAX_PROVIDER_TOKENS,
     OPENHANDS_V22_TOOL_CHOICE_POLICY,
 )
+from verigym_openhands.hwe_v23_protocol import (
+    OPENHANDS_V23_MAX_PROVIDER_CALLS,
+    OPENHANDS_V23_MAX_PROVIDER_TOKENS,
+    OPENHANDS_V23_TOOL_CHOICE_POLICY,
+)
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -46,6 +51,7 @@ _EXACT_PROVIDER_BUDGET_POLICIES = {
     OPENHANDS_V20_TOOL_CHOICE_POLICY,
     OPENHANDS_V21_TOOL_CHOICE_POLICY,
     OPENHANDS_V22_TOOL_CHOICE_POLICY,
+    OPENHANDS_V23_TOOL_CHOICE_POLICY,
 }
 _OPTIONS = {
     "model_id",
@@ -116,7 +122,11 @@ class OpenHandsHweSettings:
             "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
             "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
             "same_session_recovery": True,
-            "termination_authority": "broker_typed_finish",
+            "termination_authority": (
+                "broker_typed_finish_or_v23_progress_or_sdk_stuck"
+                if self.tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY
+                else "broker_typed_finish"
+            ),
             "hook_subprocess_locale": "C",
             "provider_thinking_mode": "disabled",
             "tool_choice_policy": self.tool_choice_policy,
@@ -132,7 +142,9 @@ class OpenHandsHweSettings:
         if self.tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
             result["max_provider_billed_units"] = self.max_provider_tokens
             result["provider_token_accounting"] = (
-                "post_response_pre_dispatch_v22"
+                "post_response_pre_dispatch_v23"
+                if self.tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY
+                else "post_response_pre_dispatch_v22"
                 if self.tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
                 else "post_response_pre_dispatch_v21"
                 if self.tool_choice_policy == OPENHANDS_V21_TOOL_CHOICE_POLICY
@@ -140,6 +152,8 @@ class OpenHandsHweSettings:
                 if self.tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
                 else "post_response_pre_dispatch_v19"
             )
+        if self.tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY:
+            result.update(_v23_safe_policy_fields())
         return result
 
 
@@ -211,12 +225,15 @@ def resolve_hwe_settings(
         OPENHANDS_V20_TOOL_CHOICE_POLICY,
         OPENHANDS_V21_TOOL_CHOICE_POLICY,
         OPENHANDS_V22_TOOL_CHOICE_POLICY,
+        OPENHANDS_V23_TOOL_CHOICE_POLICY,
     }:
         raise ValueError("OpenHands HWE tool choice policy is unsupported")
     max_provider_tokens: int | None = None
     if tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
         protocol_version = (
-            22
+            23
+            if tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY
+            else 22
             if tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
             else 21
             if tool_choice_policy == OPENHANDS_V21_TOOL_CHOICE_POLICY
@@ -225,7 +242,9 @@ def resolve_hwe_settings(
             else 19
         )
         expected_calls = (
-            OPENHANDS_V22_MAX_PROVIDER_CALLS
+            OPENHANDS_V23_MAX_PROVIDER_CALLS
+            if protocol_version == 23
+            else OPENHANDS_V22_MAX_PROVIDER_CALLS
             if protocol_version == 22
             else OPENHANDS_V21_MAX_PROVIDER_CALLS
             if protocol_version == 21
@@ -234,7 +253,9 @@ def resolve_hwe_settings(
             else OPENHANDS_V19_MAX_PROVIDER_CALLS
         )
         expected_tokens = (
-            OPENHANDS_V22_MAX_PROVIDER_TOKENS
+            OPENHANDS_V23_MAX_PROVIDER_TOKENS
+            if protocol_version == 23
+            else OPENHANDS_V22_MAX_PROVIDER_TOKENS
             if protocol_version == 22
             else OPENHANDS_V21_MAX_PROVIDER_TOKENS
             if protocol_version == 21
@@ -257,7 +278,7 @@ def resolve_hwe_settings(
                 f"OpenHands HWE v{protocol_version} freezes a 1000000-token provider budget"
             )
     elif "max_provider_billed_units" in options:
-        raise ValueError("OpenHands HWE provider token budget is v19/v20/v21/v22-only")
+        raise ValueError("OpenHands HWE provider token budget is v19/v20/v21/v22/v23-only")
     role = _text(options.get("campaign_role", "development"), "campaign_role")
     if role not in {"development", "evaluation", "training"}:
         raise ValueError("OpenHands HWE campaign role is unsupported")
@@ -301,7 +322,11 @@ def resolve_hwe_settings(
         "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
         "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
         "same_session_recovery": True,
-        "termination_authority": "broker_typed_finish",
+        "termination_authority": (
+            "broker_typed_finish_or_v23_progress_or_sdk_stuck"
+            if tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY
+            else "broker_typed_finish"
+        ),
         "hook_subprocess_locale": "C",
         "provider_thinking_mode": "disabled",
         "tool_choice_policy": tool_choice_policy,
@@ -316,7 +341,9 @@ def resolve_hwe_settings(
     if tool_choice_policy in _EXACT_PROVIDER_BUDGET_POLICIES:
         safe["max_provider_billed_units"] = max_provider_tokens
         safe["provider_token_accounting"] = (
-            "post_response_pre_dispatch_v22"
+            "post_response_pre_dispatch_v23"
+            if tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY
+            else "post_response_pre_dispatch_v22"
             if tool_choice_policy == OPENHANDS_V22_TOOL_CHOICE_POLICY
             else "post_response_pre_dispatch_v21"
             if tool_choice_policy == OPENHANDS_V21_TOOL_CHOICE_POLICY
@@ -324,6 +351,8 @@ def resolve_hwe_settings(
             if tool_choice_policy == OPENHANDS_V20_TOOL_CHOICE_POLICY
             else "post_response_pre_dispatch_v19"
         )
+    if tool_choice_policy == OPENHANDS_V23_TOOL_CHOICE_POLICY:
+        safe.update(_v23_safe_policy_fields())
     return OpenHandsHweSettings(
         model_id=model_id,
         base_url_env=base_url_env,
@@ -341,6 +370,22 @@ def resolve_hwe_settings(
         agent_version_hash=version_hash,
         configuration_fingerprint=content_hash(safe),
     )
+
+
+def _v23_safe_policy_fields() -> dict[str, JsonValue]:
+    return {
+        "ordinary_tool_choice": "provider_default_auto_omitted",
+        "recovery_tool_choice": "required",
+        "public_rationale_allowed": True,
+        "sibling_prevalidation": "all_before_dispatch",
+        "sibling_execution": "decision_order_serial",
+        "tool_concurrency_limit": 1,
+        "stuck_detection_enabled": True,
+        "pre_edit_checkpoint_action": 16,
+        "pre_edit_no_progress_action": 32,
+        "v23_observation_projection": True,
+        "failed_tool_decisions_supervised": False,
+    }
 
 
 def _agent_version(

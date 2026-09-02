@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v52_v23_canary_materialization_authorization_v1",
+  "status": "authorized_pending_zero_provider_materialization",
+  "identity": "openhands-hwe-v52-v23-canary-materialization-v1",
+  "predecessor_v51": {
+    "identity": "openhands-hwe-v51-pr2728-public-qualification-v1",
+    "status": "stopped_security_or_infrastructure_invalid",
+    "identity_frozen": true,
+    "source_workspace_created": false,
+    "verifier_executed": false,
+    "provider_called": false,
+    "benchmark_disposition_created": false,
+    "stopped_audit_merge_commit": "2921d04586a375fd2c15ff1a944034e576ab71c4",
+    "post_merge_main_run_id": 33528870018,
+    "post_merge_main_all_eight_classes_passed": true
+  },
+  "v51_identity_frozen": true,
+  "v51_source_workspace_created": false,
+  "v51_verifier_executed": false,
+  "v51_provider_called": false,
+  "pr2728_public_requalification_allowed": true,
+  "stage_order": [
+    "pr2728_image_transfer",
+    "pr2728_public_qualification",
+    "pr2728_v2_security_scan",
+    "pr2728_command_image_lock",
+    "pr3204_v33_lock_revalidation",
+    "v23_canary_contract"
+  ],
+  "persistent_layer_cache": "/data/jzhu484/Agent/.verigym-tmp/openhands-v52-content-addressed-layer-cache-v1",
+  "training_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2728",
+  "validation_task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-3204",
+  "validation_v33_binding": {
+    "task_hash": "9322fa0b8455126e5c5f2e68ae02c47484935d5ea84bf69b9e6494658e229e86",
+    "source_hash": "15861c5f52071656a4ac8dbe7f96df49c974d24c2e3f53f9e449eba12794f02f",
+    "verifier_image": "sha256:459deab1a9b65a25be4583087238308dd12e773b818e720299cc8cafe55f4f64",
+    "source_image_lock_file_sha256": "55ff6b4efb9675a0a6d512b32d0b33d7778d93d81159086c7485b9f3ebe92a6b",
+    "source_image_lock_hash": "b3fe6732fe4d9b52a6444cda90b25add311665af537acf6b389ad1fdafa1933b",
+    "command_image": "sha256:ed935e093a8f5df4f081ee94d7fb3696335350053dd74fbbd5178b23c2fd1784",
+    "lock_file_sha256": "a3a29f4ad2515c9502b3716e8644806154c7f9a74d388f9cd9c741d81458dc22",
+    "lock_hash": "4e6bcb561d1c631955dcf9b4a2475a0b09d5bb6bb6b98441cd20101f893400d7",
+    "security_scan_file_sha256": "6357976446539e526c15cf22a8e9616df650e4ac30117934898b7a40eb339ed1",
+    "security_scan_id": "55e94ec5fd12482534238867e109f920779685d0ef9f18b0db03e99f88be62cf"
+  },
+  "materialization_inputs": {
+    "dataset": {
+      "sha256": "732c5dac910815c1c7ac72c8ccca88f66dbb7ed5d097806a5ddea611102f60f1",
+      "revision": "1403afb57ce056c659c82b35e39c38c6a21ee635",
+      "source_commit": "10c78a87e1f92695d78d15b1464a6107dcac8837",
+      "candidate_record_sha256": "42f3040a91af4e735e1107dd2536691c9fa3286b4e9441cc8ebb039e3d3c1a16",
+      "reference_patch_compatibility_hash": "cccec1b44901f1e3cd7d6694a5a825cd9716536e445a7678ff408cedcf6fe0d2"
+    },
+    "transfer": {
+      "reference": "ghcr.io/pku-liang/openhwgroup_m_cva6:pr-2728",
+      "execution_image": {
+        "reference": "python:3.11.9-slim-bookworm",
+        "image_id": "sha256:65a6ce634d975b67ee77c8d0f59248cbcb9d8b8f229d584c3cf5d624038bf963",
+        "manifest_digest": "sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+      },
+      "network": "verigym-hwe-net",
+      "crane_release": "v0.22.0",
+      "crane_sha256": "771ced475a87b8b2314b9f9de267264789b3297f34a6d5d8ab601e8482db4d94"
+    },
+    "command_image": {
+      "ripgrep_version": "ripgrep 15.2.0 (rev e89fff89ac)",
+      "ripgrep_binary_sha256": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+      "ripgrep_release_archive_sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+      "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+      "build_network": "none",
+      "runtime_network": "none"
+    },
+    "v33_files": {
+      "source_lock_file_sha256": "55ff6b4efb9675a0a6d512b32d0b33d7778d93d81159086c7485b9f3ebe92a6b",
+      "command_lock_file_sha256": "a3a29f4ad2515c9502b3716e8644806154c7f9a74d388f9cd9c741d81458dc22",
+      "security_scan_file_sha256": "6357976446539e526c15cf22a8e9616df650e4ac30117934898b7a40eb339ed1"
+    }
+  },
+  "model": "openai/deepseek-v4-flash",
+  "seed": 498,
+  "sample_index": 14,
+  "behavior_protocol": "auto_public_thought_atomic_recovery_v23",
+  "provider_hidden_thinking": "disabled",
+  "required_controls": {
+    "persistent_content_addressed_layer_cache": true,
+    "task_specific_download_staging": true,
+    "digest_and_size_before_atomic_rename": true,
+    "bounded_digest_size_hit_inventory_only": true,
+    "raw_stderr_temporary_only": true,
+    "redacted_error_family_only": true,
+    "single_temporary_archive_cleanup": true,
+    "base_fail_reference_pass": true,
+    "scanner_profile_v2": true,
+    "codex_absent": true,
+    "credentials_absent": true,
+    "hidden_assets_absent": true,
+    "runtime_network_none": true,
+    "pr3204_v33_lock_revalidated": true,
+    "atomic_final_contract_publication": true,
+    "failure_publishes_no_partial_contract": true,
+    "automatic_retry": false
+  },
+  "authorized_actions": {
+    "transfer_pr2728_image": true,
+    "qualify_pr2728_public_task": true,
+    "build_and_run_v2_scanner": true,
+    "build_pr2728_command_image_lock": true,
+    "revalidate_pr3204_v33_lock": true,
+    "materialize_v23_canary_contract": true,
+    "invoke_provider": false,
+    "run_canary": false,
+    "start_formal_collection": false,
+    "start_training": false
+  },
+  "failure_policy": "freeze_v52_and_advance_identity_without_partial_authorization",
+  "provider_calls": 0,
+  "model_process_count": 0,
+  "formal_collection_allowed": false,
+  "formal_collection_started": false,
+  "collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "authorization_hash": "20a504cb526c0eb45083ce1daf69debd78dafef8a7f6b330d8a0b40e5dc62bcc"
+}

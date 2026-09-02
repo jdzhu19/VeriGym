@@ -136,6 +136,68 @@ class HweAgentImageLock(StrictModel):
         return self
 
 
+class HweCommandSourceLock(StrictModel):
+    """Source/verifier identity used to derive a credential-free command image."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_hwe_command_source_lock_v1"] = "verigym_hwe_command_source_lock_v1"
+    task_id: str
+    task_hash: str
+    source_hash: str
+    prepared_source_image_lock_sha256: str
+    verifier_base_image_id: str
+    collection_profile_id: Literal["hwe_standard_v2"] = "hwe_standard_v2"
+    tool_contract_id: Literal["hwe_native_shell_v2"] = "hwe_native_shell_v2"
+    toolchain_profile_id: str = Field(min_length=1, max_length=128)
+    allowlisted_artifacts: list[HweAllowlistedArtifact] = Field(min_length=1, max_length=512)
+    build_network: Literal["none"] = "none"
+    runtime_network: Literal["none"] = "none"
+    provider_credentials_present: Literal[False] = False
+    hidden_assets_present: Literal[False] = False
+    verifier_payload_present: Literal[False] = False
+    reference_patch_present: Literal[False] = False
+    lock_hash: str
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, value: str) -> str:
+        if not _TASK_ID.fullmatch(value):
+            raise ValueError("HWE command source task ID is not portable")
+        return value
+
+    @field_validator(
+        "task_hash",
+        "source_hash",
+        "prepared_source_image_lock_sha256",
+        "lock_hash",
+    )
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("HWE command source identity must be SHA-256")
+        return value
+
+    @field_validator("verifier_base_image_id")
+    @classmethod
+    def validate_image_id(cls, value: str) -> str:
+        if not _IMAGE_ID.fullmatch(value):
+            raise ValueError("HWE command source image identity must be sha256:<64 lowercase hex>")
+        return value
+
+    @model_validator(mode="after")
+    def validate_lock(self) -> Self:
+        paths = [artifact.path for artifact in self.allowlisted_artifacts]
+        if len(paths) != len(set(paths)):
+            raise ValueError("HWE command source allowlist contains duplicate paths")
+        roles = {artifact.role for artifact in self.allowlisted_artifacts}
+        if not {"build_tool", "simulator"}.issubset(roles):
+            raise ValueError("HWE command source lock must bind build and simulation tools")
+        identity = self.model_dump(mode="json", exclude={"lock_hash"})
+        if content_hash(identity) != self.lock_hash:
+            raise ValueError("HWE command source lock identity changed")
+        return self
+
+
 class HweCommandImageLock(StrictModel):
     """Codex-free task binding for a credential-free HWE shell command image."""
 
@@ -258,10 +320,33 @@ def build_hwe_command_image_lock(**values: object) -> HweCommandImageLock:
     return HweCommandImageLock.model_validate({**normalized, "lock_hash": content_hash(normalized)})
 
 
+def build_hwe_command_source_lock(**values: object) -> HweCommandSourceLock:
+    base = {
+        "schema_version": SCHEMA_VERSION,
+        "format_id": "verigym_hwe_command_source_lock_v1",
+        **values,
+    }
+    artifacts = base.get("allowlisted_artifacts")
+    if isinstance(artifacts, list):
+        base["allowlisted_artifacts"] = [
+            item
+            if isinstance(item, HweAllowlistedArtifact)
+            else HweAllowlistedArtifact.model_validate(item)
+            for item in artifacts
+        ]
+    provisional = HweCommandSourceLock.model_construct(None, **base, lock_hash="0" * 64)
+    normalized = provisional.model_dump(mode="json", exclude={"lock_hash"})
+    return HweCommandSourceLock.model_validate(
+        {**normalized, "lock_hash": content_hash(normalized)}
+    )
+
+
 __all__ = [
     "HweAgentImageLock",
     "HweAllowlistedArtifact",
     "HweCommandImageLock",
+    "HweCommandSourceLock",
     "build_hwe_agent_image_lock",
     "build_hwe_command_image_lock",
+    "build_hwe_command_source_lock",
 ]

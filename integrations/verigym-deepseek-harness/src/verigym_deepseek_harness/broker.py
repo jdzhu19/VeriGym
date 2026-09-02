@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from verigym.core.workspace import glob_matches
 from verigym.hwe.observation import HweObservationCompactor, ObservationKind
 from verigym.hwe.private_audit import HweRawArtifactWriter
 from verigym.hwe.profiles import (
@@ -36,10 +37,64 @@ _MAX_REQUEST_BYTES = 5 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TOOLS = frozenset({"list_files", "read_file", "apply_patch", "shell", "inspect_diff", "finish"})
 _TERMINAL_STATUS_OPERATION = "verigym_hwe_terminal_status_v1"
+OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION = 16
+OPENHANDS_V23_NO_PROGRESS_ACTION = 32
+OPENHANDS_V23_PROGRESS_CHECKPOINT = (
+    "[Progress checkpoint] No valid candidate modification has been observed after 16 actions. "
+    "State the current hypothesis, make one focused edit, and validate it before broadening "
+    "inspection."
+)
+OPENHANDS_V23_PROGRESS_CHECKPOINT_SHA256 = hashlib.sha256(
+    OPENHANDS_V23_PROGRESS_CHECKPOINT.encode()
+).hexdigest()
 _RAW_HOST_PATH = re.compile(
     r"(?<![A-Za-z0-9._-])/(?:home|data|hpc)(?:/|(?![A-Za-z0-9._-]))|[A-Za-z]:\\\\",
     re.IGNORECASE,
 )
+
+
+def openhands_v23_progress_gate_state(
+    *,
+    action_count: int,
+    first_effective_modification_action: int | None,
+) -> dict[str, int | str | bool | None]:
+    """Project the frozen pre-edit gate without executing a provider or tool."""
+
+    if isinstance(action_count, bool) or not isinstance(action_count, int) or action_count < 0:
+        raise ValueError("OpenHands v23 action count is invalid")
+    first = first_effective_modification_action
+    if first is not None and (
+        isinstance(first, bool)
+        or not isinstance(first, int)
+        or not 1 <= first <= action_count
+        or first > OPENHANDS_V23_NO_PROGRESS_ACTION
+    ):
+        raise ValueError("OpenHands v23 first effective modification action is invalid")
+    if first is None and action_count > OPENHANDS_V23_NO_PROGRESS_ACTION:
+        raise ValueError("OpenHands v23 no-progress sequence continued past its terminal action")
+    checkpoint = action_count >= OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION and (
+        first is None or first > OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION
+    )
+    no_progress = first is None and action_count >= OPENHANDS_V23_NO_PROGRESS_ACTION
+    state = (
+        "terminated_no_progress"
+        if no_progress
+        else "released_after_modification"
+        if first is not None
+        else "checkpoint_injected"
+        if checkpoint
+        else "monitoring"
+    )
+    return {
+        "first_effective_modification_action": first,
+        "progress_checkpoint_action": (
+            OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION if checkpoint else None
+        ),
+        "progress_checkpoint_injected": checkpoint,
+        "no_progress_action": OPENHANDS_V23_NO_PROGRESS_ACTION if no_progress else None,
+        "no_progress_terminated": no_progress,
+        "progress_gate_state": state,
+    }
 
 
 @dataclass(frozen=True)
@@ -70,6 +125,7 @@ class DeepSeekHarnessHweBroker:
         bridge: ExternalAgentBridge,
         socket_path: Path,
         private_audit_root: Path,
+        openhands_v23_controls: bool = False,
     ) -> None:
         self._bridge = bridge
         self.socket_path = socket_path
@@ -77,7 +133,10 @@ class DeepSeekHarnessHweBroker:
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._lock = threading.Lock()
-        self._compactor = HweObservationCompactor(profile_id=HWE_COLLECTION_PROFILE_V2_ID)
+        self._compactor = HweObservationCompactor(
+            profile_id=HWE_COLLECTION_PROFILE_V2_ID,
+            v23_bounded_projection=openhands_v23_controls,
+        )
         self._budget = HweEpisodeBudget(profile_id=HWE_COLLECTION_PROFILE_V2_ID)
         self._raw_writer = HweRawArtifactWriter(
             private_audit_root,
@@ -99,6 +158,11 @@ class DeepSeekHarnessHweBroker:
         self._finished = False
         self._policy_failure: str | None = None
         self._infrastructure_failure: str | None = None
+        self._openhands_v23_controls = openhands_v23_controls
+        self._first_effective_modification_action: int | None = None
+        self._progress_checkpoint_injected = False
+        self._no_progress_terminated = False
+        self._tool_result_successes: list[bool] = []
 
     def start(self) -> None:
         if self._server is not None:
@@ -143,6 +207,48 @@ class DeepSeekHarnessHweBroker:
     def call_ids(self) -> tuple[str, ...]:
         with self._lock:
             return tuple(self._call_ids)
+
+    def tool_result_successes(self) -> tuple[bool, ...]:
+        with self._lock:
+            return tuple(self._tool_result_successes)
+
+    def openhands_v23_progress_receipt(self) -> dict[str, Any]:
+        """Return content-free progress and observation identities for v23."""
+
+        if not self._openhands_v23_controls:
+            raise RuntimeError("OpenHands v23 progress controls are not enabled")
+        with self._lock:
+            first = self._first_effective_modification_action
+            checkpoint = self._progress_checkpoint_injected
+            no_progress = self._no_progress_terminated
+            events = tuple(self._events)
+        gate = openhands_v23_progress_gate_state(
+            action_count=len(events),
+            first_effective_modification_action=first,
+        )
+        if (
+            gate["progress_checkpoint_injected"] is not checkpoint
+            or gate["no_progress_terminated"] is not no_progress
+        ):
+            raise RuntimeError("OpenHands v23 progress gate state drifted")
+        return {
+            "schema_version": "1.0",
+            "format_id": "verigym_openhands_v23_progress_observation_receipt_v1",
+            **gate,
+            "progress_checkpoint_sha256": OPENHANDS_V23_PROGRESS_CHECKPOINT_SHA256,
+            "observation_compaction": [
+                {
+                    "sequence": event.sequence,
+                    "raw_sha256": event.raw_observation_sha256,
+                    "raw_bytes": event.raw_observation_bytes,
+                    "compact_sha256": event.compact_observation_sha256,
+                    "compact_tokens": event.compact_observation_tokens,
+                    "rule_id": event.observation_rule_id,
+                    "omitted": event.observation_omitted,
+                }
+                for event in events
+            ],
+        }
 
     def stats(self) -> DeepSeekHarnessBrokerStats:
         with self._lock:
@@ -239,8 +345,11 @@ class DeepSeekHarnessHweBroker:
         with self._lock:
             finished = self._finished
             duplicate = call_id in self._call_ids
+            no_progress = self._no_progress_terminated
         if finished:
             return self._reject("episode_finished", "no tool calls are accepted after finish")
+        if no_progress:
+            return self._reject("no_progress", "the pre-edit progress gate is terminal")
         if duplicate:
             return self._reject("duplicate_call_id", "tool call id was already used")
         serialized_arguments = json.dumps(
@@ -309,6 +418,18 @@ class DeepSeekHarnessHweBroker:
             "finish": "diff",
         }
         kind = observation_kinds[name]
+        action_number = self._tool_calls + 1
+        effective_changes = tuple(
+            path
+            for path in changed_paths
+            if any(glob_matches(path, pattern) for pattern in self._bridge.editable_globs)
+        )
+        if (
+            self._openhands_v23_controls
+            and effective_changes
+            and self._first_effective_modification_action is None
+        ):
+            self._first_effective_modification_action = action_number
         command = validated.get("command") if name == "shell" else None
         compact = self._compactor.compact(
             kind,
@@ -320,6 +441,17 @@ class DeepSeekHarnessHweBroker:
             exit_code=exit_code,
             duration_ms=duration_ms,
         )
+        if (
+            self._openhands_v23_controls
+            and action_number == OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION
+            and self._first_effective_modification_action is None
+        ):
+            compact = self._compactor.append_fixed_notice(
+                compact,
+                OPENHANDS_V23_PROGRESS_CHECKPOINT,
+                notice_id="openhands_v23_pre_edit_progress_checkpoint",
+            )
+            self._progress_checkpoint_injected = True
         raw_stdout_bytes = len(raw_stdout.encode("utf-8"))
         raw_stderr_bytes = len(raw_stderr.encode("utf-8"))
         self._raw_writer.append(
@@ -376,6 +508,14 @@ class DeepSeekHarnessHweBroker:
             self._diff_inspections += int(name == "inspect_diff")
             self._finish_calls += int(name == "finish")
             self._finished = self._finished or name == "finish"
+            self._tool_result_successes.append(result.success)
+            if (
+                self._openhands_v23_controls
+                and action_number >= OPENHANDS_V23_NO_PROGRESS_ACTION
+                and self._first_effective_modification_action is None
+            ):
+                self._no_progress_terminated = True
+                self._policy_failure = "no_progress"
         return {
             "ok": True,
             "text": compact.text,
@@ -491,5 +631,10 @@ def broker_stats_dict(stats: DeepSeekHarnessBrokerStats) -> dict[str, Any]:
 __all__ = [
     "DeepSeekHarnessBrokerStats",
     "DeepSeekHarnessHweBroker",
+    "OPENHANDS_V23_NO_PROGRESS_ACTION",
+    "OPENHANDS_V23_PROGRESS_CHECKPOINT",
+    "OPENHANDS_V23_PROGRESS_CHECKPOINT_ACTION",
+    "OPENHANDS_V23_PROGRESS_CHECKPOINT_SHA256",
     "broker_stats_dict",
+    "openhands_v23_progress_gate_state",
 ]

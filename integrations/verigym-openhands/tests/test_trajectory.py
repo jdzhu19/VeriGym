@@ -36,6 +36,9 @@ from verigym_openhands.trajectory import (
     OPENHANDS_RECOVERY_DATASET_FORMAT,
     OPENHANDS_RECOVERY_DECISION_FORMAT,
     OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
+    OPENHANDS_V23_DATASET_FORMAT,
+    OPENHANDS_V23_DECISION_FORMAT,
+    OPENHANDS_V23_TRAJECTORY_FORMAT,
     OpenHandsTrajectoryError,
     OpenHandsTrajectoryInfrastructureError,
     _validate_public_text,
@@ -1083,3 +1086,175 @@ def test_hwe_recoverable_invalid_arguments_are_context_only(tmp_path: Path) -> N
     manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
     assert manifest["format_id"] == OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT
     assert manifest["masked_policy_error_decision_count"] == 1
+
+
+def test_v23_failed_decision_stays_context_and_successful_siblings_are_one_target(
+    tmp_path: Path,
+) -> None:
+    observations = {
+        "list": '{"entries":["TASK.md","rtl"]}',
+        "failed_read": "read failed without changing the candidate",
+        "diff": "rtl/core.sv | 1 +",
+        "shell": "focused diagnostic passed",
+        "finish": "Candidate diff inspected.",
+    }
+    snapshots = [
+        {
+            "event_type": "SystemPromptEvent",
+            "event_id": "system",
+            "parent_id": None,
+            "source": "agent",
+            "message": _message("system", "Bounded HWE repair system."),
+            "dynamic_context_present": False,
+        },
+        {
+            "event_type": "MessageEvent",
+            "event_id": "user",
+            "parent_id": "system",
+            "source": "user",
+            "message": _message("user", "Repair TASK.md."),
+            "activated_skills": [],
+            "extended_content_present": False,
+            "critic_present": False,
+        },
+        _action(
+            "call-list",
+            "list_files",
+            {"path": "."},
+            response_id="response-failed-siblings",
+        ),
+        _action(
+            "call-read",
+            "read_file",
+            {"path": "rtl/core.sv", "start_line": 1, "end_line": 20},
+            response_id="response-failed-siblings",
+        ),
+        _observation("call-list", "list_files", observations["list"]),
+        _observation("call-read", "read_file", observations["failed_read"]),
+        _action(
+            "call-diff",
+            "inspect_diff",
+            {},
+            response_id="response-success-siblings",
+        ),
+        _action(
+            "call-shell",
+            "shell",
+            {"command": "rg -n core rtl/core.sv", "cwd": "."},
+            response_id="response-success-siblings",
+        ),
+        _observation("call-diff", "inspect_diff", observations["diff"]),
+        _observation("call-shell", "shell", observations["shell"]),
+        _action("call-finish", "finish", {"summary": "validated candidate"}),
+        _observation("call-finish", "finish", observations["finish"]),
+    ]
+    snapshots[2]["message"]["content"] = [
+        {"type": "text", "text": "Hypothesis: inspect the visible task and RTL together."}
+    ]
+    snapshots[6]["message"]["content"] = [
+        {
+            "type": "text",
+            "text": "Validation plan: inspect the diff and run one focused diagnostic.",
+        }
+    ]
+    events = (
+        HweNormalizedEvent(
+            sequence=0,
+            action="list_files",
+            arguments={"path": "."},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(observations["list"].encode()).hexdigest(),
+        ),
+        HweNormalizedEvent(
+            sequence=1,
+            action="read_file",
+            arguments={"path": "rtl/core.sv", "start_line": 1, "end_line": 20},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(
+                observations["failed_read"].encode()
+            ).hexdigest(),
+        ),
+        HweNormalizedEvent(
+            sequence=2,
+            action="inspect_diff",
+            arguments={},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(observations["diff"].encode()).hexdigest(),
+        ),
+        HweNormalizedEvent(
+            sequence=3,
+            action="shell",
+            arguments={"command": "rg -n core rtl/core.sv", "cwd": "."},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(observations["shell"].encode()).hexdigest(),
+        ),
+        HweNormalizedEvent(
+            sequence=4,
+            action="finish",
+            arguments={"summary": "validated candidate"},
+            workspace_epoch_before=0,
+            workspace_epoch_after=0,
+            compact_observation_sha256=hashlib.sha256(observations["finish"].encode()).hexdigest(),
+        ),
+    )
+    tools = copy.deepcopy(deepseek_harness_tool_definitions())
+
+    trajectory = build_openhands_training_trajectory(
+        task_id="hwe-bench/repo-repair-v1/task-v23-siblings",
+        provider="openai-compatible",
+        model_id="openai/deepseek-v4-flash",
+        configuration_fingerprint=content_hash({"configuration": "hwe-v23"}),
+        event_snapshots=snapshots,
+        tools=tools,
+        broker_turns=hwe_broker_receipts(
+            events,
+            ("call-list", "call-read", "call-diff", "call-shell", "call-finish"),
+            (True, False, True, True, True),
+        ),
+        tool_contract="hwe_native_shell_v2",
+        recovery_policy_id=OPENHANDS_FORMAT_RECOVERY_POLICY,
+        mask_failed_tool_decisions=True,
+    )
+
+    assert trajectory["format_id"] == OPENHANDS_V23_TRAJECTORY_FORMAT
+    assert trajectory["assistant_decision_count"] == 3
+    assert trajectory["supervised_decision_count"] == 2
+    assert trajectory["failed_tool_decision_count"] == 1
+    failed, successful, finish = trajectory["assistant_decisions"]
+    assert failed["supervised_target"] is False
+    assert failed["mask_reason"] == "tool_execution_failed"
+    assert failed["tool_action_count"] == 2
+    assert successful["supervised_target"] is True
+    assert successful["tool_action_count"] == 2
+    assert finish["supervised_target"] is True
+    assert trajectory["messages"][2]["content"].startswith("Hypothesis:")
+
+    resolved = set_openhands_verifier_result(trajectory, verifier_resolved=True)
+    tokenizer = _tokenizer(tmp_path)
+    records = materialize_openhands_decisions(
+        resolved,
+        binding=_binding(),
+        tokenizer=tokenizer,
+    )
+
+    assert len(records) == 2
+    assert all(record["format_id"] == OPENHANDS_V23_DECISION_FORMAT for record in records)
+    assert [record["decision_index"] for record in records] == [1, 2]
+    assert records[0]["target_message"]["content"].startswith("Validation plan:")
+    assert len(records[0]["target_message"]["tool_calls"]) == 2
+    assert records[0]["tool_action_count"] == 2
+    assert records[0]["input_messages"][2]["tool_calls"][1]["id"] == "call-read"
+    assert records[0]["input_loss_masked"] is True
+    assert records[0]["truncation"] == "error"
+    assert records[0]["token_count"] <= 65_536
+
+    output = tmp_path / "v23-dataset"
+    manifest = write_openhands_decision_dataset(records, tokenizer=tokenizer, output=output)
+    assert manifest["format_id"] == OPENHANDS_V23_DATASET_FORMAT
+    assert manifest["failed_tool_decision_count"] == 1
+    assert manifest["decision_target_granularity"] == "complete_assistant_decision"
+    assert manifest["sibling_targets_split"] is False

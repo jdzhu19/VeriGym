@@ -7,7 +7,7 @@ import importlib
 import importlib.metadata
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Any, Literal, Protocol
 
@@ -29,6 +29,11 @@ _DIAGNOSTIC = re.compile(
     r"\bhierarchy\b|\belaborat|\bseed\b|\bexpected\b|\bactual\b|\bfailed\b)",
     re.I,
 )
+_V23_READ_MAX_MODEL_LINES = 400
+_V23_READ_MAX_BYTES = 128 * 1024
+_V23_SHELL_HEAD_BYTES = 64 * 1024
+_V23_SHELL_TAIL_BYTES = 64 * 1024
+_V23_SHELL_CONTEXT_TOKENS = 65_536
 _SCALA_STRUCTURE = re.compile(
     r"^\s*(?:(?:sealed\s+|abstract\s+|final\s+|case\s+)*(?:class|trait|object)\b|"
     r"(?:private\s+|protected\s+|override\s+|implicit\s+|lazy\s+)*(?:def|val|var|type)\b|"
@@ -98,11 +103,15 @@ class HweObservationCompactor:
         counter: TokenCounter | None = None,
         *,
         profile_id: str = HWE_COLLECTION_PROFILE_ID,
+        v23_bounded_projection: bool = False,
     ) -> None:
         self.counter = counter or TiktokenO200kCounter()
         if self.counter.tokenizer_id != HWE_TOKENIZER_ID:
             raise ValueError("HWE compaction requires the frozen o200k_base tokenizer")
         self.profile = resolve_hwe_collection_profile(profile_id)
+        if v23_bounded_projection and profile_id != HWE_COLLECTION_PROFILE_V2_ID:
+            raise ValueError("OpenHands v23 observation projection requires hwe_standard_v2")
+        self.v23_bounded_projection = v23_bounded_projection
 
     def compact(
         self,
@@ -127,9 +136,64 @@ class HweObservationCompactor:
         raw = raw_text.encode("utf-8")
         raw_hash = hashlib.sha256(raw).hexdigest()
         preferred, hard = self._LIMITS[kind]
+        result_header = (
+            _result_header(
+                command=command,
+                cwd=cwd,
+                exit_code=exit_code,
+                duration_ms=duration_ms,
+                stdout_bytes=len(text.encode("utf-8")),
+                stderr_bytes=len(stderr.encode("utf-8")),
+            )
+            if self.profile.profile_id == HWE_COLLECTION_PROFILE_V2_ID
+            else ""
+        )
         cleaned = clean_terminal_noise(text)
+        cleaned_stderr = clean_terminal_noise(stderr)
+        v23_projection_metadata: dict[str, Any] = {}
+        v23_projection_omitted = False
+        if self.v23_bounded_projection and kind == "read":
+            cleaned, v23_projection_metadata = _bounded_read_projection(
+                cleaned,
+                source_text=text,
+                max_bytes=_V23_READ_MAX_BYTES - len(result_header.encode("utf-8")) - 1,
+            )
+            v23_projection_omitted = bool(
+                v23_projection_metadata["omitted_lines"]
+                or v23_projection_metadata["omitted_bytes"]
+                or v23_projection_metadata["terminal_cleanup_changed"]
+            )
+        elif self.v23_bounded_projection and kind == "shell":
+            cleaned, stdout_projection = _bounded_stream_projection(
+                cleaned,
+                label="stdout",
+                head_bytes=_V23_SHELL_HEAD_BYTES,
+                tail_bytes=_V23_SHELL_TAIL_BYTES,
+                source_text=text,
+            )
+            cleaned_stderr, stderr_projection = _bounded_stream_projection(
+                cleaned_stderr,
+                label="stderr",
+                head_bytes=_V23_SHELL_HEAD_BYTES,
+                tail_bytes=_V23_SHELL_TAIL_BYTES,
+                source_text=stderr,
+            )
+            v23_projection_metadata = {
+                "stdout_projection": stdout_projection,
+                "stderr_projection": stderr_projection,
+            }
+            v23_projection_omitted = any(
+                projection["omitted_bytes"] or projection["terminal_cleanup_changed"]
+                for projection in (stdout_projection, stderr_projection)
+            )
         omitted_units = 0
-        rule_suffix = "v2" if self.profile.profile_id == HWE_COLLECTION_PROFILE_V2_ID else "v1"
+        rule_suffix = (
+            "v23"
+            if self.v23_bounded_projection
+            else "v2"
+            if self.profile.profile_id == HWE_COLLECTION_PROFILE_V2_ID
+            else "v1"
+        )
         rule_id = f"{self.profile.observation_policy_id}/{kind}_{rule_suffix}"
         metadata: dict[str, Any] = {
             "preferred_tokens": preferred,
@@ -139,6 +203,7 @@ class HweObservationCompactor:
             "raw_stdout_bytes": len(text.encode("utf-8")),
             "raw_stderr_bytes": len(stderr.encode("utf-8")),
             "raw_line_count": len(raw_text.splitlines()),
+            **v23_projection_metadata,
         }
         if kind == "list":
             lines = cleaned.splitlines()
@@ -165,10 +230,12 @@ class HweObservationCompactor:
         elif kind == "shell":
             combined = cleaned
             if stderr:
-                cleaned_stderr = clean_terminal_noise(stderr)
                 combined = f"{cleaned}\n[stderr]\n{cleaned_stderr}".strip()
             candidate = combined
-            if self.counter.count(candidate) > preferred:
+            if self.v23_bounded_projection:
+                preferred = hard = _V23_SHELL_CONTEXT_TOKENS
+                metadata["view"] = "stream_head_tail"
+            elif self.counter.count(candidate) > preferred:
                 candidate, omitted_units = _diagnostic_projection(combined.splitlines())
                 metadata["view"] = "diagnostic"
             else:
@@ -178,16 +245,17 @@ class HweObservationCompactor:
             metadata["view"] = "full"
 
         content_changed = candidate != cleaned
-        if self.profile.profile_id == HWE_COLLECTION_PROFILE_V2_ID:
-            candidate = _result_header(
-                command=command,
-                cwd=cwd,
-                exit_code=exit_code,
-                duration_ms=duration_ms,
-                stdout_bytes=len(text.encode("utf-8")),
-                stderr_bytes=len(stderr.encode("utf-8")),
-            ) + (f"\n{candidate}" if candidate else "")
+        if result_header:
+            candidate = result_header + (f"\n{candidate}" if candidate else "")
         original_candidate = candidate
+        if (
+            self.v23_bounded_projection
+            and kind == "shell"
+            and self.counter.count(original_candidate) > hard
+        ):
+            raise RuntimeError(
+                "OpenHands v23 exact head/tail stream projection exceeds its context bound"
+            )
         candidate, bounded_omission = self._bound(
             candidate,
             hard,
@@ -196,7 +264,9 @@ class HweObservationCompactor:
             raw_sha256=raw_hash,
             description="hard token cap",
         )
-        omitted = bool(omitted_units or bounded_omission or content_changed)
+        omitted = bool(
+            omitted_units or bounded_omission or content_changed or v23_projection_omitted
+        )
         if omitted and not bounded_omission:
             candidate = self._append_marker(
                 candidate,
@@ -233,6 +303,61 @@ class HweObservationCompactor:
             compact_tokens=compact_tokens,
             omitted=omitted,
             omitted_units=omitted_units,
+            metadata=metadata,
+        )
+
+    def append_fixed_notice(
+        self,
+        result: HweObservationResult,
+        notice: str,
+        *,
+        notice_id: str,
+    ) -> HweObservationResult:
+        """Append one fixed model-visible control notice under the existing hard cap."""
+
+        if not self.v23_bounded_projection:
+            raise ValueError("fixed progress notices are v23-only")
+        if not notice or notice != notice.strip() or "\n" in notice:
+            raise ValueError("fixed progress notice must be one canonical line")
+        _preferred, hard = self._LIMITS[result.kind]
+        existing = result.text
+        line_compacted = False
+        if result.kind == "read":
+            lines = existing.splitlines()
+            existing_limit = _V23_READ_MAX_MODEL_LINES - 1
+            if len(lines) > existing_limit:
+                head_count = (existing_limit - 1) // 2
+                tail_count = existing_limit - 1 - head_count
+                marker = (
+                    "[verigym-hwe read checkpoint omission "
+                    f"omitted_lines={len(lines) - head_count - tail_count} "
+                    f"raw_sha256={result.raw_sha256}]"
+                )
+                existing = "\n".join([*lines[:head_count], marker, *lines[-tail_count:]])
+                line_compacted = True
+        combined = f"{existing}\n{notice}" if existing else notice
+        bounded, omitted = self._bound(
+            combined,
+            hard,
+            rule_id=result.rule_id,
+            raw_bytes=result.raw_bytes,
+            raw_sha256=result.raw_sha256,
+            description="progress checkpoint append",
+        )
+        metadata = dict(result.metadata)
+        metadata.update(
+            {
+                "fixed_notice_id": notice_id,
+                "fixed_notice_sha256": hashlib.sha256(notice.encode()).hexdigest(),
+                "fixed_notice_line_compaction": line_compacted,
+            }
+        )
+        return replace(
+            result,
+            text=bounded,
+            compact_bytes=len(bounded.encode("utf-8")),
+            compact_tokens=self.counter.count(bounded),
+            omitted=result.omitted or omitted,
             metadata=metadata,
         )
 
@@ -456,6 +581,129 @@ def _result_header(
         "stdout_bytes": stdout_bytes,
     }
     return "[verigym-hwe result " + repr(fields) + "]"
+
+
+def _bounded_read_projection(
+    text: str,
+    *,
+    source_text: str,
+    max_bytes: int,
+) -> tuple[str, dict[str, Any]]:
+    if not 1024 <= max_bytes <= _V23_READ_MAX_BYTES:
+        raise ValueError("OpenHands v23 read projection byte budget is invalid")
+    raw = text.encode("utf-8")
+    source_raw = source_text.encode("utf-8")
+    raw_hash = hashlib.sha256(raw).hexdigest()
+    lines = text.splitlines()
+    content_line_limit = _V23_READ_MAX_MODEL_LINES - 1
+    omitted_lines = max(0, len(lines) - content_line_limit)
+    if omitted_lines:
+        head_count = (content_line_limit - 1) // 2
+        tail_count = content_line_limit - 1 - head_count
+        marker = (
+            f"[verigym-hwe read omission omitted_lines={omitted_lines} "
+            f"raw_bytes={len(raw)} raw_sha256={raw_hash}]"
+        )
+        lines = [*lines[:head_count], marker, *lines[-tail_count:]]
+    projected = "\n".join(lines)
+    projected_bytes = projected.encode("utf-8")
+    byte_omitted = 0
+    if len(projected_bytes) > max_bytes:
+        projected, byte_omitted = _bounded_utf8_bytes(
+            projected,
+            label="read",
+            head_bytes=(max_bytes - 512) // 2,
+            tail_bytes=(max_bytes - 512) // 2,
+        )
+    if len(projected.encode("utf-8")) > max_bytes:
+        raise RuntimeError("OpenHands v23 read projection exceeded 128 KiB")
+    return projected, {
+        "projection_policy": "read_head_tail_400_lines_128k_v23",
+        "model_visible_line_count": len(projected.splitlines()) + 1,
+        "model_visible_line_limit_including_result_header": _V23_READ_MAX_MODEL_LINES,
+        "model_visible_bytes": len(projected.encode("utf-8")),
+        "model_visible_bytes_including_result_header_limit": _V23_READ_MAX_BYTES,
+        "omitted_lines": omitted_lines,
+        "omitted_bytes": byte_omitted,
+        "source_bytes": len(source_raw),
+        "source_sha256": hashlib.sha256(source_raw).hexdigest(),
+        "cleaned_sha256": raw_hash,
+        "terminal_cleanup_changed": source_text != text,
+    }
+
+
+def _bounded_stream_projection(
+    text: str,
+    *,
+    label: str,
+    head_bytes: int,
+    tail_bytes: int,
+    source_text: str,
+) -> tuple[str, dict[str, Any]]:
+    projected, omitted_bytes = _bounded_utf8_bytes(
+        text,
+        label=label,
+        head_bytes=head_bytes,
+        tail_bytes=tail_bytes,
+    )
+    cleaned_raw = text.encode("utf-8")
+    source_raw = source_text.encode("utf-8")
+    return projected, {
+        "projection_policy": "stream_head_64k_tail_64k_v23",
+        "raw_bytes": len(source_raw),
+        "raw_sha256": hashlib.sha256(source_raw).hexdigest(),
+        "cleaned_bytes": len(cleaned_raw),
+        "cleaned_sha256": hashlib.sha256(cleaned_raw).hexdigest(),
+        "terminal_cleanup_changed": source_text != text,
+        "model_visible_projection_bytes": len(projected.encode("utf-8")),
+        "omitted_bytes": omitted_bytes,
+    }
+
+
+def _bounded_utf8_bytes(
+    text: str,
+    *,
+    label: str,
+    head_bytes: int,
+    tail_bytes: int,
+) -> tuple[str, int]:
+    raw = text.encode("utf-8")
+    if len(raw) <= head_bytes + tail_bytes:
+        return text, 0
+    head = _utf8_prefix(raw, head_bytes)
+    tail = _utf8_suffix(raw, len(raw) - tail_bytes)
+    if len(head) + len(tail) >= len(raw):
+        return text, 0
+    omitted = len(raw) - len(head) - len(tail)
+    marker = (
+        f"[verigym-hwe {label} omission omitted_bytes={omitted} "
+        f"raw_bytes={len(raw)} raw_sha256={hashlib.sha256(raw).hexdigest()}]"
+    )
+    return "\n".join((head.decode("utf-8"), marker, tail.decode("utf-8"))), omitted
+
+
+def _utf8_prefix(raw: bytes, limit: int) -> bytes:
+    end = min(limit, len(raw))
+    while end > 0:
+        try:
+            raw[:end].decode("utf-8")
+        except UnicodeDecodeError:
+            end -= 1
+        else:
+            return raw[:end]
+    return b""
+
+
+def _utf8_suffix(raw: bytes, start: int) -> bytes:
+    offset = max(0, min(start, len(raw)))
+    while offset < len(raw):
+        try:
+            raw[offset:].decode("utf-8")
+        except UnicodeDecodeError:
+            offset += 1
+        else:
+            return raw[offset:]
+    return b""
 
 
 __all__ = [

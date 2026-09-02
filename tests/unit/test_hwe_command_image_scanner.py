@@ -10,9 +10,48 @@ from typing import Any
 
 import pytest
 
-from verigym.hwe.image_lock import build_hwe_agent_image_lock
+from verigym.hwe.image_lock import build_hwe_agent_image_lock, build_hwe_command_source_lock
 
 _scanner = importlib.import_module("scripts.scan_and_lock_cva6_hwe_command_image")
+
+
+def test_scanner_accepts_v52_command_source_lock_without_reinterpreting_agent_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_lock = build_hwe_command_source_lock(
+        task_id="hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2728",
+        task_hash="1" * 64,
+        source_hash="2" * 64,
+        prepared_source_image_lock_sha256="3" * 64,
+        verifier_base_image_id=f"sha256:{'4' * 64}",
+        toolchain_profile_id="cva6-verilator-5.008-container-native-v2",
+        allowlisted_artifacts=[
+            {"path": "/usr/bin/make", "sha256": "5" * 64, "role": "build_tool"},
+            {
+                "path": "/tools/verilator/bin/verilator_bin",
+                "sha256": "6" * 64,
+                "role": "simulator",
+            },
+        ],
+    )
+    identity_path = tmp_path / "source-lock.json"
+    identity_path.write_text(json.dumps(source_lock.model_dump(mode="json")), encoding="utf-8")
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        _scanner.HweAgentImageLock,
+        "model_validate",
+        lambda _value: (_ for _ in ()).throw(AssertionError("historical path was used")),
+    )
+
+    with pytest.raises(ValueError, match="receipt differs"):
+        _scanner.scan_and_lock(
+            receipt_path=receipt_path,
+            identity_lock_path=identity_path,
+            security_output=tmp_path / "security.json",
+            lock_output=tmp_path / "lock.json",
+        )
 
 
 def _inspection(user: str) -> dict[str, Any]:
