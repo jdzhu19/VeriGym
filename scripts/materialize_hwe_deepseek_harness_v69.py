@@ -67,13 +67,20 @@ RG_BINARY = RG_ROOT / "rg"
 RG_ARCHIVE = RG_ROOT.parent / "ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
 RG_SHA256 = "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849"
 RG_ARCHIVE_SHA256 = "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c"
-_CREDENTIAL_ENV_NAMES = frozenset(
+_PROVIDER_ENV_NAMES = frozenset(
     {
         "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
         "DEEPSEEK_API_KEY",
+        "DEEPSEEK_API_BASE_URL",
         "OPENAI_API_KEY",
+        "OPENAI_API_BASE",
+        "OPENAI_BASE_URL",
         "OPENAI_ORG_ID",
         "OPENAI_PROJECT_ID",
+        "VERIGYM_DEEPSEEK_API_BASE_URL",
+        "VERIGYM_DEEPSEEK_API_KEY",
     }
 )
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -542,8 +549,8 @@ def _require_execution_boundary(arguments: argparse.Namespace) -> None:
         raise ConfigurationError(f"{OPT_IN_ENV}=1 is required")
     if os.getuid() == 0 or os.getgid() == 0:
         raise ConfigurationError("v69 requires a non-root host identity")
-    if any(name in os.environ for name in _CREDENTIAL_ENV_NAMES):
-        raise ConfigurationError("v69 refuses a provider credential environment")
+    if any(name in os.environ for name in _PROVIDER_ENV_NAMES):
+        raise ConfigurationError("v69 refuses a provider configuration environment")
     if arguments.post_merge_main_run_id < 1:
         raise ConfigurationError("v69 requires a positive post-merge main run ID")
 
