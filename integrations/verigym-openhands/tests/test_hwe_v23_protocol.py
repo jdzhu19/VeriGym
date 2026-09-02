@@ -205,6 +205,37 @@ def test_v23_only_the_one_same_session_recovery_uses_required(tmp_path: Path) ->
     assert llm.recovery_validated_tool_count == 1
 
 
+def test_v23_second_content_only_after_consumed_recovery_fails_closed(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "recovery.json"
+    llm = _llm(state)
+    completion = AsyncMock(
+        side_effect=[
+            _response([], text="I need one tool call to continue."),
+            _response([("inspect_diff", {})], text="Inspect the current candidate."),
+            _response([], text="The task is complete."),
+        ]
+    )
+    with patch("openhands.sdk.llm.llm.LLM.acompletion", completion):
+        first = asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+        _write_recovery_state(state)
+        second = asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+        with pytest.raises(V23ProtocolViolation, match="second content-only"):
+            asyncio.run(llm.acompletion(messages=_messages(), tools=_tools()))
+
+    assert first.message.tool_calls is None
+    assert second.message.tool_calls[0].name == "inspect_diff"
+    assert "tool_choice" not in completion.call_args_list[0].kwargs
+    assert completion.call_args_list[1].kwargs["tool_choice"] == "required"
+    assert "tool_choice" not in completion.call_args_list[2].kwargs
+    assert llm.ordinary_auto_request_count == 2
+    assert llm.required_tool_request_count == 1
+    assert llm.content_only_response_count == 2
+    assert llm.recovery_forced_request_count == 1
+    assert llm.recovery_validated_tool_count == 1
+
+
 def test_v23_recovery_refuses_siblings_and_does_not_drift_back_to_auto(
     tmp_path: Path,
 ) -> None:
