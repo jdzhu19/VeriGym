@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import copy
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+from verigym.core.errors import ConfigurationError
+from verigym.hwe.deepseek_harness_campaign import (
+    V69_PRIMARY_TASK_IDS,
+    HweOfflineTaskLock,
+    load_v69_manifest,
+)
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from scripts import materialize_hwe_deepseek_harness_v69 as runner  # noqa: E402
+
+_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v69_multitask_zero_provider_v1.json"
+)
+
+
+def _receipt(task: HweOfflineTaskLock) -> dict[str, object]:
+    return {
+        "task_id": task.task_id,
+        "task_hash": "1" * 64,
+        "source_hash": "2" * 64,
+        "agent_toolchain_id": task.agent_toolchain_id,
+        "official_verifier_image": task.official_verifier_image,
+        "base_failed": True,
+        "base_infrastructure_error": False,
+        "reference_passed": True,
+        "verifier_network": "none",
+        "provider_calls": 0,
+    }
+
+
+def test_checked_in_v69_manifest_is_hash_bound_and_collection_closed() -> None:
+    manifest = load_v69_manifest(_MANIFEST)
+    assert tuple(task.task_id for task in manifest.primary_tasks) == V69_PRIMARY_TASK_IDS
+    assert manifest.provider_clients_available is False
+    assert manifest.atomic_provider_contract is True
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+def test_provider_contract_is_atomic_and_keeps_execution_unauthorized() -> None:
+    manifest = load_v69_manifest(_MANIFEST)
+    receipts = [_receipt(task) for task in manifest.primary_tasks]
+    contract = runner._provider_contract(  # noqa: SLF001
+        manifest,
+        receipts,
+        source_commit="3" * 40,
+        post_merge_main_run_id=123,
+    )
+    assert contract["schedule"] == list(V69_PRIMARY_TASK_IDS)
+    assert contract["all_tasks_materialized"] is True
+    assert contract["partial_authorization_published"] is False
+    assert contract["provider_execution_authorized"] is False
+    assert contract["formal_collection_allowed"] is False
+
+    with pytest.raises(ConfigurationError, match="partial provider contract"):
+        runner._provider_contract(  # noqa: SLF001
+            manifest,
+            receipts[:-1],
+            source_commit="3" * 40,
+            post_merge_main_run_id=123,
+        )
+
+
+def test_provider_contract_rejects_task_or_verifier_drift() -> None:
+    manifest = load_v69_manifest(_MANIFEST)
+    receipts = [_receipt(task) for task in manifest.primary_tasks]
+    changed = copy.deepcopy(receipts)
+    changed[0]["official_verifier_image"] = "sha256:" + "f" * 64
+    with pytest.raises(ConfigurationError, match="not eligible"):
+        runner._provider_contract(  # noqa: SLF001
+            manifest,
+            changed,
+            source_commit="3" * 40,
+            post_merge_main_run_id=123,
+        )
+
+
+def test_v69_runner_has_no_provider_surface_or_registry_command() -> None:
+    source = (_REPOSITORY_ROOT / "scripts/materialize_hwe_deepseek_harness_v69.py").read_text(
+        encoding="utf-8"
+    )
+    assert "provider_clients_available" not in source
+    assert '["docker", "pull"' not in source
+    assert "registry_access_allowed" not in source
+    assert "DEEPSEEK_API_KEY" in source
+    assert "refuses a provider credential environment" in source
+    manifest = json.loads(_MANIFEST.read_text(encoding="utf-8"))
+    assert all(
+        not task["archive_relpath"].endswith(".partial") for task in manifest["primary_tasks"]
+    )

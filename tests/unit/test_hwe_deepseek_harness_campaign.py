@@ -1,0 +1,353 @@
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import tarfile
+from pathlib import Path
+
+import pytest
+
+from verigym.core.errors import ConfigurationError
+from verigym.core.hashing import content_hash
+from verigym.hwe.deepseek_harness_campaign import (
+    V69_CVA6_FALLBACK_TASK_IDS,
+    V69_IBEX_FALLBACK_TASK_IDS,
+    V69_OPEN_TOOL_TASK_ID,
+    V69_PRIMARY_TASK_IDS,
+    DeepSeekHarnessMatrixAttempt,
+    DeepSeekHarnessV69Manifest,
+    HweAdmissionPlanes,
+    HweOfflineTaskLock,
+    inspect_offline_image_archive,
+    migration_conclusions,
+    new_matrix_state,
+    record_matrix_attempt,
+    require_toolchain_verifier_binding,
+)
+
+
+def _repository_parts(task_id: str) -> tuple[str, str, int]:
+    pr = int(task_id.rsplit("-", 1)[1])
+    if "lowRISC__ibex" in task_id:
+        return "ibex", "lowRISC/ibex", pr
+    return "cva6", "openhwgroup/cva6", pr
+
+
+def _task_lock(task_id: str) -> dict[str, object]:
+    repository, instance_repository, pr = _repository_parts(task_id)
+    slug = "lowrisc_m_ibex" if repository == "ibex" else "openhwgroup_m_cva6"
+    digest = "sha256:" + ("1" if repository == "ibex" else "2") * 64
+    return {
+        "task_id": task_id,
+        "instance_id": f"{instance_repository}:pr-{pr}",
+        "repository": repository,
+        "pr_number": pr,
+        "dataset_relpath": (
+            "datasets/lowRISC__ibex.jsonl"
+            if repository == "ibex"
+            else "datasets/openhwgroup__cva6.jsonl"
+        ),
+        "dataset_sha256": "3" * 64,
+        "selected_row_sha256": "4" * 64,
+        "source_commit": "5" * 40,
+        "archive_relpath": f"docker-tar-archives/{slug}/pr-{pr}.tar",
+        "archive_sha256_relpath": f"docker-tar-archives/{slug}/pr-{pr}.tar.sha256",
+        "archive_sha256": "6" * 64,
+        "registry_digest_relpath": f"digest-locks/{slug}/pr-{pr}.digest",
+        "registry_reference": f"ghcr.io/pku-liang/{slug}:pr-{pr}",
+        "registry_manifest_digest": "sha256:" + "7" * 64,
+        "image_config_digest": digest,
+        "archive_repository_tag": f"ghcr.io/pku-liang/{slug}:i-was-a-digest",
+        "official_verifier_image": digest,
+        "agent_toolchain_id": "hwe-official-task-toolchain-v1",
+    }
+
+
+def _manifest_payload() -> dict[str, object]:
+    available = [
+        *[(task_id, "planned_primary") for task_id in V69_PRIMARY_TASK_IDS],
+        *[(task_id, "zero_provider_fallback") for task_id in V69_IBEX_FALLBACK_TASK_IDS],
+        *[(task_id, "archive_incomplete_fallback") for task_id in V69_CVA6_FALLBACK_TASK_IDS],
+        (V69_OPEN_TOOL_TASK_ID, "alternative_toolchain_reserved"),
+    ]
+    base: dict[str, object] = {
+        "schema_version": "1.0",
+        "format_id": "verigym_deepseek_harness_hwe_v69_manifest_v1",
+        "identity": "deepseek-harness-hwe-v69-multitask-zero-provider-v1",
+        "primary_tasks": [_task_lock(task_id) for task_id in V69_PRIMARY_TASK_IDS],
+        "ibex_fallback_order": list(V69_IBEX_FALLBACK_TASK_IDS),
+        "cva6_fallback_order": list(V69_CVA6_FALLBACK_TASK_IDS),
+        "alternative_toolchain_task_id": V69_OPEN_TOOL_TASK_ID,
+        "task_ledger": [
+            {
+                "task_id": task_id,
+                "disposition": disposition,
+                "provider_boundary_crossed": False,
+                "provider_consumed": False,
+            }
+            for task_id, disposition in available
+        ]
+        + [
+            {
+                "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-166",
+                "disposition": "provider_consumed",
+                "provider_boundary_crossed": True,
+                "provider_consumed": True,
+            }
+        ],
+        "provider_clients_available": False,
+        "registry_access_allowed": False,
+        "partial_archive_allowed": False,
+        "atomic_provider_contract": True,
+        "formal_collection_allowed": False,
+        "formal_collection_started": False,
+        "collection_started": False,
+        "training_started": False,
+        "production_training_ready": False,
+    }
+    return {**base, "manifest_hash": content_hash(base)}
+
+
+def test_v69_manifest_freezes_task_and_fallback_order() -> None:
+    manifest = DeepSeekHarnessV69Manifest.model_validate(_manifest_payload())
+    assert tuple(item.task_id for item in manifest.primary_tasks) == V69_PRIMARY_TASK_IDS
+
+    changed = _manifest_payload()
+    tasks = list(changed["primary_tasks"])
+    tasks[0], tasks[1] = tasks[1], tasks[0]
+    changed["primary_tasks"] = tasks
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="primary task order"):
+        DeepSeekHarnessV69Manifest.model_validate(changed)
+
+
+def test_v69_manifest_rejects_historical_or_consumed_primary() -> None:
+    changed = _manifest_payload()
+    ledger = list(changed["task_ledger"])
+    ledger[0] = {
+        "task_id": V69_PRIMARY_TASK_IDS[0],
+        "disposition": "provider_consumed",
+        "provider_boundary_crossed": True,
+        "provider_consumed": True,
+    }
+    changed["task_ledger"] = ledger
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="planned task dispositions"):
+        DeepSeekHarnessV69Manifest.model_validate(changed)
+
+
+def _offline_archive(tmp_path: Path) -> tuple[HweOfflineTaskLock, Path]:
+    root = tmp_path / "archive-root"
+    archive_relative = Path("docker-tar-archives/lowrisc_m_ibex/pr-465.tar")
+    archive = root / archive_relative
+    archive.parent.mkdir(parents=True)
+    config = json.dumps({"config": {"WorkingDir": "/home/ibex"}}).encode()
+    config_digest = "sha256:" + hashlib.sha256(config).hexdigest()
+    layer_name = "a" * 64 + ".tar.gz"
+    manifest = json.dumps(
+        [
+            {
+                "Config": config_digest,
+                "RepoTags": ["ghcr.io/pku-liang/lowrisc_m_ibex:i-was-a-digest"],
+                "Layers": [layer_name],
+            }
+        ],
+        separators=(",", ":"),
+    ).encode()
+    with tarfile.open(archive, "w:") as tar:
+        for name, payload in (
+            (config_digest, config),
+            (layer_name, b"layer"),
+            ("manifest.json", manifest),
+        ):
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+    archive_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_suffix(".tar.sha256").write_text(
+        f"{archive_sha256}  {archive.name}\n", encoding="utf-8"
+    )
+    digest_path = root / "digest-locks/lowrisc_m_ibex/pr-465.digest"
+    digest_path.parent.mkdir(parents=True)
+    manifest_digest = "sha256:" + "b" * 64
+    digest_path.write_text(f"{manifest_digest}\n", encoding="utf-8")
+    lock = HweOfflineTaskLock.model_validate(
+        {
+            **_task_lock(V69_PRIMARY_TASK_IDS[0]),
+            "archive_sha256": archive_sha256,
+            "registry_manifest_digest": manifest_digest,
+            "image_config_digest": config_digest,
+            "official_verifier_image": config_digest,
+        }
+    )
+    return lock, root
+
+
+def test_offline_archive_binds_checksum_manifest_config_and_repository(tmp_path: Path) -> None:
+    lock, root = _offline_archive(tmp_path)
+    receipt = inspect_offline_image_archive(lock, archive_root=root)
+    assert receipt["archive_sha256_sidecar_valid"] is True
+    assert receipt["docker_archive_manifest_valid"] is True
+    assert receipt["image_config_digest_valid"] is True
+    assert receipt["repository_base"] == "/home/ibex"
+    assert receipt["registry_accessed"] is False
+
+
+def test_offline_archive_rejects_checksum_or_repository_drift(tmp_path: Path) -> None:
+    lock, root = _offline_archive(tmp_path)
+    sidecar = root / lock.archive_sha256_relpath
+    sidecar.write_text(f"{'0' * 64}  pr-465.tar\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="sidecar"):
+        inspect_offline_image_archive(lock, archive_root=root)
+
+
+def _planes(
+    *,
+    verifier: bool,
+    protocol: bool = True,
+    trajectory: bool = True,
+    infrastructure: bool = True,
+    security: bool = True,
+) -> HweAdmissionPlanes:
+    return HweAdmissionPlanes(
+        benchmark_verifier_pass=verifier,
+        agent_protocol_valid=protocol,
+        trajectory_eligible=trajectory,
+        infrastructure_valid=infrastructure,
+        security_valid=security,
+        sft_admitted=verifier and protocol and trajectory and infrastructure and security,
+    )
+
+
+def _attempt(
+    task_id: str,
+    *,
+    outcome: str,
+    planes: HweAdmissionPlanes,
+    marker: str = "started_valid",
+    first_modification: int | None = 3,
+) -> DeepSeekHarnessMatrixAttempt:
+    return DeepSeekHarnessMatrixAttempt.model_validate(
+        {
+            "task_id": task_id,
+            "repository": "ibex" if "ibex" in task_id else "cva6",
+            "agent_toolchain_id": "hwe-official-task-toolchain-v1",
+            "official_verifier_image": "sha256:" + "9" * 64,
+            "provider_marker": marker,
+            "provider_call_count": 0 if marker == "not_started" else 1,
+            "provider_total_tokens": 0 if marker == "not_started" else 100,
+            "first_effective_modification_action": first_modification,
+            "outcome": outcome,
+            "planes": planes,
+            "exact_64k_eligible": planes.trajectory_eligible,
+            "maximum_decision_tokens": 100 if planes.trajectory_eligible else None,
+            "truncation_applied": False,
+            "decision_only_loss_mask": planes.trajectory_eligible,
+        }
+    )
+
+
+def test_matrix_stops_pre_provider_without_consuming_task() -> None:
+    state = new_matrix_state(V69_PRIMARY_TASK_IDS[:2])
+    attempt = _attempt(
+        V69_PRIMARY_TASK_IDS[0],
+        outcome="infrastructure_failure",
+        planes=_planes(verifier=False, trajectory=False, infrastructure=False),
+        marker="not_started",
+        first_modification=None,
+    )
+    stopped = record_matrix_attempt(state, attempt)
+    assert stopped.status == "stopped"
+    assert stopped.stop_reason == "pre_provider_infrastructure_failure"
+    assert stopped.attempts[0]["provider_consumed"] is False
+
+
+def test_matrix_continues_verifier_failure_and_stops_after_two_no_progress() -> None:
+    state = new_matrix_state(V69_PRIMARY_TASK_IDS[:3])
+    state = record_matrix_attempt(
+        state,
+        _attempt(
+            V69_PRIMARY_TASK_IDS[0],
+            outcome="no_effective_modification",
+            planes=_planes(verifier=False, trajectory=False),
+            first_modification=None,
+        ),
+    )
+    assert state.status == "running"
+    state = record_matrix_attempt(
+        state,
+        _attempt(
+            V69_PRIMARY_TASK_IDS[1],
+            outcome="no_progress",
+            planes=_planes(verifier=False, trajectory=False),
+            first_modification=None,
+        ),
+    )
+    assert state.status == "stopped"
+    assert state.stop_reason == "two_consecutive_no_progress_or_trajectory_failures"
+
+    separate = new_matrix_state(V69_PRIMARY_TASK_IDS[:2])
+    separate = record_matrix_attempt(
+        separate,
+        _attempt(
+            V69_PRIMARY_TASK_IDS[0],
+            outcome="verifier_rejection",
+            planes=_planes(verifier=False),
+        ),
+    )
+    assert separate.status == "running"
+    assert separate.consecutive_no_progress == 0
+
+
+def test_migration_conclusions_keep_trajectory_and_sft_claims_separate() -> None:
+    attempts = [
+        _attempt(task_id, outcome="passed", planes=_planes(verifier=True))
+        for task_id in (
+            V69_PRIMARY_TASK_IDS[0],
+            V69_PRIMARY_TASK_IDS[1],
+            V69_PRIMARY_TASK_IDS[3],
+        )
+    ]
+    conclusions = migration_conclusions(attempts)
+    assert conclusions["trajectory_collection_migratable"] is True
+    assert conclusions["sft_path_migratable"] is True
+
+    trajectory_only = [
+        _attempt(task_id, outcome="verifier_rejection", planes=_planes(verifier=False))
+        for task_id in (
+            V69_PRIMARY_TASK_IDS[0],
+            V69_PRIMARY_TASK_IDS[1],
+            V69_PRIMARY_TASK_IDS[3],
+        )
+    ]
+    conclusions = migration_conclusions(trajectory_only)
+    assert conclusions["trajectory_collection_migratable"] is True
+    assert conclusions["sft_path_migratable"] is False
+
+
+def test_agent_toolchain_cannot_impersonate_official_verifier() -> None:
+    valid = {
+        "agent_toolchain_id": "verigym-open-rtl-tools-v1",
+        "official_verifier_image": "sha256:" + "9" * 64,
+        "official_verifier_executed": True,
+        "agent_diagnostic_result_role": "agent_only_non_authoritative",
+        "official_verifier_result_role": "benchmark_authoritative",
+        "agent_diagnostic_receipt_hash": "1" * 64,
+        "official_verifier_receipt_hash": "2" * 64,
+    }
+    require_toolchain_verifier_binding(
+        attempt=valid,
+        expected_agent_toolchain_id="verigym-open-rtl-tools-v1",
+        expected_official_verifier_image="sha256:" + "9" * 64,
+    )
+    with pytest.raises(ConfigurationError, match="identities are confused"):
+        require_toolchain_verifier_binding(
+            attempt={**valid, "official_verifier_receipt_hash": "1" * 64},
+            expected_agent_toolchain_id="verigym-open-rtl-tools-v1",
+            expected_official_verifier_image="sha256:" + "9" * 64,
+        )

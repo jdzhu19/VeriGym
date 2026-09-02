@@ -564,6 +564,20 @@ components can expose the provider credential. Docker is not a defense against c
 host control plane. The three-task collection output is permanently pilot-only and cannot claim
 production training readiness.
 
+The v69 successor materializes a five-task provider contract without constructing a provider
+client or accepting a provider credential. Its immutable manifest records every selected,
+fallback, reserved, historical, previously authorized, and provider-consumed public task known to
+the campaign. Reference-patch compatibility and dataset/source identity are checked for all five
+tasks before any image archive or Docker operation. Only completed local archives are accepted;
+the archive SHA-256 sidecar, registry-manifest digest lock, Docker archive manifest, config digest,
+repository base, source commit, and official verifier image must all agree. Registry access and
+`.partial` archives are forbidden. Each task must independently reproduce base-FAIL and
+reference-PASS with verifier network disabled and pass the task-specific command-image v2 scan.
+The provider contract is published last and only when all five ordered task receipts pass; any
+failure leaves progress evidence but no partial authorization. Even a complete v69 contract keeps
+provider execution, formal collection, SFT training, and production readiness disabled pending an
+independent successor audit.
+
 ### Claude CLI MCP external-agent boundary
 
 The optional `verigym-claude-cli` plugin uses a distinct host-control-plane design because Claude

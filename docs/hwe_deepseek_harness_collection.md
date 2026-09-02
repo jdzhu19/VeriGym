@@ -127,3 +127,29 @@ python scripts/collect_cva6_hwe_deepseek_v3.py \
   --output /data/jzhu484/Agent/experiments/cva6-hwe-deepseek-harness-v1/pilot-3task-v3 \
   --campaign-id cva6-hwe-deepseek-harness-pilot-3task-v3
 ```
+
+## v69 multi-task zero-provider materialization
+
+The later v69 path is manifest-driven and does not run a model. It freezes three Ibex tasks
+(`PR-465`, `PR-1135`, and `PR-1780`) followed by two CVA6 tasks (`PR-2017` and `PR-2711`). It also
+records the Ibex fallback order `PR-48`, `PR-293`, reserves `PR-1816` for the open-tool comparison,
+and marks CVA6 `PR-3042` and `PR-3137` unavailable until completed archives and sidecars exist.
+Historical, held-out, already authorized, and provider-consumed tasks cannot enter the schedule.
+
+Run the materializer only from a clean, merged `main` after all eight required post-merge workflow
+classes pass. The command accepts only the frozen local archive/tool paths, refuses provider
+credential variables, hashes each completed archive in full, never contacts a registry, and runs
+qualification and image inspection with `network=none`:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V69_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v69.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+The new output root is fixed under `/data2/jiadongzhu/Agent/experiments/`. The runner writes atomic
+progress after each task, but `provider-contract.json` is the last publication and is never
+created for a partial matrix. A completed contract still states
+`provider_execution_authorized=false`; v70 must independently audit it before any v71 provider
+authorization. The v69 manifest and receipt models live in
+`src/verigym/hwe/deepseek_harness_campaign.py`.
