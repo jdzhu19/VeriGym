@@ -97,6 +97,8 @@ def test_v53_transfer_downloads_only_cache_misses_and_commits_each_layer(
         cache_staging: Path | None = None,
         **_values: object,
     ) -> tuple[bytes, bytes]:
+        assert _values["owner_identity"] == _cli._v53.OPENHANDS_V53_IDENTITY
+        assert _values["name_version"] == "v53"
         roles.append(role)
         if role == "candidate_digest":
             return f"{manifest_digest}\n".encode(), b""

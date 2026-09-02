@@ -138,22 +138,39 @@ def materialize(arguments: argparse.Namespace) -> dict[str, Any]:
 
 
 def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+    return _transfer_stage_for_identity(
+        context,
+        root,
+        identity=_v53.OPENHANDS_V53_IDENTITY,
+        version="v53",
+        cache_root=_v53.OPENHANDS_V53_PERSISTENT_LAYER_CACHE,
+    )
+
+
+def _transfer_stage_for_identity(
+    context: _v52_cli._RunContext,
+    root: Path,
+    *,
+    identity: str,
+    version: str,
+    cache_root: Path,
+) -> dict[str, Any]:
     _v51._validate_headroom()
     _v51._validate_network()
     execution = _v51._validate_local_image(_v52_cli._EXECUTION_IMAGE)
     tool_cache = _v52_cli._safe_directory(_v52_cli._TOOL_CACHE)
     crane = _v52_cli._safe_file(tool_cache / "crane")
     if not os.access(crane, os.X_OK) or hash_bytes(crane.read_bytes()) != _v52_cli._CRANE_SHA256:
-        raise ConfigurationError("OpenHands v53 crane identity changed")
+        raise ConfigurationError(f"OpenHands {version} crane identity changed")
     if _v51._inspect_host_image(_v52_cli._REFERENCE) is not None:
-        raise ConfigurationError("OpenHands v53 PR-2728 tag already exists")
+        raise ConfigurationError(f"OpenHands {version} PR-2728 tag already exists")
     sentinel = _v51._sentinel_reference()
     if _v51._inspect_host_image(sentinel) is not None:
-        raise ConfigurationError("OpenHands v53 transfer sentinel already exists")
+        raise ConfigurationError(f"OpenHands {version} transfer sentinel already exists")
 
-    cache = ContentAddressedLayerCache(_v53.OPENHANDS_V53_PERSISTENT_LAYER_CACHE)
+    cache = ContentAddressedLayerCache(cache_root)
     download_staging = cache.task_staging(
-        f"v53-pr2728-download-{os.getpid()}-{secrets.token_hex(4)}"
+        f"{version}-pr2728-download-{os.getpid()}-{secrets.token_hex(4)}"
     )
     assembly_staging: Path | None = None
     work = root / "private-transfer"
@@ -171,10 +188,12 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
             arguments=[_PLATFORM_FLAG, "digest", _v52_cli._REFERENCE],
             role="candidate_digest",
             timeout=300,
+            owner_identity=identity,
+            name_version=version,
         )
         manifest_digest = digest_stdout.decode("ascii", errors="strict").strip()
         if _v52_cli._DIGEST.fullmatch(manifest_digest) is None:
-            raise ConfigurationError("OpenHands v53 candidate manifest digest is malformed")
+            raise ConfigurationError(f"OpenHands {version} candidate manifest digest is malformed")
         repository = _v52_cli._REFERENCE.rsplit(":", 1)[0]
         immutable = f"{repository}@{manifest_digest}"
         manifest_stdout, _ = _controlled(
@@ -185,6 +204,8 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
             arguments=[_PLATFORM_FLAG, "manifest", immutable],
             role="candidate_manifest",
             timeout=300,
+            owner_identity=identity,
+            name_version=version,
         )
         manifest = validate_registry_image_manifest(
             manifest_stdout,
@@ -199,12 +220,15 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
             arguments=[_PLATFORM_FLAG, "config", immutable],
             role="candidate_config",
             timeout=300,
+            owner_identity=identity,
+            name_version=version,
         )
         config_payload = _digest_qualified_payload(
             config_stdout,
             digest=manifest.config.digest,
             size=manifest.config.size,
             label="config",
+            version=version,
         )
         image_id = manifest.config.digest
 
@@ -212,7 +236,7 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
             cached = cache.bounded_inventory([layer.digest])[0]
             if cached["cache_hit"] is True:
                 if cached["size"] != layer.size:
-                    raise ConfigurationError("OpenHands v53 cached layer size changed")
+                    raise ConfigurationError(f"OpenHands {version} cached layer size changed")
                 receipt = cached
             else:
                 target = download_staging / layer.digest
@@ -232,9 +256,11 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
                     ],
                     role=f"layer_{index:03d}",
                     timeout=3_600,
+                    owner_identity=identity,
+                    name_version=version,
                 )
                 if stdout:
-                    raise ConfigurationError("OpenHands v53 layer download emitted stdout")
+                    raise ConfigurationError(f"OpenHands {version} layer download emitted stdout")
                 receipt = cache.commit(
                     target,
                     digest=layer.digest,
@@ -244,9 +270,9 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
             context.verified_layer_inventory = copy.deepcopy(inventory)
 
         if len(inventory) != len(manifest.layers):
-            raise ConfigurationError("OpenHands v53 layer inventory is incomplete")
+            raise ConfigurationError(f"OpenHands {version} layer inventory is incomplete")
         assembly_staging = cache.task_staging(
-            f"v53-pr2728-assembly-{os.getpid()}-{secrets.token_hex(4)}"
+            f"{version}-pr2728-assembly-{os.getpid()}-{secrets.token_hex(4)}"
         )
         cache.seed_task_staging(
             assembly_staging,
@@ -270,13 +296,15 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
                 ],
                 role="candidate_assembly",
                 timeout=3_600,
+                owner_identity=identity,
+                name_version=version,
             )
             if pull_stdout:
-                raise ConfigurationError("OpenHands v53 crane assembly emitted stdout")
+                raise ConfigurationError(f"OpenHands {version} crane assembly emitted stdout")
             assembly_inventory = cache.promote_task_staging(assembly_staging)
             assembled = {item.digest: item.size for item in assembly_inventory}
             if assembled != {item.digest: item.size for item in manifest.layers}:
-                raise ConfigurationError("OpenHands v53 assembly cache identity changed")
+                raise ConfigurationError(f"OpenHands {version} assembly cache identity changed")
             _v51._validated_crane_tarball(
                 archive,
                 expected_image_id=image_id,
@@ -289,7 +317,7 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
                 raise _v52_cli._CommandFailure("candidate_load", loaded.stderr)
             observed_sentinel = _v51._inspect_host_image(sentinel)
             if observed_sentinel is None or observed_sentinel.get("Id") != image_id:
-                raise ConfigurationError("OpenHands v53 loaded image identity changed")
+                raise ConfigurationError(f"OpenHands {version} loaded image identity changed")
             tagged = _v52_cli._bounded_run(
                 ["docker", "image", "tag", image_id, _v52_cli._REFERENCE], timeout=60
             )
@@ -297,7 +325,7 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
                 raise _v52_cli._CommandFailure("candidate_tag", tagged.stderr)
             imported = _v51._inspect_host_image(_v52_cli._REFERENCE)
             if imported is None or imported.get("Id") != image_id:
-                raise ConfigurationError("OpenHands v53 candidate tag identity changed")
+                raise ConfigurationError(f"OpenHands {version} candidate tag identity changed")
             removed = _v52_cli._bounded_run(["docker", "image", "rm", sentinel], timeout=60)
             if removed.returncode != 0 or _v51._inspect_host_image(sentinel) is not None:
                 raise _v52_cli._CommandFailure("sentinel_cleanup", removed.stderr)
@@ -308,7 +336,7 @@ def _transfer_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]
         _v52_cli._cleanup_directories(*cleanup)
     base = {
         "schema_version": "1.0",
-        "format_id": "verigym_openhands_hwe_v53_pr2728_image_transfer_v1",
+        "format_id": f"verigym_openhands_hwe_{version}_pr2728_image_transfer_v1",
         "task_id": _v52_cli._TASK_ID,
         "platform": _PLATFORM,
         "verifier_image": image_id,
@@ -340,6 +368,8 @@ def _controlled(
     timeout: int,
     work: Path | None = None,
     cache_staging: Path | None = None,
+    owner_identity: str = _v53.OPENHANDS_V53_IDENTITY,
+    name_version: str = "v53",
 ) -> tuple[bytes, bytes]:
     return _v52_cli._run_controlled_container(
         image_id=str(execution["image_id"]),
@@ -351,52 +381,101 @@ def _controlled(
         arguments=arguments,
         role=role,
         timeout=timeout,
-        owner_identity=_v53.OPENHANDS_V53_IDENTITY,
-        name_version="v53",
+        owner_identity=owner_identity,
+        name_version=name_version,
     )
 
 
-def _digest_qualified_payload(raw: bytes, *, digest: str, size: int, label: str) -> bytes:
+def _digest_qualified_payload(
+    raw: bytes,
+    *,
+    digest: str,
+    size: int,
+    label: str,
+    version: str = "v53",
+) -> bytes:
     expected = digest.removeprefix("sha256:")
     candidates = (raw, raw[:-1]) if raw.endswith(b"\n") else (raw,)
     for candidate in candidates:
         if len(candidate) == size and hashlib.sha256(candidate).hexdigest() == expected:
             return candidate
-    raise ConfigurationError(f"OpenHands v53 candidate {label} identity changed")
+    raise ConfigurationError(f"OpenHands {version} candidate {label} identity changed")
 
 
-def _qualification_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+def _qualification_stage_for_version(
+    context: _v52_cli._RunContext,
+    root: Path,
+    *,
+    version: str,
+) -> dict[str, Any]:
     receipt = _relabel(
         _v52_cli._qualification_stage(context, root),
-        "verigym_openhands_hwe_v53_pr2728_public_qualification_v1",
+        f"verigym_openhands_hwe_{version}_pr2728_public_qualification_v1",
     )
     context.qualification = receipt
     return receipt
 
 
-def _security_scan_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+def _qualification_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+    return _qualification_stage_for_version(context, root, version="v53")
+
+
+def _security_scan_stage_for_identity(
+    context: _v52_cli._RunContext,
+    root: Path,
+    *,
+    identity: str,
+    version: str,
+) -> dict[str, Any]:
     return _v52_cli._security_scan_stage(
         context,
         root,
-        image_tag="verigym/cva6-openhands-v53-command-pr-2728:rg-15.2.0-v1",
-        format_id="verigym_openhands_hwe_v53_pr2728_v2_security_scan_v1",
-        owner_identity=_v53.OPENHANDS_V53_IDENTITY,
-        name_version="v53",
+        image_tag=f"verigym/cva6-openhands-{version}-command-pr-2728:rg-15.2.0-v1",
+        format_id=f"verigym_openhands_hwe_{version}_pr2728_v2_security_scan_v1",
+        owner_identity=identity,
+        name_version=version,
+    )
+
+
+def _security_scan_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+    return _security_scan_stage_for_identity(
+        context,
+        root,
+        identity=_v53.OPENHANDS_V53_IDENTITY,
+        version="v53",
+    )
+
+
+def _command_lock_stage_for_version(
+    context: _v52_cli._RunContext,
+    root: Path,
+    *,
+    version: str,
+) -> dict[str, Any]:
+    return _relabel(
+        _v52_cli._command_lock_stage(context, root),
+        f"verigym_openhands_hwe_{version}_pr2728_command_image_lock_v1",
     )
 
 
 def _command_lock_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
+    return _command_lock_stage_for_version(context, root, version="v53")
+
+
+def _v33_revalidation_stage_for_version(
+    context: _v52_cli._RunContext,
+    root: Path,
+    *,
+    version: str,
+) -> dict[str, Any]:
     return _relabel(
-        _v52_cli._command_lock_stage(context, root),
-        "verigym_openhands_hwe_v53_pr2728_command_image_lock_v1",
+        _v52_cli._v33_revalidation_stage(context, root),
+        f"verigym_openhands_hwe_{version}_pr3204_v33_lock_revalidation_v1",
     )
 
 
 def _v33_revalidation_stage(context: _v52_cli._RunContext, root: Path) -> dict[str, Any]:
-    return _relabel(
-        _v52_cli._v33_revalidation_stage(context, root),
-        "verigym_openhands_hwe_v53_pr3204_v33_lock_revalidation_v1",
-    )
+    return _v33_revalidation_stage_for_version(context, root, version="v53")
 
 
 def _relabel(receipt: dict[str, Any], format_id: str) -> dict[str, Any]:
