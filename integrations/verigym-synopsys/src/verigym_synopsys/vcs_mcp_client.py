@@ -46,6 +46,17 @@ from .vcs_mcp_profile import (
 )
 
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
+DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT = "VERIGYM_VCS_MCP_PROFILE_V2"
+LEGACY_VCS_MCP_PROFILE_ENVIRONMENT = "VERIGYM_VCS_MCP_PROFILE"
+_SAFE_MISMATCH_CODES = frozenset(
+    {
+        "profile_not_approved",
+        "profile_identity_mismatch",
+        "profile_contract_mismatch",
+        "profile_resolved_identity_mismatch",
+        "tool_identity_mismatch",
+    }
+)
 
 
 class VcsAuxiliaryIdentity(StrictModel):
@@ -120,7 +131,10 @@ def _tool_response(completed: CompletedCommand, expected_server_version: str) ->
     )
     result = response.get("result")
     if not isinstance(result, dict) or result.get("isError") is True:
-        raise McpProtocolError("VCS MCP service rejected the fixed verifier request")
+        structured = result.get("structuredContent") if isinstance(result, dict) else None
+        reason = structured.get("reason_code") if isinstance(structured, dict) else None
+        suffix = f" ({reason})" if reason in _SAFE_MISMATCH_CODES else ""
+        raise McpProtocolError(f"VCS MCP service rejected the fixed verifier request{suffix}")
     structured = result.get("structuredContent")
     if not isinstance(structured, dict) or structured.get("protocol") != SERVICE_PROTOCOL:
         raise McpProtocolError("VCS MCP service returned an invalid structured response")
@@ -157,11 +171,16 @@ class McpVcsSimulationTool(VerifierBackendPlugin):
 
     def health_check(self, context: ToolContext | None = None) -> HealthCheckResult:
         del context
-        path = os.environ.get("VERIGYM_VCS_MCP_PROFILE")
+        path = os.environ.get(DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT) or os.environ.get(
+            LEGACY_VCS_MCP_PROFILE_ENVIRONMENT
+        )
         if path is None:
             return HealthCheckResult(
                 healthy=False,
-                message="set VERIGYM_VCS_MCP_PROFILE to a fixed verifier profile",
+                message=(
+                    f"set {DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT} to the current fixed verifier "
+                    f"profile ({LEGACY_VCS_MCP_PROFILE_ENVIRONMENT} remains replay-only)"
+                ),
             )
         try:
             profile = load_verifier_profile(path)
@@ -370,4 +389,8 @@ class McpVcsSimulationTool(VerifierBackendPlugin):
             )
 
 
-__all__ = ["McpVcsSimulationTool"]
+__all__ = [
+    "DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT",
+    "LEGACY_VCS_MCP_PROFILE_ENVIRONMENT",
+    "McpVcsSimulationTool",
+]

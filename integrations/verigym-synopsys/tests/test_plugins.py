@@ -9,6 +9,7 @@ from verigym.profiles.registry import ToolchainProfileRegistry
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
 
+from verigym_synopsys.common import temporary_environment, vcs_environment
 from verigym_synopsys.dc import (
     AREA_TIMING_FLOW_TEMPLATE_ID,
     MULTICLOCK_FLOW_TEMPLATE_HASH,
@@ -33,6 +34,24 @@ def _session(tmp_path: Path, files: dict[str, bytes]) -> tuple[LocalRuntime, Run
     runtime = LocalRuntime()
     session = runtime.create_session(SessionSpec(source_dir=str(source), label="verifier"))
     return runtime, session
+
+
+def test_vcs_forwards_only_an_existing_direct_scratch_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setenv("TMPDIR", str(scratch))
+    assert temporary_environment() == {"TMPDIR": str(scratch.resolve())}
+    assert vcs_environment("vcs")["TMPDIR"] == str(scratch.resolve())
+
+    scratch_link = tmp_path / "scratch-link"
+    scratch_link.symlink_to(scratch, target_is_directory=True)
+    monkeypatch.setenv("TMPDIR", str(scratch_link))
+    assert temporary_environment() == {}
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "missing"))
+    assert temporary_environment() == {}
 
 
 def test_prepare_profile_requires_exactly_one_db_path(tmp_path: Path) -> None:
@@ -153,7 +172,12 @@ def test_vcs_stages_testbench_first_and_redacts_license(
         assert command.requires_shell is False
         assert command.argv.index("input/000.v") < command.argv.index("input/001.v")
         assert "SNPSLMD_LICENSE_FILE" in command.env
-        assert set(command.env) <= {"SNPSLMD_LICENSE_FILE", "LM_LICENSE_FILE", "VCS_HOME"}
+        assert set(command.env) <= {
+            "SNPSLMD_LICENSE_FILE",
+            "LM_LICENSE_FILE",
+            "VCS_HOME",
+            "TMPDIR",
+        }
         result = plugin.parse_result(
             request,
             CompletedCommand(

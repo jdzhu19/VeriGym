@@ -16,6 +16,7 @@ from .vcs_mcp_profile import VcsMcpAuxiliaryFile, VcsMcpServerProfile
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare a fixed VCS MCP server profile.")
     parser.add_argument("--id", required=True)
+    parser.add_argument("--version", default="1.0.0")
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--source", action="append", required=True)
     parser.add_argument("--testbench", type=Path, required=True)
@@ -63,6 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     profile = VcsMcpServerProfile(
         id=arguments.id,
+        version=arguments.version,
         task_id=arguments.task_id,
         executable=str(Path(health.executable).resolve(strict=True)),
         accepted_tool_version=health.version,

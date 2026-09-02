@@ -50,7 +50,7 @@ from .agent_worker_protocol import (
     AgentWorkerReceipt,
     agent_worker_contract_identity_payload,
 )
-from .common import redact, resolve_executable, safe_executable
+from .common import redact, resolve_executable, safe_executable, temporary_environment
 from .dc import (
     AREA_TIMING_FLOW_TEMPLATE_HASH,
     AREA_TIMING_FLOW_TEMPLATE_ID,
@@ -474,6 +474,7 @@ def _run_stdio(
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
+        **temporary_environment(),
         **_transport_environment(environment_names),
     }
     exit_code: int | None = None

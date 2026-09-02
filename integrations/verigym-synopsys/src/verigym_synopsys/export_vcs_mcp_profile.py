@@ -21,6 +21,7 @@ from .vcs_mcp_profile import RESOLVE_PROFILE_TOOL, SERVER_VERSION, SERVICE_PROTO
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export a sanitized VCS MCP verifier profile.")
     parser.add_argument("--id", required=True)
+    parser.add_argument("--version", default="1.0.0")
     parser.add_argument("--server-profile-id", required=True)
     parser.add_argument("--server-declared-profile-hash", required=True)
     parser.add_argument("--server-contract-hash", required=True)
@@ -65,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ConfigurationError("remote VCS profile differs from the export arguments")
     profile = VerifierToolProfile(
         id=arguments.id,
-        version="1.0.0",
+        version=arguments.version,
         description="Fixed verifier-only VCS MCP profile; no commercial assets are embedded.",
         task_id=arguments.task_id,
         source_plugin=arguments.source_plugin,

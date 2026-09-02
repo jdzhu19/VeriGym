@@ -128,7 +128,11 @@ class VcsMcpSimulationRequest(VcsProfileIdentityRequest):
 
 
 class VcsMcpRequestError(ValueError):
-    """Caller-safe protocol or fixed-contract rejection."""
+    """Caller-safe protocol or fixed-contract rejection with a stable classification."""
+
+    def __init__(self, message: str, *, reason_code: str = "invalid_request") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 def _identity_schema(*, simulate: bool) -> dict[str, Any]:
@@ -267,17 +271,29 @@ class VcsMcpService:
     ) -> tuple[VcsMcpServerProfile, dict[str, Any]]:
         profile = self._profiles.get(request.profile_id)
         if profile is None:
-            raise VcsMcpRequestError("requested profile is not approved by this server")
+            raise VcsMcpRequestError(
+                "requested profile is not approved by this server",
+                reason_code="profile_not_approved",
+            )
         if content_hash(profile) != request.declared_profile_hash:
-            raise VcsMcpRequestError("declared profile hash differs from the server profile")
+            raise VcsMcpRequestError(
+                "declared profile hash differs from the server profile",
+                reason_code="profile_identity_mismatch",
+            )
         if profile.contract_hash != request.contract_hash:
-            raise VcsMcpRequestError("public contract hash differs from the server profile")
+            raise VcsMcpRequestError(
+                "public contract hash differs from the server profile",
+                reason_code="profile_contract_mismatch",
+            )
         self._validate_hidden_assets(profile)
         health = probe_vcs(profile.executable)
         if not health.healthy or health.version is None:
             raise VcsMcpRequestError("approved VCS executable failed its identity probe")
         if health.version != profile.accepted_tool_version:
-            raise VcsMcpRequestError("VCS tool version differs from the approved exact version")
+            raise VcsMcpRequestError(
+                "VCS tool version differs from the approved exact version",
+                reason_code="tool_identity_mismatch",
+            )
         payload = {
             "service_protocol": SERVICE_PROTOCOL,
             "server_version": SERVER_VERSION,
@@ -292,7 +308,10 @@ class VcsMcpService:
             request.expected_resolved_profile_hash is not None
             and request.expected_resolved_profile_hash != resolved["resolved_profile_hash"]
         ):
-            raise VcsMcpRequestError("resolved profile differs from the expected replay identity")
+            raise VcsMcpRequestError(
+                "resolved profile differs from the expected replay identity",
+                reason_code="profile_resolved_identity_mismatch",
+            )
         return profile, resolved
 
     def _simulate(self, request: VcsMcpSimulationRequest) -> dict[str, Any]:
@@ -494,7 +513,7 @@ def _handle(request: Any, service: VcsMcpService) -> dict[str, Any] | None:
         try:
             structured = service.call(name, arguments)
         except VcsMcpRequestError as exc:
-            result = _tool_error(redact(str(exc)))
+            result = _tool_error(redact(str(exc)), reason_code=exc.reason_code)
         except Exception as exc:
             result = _tool_error(f"server execution failed: {type(exc).__name__}")
         else:
@@ -507,10 +526,10 @@ def _handle(request: Any, service: VcsMcpService) -> dict[str, Any] | None:
     return _rpc_error(request_id, -32601, "method not found")
 
 
-def _tool_error(message: str) -> dict[str, Any]:
+def _tool_error(message: str, *, reason_code: str = "invalid_request") -> dict[str, Any]:
     return {
         "content": [{"type": "text", "text": message}],
-        "structuredContent": {"error": message},
+        "structuredContent": {"error": message, "reason_code": reason_code},
         "isError": True,
     }
 

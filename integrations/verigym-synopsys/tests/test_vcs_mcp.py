@@ -6,6 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 from verigym.core.verifier_profiles import resolve_verifier_profile, task_with_verifier_profile
 from verigym.plugin_api import (
@@ -35,17 +36,25 @@ from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.tools.base import ToolPlugin
 
 from verigym_synopsys.export_vcs_mcp_profile import main as export_vcs_profile
-from verigym_synopsys.vcs_mcp_client import McpVcsSimulationTool
+from verigym_synopsys.reissue_vcs_mcp_profile import main as reissue_vcs_profile
+from verigym_synopsys.vcs_mcp_client import (
+    DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT,
+    LEGACY_VCS_MCP_PROFILE_ENVIRONMENT,
+    McpVcsSimulationTool,
+)
 from verigym_synopsys.vcs_mcp_profile import (
     SERVER_VERSION,
     SERVICE_PROTOCOL,
     VcsMcpAuxiliaryFile,
     VcsMcpServerProfile,
+    load_vcs_server_profile,
 )
 from verigym_synopsys.vcs_mcp_server import (
+    RESOLVE_PROFILE_TOOL,
     SIMULATE_TOOL,
     VcsMcpRequestError,
     VcsMcpService,
+    _handle,
     tool_definitions,
 )
 
@@ -123,6 +132,8 @@ def test_vcs_exporter_can_replace_an_iverilog_hidden_node(tmp_path: Path) -> Non
             [
                 "--id",
                 "rtllm-harder-vcs-client-v1",
+                "--version",
+                "2.0.0",
                 "--server-profile-id",
                 server.id,
                 "--server-declared-profile-hash",
@@ -141,7 +152,107 @@ def test_vcs_exporter_can_replace_an_iverilog_hidden_node(tmp_path: Path) -> Non
         )
         == 0
     )
-    assert load_verifier_profile(output).source_plugin == "iverilog.simulate"
+    exported = load_verifier_profile(output)
+    assert exported.source_plugin == "iverilog.simulate"
+    assert exported.version == "2.0.0"
+
+
+def test_vcs_profile_mismatch_has_a_stable_safe_reason_code(tmp_path: Path) -> None:
+    profile, profile_path, _ = _fixture(tmp_path)
+    service = VcsMcpService([profile_path], tmp_path / "reason-work")
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": RESOLVE_PROFILE_TOOL,
+            "arguments": {
+                "profile_id": profile.id,
+                "declared_profile_hash": "0" * 64,
+                "contract_hash": profile.contract_hash,
+            },
+        },
+    }
+
+    response = _handle(request, service)
+
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"] == {
+        "error": "declared profile hash differs from the server profile",
+        "reason_code": "profile_identity_mismatch",
+    }
+    serialized = json.dumps(result)
+    assert str(tmp_path) not in serialized
+    assert profile.executable not in serialized
+
+
+def test_doctor_prefers_the_v2_profile_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, _, wrapper = _fixture(tmp_path)
+    client = _client_profile(server, wrapper).model_copy(update={"version": "2.0.0"})
+    profile_path = tmp_path / "client-v2.yaml"
+    profile_path.write_text(
+        yaml.safe_dump(client.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    monkeypatch.setenv(DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT, str(profile_path))
+    monkeypatch.setenv(LEGACY_VCS_MCP_PROFILE_ENVIRONMENT, str(tmp_path / "missing-v1.yaml"))
+
+    health = McpVcsSimulationTool().health_check()
+
+    assert health.healthy is True
+    assert health.version == server.accepted_tool_version
+
+
+def test_reissue_creates_a_new_stable_v2_identity_without_changing_v1(
+    tmp_path: Path,
+) -> None:
+    server, server_path, wrapper = _fixture(tmp_path)
+    client_path = tmp_path / "client-v1.yaml"
+    client_path.write_text(
+        yaml.safe_dump(_client_profile(server, wrapper).model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+    original_server = server_path.read_bytes()
+    original_client = client_path.read_bytes()
+    output = tmp_path / "issued-v2"
+    receipt = tmp_path / "receipt-v2.json"
+
+    assert (
+        reissue_vcs_profile(
+            [
+                "--base-server",
+                str(server_path),
+                "--base-client",
+                str(client_path),
+                "--server-id",
+                "rtllm-counter-vcs-v2",
+                "--client-id",
+                "rtllm-counter-vcs-mcp-local-v2",
+                "--output-dir",
+                str(output),
+                "--receipt",
+                str(receipt),
+            ]
+        )
+        == 0
+    )
+
+    issued_server = load_vcs_server_profile(output / "server-v2.yaml")
+    issued_client = load_verifier_profile(output / "client-v2.yaml")
+    result = json.loads(receipt.read_text(encoding="utf-8"))
+    assert server_path.read_bytes() == original_server
+    assert client_path.read_bytes() == original_client
+    assert issued_server.version == issued_client.version == "2.0.0"
+    assert issued_client.server_declared_profile_hash == content_hash(issued_server)
+    assert issued_client.server_contract_hash == issued_server.contract_hash
+    assert result["cause"] == "server_client_canonical_profile_hash_drift"
+    assert result["license_failure"] is False
+    assert result["tool_failure"] is False
+    assert result["repeated_resolution_stable"] is True
+    assert str(tmp_path) not in json.dumps(result)
 
 
 def test_vcs_mcp_surface_is_fixed_and_response_is_sanitized(tmp_path: Path) -> None:

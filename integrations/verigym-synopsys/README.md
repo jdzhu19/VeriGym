@@ -90,6 +90,20 @@ and exact VCS version. Candidate verdicts expose no stdout, stderr, VCS log, rep
 license value, or verifier path. See [verifier backend profiles](../../docs/verifier_profiles.md)
 for the full contract and Icarus/VCS benchmark-version boundaries.
 
+If a frozen server/client pair has canonical identity drift, do not edit either historical file.
+`verigym-synopsys-reissue-vcs-mcp-profile` probes the exact VCS identity, emits a new v2 server,
+transport, and client directory, resolves the result twice, and writes a sanitized hash-only
+receipt. `VERIGYM_VCS_MCP_PROFILE_V2` is the preferred default doctor binding;
+`VERIGYM_VCS_MCP_PROFILE` remains a legacy replay fallback. Safe profile failures expose only one
+of `profile_not_approved`, `profile_identity_mismatch`, `profile_contract_mismatch`,
+`profile_resolved_identity_mismatch`, or `tool_identity_mismatch`; verifier paths, commercial
+assets, and hidden checker contents remain server-owned. See the
+[VCS identity repair audit](../../docs/audits/rtllm_vcs_profile_repair_v2.md).
+
+The trusted launcher may set `TMPDIR` to an existing writable, executable, non-symlink directory
+when the host default temporary filesystem is constrained. The client passes that value to the
+fixed transport and direct VCS launches, but tool requests cannot supply or override it.
+
 ## Prepare a site profile
 
 Prefer the PDK's prebuilt `.db` when available. The paired Liberty remains hash-bound provenance:
