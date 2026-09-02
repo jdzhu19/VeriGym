@@ -87,7 +87,26 @@ _IBEX_PROFILE = _RepositoryProfile(
         ("vvp -V >/tmp/vvp-version 2>/tmp/vvp-stderr", 84),
     ),
 )
-_REPOSITORY_PROFILES = {profile.name: profile for profile in (_CVA6_PROFILE, _IBEX_PROFILE)}
+_IBEX_VERILATOR_PROFILE = _RepositoryProfile(
+    name="ibex-verilator",
+    runtime_role="hwe-ibex-command",
+    verifier_label="org.verigym.ibex.verifier_base_image_id",
+    source_whiteout_path="/home/ibex",
+    source_marker_path="/home/ibex_base_commit.txt",
+    scanner_profile_id="ibex-hwe-command-container-native-offline-v2",
+    toolchain_profile_id="ibex-verilator-system-container-native-v1",
+    exact_environment=_IBEX_PROFILE.exact_environment,
+    tool_assertions=(
+        ("make --version >/tmp/make-version", 80),
+        ("/usr/bin/verilator_bin --version >/tmp/verilator-bin-version", 81),
+        ("/usr/bin/verilator --version >/tmp/verilator-version", 82),
+    ),
+)
+_REPOSITORY_PROFILES = {
+    "cva6": _CVA6_PROFILE,
+    "ibex": _IBEX_PROFILE,
+    "ibex-verilator": _IBEX_VERILATOR_PROFILE,
+}
 _IBEX_SCRATCH_PARENT = Path("/data2/jiadongzhu/Agent/.verigym-tmp")
 _ASSERTION_EXIT_CODES = {
     41: "rootfs_write_rejected",
@@ -351,7 +370,7 @@ def _container_scan(
         for item in artifacts
     )
     command = "\n".join(("set -u", *assertions))
-    scratch_parent = _SCRATCH_PARENT if profile is _CVA6_PROFILE else _IBEX_SCRATCH_PARENT
+    scratch_parent = _SCRATCH_PARENT if profile.name == "cva6" else _IBEX_SCRATCH_PARENT
     scratch_parent.mkdir(parents=True, exist_ok=True)
     workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=scratch_parent))
     container_id: str | None = None
@@ -388,7 +407,7 @@ def _container_scan(
             "--workdir",
             "/workspace/repository",
         ]
-        for entry in _EXPECTED_IMAGE_ENVIRONMENT:
+        for entry in profile.exact_environment:
             create.extend(("--env", entry))
         create.extend(
             (
@@ -460,9 +479,9 @@ def _container_scan(
                     and mounts[0]["RW"] is True
                 ),
                 "exact_environment": (
-                    len(config["Env"]) == len(_EXPECTED_IMAGE_ENVIRONMENT)
+                    len(config["Env"]) == len(profile.exact_environment)
                     and _environment_map(config["Env"])
-                    == _environment_map(_EXPECTED_IMAGE_ENVIRONMENT)
+                    == _environment_map(list(profile.exact_environment))
                 ),
                 "non_root_identity": config["User"] == user,
             }
@@ -532,7 +551,7 @@ def _container_scan(
                 "rg_version_exact": True,
                 "keepalive_available": True,
                 "make_available": True,
-                "verilator_available": True,
+                "toolchain_available": True,
                 "hidden_reference_verifier_assets_absent": True,
                 "rootfs_write_rejected": True,
                 "tmp_ephemeral": not (workspace / "ephemeral-proof").exists(),
@@ -631,6 +650,9 @@ def scan_and_lock(
     }
     if any(receipt.get(key) != value for key, value in expected_receipt.items()):
         raise ValueError("HWE command-image receipt differs from the frozen task identity")
+    receipt_toolchain = receipt.get("toolchain_profile_id")
+    if receipt_toolchain is not None and receipt_toolchain != profile.toolchain_profile_id:
+        raise ValueError("HWE command-image receipt toolchain differs from the scanner profile")
     for key in (
         "derived_command_image_id",
         "unsanitized_command_image_id",
@@ -663,6 +685,11 @@ def scan_and_lock(
         "org.verigym.reference_patch": "absent",
         "org.verigym.verifier_payload": "absent",
     }
+    if receipt_toolchain is not None:
+        required_labels["org.verigym.ibex.toolchain.profile"] = {
+            "ibex-iverilog-container-native-v1": "iverilog",
+            "ibex-verilator-system-container-native-v1": "verilator",
+        }.get(profile.toolchain_profile_id, "")
     image_checks = {
         "image_identity": image.get("Id") == image_id,
         "rootfs_layer_identity_preserved": image.get("RootFS") == unsanitized.get("RootFS"),

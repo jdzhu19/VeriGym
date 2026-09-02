@@ -54,6 +54,15 @@ def test_scanner_accepts_v52_command_source_lock_without_reinterpreting_agent_lo
         )
 
 
+def test_ibex_verilator_profile_is_task_explicit_and_keeps_ibex_isolation() -> None:
+    profile = _scanner._REPOSITORY_PROFILES["ibex-verilator"]
+
+    assert profile.runtime_role == "hwe-ibex-command"
+    assert profile.source_whiteout_path == "/home/ibex"
+    assert profile.toolchain_profile_id == "ibex-verilator-system-container-native-v1"
+    assert any("verilator_bin" in command for command, _exit_code in profile.tool_assertions)
+
+
 def _inspection(user: str) -> dict[str, Any]:
     return {
         "HostConfig": {

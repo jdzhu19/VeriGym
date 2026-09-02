@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 6 ]]; then
-  echo "usage: $0 ABSOLUTE_RG_BINARY ABSOLUTE_RG_RELEASE_ARCHIVE VERIFIER_IMAGE_ID TASK_ID IMAGE_TAG OUTPUT_JSON" >&2
+if [[ $# -lt 6 || $# -gt 7 ]]; then
+  echo "usage: $0 ABSOLUTE_RG_BINARY ABSOLUTE_RG_RELEASE_ARCHIVE VERIFIER_IMAGE_ID TASK_ID IMAGE_TAG OUTPUT_JSON [iverilog|verilator]" >&2
   exit 2
 fi
 
@@ -12,6 +12,7 @@ verifier_image_id=$3
 task_id=$4
 image_tag=$5
 output_json=$6
+ibex_toolchain_profile=${7:-iverilog}
 repository_root=$(git rev-parse --show-toplevel)
 dockerfile=$repository_root/docker/ibex-hwe-command/Dockerfile
 sanitizer=$repository_root/scripts/sanitize_docker_image_environment.py
@@ -47,6 +48,10 @@ if [[ ! $verifier_image_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
 fi
 if [[ ! $task_id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$ ]]; then
   echo "Task ID is not portable" >&2
+  exit 2
+fi
+if [[ $ibex_toolchain_profile != iverilog && $ibex_toolchain_profile != verilator ]]; then
+  echo "Ibex toolchain profile must be iverilog or verilator" >&2
   exit 2
 fi
 if [[ $output_json != /* || -e $output_json ]]; then
@@ -112,6 +117,7 @@ DOCKER_BUILDKIT=1 docker build \
   --build-arg "RG_SHA256=$rg_sha256" \
   --build-arg "RG_RELEASE_ARCHIVE_SHA256=$rg_release_archive_sha256" \
   --build-arg "HWE_TASK_ID=$task_id" \
+  --build-arg "IBEX_TOOLCHAIN_PROFILE=$ibex_toolchain_profile" \
   --build-arg "COMMAND_UID=$command_uid" \
   --build-arg "COMMAND_GID=$command_gid" \
   --file "$dockerfile" \
@@ -146,7 +152,7 @@ mkdir -p "$(dirname "$output_json")"
 sanitizer_sha256=$(sha256sum "$sanitizer" | awk '{print $1}')
 python - "$output_json" "$task_id" "$verifier_image_id" "$derived_image_id" \
   "$unsanitized_image_id" "$rg_sha256" "$rg_release_archive_sha256" \
-  "$sanitizer_sha256" <<'PY'
+  "$sanitizer_sha256" "$ibex_toolchain_profile" <<'PY'
 import json
 import os
 import sys
@@ -161,7 +167,12 @@ from pathlib import Path
     rg_sha256,
     rg_release_archive_sha256,
     sanitizer_sha256,
+    ibex_toolchain_profile,
 ) = sys.argv[1:]
+toolchain_profile_id = {
+    "iverilog": "ibex-iverilog-container-native-v1",
+    "verilator": "ibex-verilator-system-container-native-v1",
+}[ibex_toolchain_profile]
 payload = {
     "format_id": "verigym_hwe_command_image_build_receipt_v1",
     "task_id": task_id,
@@ -178,6 +189,7 @@ payload = {
     "visible_workspace_path": "/workspace/repository",
     "collection_profile_id": "hwe_standard_v2",
     "tool_contract_id": "hwe_native_shell_v2",
+    "toolchain_profile_id": toolchain_profile_id,
     "command_protocol": "hwe_command_image_v1",
     "configuration_sanitizer_sha256": sanitizer_sha256,
     "exact_image_environment": [
