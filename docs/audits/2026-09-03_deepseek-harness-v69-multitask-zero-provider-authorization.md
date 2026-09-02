@@ -51,6 +51,12 @@ and executable are hash-bound. The provider contract is published only after all
 receipts pass in order. Any capacity, infrastructure, safety, qualification, or build failure
 atomically stops without a partial contract.
 
+Before the first image is loaded or built, the shared HWE headroom policy requires 4 GiB and
+100,000 inodes on the host control root, 96 GiB and 250,000 inodes on the Docker data root, 8 GiB
+and 50,000 inodes on the fixed `/data2/jiadongzhu/Agent/.verigym-tmp` scratch root, and 2 GiB and
+10,000 inodes on the output filesystem. A rejection receipt contains only roles and numeric
+capacity, never resolved paths or raw `docker info` output.
+
 ## Successor boundary
 
 A completed v69 output remains pending the independent v70 result audit. Only a separate merged

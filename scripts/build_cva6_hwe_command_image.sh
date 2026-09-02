@@ -95,7 +95,7 @@ if [[ -z $local_base_reference ]]; then
   exit 1
 fi
 
-scratch_parent=/data/jzhu484/Agent/.verigym-tmp
+scratch_parent=/data2/jiadongzhu/Agent/.verigym-tmp
 mkdir -p "$scratch_parent"
 build_context=$(mktemp -d "$scratch_parent/verigym-cva6-hwe-command.XXXXXXXX")
 cleanup() {

@@ -49,6 +49,11 @@ from verigym.hwe.deepseek_harness_campaign import (  # noqa: E402
     load_v69_manifest,
 )
 from verigym.hwe.image_lock import build_hwe_command_source_lock  # noqa: E402
+from verigym.hwe.materialization_preflight import (  # noqa: E402
+    MaterializationHeadroomError,
+    discover_docker_root,
+    require_materialization_headroom,
+)
 from verigym.schemas.suite import SuiteSourceConfig  # noqa: E402
 
 IDENTITY = "deepseek-harness-hwe-v69-multitask-zero-provider-v1"
@@ -65,6 +70,7 @@ RG_ROOT = Path(
 )
 RG_BINARY = RG_ROOT / "rg"
 RG_ARCHIVE = RG_ROOT.parent / "ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
+SCRATCH_ROOT = Path("/data2/jiadongzhu/Agent/.verigym-tmp")
 RG_SHA256 = "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849"
 RG_ARCHIVE_SHA256 = "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c"
 _PROVIDER_ENV_NAMES = frozenset(
@@ -92,6 +98,7 @@ _REQUIRED_MERGED_PATHS = (
     "docs/hwe_deepseek_harness_collection.md",
     "integrations/verigym-deepseek-harness/tests/test_v69_multitask_materialization.py",
     "integrations/verigym-hwe-bench/src/verigym_hwe_bench/prepare.py",
+    "scripts/build_cva6_hwe_command_image.sh",
     "scripts/materialize_hwe_deepseek_harness_v69.py",
     "src/verigym/hwe/deepseek_harness_campaign.py",
     "tests/unit/test_hwe_deepseek_harness_campaign.py",
@@ -146,6 +153,7 @@ def materialize(arguments: argparse.Namespace) -> dict[str, Any]:
         "status": "static_preflight",
         "completed_task_ids": [],
         "task_receipts": [],
+        "headroom_preflight_hash": None,
         "provider_contract_published": False,
         "provider_calls": 0,
         "model_process_count": 0,
@@ -154,6 +162,32 @@ def materialize(arguments: argparse.Namespace) -> dict[str, Any]:
     _write_progress(root, progress)
     try:
         instances = _patch_preflight(manifest, archive_root=archive_root, root=root)
+        progress["status"] = "headroom_preflight"
+        _write_progress(root, progress)
+        try:
+            headroom = require_materialization_headroom(
+                control_root=Path("/"),
+                docker_root=discover_docker_root(),
+                scratch_root=_exact_directory(SCRATCH_ROOT, SCRATCH_ROOT, "scratch root"),
+                output_parent=root.parent,
+            )
+        except MaterializationHeadroomError as exc:
+            atomic_dump_json(root / "headroom-preflight.json", exc.receipt)
+            progress.update(
+                {
+                    "headroom_preflight_hash": exc.receipt["preflight_hash"],
+                    "failure_stage": "headroom_preflight",
+                    "capacity_satisfied": False,
+                }
+            )
+            raise
+        atomic_dump_json(root / "headroom-preflight.json", headroom)
+        progress.update(
+            {
+                "headroom_preflight_hash": headroom["preflight_hash"],
+                "capacity_satisfied": True,
+            }
+        )
         progress["status"] = "offline_materialization"
         _write_progress(root, progress)
         for task_lock in manifest.primary_tasks:
