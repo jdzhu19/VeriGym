@@ -36,8 +36,11 @@ from verigym.core.hashing import content_hash, hash_bytes  # noqa: E402
 from verigym.experiments.state import atomic_dump_json  # noqa: E402
 from verigym.hwe.image_transfer import (  # noqa: E402
     ContentAddressedLayerCache,
+    LayerCacheValidationError,
+    LayerTransferRetryPolicy,
     SingleCleanupArchive,
     redacted_transfer_failure,
+    redacted_transfer_failure_v2,
     validate_registry_image_manifest,
 )
 
@@ -154,6 +157,7 @@ def _transfer_stage_for_identity(
     identity: str,
     version: str,
     cache_root: Path,
+    layer_retry_policy: LayerTransferRetryPolicy | None = None,
 ) -> dict[str, Any]:
     _v51._validate_headroom()
     _v51._validate_network()
@@ -178,7 +182,9 @@ def _transfer_stage_for_identity(
     archive = work / "candidate-image.tar"
     owner = SingleCleanupArchive(archive)
     inventory: list[dict[str, str | int | bool]] = []
+    transfer_attempts: list[dict[str, Any]] = []
     context.verified_layer_inventory = inventory
+    context.layer_transfer_attempts = transfer_attempts
     try:
         digest_stdout, _ = _controlled(
             execution,
@@ -238,34 +244,94 @@ def _transfer_stage_for_identity(
                 if cached["size"] != layer.size:
                     raise ConfigurationError(f"OpenHands {version} cached layer size changed")
                 receipt = cached
+                if layer_retry_policy is not None:
+                    transfer_attempts.append(
+                        {
+                            "digest": layer.digest,
+                            "size": layer.size,
+                            "cache_hit": True,
+                            "attempt_count": 0,
+                            "failed_attempts": [],
+                            "completed": True,
+                        }
+                    )
             else:
                 target = download_staging / layer.digest
                 blob_reference = f"{repository}@{layer.digest}"
-                stdout, _ = _controlled(
-                    execution,
-                    tool_cache=tool_cache,
-                    cache_staging=download_staging,
-                    network=_v52_cli._NETWORK,
-                    path="/bin/sh",
-                    arguments=[
-                        "-ceu",
-                        _BLOB_SCRIPT,
-                        "verigym-v53-layer",
-                        blob_reference,
-                        f"/cache/{layer.digest}",
-                    ],
-                    role=f"layer_{index:03d}",
-                    timeout=3_600,
-                    owner_identity=identity,
-                    name_version=version,
+                maximum_attempts = (
+                    layer_retry_policy.maximum_attempts if layer_retry_policy is not None else 1
                 )
-                if stdout:
-                    raise ConfigurationError(f"OpenHands {version} layer download emitted stdout")
-                receipt = cache.commit(
-                    target,
-                    digest=layer.digest,
-                    size=layer.size,
-                ).safe_dict()
+                failed_attempts: list[dict[str, str | int | bool]] = []
+                attempt_record: dict[str, Any] | None = None
+                if layer_retry_policy is not None:
+                    attempt_record = {
+                        "digest": layer.digest,
+                        "size": layer.size,
+                        "cache_hit": False,
+                        "attempt_count": 0,
+                        "failed_attempts": failed_attempts,
+                        "completed": False,
+                    }
+                    transfer_attempts.append(attempt_record)
+                    context.layer_transfer_attempts = copy.deepcopy(transfer_attempts)
+                for attempt in range(1, maximum_attempts + 1):
+                    role = (
+                        f"layer_{index:03d}"
+                        if layer_retry_policy is None
+                        else f"layer_{index:03d}_attempt_{attempt:02d}"
+                    )
+                    if attempt_record is not None:
+                        attempt_record["attempt_count"] = attempt
+                        context.layer_transfer_attempts = copy.deepcopy(transfer_attempts)
+                    try:
+                        stdout, _ = _controlled(
+                            execution,
+                            tool_cache=tool_cache,
+                            cache_staging=download_staging,
+                            network=_v52_cli._NETWORK,
+                            path="/bin/sh",
+                            arguments=[
+                                "-ceu",
+                                _BLOB_SCRIPT,
+                                "verigym-v53-layer",
+                                blob_reference,
+                                f"/cache/{layer.digest}",
+                            ],
+                            role=role,
+                            timeout=3_600,
+                            owner_identity=identity,
+                            name_version=version,
+                        )
+                        if stdout:
+                            raise ConfigurationError(
+                                f"OpenHands {version} layer download emitted stdout"
+                            )
+                        receipt = cache.commit(
+                            target,
+                            digest=layer.digest,
+                            size=layer.size,
+                        ).safe_dict()
+                    except (_v52_cli._CommandFailure, LayerCacheValidationError) as exc:
+                        if layer_retry_policy is None:
+                            raise
+                        raw_stderr = (
+                            exc.raw_stderr if isinstance(exc, _v52_cli._CommandFailure) else b""
+                        )
+                        diagnostic = redacted_transfer_failure_v2(
+                            exc,
+                            raw_stderr=raw_stderr,
+                            stage=role,
+                        )
+                        failed_attempts.append(diagnostic)
+                        context.layer_transfer_attempts = copy.deepcopy(transfer_attempts)
+                        target.unlink(missing_ok=True)
+                        if diagnostic["retryable"] is not True or attempt == maximum_attempts:
+                            raise
+                        continue
+                    if attempt_record is not None:
+                        attempt_record["completed"] = True
+                        context.layer_transfer_attempts = copy.deepcopy(transfer_attempts)
+                    break
             inventory.append(receipt)
             context.verified_layer_inventory = copy.deepcopy(inventory)
 
@@ -336,7 +402,11 @@ def _transfer_stage_for_identity(
         _v52_cli._cleanup_directories(*cleanup)
     base = {
         "schema_version": "1.0",
-        "format_id": f"verigym_openhands_hwe_{version}_pr2728_image_transfer_v1",
+        "format_id": (
+            f"verigym_openhands_hwe_{version}_pr2728_image_transfer_v2"
+            if layer_retry_policy is not None
+            else f"verigym_openhands_hwe_{version}_pr2728_image_transfer_v1"
+        ),
         "task_id": _v52_cli._TASK_ID,
         "platform": _PLATFORM,
         "verifier_image": image_id,
@@ -353,6 +423,17 @@ def _transfer_stage_for_identity(
         "provider_calls": 0,
         "model_process_count": 0,
     }
+    if layer_retry_policy is not None:
+        base.update(
+            {
+                "layer_runner_maximum_attempts": layer_retry_policy.maximum_attempts,
+                "layer_transfer_attempts": transfer_attempts,
+                "layer_download_attempt_count": sum(
+                    int(item["attempt_count"]) for item in transfer_attempts
+                ),
+                "provider_retry_count": 0,
+            }
+        )
     context.transfer = _v52_cli._sealed(base)
     return context.transfer
 

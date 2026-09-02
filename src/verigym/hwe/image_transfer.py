@@ -27,11 +27,28 @@ TransferErrorFamily = Literal[
     "tar_write",
     "unknown",
 ]
+TransferErrorFamilyV2 = Literal[
+    "dns",
+    "tls",
+    "timeout",
+    "transport",
+    "http_status",
+    "disk_full",
+    "permission",
+    "checksum",
+    "tar_write",
+    "unknown",
+]
 
 _DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$")
 _TASK_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _STAGE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _HTTP_STATUS = re.compile(r"(?:http(?: status)?|status code)\D*([45][0-9]{2})", re.IGNORECASE)
+_HTTP_STATUS_V2 = re.compile(
+    r"(?:http(?: status)?|status(?: code)?)\D*([45][0-9]{2})",
+    re.IGNORECASE,
+)
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
@@ -132,6 +149,25 @@ class LayerCachePromotionError(ConfigurationError):
         self.inventory = tuple(inventory)
 
 
+class LayerCacheValidationError(ConfigurationError):
+    """A task-staged blob was complete enough to inspect but failed its descriptor."""
+
+    def __init__(self, kind: Literal["size", "checksum"]) -> None:
+        super().__init__(f"HWE layer-cache staged {kind} changed")
+        self.kind = kind
+
+
+@dataclass(frozen=True)
+class LayerTransferRetryPolicy:
+    """Bound retries for digest-verified environment provisioning, never model calls."""
+
+    maximum_attempts: int = 3
+
+    def __post_init__(self) -> None:
+        if isinstance(self.maximum_attempts, bool) or not 1 <= self.maximum_attempts <= 3:
+            raise ConfigurationError("HWE layer-transfer retry policy is invalid")
+
+
 class ContentAddressedLayerCache:
     """Commit verified layer blobs from per-task staging into a persistent cache."""
 
@@ -158,12 +194,14 @@ class ContentAddressedLayerCache:
         match = _DIGEST.fullmatch(digest)
         if match is None or isinstance(size, bool) or not isinstance(size, int) or size <= 0:
             raise ConfigurationError("HWE layer-cache digest or size is invalid")
-        staged_path = _safe_regular_file(staged, expected_size=size)
+        staged_path = _safe_regular_file(staged)
         if not staged_path.is_relative_to(self._staging_root):
             raise ConfigurationError("HWE layer-cache blob is outside task staging")
+        if staged_path.stat().st_size != size:
+            raise LayerCacheValidationError("size")
         observed = _sha256_file(staged_path)
         if observed != match.group(1):
-            raise ConfigurationError("HWE layer-cache staged checksum changed")
+            raise LayerCacheValidationError("checksum")
         target = self._blob_root / match.group(1)
         lock = self._blob_root / f".{match.group(1)}.lock"
         descriptor = os.open(
@@ -352,6 +390,75 @@ def redacted_transfer_failure(
     }
 
 
+def redacted_transfer_failure_v2(
+    exc: BaseException,
+    *,
+    raw_stderr: bytes,
+    stage: str,
+) -> dict[str, str | int | bool]:
+    """Return a retry decision plus bounded diagnostics without stderr text."""
+
+    if not _STAGE.fullmatch(stage):
+        raise ConfigurationError("HWE transfer failure stage is invalid")
+    family, reason, http_status, retryable = _error_details_v2(exc, raw_stderr)
+    receipt: dict[str, str | int | bool] = {
+        "schema_version": "2.0",
+        "format_id": "verigym_hwe_redacted_transfer_failure_v2",
+        "stage": stage,
+        "error_family": family,
+        "reason": reason,
+        "retryable": retryable,
+        "stderr_bytes": len(raw_stderr),
+        "stderr_sha256": hashlib.sha256(raw_stderr).hexdigest(),
+        "raw_stderr_persisted": False,
+    }
+    if http_status is not None:
+        receipt["http_status"] = http_status
+    return receipt
+
+
+def _error_details_v2(
+    exc: BaseException,
+    stderr: bytes,
+) -> tuple[TransferErrorFamilyV2, str, int | None, bool]:
+    text = stderr.decode("utf-8", errors="replace").lower()
+    if isinstance(exc, LayerCacheValidationError):
+        return "checksum", f"staged_{exc.kind}_mismatch", None, True
+    http_match = _HTTP_STATUS_V2.search(text)
+    if http_match is not None:
+        status = int(http_match.group(1))
+        return "http_status", "http_status", status, status in _RETRYABLE_HTTP_STATUSES
+    family = _error_family(exc, stderr)
+    transport_reasons = (
+        ("connection reset", "connection_reset"),
+        ("unexpected eof", "unexpected_eof"),
+        ("stream error", "stream_error"),
+        ("connection closed", "connection_closed"),
+        ("connection refused", "connection_refused"),
+        ("broken pipe", "broken_pipe"),
+    )
+    for pattern, reason in transport_reasons:
+        if pattern in text:
+            return "transport", reason, None, True
+    if re.search(r"(?:^|[^a-z])eof(?:[^a-z]|$)", text):
+        return "transport", "unexpected_eof", None, True
+    if family == "dns":
+        return "dns", "dns", None, True
+    if family == "timeout":
+        return "timeout", "timeout", None, True
+    if family == "tls":
+        return "tls", "tls", None, False
+    if family == "checksum":
+        return "checksum", "checksum", None, False
+    if family == "disk_full":
+        return "disk_full", "disk_full", None, False
+    if family == "permission":
+        return "permission", "permission", None, False
+    if family == "tar_write":
+        return "tar_write", "tar_write", None, False
+    return "unknown", "unknown", None, False
+
+
 def _error_family(exc: BaseException, stderr: bytes) -> TransferErrorFamily:
     text = stderr.decode("utf-8", errors="replace").lower()
     if isinstance(exc, TimeoutError) or "timed out" in text or "timeout" in text:
@@ -428,10 +535,14 @@ __all__ = [
     "ContentAddressedLayerCache",
     "LayerCacheReceipt",
     "LayerCachePromotionError",
+    "LayerCacheValidationError",
+    "LayerTransferRetryPolicy",
     "RegistryBlobDescriptor",
     "RegistryImageManifest",
     "SingleCleanupArchive",
     "TransferErrorFamily",
+    "TransferErrorFamilyV2",
     "redacted_transfer_failure",
+    "redacted_transfer_failure_v2",
     "validate_registry_image_manifest",
 ]

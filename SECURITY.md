@@ -922,6 +922,33 @@ not a benchmark verifier result or an infrastructure result. A successor campaig
 preflight to avoid work on an unrepresentable never-attempted candidate, but it may not retry,
 reconstruct or relabel a sealed historical attempt.
 
+### Resumable HWE environment provisioning
+
+OpenHands v55 separates registry-backed environment provisioning from public task qualification,
+command-image security scanning, canary authorization, and provider execution. Provisioning owns
+only an environment identity. It does not allocate a model, seed, sample, campaign, or provider
+task identity, and a provisioning failure does not consume a benchmark task or a provider
+behavior-failure slot. Historical v51--v54 identities and their one-shot failure receipts remain
+immutable; this separation applies only to the explicitly authorized v55 protocol.
+
+Each registry layer is downloaded into task-specific staging and must match the manifest-bound
+size and SHA-256 before same-filesystem atomic publication into the fixed content-addressed cache.
+V55 permits at most three attempts for one missing layer and at most three append-only provisioning
+sessions for the same environment identity. A retry is permitted only for a closed allowlist of
+DNS, timeout, connection/stream interruption, selected transient HTTP status, or task-staged
+size/checksum failures. TLS, permission, disk-full, persistent-cache corruption, archive, unknown,
+and policy failures stop without another session. Every failed partial layer is removed before a
+retry; verified cache entries remain reusable.
+
+Raw stderr remains transient and retains the existing 32 MiB command-output bound. A persisted
+diagnostic contains only the closed family and reason, optional allowlisted HTTP status, retry
+decision, byte count, SHA-256, and a statement that raw content was not persisted. Session
+receipts are bounded, sequential, append-only, and state explicitly that no environment manifest,
+provider identity, benchmark disposition, collection, or training was produced. Only a complete
+digest-verified assembly may atomically publish the environment manifest. Provider retries remain
+zero, verifier execution remains `--network none`, and later qualification/security/canary stages
+require separate authorization after revalidating this manifest.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
