@@ -26,7 +26,13 @@ from verigym.schemas.verifier import VerifierStatus
 from verigym.tools.base import SynthesisBackendPlugin
 
 _DECLARATION_KEY = "agent_eval"
-_OPEN_PPA_FLOW = "verigym-yosys-opensta-atp-v2"
+_OPEN_PPA_FLOWS = frozenset(
+    {
+        "verigym-yosys-opensta-atp-v2",
+        "verigym-yosys-opensta-atp-v3",
+        "verigym-yosys-opensta-atp-v4",
+    }
+)
 _OPEN_PPA_BACKENDS = frozenset({"yosys.synth", "yosys.stat"})
 _COMMERCIAL_PPA_BACKEND = "synopsys.dc.mcp"
 _COMMERCIAL_PPA_FLOWS = frozenset(
@@ -105,11 +111,11 @@ def resolve_agent_feedback_contract(
         commercial_release_hash: str | None = None
         if profile_backend in _OPEN_PPA_BACKENDS:
             if (
-                resolved_profile.flow_template_id != _OPEN_PPA_FLOW
+                resolved_profile.flow_template_id not in _OPEN_PPA_FLOWS
                 or resolved_profile.metric_scope != "synthesis_area_timing_power"
             ):
                 raise ConfigurationError(
-                    "agent PPA feedback requires verigym-yosys-opensta-atp-v2 area/timing/power"
+                    "agent PPA feedback requires an approved Yosys/OpenSTA area/timing/power flow"
                 )
         elif profile_backend == _COMMERCIAL_PPA_BACKEND:
             commercial_worker_hash = resolved_profile.metadata.get(

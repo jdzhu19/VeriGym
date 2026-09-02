@@ -275,6 +275,30 @@ def _commercial_profile(
     )
 
 
+@pytest.mark.parametrize(
+    "flow_template_id",
+    [
+        "verigym-yosys-opensta-atp-v2",
+        "verigym-yosys-opensta-atp-v3",
+        "verigym-yosys-opensta-atp-v4",
+    ],
+)
+def test_feedback_resolution_accepts_approved_opensta_flows(flow_template_id: str) -> None:
+    profile = _commercial_profile(isolated=False, flow_template_id=flow_template_id)
+
+    contract = resolve_agent_feedback_contract(
+        task=_declared_task(ppa_supported=True),
+        ppa_enabled=True,
+        ppa_max_executions=3,
+        resolved_profile=profile,
+        profile_backend="yosys.synth",
+    )
+
+    assert contract is not None
+    assert contract.contract_id == "agent_feedback_contract.v1"
+    assert contract.resolved_profile_hash == "a" * 64
+
+
 def test_feedback_resolution_rejects_unsupported_and_unisolated_commercial_ppa() -> None:
     with pytest.raises(ConfigurationError, match="does not support PPA"):
         resolve_agent_feedback_contract(

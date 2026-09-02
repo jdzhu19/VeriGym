@@ -29,16 +29,20 @@ from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
 from verigym.tools.yosys.diagnostics import diagnostics_from_log
 from verigym.tools.yosys.identity import local_yosys_health
 from verigym.tools.yosys.opensta import (
-    FLOW_TEMPLATE_ID as OPENSTA_FLOW_TEMPLATE_ID,
-)
-from verigym.tools.yosys.opensta import (
     FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS,
 )
 from verigym.tools.yosys.opensta import (
+    LATCH_MAPPING_FLOW_TEMPLATE_ID as OPENSTA_LATCH_MAPPING_FLOW_TEMPLATE_ID,
+)
+from verigym.tools.yosys.opensta import (
+    LATCH_MAPPING_SOURCE,
     build_opensta_script,
     parse_opensta_metrics,
     parse_opensta_power_json,
     power_activity_identity,
+)
+from verigym.tools.yosys.opensta import (
+    LEGACY_FLOW_TEMPLATE_ID as OPENSTA_LEGACY_FLOW_TEMPLATE_ID,
 )
 from verigym.tools.yosys.parser import YosysStatParseError, parse_yosys_stat_json
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
@@ -174,6 +178,8 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
         if hash_bytes(liberty) != request.liberty_sha256:
             raise ValueError("Liberty asset hash mismatch")
         session.write_file(f"{stage}/profile/cells.lib", liberty)
+        if request.flow_template_id == OPENSTA_LATCH_MAPPING_FLOW_TEMPLATE_ID:
+            session.write_file(f"{stage}/profile/latch_map.v", LATCH_MAPPING_SOURCE.encode("utf-8"))
         script = build_yosys_script(request)
         script_hash = generated_script_hash(request)
         if (
@@ -226,7 +232,7 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
                     f"{stage}/out/check_setup.rpt",
                 ]
             )
-            if request.flow_template_id == OPENSTA_FLOW_TEMPLATE_ID:
+            if request.flow_template_id != OPENSTA_LEGACY_FLOW_TEMPLATE_ID:
                 artifacts.extend(
                     [
                         f"{stage}/out/units.rpt",
@@ -427,7 +433,7 @@ class YosysSynthesisTool(SynthesisBackendPlugin):
                 total_power = parse_opensta_power_json(
                     power_payload, target_unit=request.power_unit
                 )
-                if request.flow_template_id == OPENSTA_FLOW_TEMPLATE_ID:
+                if request.flow_template_id != OPENSTA_LEGACY_FLOW_TEMPLATE_ID:
                     for diagnostic_name in ("units.rpt", "activity_annotation.rpt"):
                         diagnostic_payload = _read_bounded(
                             context.session.root,

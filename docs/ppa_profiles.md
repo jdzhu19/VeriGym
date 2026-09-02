@@ -140,8 +140,14 @@ The built-in `open-yosys-toy-area-v1` profile remains area-only. The versioned
    as unannotated and is not treated as a failed power run.
 
 The original `verigym-yosys-opensta-atp-v1` contract remains available only for exact replay of
-already frozen results. New profiles use v2; adding diagnostics did not silently relabel the v1
-script or alter its generated-script hash.
+already frozen results. General new profiles use v2; adding diagnostics did not silently relabel
+the v1 script or alter its generated-script hash. The separately identified
+`verigym-yosys-opensta-atp-v3` compatibility template retains the v2 reports and metrics but asks
+Yosys for a structural Verilog netlist with `-noexpr -nodec -simple-lhs`. Use it for heterogeneous
+catalogs where OpenSTA cannot parse every valid Yosys expression form. The v4 template additionally
+maps Yosys positive- and negative-enable latch primitives to the corresponding frozen Liberty
+cells; RTLLM PPA47 uses v4 because its `fsm` reference infers a latch. Earlier profiles and results
+remain unchanged and are not comparable across a changed profile identity.
 
 `scripts/prepare_nangate45_ppa_profile.py` hashes the complete external NanGate45 PDK tree and
 emits a local profile without copying PDK bytes into the repository. Local execution is for trusted
