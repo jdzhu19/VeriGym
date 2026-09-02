@@ -105,6 +105,26 @@ def test_v69_runner_has_no_provider_surface_or_registry_command() -> None:
     )
 
 
+def test_v69_checks_patch_compatibility_before_headroom_and_images() -> None:
+    source = (_REPOSITORY_ROOT / "scripts/materialize_hwe_deepseek_harness_v69.py").read_text(
+        encoding="utf-8"
+    )
+    patch_index = source.index("instances = _patch_preflight")
+    headroom_index = source.index("headroom = require_materialization_headroom")
+    image_index = source.index("for task_lock in manifest.primary_tasks")
+    assert patch_index < headroom_index < image_index
+    assert 'control_root=Path("/")' in source
+    assert 'SCRATCH_ROOT = Path("/data2/jiadongzhu/Agent/.verigym-tmp")' in source
+
+
+def test_cva6_command_image_uses_the_campaign_scratch_root() -> None:
+    source = (_REPOSITORY_ROOT / "scripts/build_cva6_hwe_command_image.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "scratch_parent=/data2/jiadongzhu/Agent/.verigym-tmp" in source
+    assert "scratch_parent=/data/jzhu484/Agent/.verigym-tmp" not in source
+
+
 @pytest.mark.parametrize(
     "name",
     [
