@@ -12,7 +12,7 @@ license = "Apache-2.0"
 dependencies = ["openhands-sdk==1.42.1", "verigym==0.1.0"]
 
 [project.optional-dependencies]
-hwe = ["verigym-deepseek-harness==0.2.0"]
+hwe = ["verigym-deepseek-harness==0.3.0"]
 
 [project.entry-points."verigym.agents"]
 openhands-repository-agent = "verigym_openhands:OpenHandsRepositoryAgentAdapter"

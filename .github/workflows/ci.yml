@@ -129,7 +129,7 @@ jobs:
           assert version("openhands-sdk") == "1.42.1"
           assert version("litellm") == "1.93.0"
           assert version("tiktoken") == "0.11.0"
-          assert version("verigym-deepseek-harness") == "0.2.0"
+          assert version("verigym-deepseek-harness") == "0.3.0"
           print("frozen OpenHands base dependency closure verified")
           PY
           env -u PIP_CONSTRAINT python -m pip install \

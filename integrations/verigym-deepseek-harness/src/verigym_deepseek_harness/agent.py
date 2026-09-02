@@ -49,6 +49,8 @@ from ._version import __version__
 from .broker import DeepSeekHarnessBrokerStats, DeepSeekHarnessHweBroker, broker_stats_dict
 from .config import (
     DEEPSEEK_HARNESS_VERSION,
+    MAX_PROVIDER_CALLS,
+    MAX_PROVIDER_TOKENS,
     DeepSeekHarnessSettings,
     require_provider_environment,
     resolve_settings,
@@ -65,7 +67,10 @@ BASE_INSTRUCTION_POLICY = "deepseek_harness_hwe_six_tool_base_v1"
 PROMPT_CONTRACT_ID_V3 = "deepseek_harness_hwe_native_shell_context_v3"
 PROMPT_CONTRACT_VERSION_V3 = "3.0.0"
 BASE_INSTRUCTION_POLICY_V3 = "deepseek_harness_hwe_deepswe_compatible_v3"
-_CONTROL_ROOT = Path("/data/jzhu484/Agent/.verigym-tmp/deepseek-harness")
+PROMPT_CONTRACT_ID_V4 = "deepseek_harness_hwe_native_shell_context_v4"
+PROMPT_CONTRACT_VERSION_V4 = "4.0.0"
+BASE_INSTRUCTION_POLICY_V4 = "deepseek_harness_hwe_bounded_recovery_v4"
+_CONTROL_ROOT = Path("/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness")
 
 
 class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
@@ -102,6 +107,8 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
     harness_contract_version = "v2"
     format_repair_budget = 0
     accepts_public_assistant_text = False
+    bounded_progress_controls = False
+    enforce_provider_budget = False
 
     def __init__(self) -> None:
         self._context: AgentContext | None = None
@@ -129,9 +136,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             context.agent_options,
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
-        system_prompt = (
-            _system_prompt_v3() if self.accepts_public_assistant_text else _system_prompt()
-        )
+        system_prompt = self._select_system_prompt()
         task_prompt = validate_prompt_text(_task_prompt(context, bridge), context.prompt_policy)
         self._context = context
         self._bridge = bridge
@@ -176,6 +181,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
                 bridge=bridge,
                 socket_path=control / "b" / "broker.sock",
                 private_audit_root=bridge.artifact_root.parent.parent,
+                openhands_v23_controls=self.bounded_progress_controls,
             )
             broker.start()
             bridge.emit_event(
@@ -213,6 +219,9 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             stats = broker.stats()
             events = broker.events()
             call_ids = broker.call_ids()
+            progress_receipt = (
+                broker.openhands_v23_progress_receipt() if self.bounded_progress_controls else None
+            )
 
         duration_s = time.monotonic() - started
         self._record_identity_and_accounting(
@@ -230,6 +239,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             integration_track=self.integration_track,
             format_repair_budget=self.format_repair_budget,
             accepts_public_assistant_text=self.accepts_public_assistant_text,
+            progress_receipt=progress_receipt,
         )
         if process_error is not None:
             raise _termination(
@@ -238,6 +248,16 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
                 infrastructure=True,
             ) from process_error
         assert process is not None
+        model_calls = sum(event.get("type") == "assistant/message" for event in process.events)
+        input_tokens, output_tokens = _usage(process.events)
+        if self.enforce_provider_budget and (
+            model_calls > MAX_PROVIDER_CALLS or input_tokens + output_tokens > MAX_PROVIDER_TOKENS
+        ):
+            raise _termination(
+                "provider_budget_exhausted",
+                "DeepSeek Harness exceeded its frozen provider budget",
+                infrastructure=False,
+            )
         if stats.infrastructure_failure is not None:
             raise _termination(
                 "tool_broker_infrastructure",
@@ -300,6 +320,11 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
                 "VeriGym verifier flow."
             )
         )
+
+    def _select_system_prompt(self) -> str:
+        if self.harness_contract_version == "v4":
+            return _system_prompt_v4()
+        return _system_prompt_v3() if self.accepts_public_assistant_text else _system_prompt()
 
     def finish(self, result: EpisodeResult) -> None:
         if self._bridge is None:
@@ -468,7 +493,7 @@ class DeepSeekHarnessHweAgentV3Adapter(DeepSeekHarnessHweAgentAdapter):
     descriptor = AgentDescriptor(
         schema_version=SCHEMA_VERSION,
         name="deepseek-harness-hwe-agent-v3",
-        version=__version__,
+        version="0.2.0",
         api_version=PLUGIN_API_VERSION,
         provider="deepseek-official",
         capabilities=[
@@ -487,6 +512,38 @@ class DeepSeekHarnessHweAgentV3Adapter(DeepSeekHarnessHweAgentAdapter):
     harness_contract_version = "v3"
     format_repair_budget = 1
     accepts_public_assistant_text = True
+
+
+class DeepSeekHarnessHweAgentV4Adapter(DeepSeekHarnessHweAgentV3Adapter):
+    """Fresh-task Harness route with v23 progress and provider-budget gates."""
+
+    prompt_policy_spec = AgentPromptPolicySpec(
+        prompt_contract_id=PROMPT_CONTRACT_ID_V4,
+        prompt_contract_version=PROMPT_CONTRACT_VERSION_V4,
+        task_context_policy="hwe_bounded_repository_context_v2",
+        base_instruction_policy=BASE_INSTRUCTION_POLICY_V4,
+        content_visibility_policy="public_task_workspace_no_hidden_reference_v1",
+        max_prompt_bytes=2 * 1024 * 1024,
+        max_task_context_bytes=1024 * 1024,
+        versioned_context_allowed=False,
+    )
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="deepseek-harness-hwe-agent-v4",
+        version=__version__,
+        api_version=PLUGIN_API_VERSION,
+        provider="deepseek-official",
+        capabilities=[
+            *DeepSeekHarnessHweAgentV3Adapter.descriptor.capabilities,
+            "pre_edit_progress_gate",
+            "provider_call_budget",
+            "provider_token_budget",
+        ],
+    )
+    integration_track = "deepseek_harness_hwe_native_shell_v4"
+    harness_contract_version = "v4"
+    bounded_progress_controls = True
+    enforce_provider_budget = True
 
 
 def _system_prompt() -> str:
@@ -515,6 +572,21 @@ def _system_prompt_v3() -> str:
         "use network access, hidden verifier assets, reference solutions, credentials, parent "
         "host paths, other agents, private reasoning blocks, or undeclared tools. Do not finish "
         "with a text-only response."
+    )
+
+
+def _system_prompt_v4() -> str:
+    return (
+        "You are a hardware repository repair agent using the frozen HWE native-shell v4 "
+        "contract. Briefly state the current public hypothesis, next action, and validation "
+        "conclusion when useful; do not expose or invent private chain-of-thought. You may emit "
+        "one or more typed tool calls in a decision. Use only list_files, read_file, apply_patch, "
+        "shell, inspect_diff, and finish. Sibling calls execute serially in emitted order. "
+        "Inspect TASK.md and relevant repository source, make a focused edit, "
+        "run bounded local diagnostics, inspect the final diff, and call finish exactly once. "
+        "Never use network access, hidden verifier assets, reference solutions, credentials, "
+        "parent host paths, other agents, private reasoning blocks, or undeclared tools. Do not "
+        "finish with a text-only response."
     )
 
 
@@ -548,7 +620,7 @@ def _task_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "simulation_timeout_s": 900,
         },
         "instructions": [
-            "Read TASK.md and relevant CVA6 source before editing.",
+            "Read TASK.md and relevant repository source before editing.",
             "Use list_files and bounded read_file calls to locate relevant code.",
             "Use apply_patch for concise persistent edits.",
             "Use shell only for bounded searches and local diagnostics; cwd is relative.",
@@ -601,7 +673,14 @@ def _write_collection_evidence(
     integration_track: str,
     format_repair_budget: int,
     accepts_public_assistant_text: bool,
+    progress_receipt: dict[str, Any] | None,
 ) -> None:
+    input_tokens, output_tokens = _usage(process.events if process is not None else ())
+    model_calls = (
+        sum(event.get("type") == "assistant/message" for event in process.events)
+        if process is not None
+        else 0
+    )
     base = {
         "schema_version": "1.0",
         "format_id": "verigym_hwe_deepseek_harness_collection_evidence_v1",
@@ -616,6 +695,16 @@ def _write_collection_evidence(
         "max_parallel_tool_calls": 1,
         "provider_request_retries": 0,
         "whole_episode_retries": 0,
+        "max_provider_calls": MAX_PROVIDER_CALLS,
+        "max_provider_tokens": MAX_PROVIDER_TOKENS,
+        "observed_provider_calls": model_calls,
+        "observed_provider_input_tokens": input_tokens,
+        "observed_provider_output_tokens": output_tokens,
+        "observed_provider_total_tokens": input_tokens + output_tokens,
+        "provider_budget_valid": (
+            model_calls <= MAX_PROVIDER_CALLS
+            and input_tokens + output_tokens <= MAX_PROVIDER_TOKENS
+        ),
         "same_episode_format_repair_budget": format_repair_budget,
         "same_episode_format_repair_count": (
             len(process.format_repairs) if process is not None else 0
@@ -627,6 +716,7 @@ def _write_collection_evidence(
             else "exactly_one_typed_tool_call_without_text"
         ),
         "broker": broker_stats_dict(stats),
+        "progress_receipt": progress_receipt,
         "helper_exit_code": process.helper_exit_code if process is not None else None,
         "finish_reason": process.finish_reason if process is not None else None,
         "session_event_count": len(process.events) if process is not None else 0,
@@ -705,8 +795,11 @@ __all__ = [
     "BASE_INSTRUCTION_POLICY_V3",
     "DeepSeekHarnessHweAgentAdapter",
     "DeepSeekHarnessHweAgentV3Adapter",
+    "DeepSeekHarnessHweAgentV4Adapter",
     "PROMPT_CONTRACT_ID",
     "PROMPT_CONTRACT_VERSION",
     "PROMPT_CONTRACT_ID_V3",
     "PROMPT_CONTRACT_VERSION_V3",
+    "PROMPT_CONTRACT_ID_V4",
+    "PROMPT_CONTRACT_VERSION_V4",
 ]

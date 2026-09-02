@@ -7,6 +7,8 @@ export const inject = ['tools']
 
 const SOCKET = process.env.DSH_BROKER_SOCKET
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+const MAX_PROVIDER_CALLS = 64
+let providerCalls = 0
 
 if (typeof SOCKET !== 'string' || !SOCKET.startsWith('/broker/')) {
   throw new Error('DSH_BROKER_SOCKET must name the private /broker socket')
@@ -127,12 +129,18 @@ function brokerCall(name, args, callId, signal) {
 }
 
 export function apply(ctx) {
-  ctx.on('agent/request', async (_payload, next) => ({
-    ...(await next()),
-    temperature: 0,
-    reasoningEffort: 'off',
-    maxTokens: 2048,
-  }))
+  ctx.on('agent/request', async (_payload, next) => {
+    if (providerCalls >= MAX_PROVIDER_CALLS) {
+      throw new Error('VERIGYM_HWE_PROVIDER_CALL_BUDGET_EXHAUSTED')
+    }
+    providerCalls += 1
+    return {
+      ...(await next()),
+      temperature: 0,
+      reasoningEffort: 'off',
+      maxTokens: 2048,
+    }
+  })
 
   for (const schema of tools) {
     ctx.tools.register({

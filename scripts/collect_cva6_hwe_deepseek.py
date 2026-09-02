@@ -394,7 +394,7 @@ def _zero_call_conformance() -> None:
         },
         task_wall_time_s=120,
     )
-    scratch = Path("/data/jzhu484/Agent/.verigym-tmp")
+    scratch = Path("/data2/jiadongzhu/Agent/.verigym-tmp")
     scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="dsh-preflight-", dir=scratch) as raw:
         root = Path(raw)
