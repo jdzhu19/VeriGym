@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_hwe_v58_ibex_pr54_provider_canary_authorization_v1",
+  "status": "authorized_pending_provider_canary",
+  "identity": "openhands-hwe-v58-ibex-pr54-v23-provider-canary-v1",
+  "qualification_merge_commit": "0a71773a3acb52414739bebbb6e4e73a7d2ab37c",
+  "qualification_post_merge_main_run_id": 33618065213,
+  "qualification_post_merge_main_all_eight_classes_passed": true,
+  "schedule": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-54",
+      "role": "training",
+      "seed": 498,
+      "sample_index": 14
+    }
+  ],
+  "task_binding": {
+    "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-54",
+    "task_hash": "b03b430845b6bb97a0b0443c52d337817b4ff33e3cc1b3ea15800bb8bfb4a14a",
+    "source_hash": "5393fbc4261f1a8e19ba7af7b1501367a6c1f3c28bed72f556291f734d095914",
+    "command_image_lock_hash": "3f7e090239e1230054620a7a51330a16bef54e084a395dcd294e60de003bb798",
+    "command_image": "sha256:6f88fdae127f75326407b4ebff529fea5f87aeb64997970d4408678fab942c3b",
+    "verifier_image": "sha256:a35075b506d4d8b4e9434e31f38ee0699afdb18f7119e324d49bee60565f5bfa",
+    "security_scan_id": "1bd004e75bdf245596bd1bcd3021d184123203711c30fda24969d040656ed281",
+    "source_whiteout_path": "/home/ibex"
+  },
+  "protocol": {
+    "profile": "auto_public_thought_atomic_recovery_v23",
+    "ordinary_tool_choice": "auto",
+    "content_only_recovery_tool_choice": "required",
+    "content_only_recovery_budget": 1,
+    "public_rationale_allowed": true,
+    "sibling_calls_allowed": true,
+    "sibling_prevalidation_atomic": true,
+    "sibling_dispatch_order": "provider_decision_order",
+    "private_reasoning_rejected": true,
+    "provider_hidden_thinking": "disabled",
+    "failed_decisions_supervised": false,
+    "content_only_recovery_supervised": false
+  },
+  "provider_budget": {
+    "temperature": 0,
+    "max_provider_calls": 64,
+    "max_provider_tokens": 1000000,
+    "max_context_tokens": 65536,
+    "max_output_tokens": 2048,
+    "provider_request_retries": 0,
+    "whole_episode_retries": 0
+  },
+  "software": {
+    "model": "openai/deepseek-v4-flash",
+    "model_identity": "deepseek-v4-flash",
+    "openhands_sdk": "1.42.1",
+    "litellm": "1.93.0",
+    "tiktoken": "0.7.0",
+    "transformers": "4.57.6",
+    "numpy": "2.2.6",
+    "pillow": "12.1.1"
+  },
+  "authorized_actions": {
+    "invoke_provider_for_pr54_once": true,
+    "retry_pr54": false,
+    "run_formal_collection": false,
+    "start_training": false
+  },
+  "provider_calls_before_canary": 0,
+  "benchmark_task_consumed_before_canary": false,
+  "formal_collection_allowed": false,
+  "formal_collection_started": false,
+  "collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "authorization_hash": "5e9ef47d1ff1f145d0eefb4c3587dd28d9f58e5f916b84ce7f0965a8ec547841"
+}
