@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,59 @@ _EXPECTED_IMAGE_ENVIRONMENT = [
 ]
 _RG_VERSION = "ripgrep 15.2.0 (rev e89fff89ac)"
 _RG_SOURCE = "github.com/BurntSushi/ripgrep/releases/15.2.0"
+
+
+@dataclass(frozen=True)
+class _RepositoryProfile:
+    name: str
+    runtime_role: str
+    verifier_label: str
+    source_whiteout_path: str
+    source_marker_path: str
+    scanner_profile_id: str
+    toolchain_profile_id: str
+    exact_environment: tuple[str, ...]
+    tool_assertions: tuple[tuple[str, int], ...]
+
+
+_CVA6_PROFILE = _RepositoryProfile(
+    name="cva6",
+    runtime_role="hwe-cva6-command",
+    verifier_label="org.verigym.cva6.verifier_base_image_id",
+    source_whiteout_path="/home/cva6",
+    source_marker_path="/home/cva6_base_commit.txt",
+    scanner_profile_id="cva6-hwe-command-container-native-offline-v2",
+    toolchain_profile_id="cva6-verilator-5.008-container-native-v2",
+    exact_environment=tuple(_EXPECTED_IMAGE_ENVIRONMENT),
+    tool_assertions=(
+        ("make --version >/tmp/make-version", 80),
+        ("/tools/verilator/bin/verilator_bin --version >/tmp/verilator-bin-version", 81),
+        ("VERILATOR_ROOT=/tools/verilator verilator --version >/tmp/verilator-version", 82),
+    ),
+)
+_IBEX_PROFILE = _RepositoryProfile(
+    name="ibex",
+    runtime_role="hwe-ibex-command",
+    verifier_label="org.verigym.ibex.verifier_base_image_id",
+    source_whiteout_path="/home/ibex",
+    source_marker_path="/home/ibex_base_commit.txt",
+    scanner_profile_id="ibex-hwe-command-container-native-offline-v1",
+    toolchain_profile_id="ibex-iverilog-container-native-v1",
+    exact_environment=(
+        "PATH=/usr/local/bin:/usr/bin:/bin",
+        "HOME=/tmp/verigym-home",
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8",
+        "TMPDIR=/tmp",
+    ),
+    tool_assertions=(
+        ("make --version >/tmp/make-version", 80),
+        ("iverilog -V >/tmp/iverilog-version 2>/tmp/iverilog-stderr", 83),
+        ("vvp -V >/tmp/vvp-version 2>/tmp/vvp-stderr", 84),
+    ),
+)
+_REPOSITORY_PROFILES = {profile.name: profile for profile in (_CVA6_PROFILE, _IBEX_PROFILE)}
+_IBEX_SCRATCH_PARENT = Path("/data2/jiadongzhu/Agent/.verigym-tmp")
 _ASSERTION_EXIT_CODES = {
     41: "rootfs_write_rejected",
     42: "codex_command_absent",
@@ -60,6 +114,8 @@ _ASSERTION_EXIT_CODES = {
     80: "make_available",
     81: "verilator_binary_available",
     82: "verilator_wrapper_available",
+    83: "iverilog_available",
+    84: "vvp_available",
     90: "allowlisted_artifact_hash_exact",
 }
 _ERROR_CATEGORIES = frozenset(
@@ -104,6 +160,11 @@ class CommandImageScanFailure(RuntimeError):
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--repository-profile",
+        choices=sorted(_REPOSITORY_PROFILES),
+        default="cva6",
+    )
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--identity-lock", type=Path, required=True)
     parser.add_argument("--security-scan-output", type=Path, required=True)
@@ -247,12 +308,18 @@ def _container_scan(
     user: str,
     rg_sha256: str,
     artifacts: list[dict[str, Any]],
+    profile: _RepositoryProfile = _CVA6_PROFILE,
 ) -> tuple[dict[str, bool], dict[str, Any]]:
     assertions = [
         _checked(f'test "$(id -u):$(id -g)" = "{user}"', 61),
-        _checked("test -d /home/cva6", 62),
-        _checked('test -z "$(find /home/cva6 -mindepth 1 -maxdepth 1 -print -quit)"', 63),
-        _checked("test ! -e /home/cva6_base_commit.txt", 64),
+        _checked(f"test -d {shlex.quote(profile.source_whiteout_path)}", 62),
+        _checked(
+            'test -z "$(find '
+            f"{shlex.quote(profile.source_whiteout_path)} "
+            '-mindepth 1 -maxdepth 1 -print -quit)"',
+            63,
+        ),
+        _checked(f"test ! -e {shlex.quote(profile.source_marker_path)}", 64),
         _checked("test ! -e /workspace/verifier", 65),
         _checked("test ! -e /verigym-public", 66),
         _checked("test ! -e /hidden-verifier", 67),
@@ -270,10 +337,10 @@ def _container_scan(
         _checked(f'test "$(sha256sum /usr/local/bin/rg | cut -c1-64)" = "{rg_sha256}"', 77),
         _checked(f'test "$(rg --version | head -n 1)" = "{_RG_VERSION}"', 78),
         _checked("test -x /usr/bin/tail", 79),
-        _checked("make --version >/tmp/make-version", 80),
-        _checked("/tools/verilator/bin/verilator_bin --version >/tmp/verilator-bin-version", 81),
-        _checked("VERILATOR_ROOT=/tools/verilator verilator --version >/tmp/verilator-version", 82),
     ]
+    assertions.extend(
+        _checked(command, exit_code) for command, exit_code in profile.tool_assertions
+    )
     assertions.extend(
         _checked(
             'test "$(sha256sum -- '
@@ -284,8 +351,9 @@ def _container_scan(
         for item in artifacts
     )
     command = "\n".join(("set -u", *assertions))
-    _SCRATCH_PARENT.mkdir(parents=True, exist_ok=True)
-    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=_SCRATCH_PARENT))
+    scratch_parent = _SCRATCH_PARENT if profile is _CVA6_PROFILE else _IBEX_SCRATCH_PARENT
+    scratch_parent.mkdir(parents=True, exist_ok=True)
+    workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=scratch_parent))
     container_id: str | None = None
     checks: dict[str, bool] = {}
     diagnostic = _empty_diagnostic()
@@ -532,9 +600,14 @@ def scan_and_lock(
     identity_lock_path: Path,
     security_output: Path,
     lock_output: Path,
+    repository_profile: str = "cva6",
 ) -> tuple[dict[str, Any], HweCommandImageLock]:
     if security_output.exists() or lock_output.exists():
         raise ValueError("HWE command-image scan and lock outputs must be new paths")
+    try:
+        profile = _REPOSITORY_PROFILES[repository_profile]
+    except KeyError as exc:
+        raise ValueError("unsupported HWE command-image repository profile") from exc
     receipt = _load_json(receipt_path)
     raw_identity = _load_json(identity_lock_path)
     identity: HweAgentImageLock | HweCommandSourceLock
@@ -553,7 +626,8 @@ def scan_and_lock(
         "collection_profile_id": "hwe_standard_v2",
         "tool_contract_id": "hwe_native_shell_v2",
         "command_protocol": "hwe_command_image_v1",
-        "exact_image_environment": _EXPECTED_IMAGE_ENVIRONMENT,
+        "source_whiteout_path": profile.source_whiteout_path,
+        "exact_image_environment": list(profile.exact_environment),
     }
     if any(receipt.get(key) != value for key, value in expected_receipt.items()):
         raise ValueError("HWE command-image receipt differs from the frozen task identity")
@@ -574,7 +648,7 @@ def scan_and_lock(
     unsanitized = _inspect(unsanitized_id)
     labels = image["Config"].get("Labels") or {}
     required_labels = {
-        "org.verigym.runtime.role": "hwe-cva6-command",
+        "org.verigym.runtime.role": profile.runtime_role,
         "org.verigym.collection.profile": "hwe_standard_v2",
         "org.verigym.tool.contract": "hwe_native_shell_v2",
         "org.verigym.command.protocol": "hwe_command_image_v1",
@@ -582,7 +656,7 @@ def scan_and_lock(
         "org.verigym.command.rg.sha256": rg_sha256,
         "org.verigym.command.rg.release_archive.sha256": receipt["rg_release_archive_sha256"],
         "org.verigym.hwe.task_id": identity.task_id,
-        "org.verigym.cva6.verifier_base_image_id": identity.verifier_base_image_id,
+        profile.verifier_label: identity.verifier_base_image_id,
         "org.verigym.codex.present": "absent",
         "org.verigym.provider_credentials": "absent",
         "org.verigym.hidden_assets": "absent",
@@ -592,7 +666,7 @@ def scan_and_lock(
     image_checks = {
         "image_identity": image.get("Id") == image_id,
         "rootfs_layer_identity_preserved": image.get("RootFS") == unsanitized.get("RootFS"),
-        "image_environment_exact": image["Config"].get("Env") == _EXPECTED_IMAGE_ENVIRONMENT,
+        "image_environment_exact": image["Config"].get("Env") == list(profile.exact_environment),
         "image_user_exact": image["Config"].get("User") == f"{os.getuid()}:{os.getgid()}",
         "image_declares_no_volumes": image["Config"].get("Volumes") in (None, {}),
         "image_default_command_is_inert": image["Config"].get("Cmd")
@@ -619,12 +693,13 @@ def scan_and_lock(
             user=f"{os.getuid()}:{os.getgid()}",
             rg_sha256=rg_sha256,
             artifacts=artifacts,
+            profile=profile,
         )
     except CommandImageScanFailure as exc:
         failure_base = {
             "schema_version": "1.0",
             "format_id": "verigym_hwe_command_image_security_scan_v2",
-            "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+            "scanner_profile_id": profile.scanner_profile_id,
             "task_id": identity.task_id,
             "verifier_base_image_id": identity.verifier_base_image_id,
             "derived_command_image_id": image_id,
@@ -640,7 +715,7 @@ def scan_and_lock(
     base = {
         "schema_version": "1.0",
         "format_id": "verigym_hwe_command_image_security_scan_v2",
-        "scanner_profile_id": "cva6-hwe-command-container-native-offline-v2",
+        "scanner_profile_id": profile.scanner_profile_id,
         "task_id": identity.task_id,
         "verifier_base_image_id": identity.verifier_base_image_id,
         "derived_command_image_id": image_id,
@@ -648,7 +723,7 @@ def scan_and_lock(
         "configuration_sanitizer_sha256": receipt["configuration_sanitizer_sha256"],
         "rg_source": _RG_SOURCE,
         "rg_release_archive_sha256": receipt["rg_release_archive_sha256"],
-        "exact_image_environment": _EXPECTED_IMAGE_ENVIRONMENT,
+        "exact_image_environment": list(profile.exact_environment),
         "runtime_controls": {
             "network_mode": "none",
             "read_only_rootfs": True,
@@ -675,8 +750,9 @@ def scan_and_lock(
         derived_command_image_id=image_id,
         rg_sha256=rg_sha256,
         rg_release_archive_sha256=receipt["rg_release_archive_sha256"],
-        toolchain_profile_id="cva6-verilator-5.008-container-native-v2",
+        toolchain_profile_id=profile.toolchain_profile_id,
         allowlisted_artifacts=artifacts,
+        source_whiteout_path=profile.source_whiteout_path,
         security_scan_id=scan["security_scan_id"],
     )
     security_output.parent.mkdir(parents=True, exist_ok=True)
@@ -693,6 +769,7 @@ def main() -> int:
         identity_lock_path=arguments.identity_lock,
         security_output=arguments.security_scan_output,
         lock_output=arguments.lock_output,
+        repository_profile=arguments.repository_profile,
     )
     print(
         json.dumps(

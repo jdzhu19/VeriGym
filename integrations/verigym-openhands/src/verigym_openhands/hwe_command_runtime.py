@@ -22,8 +22,16 @@ def build_hwe_command_runtime_config(
 ) -> DockerRuntimeConfig:
     """Bind a successor OpenHands runtime to a scanned, task-specific command image."""
 
+    if lock.source_whiteout_path == "/home/cva6":
+        runtime_role = "hwe-cva6-command"
+        verifier_label = "org.verigym.cva6.verifier_base_image_id"
+    elif lock.source_whiteout_path == "/home/ibex":
+        runtime_role = "hwe-ibex-command"
+        verifier_label = "org.verigym.ibex.verifier_base_image_id"
+    else:  # pragma: no cover - the lock schema rejects other values
+        raise ValueError("unsupported HWE command-image source whiteout profile")
     labels = {
-        "org.verigym.runtime.role": "hwe-cva6-command",
+        "org.verigym.runtime.role": runtime_role,
         "org.verigym.collection.profile": lock.collection_profile_id,
         "org.verigym.tool.contract": lock.tool_contract_id,
         "org.verigym.command.protocol": lock.command_protocol,
@@ -31,7 +39,7 @@ def build_hwe_command_runtime_config(
         "org.verigym.command.rg.sha256": lock.rg_sha256,
         "org.verigym.command.rg.release_archive.sha256": lock.rg_release_archive_sha256,
         "org.verigym.hwe.task_id": lock.task_id,
-        "org.verigym.cva6.verifier_base_image_id": lock.verifier_base_image_id,
+        verifier_label: lock.verifier_base_image_id,
         "org.verigym.codex.present": "absent",
         "org.verigym.provider_credentials": "absent",
         "org.verigym.hidden_assets": "absent",

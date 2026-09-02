@@ -50,6 +50,35 @@ def test_openhands_successor_runtime_uses_command_role_without_external_codex_ag
     assert config.command_image.required_image_labels["org.verigym.codex.present"] == "absent"
 
 
+def test_openhands_ibex_runtime_uses_repository_specific_role_and_verifier_label() -> None:
+    values = _lock().model_dump(mode="json", exclude={"lock_hash"})
+    values["supported_execution_backends"] = tuple(values["supported_execution_backends"])
+    values.update(
+        {
+            "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-54",
+            "source_whiteout_path": "/home/ibex",
+            "toolchain_profile_id": "ibex-iverilog-container-native-v1",
+            "allowlisted_artifacts": [
+                {"path": "/usr/bin/make", "sha256": "7" * 64, "role": "build_tool"},
+                {"path": "/usr/bin/iverilog", "sha256": "8" * 64, "role": "simulator"},
+            ],
+        }
+    )
+    lock = build_hwe_command_image_lock(**values)
+
+    config = build_hwe_command_runtime_config(
+        lock,
+        runtime_user="10001:10001",
+        execution_backend="episode_container_exec_v1",
+    )
+
+    assert config.command_image is not None
+    labels = config.command_image.required_image_labels
+    assert labels["org.verigym.runtime.role"] == "hwe-ibex-command"
+    assert labels["org.verigym.ibex.verifier_base_image_id"] == lock.verifier_base_image_id
+    assert "org.verigym.cva6.verifier_base_image_id" not in labels
+
+
 def _bridge(
     *, process: str, command: str, isolation: str = "docker_standard"
 ) -> ExternalAgentBridge:

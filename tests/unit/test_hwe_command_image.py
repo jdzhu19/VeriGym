@@ -60,6 +60,28 @@ def test_command_image_lock_tampering_fails_closed() -> None:
         HweCommandImageLock.model_validate(changed)
 
 
+def test_command_image_lock_accepts_ibex_whiteout_without_weakening_path_policy() -> None:
+    values = _values()
+    values["task_id"] = "lowRISC/ibex:pr-54"
+    values["source_whiteout_path"] = "/home/ibex"
+    values["toolchain_profile_id"] = "ibex-iverilog-container-native-v1"
+    values["allowlisted_artifacts"] = [
+        {"path": "/usr/bin/make", "sha256": "7" * 64, "role": "build_tool"},
+        {"path": "/usr/bin/iverilog", "sha256": "8" * 64, "role": "simulator"},
+    ]
+
+    lock = build_hwe_command_image_lock(**values)
+
+    assert lock.source_whiteout_path == "/home/ibex"
+    rejected = dict(values)
+    rejected["allowlisted_artifacts"] = [
+        {"path": "/usr/bin/make", "sha256": "7" * 64, "role": "build_tool"},
+        {"path": "/home/ibex/secret", "sha256": "8" * 64, "role": "simulator"},
+    ]
+    with pytest.raises(ValidationError, match="source, workspace, or root-home"):
+        build_hwe_command_image_lock(**rejected)
+
+
 def test_command_source_lock_seals_qualified_source_and_verifier() -> None:
     lock = build_hwe_command_source_lock(
         task_id="hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2728",
@@ -96,5 +118,22 @@ def test_command_image_builder_rejects_codex_bundled_rg_and_sanitizes_environmen
     assert "sanitize_docker_image_environment.py" in script
     assert "--network none" in script
     assert "CODEX_HOME" not in script
+    assert 'org.verigym.codex.present="absent"' in dockerfile
+    assert 'CMD ["/usr/bin/tail", "-f", "/dev/null"]' in dockerfile
+
+
+def test_ibex_command_image_builder_whites_out_source_and_keeps_only_public_tools() -> None:
+    script = Path("scripts/build_ibex_hwe_command_image.sh").read_text(encoding="utf-8")
+    dockerfile = Path("docker/ibex-hwe-command/Dockerfile").read_text(encoding="utf-8")
+
+    assert "--network none" in script
+    assert "sanitize_docker_image_environment.py" in script
+    assert "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849" in script
+    assert "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c" in script
+    assert "'/@openai/codex/'" in script
+    assert "'/codex-path/'" in script
+    assert 'source_whiteout_path": "/home/ibex"' in script
+    assert "rm -rf /home/ibex /home/ibex_base_commit.txt" in dockerfile
+    assert 'org.verigym.runtime.role="hwe-ibex-command"' in dockerfile
     assert 'org.verigym.codex.present="absent"' in dockerfile
     assert 'CMD ["/usr/bin/tail", "-f", "/dev/null"]' in dockerfile
