@@ -35,7 +35,7 @@ class HweAllowlistedArtifact(StrictModel):
             raise ValueError(
                 "HWE allowlisted artifact path must be canonical absolute container path"
             )
-        if value.startswith(("/home/cva6", "/workspace", "/root")):
+        if value.startswith(("/home/cva6", "/home/ibex", "/workspace", "/root")):
             raise ValueError("HWE allowlist cannot retain source, workspace, or root-home content")
         return value
 
@@ -67,7 +67,7 @@ class HweAgentImageLock(StrictModel):
     tool_contract_id: Literal["hwe_native_shell_v1", "hwe_native_shell_v2"] = "hwe_native_shell_v2"
     toolchain_profile_id: str = Field(min_length=1, max_length=128)
     allowlisted_artifacts: list[HweAllowlistedArtifact] = Field(min_length=1, max_length=512)
-    source_whiteout_path: Literal["/home/cva6"] = "/home/cva6"
+    source_whiteout_path: Literal["/home/cva6", "/home/ibex"] = "/home/cva6"
     visible_workspace_path: Literal["/workspace/repository"] = "/workspace/repository"
     build_network: Literal["none"] = "none"
     runtime_network: Literal["none"] = "none"
@@ -223,7 +223,7 @@ class HweCommandImageLock(StrictModel):
     ] = ("ephemeral_container_v1", "episode_container_exec_v1")
     toolchain_profile_id: str = Field(min_length=1, max_length=128)
     allowlisted_artifacts: list[HweAllowlistedArtifact] = Field(min_length=1, max_length=512)
-    source_whiteout_path: Literal["/home/cva6"] = "/home/cva6"
+    source_whiteout_path: Literal["/home/cva6", "/home/ibex"] = "/home/cva6"
     visible_workspace_path: Literal["/workspace/repository"] = "/workspace/repository"
     build_network: Literal["none"] = "none"
     runtime_network: Literal["none"] = "none"

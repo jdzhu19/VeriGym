@@ -264,6 +264,7 @@ def test_scan_and_lock_persists_failed_diagnostic_without_writing_lock(
         "collection_profile_id": "hwe_standard_v2",
         "tool_contract_id": "hwe_native_shell_v2",
         "command_protocol": "hwe_command_image_v1",
+        "source_whiteout_path": "/home/cva6",
         "exact_image_environment": list(_scanner._EXPECTED_IMAGE_ENVIRONMENT),
     }
     receipt_path = tmp_path / "receipt.json"
