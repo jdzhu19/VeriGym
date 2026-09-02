@@ -340,6 +340,12 @@ def _official_instances(dataset: Path, selected: set[str]) -> list[HweInstance]:
     return [found[instance_id] for instance_id in sorted(found)]
 
 
+def load_selected_instances(dataset: Path, selected: set[str]) -> list[HweInstance]:
+    """Load only explicit public instances for pre-image compatibility checks."""
+
+    return _official_instances(dataset, selected)
+
+
 def _inspect_image(reference: str, *, pull: bool) -> dict[str, Any]:
     if pull:
         pulled = _command(["docker", "pull", reference], timeout_s=3600)
@@ -799,4 +805,8 @@ def _prepare_verifier_dependencies(
     return dependencies
 
 
-__all__ = ["prepare_source"]
+__all__ = [
+    "load_selected_instances",
+    "prepare_source",
+    "reference_patch_compatibility",
+]
