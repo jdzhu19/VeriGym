@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -95,8 +96,35 @@ def test_v69_runner_has_no_provider_surface_or_registry_command() -> None:
     assert '["docker", "pull"' not in source
     assert "registry_access_allowed" not in source
     assert "DEEPSEEK_API_KEY" in source
-    assert "refuses a provider credential environment" in source
+    assert "VERIGYM_DEEPSEEK_API_KEY" in source
+    assert "VERIGYM_DEEPSEEK_API_BASE_URL" in source
+    assert "refuses a provider configuration environment" in source
     manifest = json.loads(_MANIFEST.read_text(encoding="utf-8"))
     assert all(
         not task["archive_relpath"].endswith(".partial") for task in manifest["primary_tasks"]
     )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "DEEPSEEK_API_KEY",
+        "OPENAI_API_KEY",
+        "VERIGYM_DEEPSEEK_API_KEY",
+        "VERIGYM_DEEPSEEK_API_BASE_URL",
+    ],
+)
+def test_v69_execution_boundary_rejects_every_provider_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    for provider_name in runner._PROVIDER_ENV_NAMES:  # noqa: SLF001
+        monkeypatch.delenv(provider_name, raising=False)
+    monkeypatch.setenv(runner.OPT_IN_ENV, "1")
+    monkeypatch.setenv(name, "present-but-never-read")
+    monkeypatch.setattr(runner.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(runner.os, "getgid", lambda: 1000)
+    with pytest.raises(ConfigurationError, match="provider configuration"):
+        runner._require_execution_boundary(Namespace(post_merge_main_run_id=1))  # noqa: SLF001
