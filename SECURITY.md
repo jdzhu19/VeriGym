@@ -466,7 +466,43 @@ decision is the sole supervised target. Historical attempts and identities remai
 sealed historical scorecards may be used only for offline classification regressions, never to
 reconstruct or retroactively admit a trajectory.
 
-Both formats reject private reasoning, thinking blocks, dynamic context, skills, critics, unknown
+The separately versioned OpenHands behavior protocol v23 restores provider-default `auto` tool
+choice for ordinary requests and accepts optional public rationale plus one or more typed calls.
+Before returning a response to OpenHands, the local LLM subclass validates every sibling's exact
+name, strict JSON object, HWE v2 schema, workspace-relative path, and shell-safety policy. One bad
+sibling rejects the entire decision before dispatch. Accepted siblings use the SDK's fixed
+single-worker executor and therefore run serially in provider order. Only the one private-state-
+bound content recovery request uses `required`, and it accepts exactly one provider-emitted
+canonical call. Private reasoning fields, hidden thinking blocks, foreign tools, a sibling
+`finish`, counter drift, and caller-supplied tool choice fail closed. Provider-native hidden
+thinking remains disabled, and v17-v22 behavior and evidence remain immutable.
+
+V23 additionally enables the SDK stuck detector and a broker-owned pre-edit progress gate. The
+broker hashes the effective editable workspace before and after each accepted action; if no
+effective modification exists, action 16 appends one fixed public checkpoint and action 32 pauses
+the conversation as the explicit infrastructure-valid `no_progress` behavior outcome. The first
+effective modification permanently releases that gate. Model-visible `read_file` output is
+bounded to 400 lines and 128 KiB. Shell stdout and stderr each retain an exact 64 KiB head and
+64 KiB tail with omitted-byte count and full-stream SHA-256; a projection that cannot fit the
+frozen context fails closed instead of silently dropping that boundary. Complete raw streams stay
+only in the existing bounded, secret-scanned private sidecar. Successful v23 SFT export supervises
+one complete assistant decision, including public rationale and all sibling calls; content-only
+recovery and failed-tool decisions remain loss-masked context. Every row is re-tokenized with the
+frozen exact Qwen tokenizer and is rejected above 65,536 tokens without truncation.
+
+The v52 authorization is a zero-provider materialization identity only. PR-2728 transfer uses a
+fixed persistent content-addressed layer cache with task-specific staging, digest-and-size
+validation, same-filesystem atomic rename, and bounded digest/size/cache-hit inventory. Raw
+transfer stderr is temporary; a failure receipt retains only byte count, SHA-256, and one closed
+error family. Each temporary archive has one cleanup owner. The atomic stage sequence then
+requires public base-FAIL/reference-PASS qualification under verifier `network=none`, the v2
+Codex/credential/hidden-asset/network scan, a task-specific PR-2728 command-image lock, and
+revalidation of the sealed PR-3204 lock before publishing a canary contract. Failure removes the
+staging tree and publishes no partial canary authorization. V52 cannot invoke a provider, execute
+the canary, start collection or training, use held-out data, or claim a benchmark result.
+
+All trajectory formats reject private reasoning, thinking blocks, dynamic context, skills,
+critics, unknown
 events, duplicate call IDs, rejected calls, missing observations, and any mismatch between the SDK
 event and broker-owned canonical arguments or compact-observation hash. The exact effective
 OpenHands tool schemas, including SDK-added metadata fields, are retained so downstream token

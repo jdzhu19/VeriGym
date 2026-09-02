@@ -51,18 +51,21 @@ OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_traj
 OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v4"
 OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v5"
 OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v6"
+OPENHANDS_V23_TRAJECTORY_FORMAT = "verigym_openhands_exact_tool_trajectory_v7"
 OPENHANDS_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v1"
 OPENHANDS_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v2"
 OPENHANDS_MASKED_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v3"
 OPENHANDS_CONTINUATION_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v4"
 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v5"
 OPENHANDS_PATH_RECOVERY_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v6"
+OPENHANDS_V23_DECISION_FORMAT = "verigym_openhands_decision_sft_64k_v7"
 OPENHANDS_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v1"
 OPENHANDS_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v2"
 OPENHANDS_MASKED_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v3"
 OPENHANDS_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v4"
 OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v5"
 OPENHANDS_PATH_RECOVERY_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v6"
+OPENHANDS_V23_DATASET_FORMAT = "verigym_openhands_decision_sft_dataset_64k_v7"
 OPENHANDS_SDK_VERSION = "1.42.1"
 OPENHANDS_MAX_LENGTH = 65_536
 
@@ -126,6 +129,7 @@ class BrokerTurnReceipt:
     tool_name: str
     arguments_json: str
     observation_sha256: str
+    tool_result_success: bool = True
 
 
 def snapshot_openhands_events(events: Sequence[object]) -> list[dict[str, Any]]:
@@ -260,7 +264,9 @@ def repository_broker_receipts(
 
 
 def hwe_broker_receipts(
-    events: Sequence[HweNormalizedEvent], call_ids: Sequence[str]
+    events: Sequence[HweNormalizedEvent],
+    call_ids: Sequence[str],
+    tool_result_successes: Sequence[bool] | None = None,
 ) -> tuple[BrokerTurnReceipt, ...]:
     """Bind OpenHands HWE events to the DeepSeek broker's public compact layer."""
 
@@ -268,8 +274,17 @@ def hwe_broker_receipts(
         raise OpenHandsTrajectoryInfrastructureError("HWE broker event and call-ID counts differ")
     if any(not call_id for call_id in call_ids) or len(set(call_ids)) != len(call_ids):
         raise OpenHandsTrajectoryInfrastructureError("HWE broker call IDs are empty or duplicate")
+    successes = (
+        tuple(True for _ in events)
+        if tool_result_successes is None
+        else tuple(tool_result_successes)
+    )
+    if len(successes) != len(events) or any(not isinstance(item, bool) for item in successes):
+        raise OpenHandsTrajectoryInfrastructureError(
+            "HWE broker tool-result success accounting is malformed"
+        )
     receipts: list[BrokerTurnReceipt] = []
-    for event, _call_id in zip(events, call_ids, strict=True):
+    for event, _call_id, tool_result_success in zip(events, call_ids, successes, strict=True):
         if event.compact_observation_sha256 is None:
             raise OpenHandsTrajectoryInfrastructureError(
                 "HWE broker event omits its compact observation hash"
@@ -286,6 +301,7 @@ def hwe_broker_receipts(
                 tool_name=event.action,
                 arguments_json=arguments_json,
                 observation_sha256=event.compact_observation_sha256,
+                tool_result_success=tool_result_success,
             )
         )
     return tuple(receipts)
@@ -303,6 +319,7 @@ def build_openhands_training_trajectory(
     tool_contract: Literal["repository_action.v2", "hwe_native_shell_v2"],
     recovery_policy_id: str | None = None,
     retain_recoverable_invalid_arguments: bool = False,
+    mask_failed_tool_decisions: bool = False,
     sdk_stop_continuation_count: int = 0,
     path_policy_recovery_receipts: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
@@ -322,6 +339,14 @@ def build_openhands_training_trajectory(
         raise OpenHandsTrajectoryError(
             "OpenHands recoverable invalid arguments require the HWE recovery contract"
         )
+    if mask_failed_tool_decisions and (
+        recovery_policy_id != OPENHANDS_FORMAT_RECOVERY_POLICY
+        or tool_contract != "hwe_native_shell_v2"
+        or retain_recoverable_invalid_arguments
+    ):
+        raise OpenHandsTrajectoryError(
+            "OpenHands v23 failed-tool masking requires its HWE recovery contract"
+        )
     (
         messages,
         decisions,
@@ -335,6 +360,7 @@ def build_openhands_training_trajectory(
         tool_contract=tool_contract,
         recovery_policy_id=recovery_policy_id,
         retain_recoverable_invalid_arguments=retain_recoverable_invalid_arguments,
+        mask_failed_tool_decisions=mask_failed_tool_decisions,
         path_policy_recovery_receipts=path_policy_recovery_receipts,
     )
     if (
@@ -347,7 +373,8 @@ def build_openhands_training_trajectory(
     masked_recovery = retain_recoverable_invalid_arguments
     sdk_continuation = sdk_stop_continuation_count == 1
     path_recovery = bool(path_recoveries)
-    if path_recovery and masked_recovery:
+    v23_masking = mask_failed_tool_decisions
+    if path_recovery and (masked_recovery or v23_masking):
         raise OpenHandsTrajectoryError(
             "OpenHands path-policy recovery cannot combine with broker argument rejection"
         )
@@ -355,7 +382,9 @@ def build_openhands_training_trajectory(
     supervised_decisions = len(decisions) - masked_decisions
     base = {
         "schema_version": (
-            "6.0"
+            "7.0"
+            if v23_masking
+            else "6.0"
             if path_recovery
             else "5.0"
             if masked_recovery and sdk_continuation
@@ -368,7 +397,9 @@ def build_openhands_training_trajectory(
             else "1.0"
         ),
         "format_id": (
-            OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
+            OPENHANDS_V23_TRAJECTORY_FORMAT
+            if v23_masking
+            else OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
             if path_recovery
             else OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT
             if masked_recovery and sdk_continuation
@@ -388,7 +419,9 @@ def build_openhands_training_trajectory(
         "client_name": "openhands-sdk",
         "client_version": OPENHANDS_SDK_VERSION,
         "harness_id": (
-            "openhands-sdk-1.42.1-verigym-broker-v6"
+            "openhands-sdk-1.42.1-verigym-broker-v7"
+            if v23_masking
+            else "openhands-sdk-1.42.1-verigym-broker-v6"
             if path_recovery
             else "openhands-sdk-1.42.1-verigym-broker-v5"
             if masked_recovery and sdk_continuation
@@ -456,6 +489,22 @@ def build_openhands_training_trajectory(
                 "accepted_tool_action_count": len(broker_turns),
             }
         )
+    if v23_masking:
+        if supervised_decisions <= 0:
+            raise OpenHandsTrajectoryError(
+                "OpenHands v23 trajectory requires at least one supervised decision"
+            )
+        base.update(
+            {
+                "failed_decisions_retained_as_context": True,
+                "failed_decisions_supervised": False,
+                "failed_tool_decision_count": masked_decisions,
+                "supervised_decision_count": supervised_decisions,
+                "accepted_tool_action_count": len(broker_turns),
+                "decision_target_granularity": "complete_assistant_decision",
+                "sibling_targets_split": False,
+            }
+        )
     if sdk_continuation:
         base.update(
             {
@@ -516,6 +565,57 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         sdk_continuation = False
         path_recovery = False
         path_recoveries: list[Any] = []
+        v23_masking = False
+    elif format_id == OPENHANDS_V23_TRAJECTORY_FORMAT:
+        versioned_required = {
+            "schema_version": "7.0",
+            "harness_id": "openhands-sdk-1.42.1-verigym-broker-v7",
+            "format_recovery_policy_id": OPENHANDS_FORMAT_RECOVERY_POLICY,
+            "format_recovery_budget": OPENHANDS_FORMAT_RECOVERY_BUDGET,
+            "same_session_recovery": True,
+            "whole_episode_retries": 0,
+            "termination_authority": "broker_typed_finish",
+            "openhands_stop_hook_enabled": True,
+            "failed_decisions_retained_as_context": True,
+            "failed_decisions_supervised": False,
+            "decision_target_granularity": "complete_assistant_decision",
+            "sibling_targets_split": False,
+        }
+        raw_recoveries = value.get("format_recoveries")
+        if not isinstance(raw_recoveries, list):
+            raise OpenHandsTrajectoryError("OpenHands v23 recovery receipts are malformed")
+        recoveries = raw_recoveries
+        path_recovery = False
+        path_recoveries = []
+        masked_recovery = False
+        v23_masking = True
+        sdk_continuation = value.get("sdk_stop_continuation_count") == 1
+        continuation_receipt_count = sum(
+            isinstance(item, dict) and "adapter_continuation_message_index" in item
+            for item in recoveries
+        )
+        terminal_hook_allow_count = value.get("terminal_hook_allow_count")
+        if (
+            value.get("format_recovery_count") != len(recoveries)
+            or len(recoveries) > OPENHANDS_FORMAT_RECOVERY_BUDGET
+            or continuation_receipt_count != int(sdk_continuation)
+            or not isinstance(terminal_hook_allow_count, int)
+            or isinstance(terminal_hook_allow_count, bool)
+            or not 0 <= terminal_hook_allow_count <= 1
+        ):
+            raise OpenHandsTrajectoryError("OpenHands v23 recovery accounting changed")
+        if sdk_continuation:
+            versioned_required.update(
+                {
+                    "sdk_stop_continuation_policy_id": OPENHANDS_SDK_STOP_CONTINUATION_POLICY,
+                    "sdk_stop_continuation_budget": OPENHANDS_SDK_STOP_CONTINUATION_BUDGET,
+                    "sdk_stop_continuation_count": 1,
+                    "sdk_stop_continuation_message_sha256": (
+                        OPENHANDS_SDK_STOP_CONTINUATION_MESSAGE_SHA256
+                    ),
+                    "sdk_upstream_source_modified": False,
+                }
+            )
     elif format_id in {
         OPENHANDS_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
@@ -524,6 +624,7 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT,
     }:
         path_recovery = format_id == OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
+        v23_masking = False
         masked_recovery = format_id in {
             OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
@@ -671,11 +772,14 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
         recovery_receipts=recoveries,
         path_policy_recovery_receipts=path_recoveries,
         retain_recoverable_invalid_arguments=masked_recovery,
+        mask_failed_tool_decisions=v23_masking,
     )
     broker_turn_count = sum(
         int(
             item.get(
-                "accepted_tool_action_count" if masked_recovery else "tool_action_count",
+                "accepted_tool_action_count"
+                if masked_recovery or v23_masking
+                else "tool_action_count",
                 -1,
             )
         )
@@ -699,6 +803,16 @@ def validate_openhands_training_trajectory(value: Mapping[str, Any]) -> dict[str
             or value.get("accepted_tool_action_count") != broker_turn_count
         ):
             raise OpenHandsTrajectoryError("OpenHands masked decision accounting changed")
+    if v23_masking:
+        masked_count = sum(item.get("supervised_target") is False for item in decisions)
+        supervised_count = len(decisions) - masked_count
+        if (
+            supervised_count <= 0
+            or value.get("failed_tool_decision_count") != masked_count
+            or value.get("supervised_decision_count") != supervised_count
+            or value.get("accepted_tool_action_count") != broker_turn_count
+        ):
+            raise OpenHandsTrajectoryError("OpenHands v23 decision accounting changed")
     _require_hash(str(value.get("configuration_fingerprint", "")), "configuration fingerprint")
     return copy.deepcopy(dict(value))
 
@@ -729,6 +843,7 @@ def materialize_openhands_decisions(
         OPENHANDS_MASKED_RECOVERY_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
     }
+    v23_masking = validated["format_id"] == OPENHANDS_V23_TRAJECTORY_FORMAT
     path_recovery = validated["format_id"] == OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
     sdk_continuation = validated["format_id"] in {
         OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
@@ -740,10 +855,11 @@ def materialize_openhands_decisions(
         OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT,
         OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT,
+        OPENHANDS_V23_TRAJECTORY_FORMAT,
     }
     records: list[dict[str, Any]] = []
     for decision_index, decision in enumerate(decisions):
-        if masked_recovery and decision.get("supervised_target") is not True:
+        if (masked_recovery or v23_masking) and decision.get("supervised_target") is not True:
             continue
         message_index = decision["message_index"]
         target = copy.deepcopy(messages[message_index])
@@ -778,7 +894,9 @@ def materialize_openhands_decisions(
         )
         base = {
             "schema_version": (
-                "6.0"
+                "7.0"
+                if v23_masking
+                else "6.0"
                 if path_recovery
                 else "5.0"
                 if masked_recovery and sdk_continuation
@@ -791,7 +909,9 @@ def materialize_openhands_decisions(
                 else "1.0"
             ),
             "format_id": (
-                OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+                OPENHANDS_V23_DECISION_FORMAT
+                if v23_masking
+                else OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
                 if path_recovery
                 else OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT
                 if masked_recovery and sdk_continuation
@@ -863,6 +983,18 @@ def materialize_openhands_decisions(
                     "failed_decisions_supervised": False,
                 }
             )
+        if v23_masking:
+            base.update(
+                {
+                    "trajectory_failed_tool_decision_count": validated[
+                        "failed_tool_decision_count"
+                    ],
+                    "failed_decisions_retained_as_context": True,
+                    "failed_decisions_supervised": False,
+                    "decision_target_granularity": "complete_assistant_decision",
+                    "sibling_targets_split": False,
+                }
+            )
         if sdk_continuation:
             visible_continuations = sum(
                 "adapter_continuation_message_index" in item for item in visible_recoveries
@@ -914,6 +1046,7 @@ def validate_openhands_decision_record(
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+        OPENHANDS_V23_DECISION_FORMAT,
     }:
         raise OpenHandsTrajectoryError("OpenHands decision format changed")
     tools = value.get("tools")
@@ -952,6 +1085,7 @@ def validate_openhands_decision_record(
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+        OPENHANDS_V23_DECISION_FORMAT,
     }:
         recoveries = value.get("format_recoveries")
         trajectory_recovery_count = value.get("trajectory_format_recovery_count")
@@ -959,6 +1093,8 @@ def validate_openhands_decision_record(
             "source_trajectory_format": (
                 OPENHANDS_MASKED_CONTINUATION_TRAJECTORY_FORMAT
                 if format_id == OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT
+                else OPENHANDS_V23_TRAJECTORY_FORMAT
+                if format_id == OPENHANDS_V23_DECISION_FORMAT
                 else OPENHANDS_PATH_RECOVERY_TRAJECTORY_FORMAT
                 if format_id == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
                 else OPENHANDS_CONTINUATION_TRAJECTORY_FORMAT
@@ -997,11 +1133,24 @@ def validate_openhands_decision_record(
             or value.get("failed_decisions_supervised") is not False
         ):
             raise OpenHandsTrajectoryError("OpenHands masked decision receipt changed")
+    if format_id == OPENHANDS_V23_DECISION_FORMAT:
+        failed_count = value.get("trajectory_failed_tool_decision_count")
+        if (
+            value.get("schema_version") != "7.0"
+            or not isinstance(failed_count, int)
+            or isinstance(failed_count, bool)
+            or failed_count < 0
+            or value.get("failed_decisions_retained_as_context") is not True
+            or value.get("failed_decisions_supervised") is not False
+            or value.get("decision_target_granularity") != "complete_assistant_decision"
+            or value.get("sibling_targets_split") is not False
+        ):
+            raise OpenHandsTrajectoryError("OpenHands v23 decision receipt changed")
     if format_id in {
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
     } or (
-        format_id == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+        format_id in {OPENHANDS_PATH_RECOVERY_DECISION_FORMAT, OPENHANDS_V23_DECISION_FORMAT}
         and "trajectory_sdk_stop_continuation_count" in value
     ):
         trajectory_count = value.get("trajectory_sdk_stop_continuation_count")
@@ -1075,6 +1224,7 @@ def write_openhands_decision_dataset(
         OPENHANDS_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
         OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+        OPENHANDS_V23_DECISION_FORMAT,
     }:
         raise OpenHandsTrajectoryError("OpenHands decision dataset contains an unknown row format")
     masked_recovery_dataset = bool(
@@ -1091,11 +1241,12 @@ def write_openhands_decision_dataset(
             OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
         }
     ) or any(
-        row["format_id"] == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+        row["format_id"] in {OPENHANDS_PATH_RECOVERY_DECISION_FORMAT, OPENHANDS_V23_DECISION_FORMAT}
         and row.get("trajectory_sdk_stop_continuation_count") == 1
         for row in rows
     )
     path_recovery_dataset = OPENHANDS_PATH_RECOVERY_DECISION_FORMAT in record_formats
+    v23_dataset = OPENHANDS_V23_DECISION_FORMAT in record_formats
     recovery_dataset = bool(
         record_formats
         & {
@@ -1104,10 +1255,13 @@ def write_openhands_decision_dataset(
             OPENHANDS_CONTINUATION_DECISION_FORMAT,
             OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
             OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+            OPENHANDS_V23_DECISION_FORMAT,
         }
     )
     base = {
-        "schema_version": "6.0"
+        "schema_version": "7.0"
+        if v23_dataset
+        else "6.0"
         if path_recovery_dataset
         else "5.0"
         if masked_recovery_dataset and sdk_continuation_dataset
@@ -1119,7 +1273,9 @@ def write_openhands_decision_dataset(
         if recovery_dataset
         else "1.0",
         "format_id": (
-            OPENHANDS_PATH_RECOVERY_DATASET_FORMAT
+            OPENHANDS_V23_DATASET_FORMAT
+            if v23_dataset
+            else OPENHANDS_PATH_RECOVERY_DATASET_FORMAT
             if path_recovery_dataset
             else OPENHANDS_MASKED_CONTINUATION_DATASET_FORMAT
             if masked_recovery_dataset and sdk_continuation_dataset
@@ -1167,6 +1323,7 @@ def write_openhands_decision_dataset(
                 OPENHANDS_CONTINUATION_DECISION_FORMAT,
                 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
                 OPENHANDS_PATH_RECOVERY_DECISION_FORMAT,
+                OPENHANDS_V23_DECISION_FORMAT,
             }:
                 continue
             transcript_hash = str(row["transcript_hash"])
@@ -1220,6 +1377,32 @@ def write_openhands_decision_dataset(
                 "masked_policy_error_decision_count": sum(masked_by_trajectory.values()),
             }
         )
+    if v23_dataset:
+        failed_by_trajectory: dict[str, int] = {}
+        for row in rows:
+            if row["format_id"] != OPENHANDS_V23_DECISION_FORMAT:
+                continue
+            transcript_hash = str(row["transcript_hash"])
+            count = row.get("trajectory_failed_tool_decision_count")
+            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                raise OpenHandsTrajectoryError("OpenHands v23 dataset failure accounting changed")
+            previous = failed_by_trajectory.setdefault(transcript_hash, count)
+            if previous != count:
+                raise OpenHandsTrajectoryError(
+                    "OpenHands v23 failure count changed within a trajectory"
+                )
+        base.update(
+            {
+                "failed_decisions_retained_as_context": True,
+                "failed_decisions_supervised": False,
+                "failed_tool_trajectory_count": sum(
+                    count > 0 for count in failed_by_trajectory.values()
+                ),
+                "failed_tool_decision_count": sum(failed_by_trajectory.values()),
+                "decision_target_granularity": "complete_assistant_decision",
+                "sibling_targets_split": False,
+            }
+        )
     if sdk_continuation_dataset:
         continuation_by_trajectory: dict[str, int] = {}
         for row in rows:
@@ -1227,7 +1410,8 @@ def write_openhands_decision_dataset(
                 OPENHANDS_CONTINUATION_DECISION_FORMAT,
                 OPENHANDS_MASKED_CONTINUATION_DECISION_FORMAT,
             } or (
-                row["format_id"] == OPENHANDS_PATH_RECOVERY_DECISION_FORMAT
+                row["format_id"]
+                in {OPENHANDS_PATH_RECOVERY_DECISION_FORMAT, OPENHANDS_V23_DECISION_FORMAT}
                 and row.get("trajectory_sdk_stop_continuation_count") == 1
             )
             if not continuation_row:
@@ -1284,6 +1468,7 @@ def _normalize_events(
     tool_contract: str,
     recovery_policy_id: str | None,
     retain_recoverable_invalid_arguments: bool,
+    mask_failed_tool_decisions: bool,
     path_policy_recovery_receipts: Sequence[Mapping[str, Any]],
 ) -> tuple[
     list[dict[str, Any]],
@@ -1542,7 +1727,7 @@ def _normalize_events(
                     "sibling_tool_calls": False,
                     "actions": [],
                 }
-                if retain_recoverable_invalid_arguments:
+                if retain_recoverable_invalid_arguments or mask_failed_tool_decisions:
                     decision.update(
                         {
                             "accepted_tool_action_count": 0,
@@ -1578,7 +1763,7 @@ def _normalize_events(
                     receipt.observation_sha256 if receipt is not None else None
                 ),
             }
-            if retain_recoverable_invalid_arguments:
+            if retain_recoverable_invalid_arguments or mask_failed_tool_decisions:
                 action_receipt.update(
                     {
                         "broker_accepted": broker_accepted,
@@ -1590,16 +1775,18 @@ def _normalize_events(
             decision["actions"].append(action_receipt)
             decision["tool_action_count"] = len(decision["actions"])
             decision["sibling_tool_calls"] = len(decision["actions"]) > 1
-            if retain_recoverable_invalid_arguments:
+            if retain_recoverable_invalid_arguments or mask_failed_tool_decisions:
                 decision["accepted_tool_action_count"] = sum(
                     action["broker_accepted"] is True for action in decision["actions"]
                 )
-                decision["supervised_target"] = (
-                    decision["accepted_tool_action_count"] == decision["tool_action_count"]
+                accepted = decision["accepted_tool_action_count"] == decision["tool_action_count"]
+                successful = all(
+                    action.get("tool_result_error") is not True for action in decision["actions"]
                 )
-                decision["mask_reason"] = (
-                    None if decision["supervised_target"] else "policy_rejected_tool_decision"
-                )
+                decision["supervised_target"] = accepted and successful
+                decision["mask_reason"] = None
+                if not accepted:
+                    decision["mask_reason"] = "policy_rejected_tool_decision"
             pending.append(
                 {
                     "call_id": call_id,
@@ -1610,6 +1797,9 @@ def _normalize_events(
                     "message_index": message_index,
                     "action_receipt": action_receipt,
                     "broker_accepted": broker_accepted,
+                    "tool_result_success": (
+                        receipt.tool_result_success if receipt is not None else False
+                    ),
                 }
             )
         elif event_type == "ObservationEvent":
@@ -1653,8 +1843,18 @@ def _normalize_events(
             action_receipt = expected["action_receipt"]
             action_receipt["observation_message_index"] = len(messages) - 1
             action_receipt["observation_sha256"] = content_hash(observation)
-            if retain_recoverable_invalid_arguments:
-                action_receipt["tool_result_error"] = not broker_accepted
+            if retain_recoverable_invalid_arguments or mask_failed_tool_decisions:
+                receipt_success = expected["tool_result_success"] is True
+                action_receipt["tool_result_error"] = not broker_accepted or not receipt_success
+                decision = decisions[-1]
+                failed = any(
+                    action.get("tool_result_error") is True for action in decision["actions"]
+                )
+                decision["supervised_target"] = not failed and all(
+                    action.get("broker_accepted") is True for action in decision["actions"]
+                )
+                if failed and decision.get("mask_reason") is None:
+                    decision["mask_reason"] = "tool_execution_failed"
             if broker_accepted:
                 receipt_index += 1
             pending.pop(0)
@@ -1778,6 +1978,7 @@ def _validate_normalized_messages(
     recovery_receipts: list[Any],
     path_policy_recovery_receipts: list[Any],
     retain_recoverable_invalid_arguments: bool,
+    mask_failed_tool_decisions: bool,
 ) -> None:
     if len(messages) < 4 or [item.get("role") for item in messages[:2]] != ["system", "user"]:
         raise OpenHandsTrajectoryError("OpenHands normalized messages have no prompt prefix")
@@ -1835,18 +2036,27 @@ def _validate_normalized_messages(
                 or ("finish" in action_names and len(calls) != 1)
             ):
                 raise OpenHandsTrajectoryError("OpenHands sibling decision receipt changed")
-            if retain_recoverable_invalid_arguments:
+            if retain_recoverable_invalid_arguments or mask_failed_tool_decisions:
                 accepted_count = sum(
                     action.get("broker_accepted") is True
                     for action in actions
                     if isinstance(action, dict)
                 )
-                supervised = accepted_count == len(calls)
+                failed_count = sum(
+                    action.get("tool_result_error") is True
+                    for action in actions
+                    if isinstance(action, dict)
+                )
+                supervised = accepted_count == len(calls) and failed_count == 0
+                expected_reason = None
+                if accepted_count != len(calls):
+                    expected_reason = "policy_rejected_tool_decision"
+                elif failed_count:
+                    expected_reason = "tool_execution_failed"
                 if (
                     receipt.get("accepted_tool_action_count") != accepted_count
                     or receipt.get("supervised_target") is not supervised
-                    or receipt.get("mask_reason")
-                    != (None if supervised else "policy_rejected_tool_decision")
+                    or receipt.get("mask_reason") != expected_reason
                 ):
                     raise OpenHandsTrajectoryError("OpenHands masked decision receipt changed")
             seen_calls.update(call_ids)
@@ -1858,7 +2068,7 @@ def _validate_normalized_messages(
                 arguments = call["function"]["arguments"]
                 broker_accepted = (
                     action.get("broker_accepted") is True
-                    if retain_recoverable_invalid_arguments
+                    if retain_recoverable_invalid_arguments or mask_failed_tool_decisions
                     else True
                 )
                 canonical: str | None = None
@@ -1890,8 +2100,13 @@ def _validate_normalized_messages(
                     or not isinstance(action.get("observation_sha256"), str)
                 ):
                     raise OpenHandsTrajectoryError("OpenHands action receipt changed")
-                if retain_recoverable_invalid_arguments and (
-                    action.get("tool_result_error") is not (not broker_accepted)
+                if (retain_recoverable_invalid_arguments or mask_failed_tool_decisions) and (
+                    not isinstance(action.get("tool_result_error"), bool)
+                    or (
+                        retain_recoverable_invalid_arguments
+                        and not mask_failed_tool_decisions
+                        and action.get("tool_result_error") is not (not broker_accepted)
+                    )
                     or (
                         broker_accepted
                         and not isinstance(action.get("broker_observation_sha256"), str)
@@ -1912,7 +2127,7 @@ def _validate_normalized_messages(
             content = message.get("content")
             broker_accepted = (
                 action.get("broker_accepted") is True
-                if retain_recoverable_invalid_arguments
+                if retain_recoverable_invalid_arguments or mask_failed_tool_decisions
                 else True
             )
             broker_observation = (
@@ -2403,6 +2618,9 @@ __all__ = [
     "OPENHANDS_RECOVERY_DATASET_FORMAT",
     "OPENHANDS_RECOVERY_DECISION_FORMAT",
     "OPENHANDS_RECOVERY_TRAJECTORY_FORMAT",
+    "OPENHANDS_V23_DATASET_FORMAT",
+    "OPENHANDS_V23_DECISION_FORMAT",
+    "OPENHANDS_V23_TRAJECTORY_FORMAT",
     "OPENHANDS_TRAJECTORY_FORMAT",
     "OpenHandsTrajectoryError",
     "OpenHandsTrajectoryInfrastructureError",

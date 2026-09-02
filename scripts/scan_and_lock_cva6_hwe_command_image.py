@@ -19,6 +19,7 @@ from verigym.experiments.state import atomic_dump_json
 from verigym.hwe.image_lock import (
     HweAgentImageLock,
     HweCommandImageLock,
+    HweCommandSourceLock,
     build_hwe_command_image_lock,
 )
 
@@ -535,7 +536,13 @@ def scan_and_lock(
     if security_output.exists() or lock_output.exists():
         raise ValueError("HWE command-image scan and lock outputs must be new paths")
     receipt = _load_json(receipt_path)
-    identity = HweAgentImageLock.model_validate(_load_json(identity_lock_path))
+    raw_identity = _load_json(identity_lock_path)
+    identity: HweAgentImageLock | HweCommandSourceLock
+    if raw_identity.get("format_id") == "verigym_hwe_command_source_lock_v1":
+        identity = HweCommandSourceLock.model_validate(raw_identity)
+    else:
+        # Historical v32/v33 materializations remain byte-for-byte compatible.
+        identity = HweAgentImageLock.model_validate(raw_identity)
     expected_receipt = {
         "format_id": "verigym_hwe_command_image_build_receipt_v1",
         "task_id": identity.task_id,

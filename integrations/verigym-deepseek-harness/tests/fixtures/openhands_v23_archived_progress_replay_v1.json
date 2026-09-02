@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_openhands_v23_archived_progress_replay_v1",
+  "replay_mode": "content_free_read_only",
+  "provider_calls_during_replay": 0,
+  "model_process_count": 0,
+  "historical_trajectory_relabelled": false,
+  "historical_trajectory_rewritten": false,
+  "replay_hash": "884c28f2ad93e540b9e488b4d930d0a51acf8b7d7f3d28b7eed2fe466d53bc42",
+  "sequences": [
+    {
+      "identity": "openhands-v17-pr2248-s486-v4",
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2248",
+      "source_format_id": "verigym_openhands_exact_tool_trajectory_v2",
+      "source_file_sha256": "b39478423ea72f38c18abfc8b29affe1bca8ce17f40190675756a2921c19a9dc",
+      "source_transcript_hash": "4185716256cefe619440960db3a2e2abc51e4f570fd97e777383cabb8064b761",
+      "actions": [
+        "read_file", "shell", "read_file", "read_file", "apply_patch", "apply_patch",
+        "shell", "apply_patch", "apply_patch", "shell", "apply_patch", "shell",
+        "inspect_diff", "shell", "finish"
+      ],
+      "effective_modification_actions": [11],
+      "expected_progress_checkpoint_injected": false,
+      "expected_no_progress_terminated": false,
+      "expected_stuck_status": "not_stuck"
+    },
+    {
+      "identity": "openhands-v17-pr2944-s486-v4",
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2944",
+      "source_format_id": "verigym_openhands_exact_tool_trajectory_v2",
+      "source_file_sha256": "c1ed33da089ab637fb36e8278bfa4952b8a7ea01da66e6daa5ef90759d6a4371",
+      "source_transcript_hash": "d9dcabd90f186f6c2768e6e35d292c6d30e40b9bf722e070bc327127bb1129ec",
+      "actions": [
+        "read_file", "shell", "read_file", "shell", "read_file", "read_file", "shell",
+        "apply_patch", "apply_patch", "read_file", "apply_patch", "shell", "apply_patch",
+        "shell", "apply_patch", "apply_patch", "shell", "inspect_diff", "read_file",
+        "read_file", "finish"
+      ],
+      "effective_modification_actions": [16],
+      "expected_progress_checkpoint_injected": false,
+      "expected_no_progress_terminated": false,
+      "expected_stuck_status": "not_stuck"
+    },
+    {
+      "identity": "deepseek-harness-v3-pr2549",
+      "task_id": "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2549",
+      "source_format_id": "verigym_hwe_deepseek_harness_teacher_transcript_v3",
+      "source_file_sha256": "70e839b73b294c3eb502ca0347d8da735e68faba247873aa16323272496456df",
+      "source_transcript_hash": "85c4a84c942e94ad609358ecceb9c10664432eca03802ccdcb0131f445ceab1e",
+      "actions": [
+        "read_file", "read_file", "read_file", "shell", "read_file", "apply_patch",
+        "read_file", "apply_patch", "shell", "apply_patch", "apply_patch", "apply_patch",
+        "read_file", "shell", "apply_patch", "read_file", "apply_patch", "shell", "shell",
+        "shell", "read_file", "shell", "read_file", "shell", "shell", "shell", "shell",
+        "shell", "shell", "shell", "shell", "shell", "shell", "shell", "shell", "shell",
+        "shell", "shell", "shell", "shell", "shell", "shell", "shell", "shell", "shell",
+        "shell", "shell", "shell", "shell", "read_file", "shell", "shell", "shell",
+        "inspect_diff", "shell", "read_file", "read_file", "shell", "shell", "shell",
+        "inspect_diff", "read_file", "finish"
+      ],
+      "effective_modification_actions": [12, 18, 20],
+      "expected_progress_checkpoint_injected": false,
+      "expected_no_progress_terminated": false,
+      "expected_stuck_status": "not_stuck"
+    }
+  ]
+}
