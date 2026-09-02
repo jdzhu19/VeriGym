@@ -144,6 +144,7 @@ class _RunContext:
     command_lock: HweCommandImageLock | None = None
     active_stage: str | None = None
     verified_layer_inventory: list[dict[str, str | int | bool]] | None = None
+    layer_transfer_attempts: list[dict[str, Any]] | None = None
 
 
 def _parser() -> argparse.ArgumentParser:

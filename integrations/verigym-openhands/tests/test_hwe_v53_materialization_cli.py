@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from verigym.core.hashing import content_hash
-from verigym.hwe.image_transfer import ContentAddressedLayerCache
+from verigym.hwe.image_transfer import ContentAddressedLayerCache, LayerTransferRetryPolicy
 
 _cli = importlib.import_module("scripts.materialize_cva6_openhands_v53_v23_canary")
 
@@ -196,6 +196,130 @@ def test_v53_failure_receipt_keeps_only_verified_layer_inventory_and_redacted_er
     assert secret.decode() not in path.read_text(encoding="utf-8")
     base = {key: value for key, value in receipt.items() if key != "receipt_hash"}
     assert receipt["receipt_hash"] == content_hash(base)
+
+
+def test_opt_in_environment_policy_retries_transport_failure_then_commits_exact_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_root = tmp_path / "persistent-cache"
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    crane = tools / "crane"
+    crane.write_bytes(b"pinned-crane")
+    crane.chmod(0o700)
+    monkeypatch.setattr(_cli._v52_cli, "_TOOL_CACHE", tools)
+    monkeypatch.setattr(
+        _cli._v52_cli,
+        "_CRANE_SHA256",
+        hashlib.sha256(b"pinned-crane").hexdigest(),
+    )
+    execution = {"image_id": "sha256:" + "e" * 64}
+    monkeypatch.setattr(_cli._v51, "_validate_local_image", lambda _reference: execution)
+    monkeypatch.setattr(_cli._v51, "_validate_headroom", lambda: None)
+    monkeypatch.setattr(_cli._v51, "_validate_network", lambda: None)
+
+    layer_payload = b"complete-layer-after-resume"
+    layer_digest = "sha256:" + hashlib.sha256(layer_payload).hexdigest()
+    config = b'{"architecture":"amd64"}'
+    config_digest = "sha256:" + hashlib.sha256(config).hexdigest()
+    manifest_value = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {"digest": config_digest, "size": len(config)},
+        "layers": [{"digest": layer_digest, "size": len(layer_payload)}],
+    }
+    manifest = json.dumps(manifest_value, separators=(",", ":"), sort_keys=True).encode()
+    manifest_digest = "sha256:" + hashlib.sha256(manifest).hexdigest()
+    roles: list[str] = []
+
+    def fake_controlled(
+        _execution: dict[str, object],
+        *,
+        role: str,
+        work: Path | None = None,
+        cache_staging: Path | None = None,
+        **_values: object,
+    ) -> tuple[bytes, bytes]:
+        roles.append(role)
+        if role == "candidate_digest":
+            return f"{manifest_digest}\n".encode(), b""
+        if role == "candidate_manifest":
+            return manifest + b"\n", b""
+        if role == "candidate_config":
+            return config + b"\n", b""
+        if role == "layer_000_attempt_01":
+            assert cache_staging is not None
+            (cache_staging / layer_digest).write_bytes(b"partial")
+            raise _cli._v52_cli._CommandFailure(role, b"read: unexpected EOF")
+        if role == "layer_000_attempt_02":
+            assert cache_staging is not None
+            assert (cache_staging / layer_digest).exists() is False
+            (cache_staging / layer_digest).write_bytes(layer_payload)
+            return b"", b""
+        if role == "candidate_assembly":
+            assert work is not None
+            (work / "candidate-image.tar").write_bytes(b"docker-tar")
+            return b"", b""
+        raise AssertionError(role)
+
+    monkeypatch.setattr(_cli, "_controlled", fake_controlled)
+    state = {"candidate": False, "sentinel": False}
+    sentinel = _cli._v51._sentinel_reference()
+
+    def inspect(reference: str) -> dict[str, str] | None:
+        if reference == _cli._v52_cli._REFERENCE and state["candidate"]:
+            return {"Id": config_digest}
+        if reference == sentinel and state["sentinel"]:
+            return {"Id": config_digest}
+        return None
+
+    monkeypatch.setattr(_cli._v51, "_inspect_host_image", inspect)
+    monkeypatch.setattr(_cli._v51, "_validated_crane_tarball", lambda *_args, **_kwargs: {})
+
+    def bounded(arguments: list[str], *, timeout: int, **_values: object) -> object:
+        del timeout
+        if arguments[:3] == ["docker", "image", "load"]:
+            state["sentinel"] = True
+        elif arguments[:3] == ["docker", "image", "tag"]:
+            state["candidate"] = True
+        elif arguments[:3] == ["docker", "image", "rm"]:
+            state["sentinel"] = False
+        return subprocess.CompletedProcess(arguments, 0, b"", b"")
+
+    monkeypatch.setattr(_cli._v52_cli, "_bounded_run", bounded)
+    root = tmp_path / "result-staging"
+    root.mkdir()
+    context = _context(tmp_path)
+
+    receipt = _cli._transfer_stage_for_identity(
+        context,
+        root,
+        identity="openhands-hwe-v55-pr2728-environment-provisioning-v1",
+        version="v55",
+        cache_root=cache_root,
+        layer_retry_policy=LayerTransferRetryPolicy(3),
+    )
+
+    assert roles == [
+        "candidate_digest",
+        "candidate_manifest",
+        "candidate_config",
+        "layer_000_attempt_01",
+        "layer_000_attempt_02",
+        "candidate_assembly",
+    ]
+    assert receipt["format_id"] == "verigym_openhands_hwe_v55_pr2728_image_transfer_v2"
+    assert receipt["layer_download_attempt_count"] == 2
+    attempt = receipt["layer_transfer_attempts"][0]
+    assert attempt["attempt_count"] == 2
+    assert attempt["completed"] is True
+    assert attempt["failed_attempts"][0]["error_family"] == "transport"
+    assert attempt["failed_attempts"][0]["reason"] == "unexpected_eof"
+    assert "unexpected EOF" not in repr(attempt)
+    assert ContentAddressedLayerCache(cache_root).bounded_inventory([layer_digest]) == [
+        {"digest": layer_digest, "size": len(layer_payload), "cache_hit": True}
+    ]
 
 
 def test_v53_digest_qualified_payload_accepts_only_exact_bytes_or_one_cli_newline() -> None:

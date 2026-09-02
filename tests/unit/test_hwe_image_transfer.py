@@ -10,8 +10,11 @@ from verigym.core.errors import ConfigurationError
 from verigym.hwe.image_transfer import (
     ContentAddressedLayerCache,
     LayerCachePromotionError,
+    LayerCacheValidationError,
+    LayerTransferRetryPolicy,
     SingleCleanupArchive,
     redacted_transfer_failure,
+    redacted_transfer_failure_v2,
     validate_registry_image_manifest,
 )
 
@@ -249,6 +252,67 @@ def test_transfer_failure_persists_only_allowed_family_size_and_hash() -> None:
 
     with pytest.raises(ConfigurationError, match="stage"):
         redacted_transfer_failure(RuntimeError("private"), raw_stderr=raw, stage="pull /secret")
+
+
+@pytest.mark.parametrize(
+    ("stderr", "family", "reason", "retryable", "status"),
+    [
+        (b"read: connection reset by peer", "transport", "connection_reset", True, None),
+        (b"copy failed: unexpected EOF", "transport", "unexpected_eof", True, None),
+        (b"request timeout", "timeout", "timeout", True, None),
+        (b"HTTP status: 503", "http_status", "http_status", True, 503),
+        (b"status code 404", "http_status", "http_status", False, 404),
+        (b"x509 certificate signed by unknown authority", "tls", "tls", False, None),
+        (b"credential=secret opaque failure", "unknown", "unknown", False, None),
+    ],
+)
+def test_v2_transfer_diagnostics_bound_retryable_causes_without_raw_text(
+    stderr: bytes,
+    family: str,
+    reason: str,
+    retryable: bool,
+    status: int | None,
+) -> None:
+    receipt = redacted_transfer_failure_v2(
+        RuntimeError("private"),
+        raw_stderr=stderr,
+        stage="layer_015_attempt_01",
+    )
+
+    assert receipt["error_family"] == family
+    assert receipt["reason"] == reason
+    assert receipt["retryable"] is retryable
+    assert receipt.get("http_status") == status
+    assert receipt["stderr_bytes"] == len(stderr)
+    assert receipt["stderr_sha256"] == hashlib.sha256(stderr).hexdigest()
+    assert stderr.decode() not in repr(receipt)
+
+
+def test_staged_validation_is_retryable_but_persistent_cache_drift_is_not(
+    tmp_path: Path,
+) -> None:
+    cache = ContentAddressedLayerCache(tmp_path / "persistent-cache")
+    staged, digest = _staged(cache, "retryable-size", b"partial")
+
+    with pytest.raises(LayerCacheValidationError) as error:
+        cache.commit(staged, digest=digest, size=99)
+
+    receipt = redacted_transfer_failure_v2(
+        error.value,
+        raw_stderr=b"",
+        stage="layer_000_attempt_01",
+    )
+    assert receipt["error_family"] == "checksum"
+    assert receipt["reason"] == "staged_size_mismatch"
+    assert receipt["retryable"] is True
+
+
+def test_layer_transfer_retry_policy_is_tightly_bounded() -> None:
+    assert LayerTransferRetryPolicy().maximum_attempts == 3
+    assert LayerTransferRetryPolicy(1).maximum_attempts == 1
+    for value in (0, 4, True):
+        with pytest.raises(ConfigurationError, match="retry policy"):
+            LayerTransferRetryPolicy(value)
 
 
 def test_temporary_archive_has_exactly_one_cleanup_owner(tmp_path: Path) -> None:
