@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "format_id": "verigym_deepseek_harness_hwe_v67_ibex_pr166_provider_canary_authorization_v1",
+  "status": "authorized_pending_provider_canary",
+  "identity": "deepseek-harness-hwe-v67-ibex-pr166-provider-canary-v1",
+  "qualification_merge_commit": "64c3883eab594eab23a9ccc6452705ae4381c52f",
+  "qualification_post_merge_main_run_id": 33641643247,
+  "qualification_post_merge_main_all_eight_classes_passed": true,
+  "schedule": [
+    {
+      "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-166",
+      "role": "training",
+      "seed": 501,
+      "sample_index": 17
+    }
+  ],
+  "task_binding": {
+    "task_id": "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-166",
+    "task_hash": "d3c05fdf9be2c8c9dae301f702de207c0986dc222625a0c573e1745b14b45d24",
+    "source_hash": "205b4e61416e4bca5bd7ef8a52167637845b1817e09e960e746b572c7814f18a",
+    "command_image_lock_hash": "d174aa1ce310c672cafa5820197351250b2b9b7b9fecdc61b1b0f01845a4864f",
+    "command_image": "sha256:1b5c838add1f3f969ce7e6887fe68c5c84078b2b2920535856751c7bff632809",
+    "verifier_image": "sha256:b7894597216546304802a6470aab76b0db297854704854b21fa32de3fd80a240",
+    "security_scan_id": "60277eaa6168466c9b4789374c3a5fab56e049c516360b4efa992dd2a377563e",
+    "source_whiteout_path": "/home/ibex",
+    "toolchain_profile_id": "ibex-verilator-system-container-native-v1"
+  },
+  "protocol": {
+    "profile": "deepseek_harness_hwe_native_shell_v4",
+    "ordinary_tool_choice": "auto",
+    "content_only_recovery_tool_choice": "auto",
+    "content_only_recovery_budget": 1,
+    "public_rationale_allowed": true,
+    "sibling_calls_allowed": true,
+    "sibling_dispatch_order": "provider_decision_order_serial",
+    "private_reasoning_rejected": true,
+    "provider_hidden_thinking": "disabled",
+    "failed_decisions_supervised": false,
+    "content_only_recovery_supervised": false,
+    "pre_edit_checkpoint_action": 16,
+    "pre_edit_no_progress_action": 32
+  },
+  "provider_budget": {
+    "temperature": 0,
+    "max_provider_calls": 64,
+    "max_provider_tokens": 1000000,
+    "max_context_tokens": 65536,
+    "max_output_tokens": 2048,
+    "provider_request_retries": 0,
+    "whole_episode_retries": 0
+  },
+  "software": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "harness_revision": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    "harness_version": "0.1.1-rc.2",
+    "verigym_integration_version": "0.5.0",
+    "harness_tracked_tree_hash": "22df3762b332f3651107756dc80a9397f27741c1256e83ca32614729f27bd566",
+    "base_model_id": "Qwen3.5-9B",
+    "base_model_snapshot_hash": "fce78eefb5b60ff95c480d2fb823bb45370a4abc933d6114a84d6a321486b156",
+    "tokenizer_hash": "440110a9c8523a13003af840f2b31ce90709383488fcc7a62cfc19ab8ead6c6e"
+  },
+  "zero_provider_evidence": {
+    "command_image_lock_file_sha256": "43c0a0c44da6acdb0b762df9751a5586dec547cb06b00322fd6ef9f9fed04d2b",
+    "security_scan_file_sha256": "d1c60102ffc0ad902e5b2749c29c7b9831bdeb8e4c2de16204a0461a19de0b1d",
+    "zero_provider_result_file_sha256": "62454c972923bcd2f1e3575415fe0770f6d0049983d4731c379c18f05f9b1354",
+    "source_image_lock_file_sha256": "aabe5a6bb353f4836e4a69e4a6bf6e922ae0a4a49f8eef40a950b79409b1971b",
+    "base_model_lock_file_sha256": "cf7c9873fda3df377d6c46096b57f8aa1b9b13c4ab6f7d2c19739c2082b0e111"
+  },
+  "authorized_actions": {
+    "invoke_provider_for_pr166_once": true,
+    "retry_pr166": false,
+    "run_formal_collection": false,
+    "start_training": false
+  },
+  "provider_calls_before_canary": 0,
+  "benchmark_task_consumed_before_canary": false,
+  "formal_collection_allowed": false,
+  "formal_collection_started": false,
+  "collection_started": false,
+  "training_started": false,
+  "production_training_ready": false,
+  "authorization_hash": "51914255de5d7ad8994b0e58cbc8f2a8b6c20703dab48369a6bf36e7ad3bb246"
+}
