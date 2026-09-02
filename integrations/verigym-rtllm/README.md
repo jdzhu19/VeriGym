@@ -25,6 +25,10 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-batch2-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-all-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-l2-diagnostic3-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-ppa3-v1
 ```
 
 Each packaged workspace contains only a known-incomplete candidate skeleton and instructions. The
@@ -97,6 +101,18 @@ to pass and four independently authored controls per task to be rejected by both
 paths. See the
 [full L2 qualification](../../docs/audits/rtllm_full_corpus_l2_qualification_v1.md).
 
+`v2-agent-eval-functional-l2-diagnostic3-v1` is a corrected diagnostic projection for
+`div_16bit`, `LFSR`, and `freq_divbyodd`. It keeps PPA disabled and freezes more informative public
+smokes; notably, the LFSR reset check now follows the prompt's rising-edge semantics. See the
+[diagnostic-three qualification](../../docs/audits/rtllm_l2_diagnostic3_qualification_v1.md).
+
+`v2-agent-eval-functional-ppa3-v1` is the separate PPA-enabled projection for `radix2_div`,
+`multi_pipe_8bit`, and `LIFObuffer`. It advertises L2 functional, L3 candidate-feedback, and L4
+correctness-gated final-PPA qualification only with task-bound resolved profiles. Yosys/OpenSTA
+and Design Compiler/MCP are distinct, non-comparable partitions. `asyn_fifo` is excluded pending
+resolution of its repeated public/hidden functional gap. See the
+[dual-backend PPA qualification](../../docs/audits/rtllm_ppa3_dual_backend_qualification_v1.md).
+
 `v2-agent-eval-functional-harder-v1` is a derived, diagnostic-only four-task partition containing
 `radix2_div`, `multi_pipe_8bit`, `LIFObuffer`, and `asyn_fifo`. Task IDs have the form
 `rtllm/v2-agent-eval-functional-harder-v1/<task-name>`. Each task has one repository-relative RTL
@@ -138,6 +154,8 @@ The supported functional-version matrix is intentionally partitioned:
   feedback for three additional tasks, and explicitly disables PPA;
 - `v2-agent-eval-functional-all-v1` requires Icarus 12, provides public L2 functional feedback
   for all 50 frozen tasks, and explicitly disables PPA;
+- `v2-agent-eval-functional-ppa3-v1` requires Icarus 12 and a separately resolved task-bound
+  OpenSTA or DC profile, and enables PPA only for its three qualified tasks;
 - Icarus 13 can remain installed for development but is not accepted for these AgentEval results.
 
 See [verifier backend profiles](../../docs/verifier_profiles.md) for configuration and
@@ -152,3 +170,7 @@ separate compile-only Codex diagnostic and the evidence used to select the next 
 three visible fail -> repair -> pass sequences and two hidden resolutions under the PPA-disabled
 L2 variant. These checks qualify bounded infrastructure or projections; they are not benchmark
 scores.
+
+The [remaining-38 diagnostic](../../docs/audits/rtllm_full_l2_remaining38_codex_diagnostic_v1.md)
+completes one bounded full-L2 observation for the rest of the corpus: 37/38 resolved with seven
+visible repair sequences, zero retries, and one asynchronous-FIFO hidden rejection.

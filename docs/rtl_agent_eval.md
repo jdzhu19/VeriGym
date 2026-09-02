@@ -13,7 +13,8 @@ contract before any model lookup.
   feedback for three evidence-selected tasks; `v2-agent-eval-functional-all-v1` provides a
   separately frozen, PPA-disabled L2 projection for all 50; and
   `v2-agent-eval-functional-harder-v1` remains the separately qualified L2/L3 four-task diagnostic
-  partition.
+  partition. `v2-agent-eval-functional-ppa3-v1` is a distinct three-task L2/L3/L4 projection with
+  separately qualified OpenSTA and DC partitions.
 - VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
   source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
@@ -48,6 +49,19 @@ from the earlier L1 pilot. It produced 9/12 resolved, 11 typed finishes, and fiv
 fail -> repair -> public-pass sequences; replay, leakage, and redaction audits passed. The
 functional-v3 prompt/tool identity is separately frozen for L2, so the paired single observations
 are diagnostic evidence rather than a pure single-variable causal estimate.
+
+The [remaining-38 campaign](audits/rtllm_full_l2_remaining38_codex_diagnostic_v1.md) completed one
+GPT-5.4/xhigh, seed-zero, zero-retry observation for every full-L2 task not in the earlier 12-task
+contrast. It recorded 37/38 resolved, 31 first public passes, seven fail -> repair -> pass
+sequences, and one asynchronous-FIFO hidden rejection. Together the two campaigns cover all 50
+frozen task slots once, but remain diagnostic single samples rather than a benchmark score.
+
+The [`v2-agent-eval-functional-ppa3-v1` qualification](audits/rtllm_ppa3_dual_backend_qualification_v1.md)
+passes candidate-only L3 feedback and correctness-gated candidate/reference L4 projection for
+`radix2_div`, `multi_pipe_8bit`, and `LIFObuffer` under both Yosys/OpenSTA and isolated DC/MCP.
+The two backends remain non-comparable profile partitions. The unified 50-task L2 variant remains
+PPA-disabled, and `asyn_fifo` is excluded because its public/hidden functional gap repeated across
+independent campaigns.
 
 The separately frozen L2 batch-one projection also sets `ppa_supported=false`, but replaces the
 compile-only contract with an independent public functional smoke for `adder_pipe_64bit`, `LFSR`,

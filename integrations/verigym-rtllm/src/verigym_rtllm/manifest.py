@@ -395,6 +395,7 @@ TASK_MANIFESTS: dict[str, RTLLMTaskManifest] = {
 }
 
 HARDER_TASK_NAMES = ("radix2_div", "multi_pipe_8bit", "LIFObuffer", "asyn_fifo")
+PPA_DIAGNOSTIC3_TASK_NAMES = ("radix2_div", "multi_pipe_8bit", "LIFObuffer")
 ADDITIONAL_TASK_CATALOG_SHA256 = "d1ebca8ae4a8ad05082c8b2ce6f37509af4d0d8e08d08ab3b9c0b5def0c737c4"
 
 
@@ -453,6 +454,7 @@ ALL_TASK_NAMES = tuple(
 )
 L2_BATCH1_TASK_NAMES = ("adder_pipe_64bit", "LFSR", "serial2parallel")
 L2_BATCH2_TASK_NAMES = ("sequence_detector", "synchronizer", "RAM")
+L2_DIAGNOSTIC3_TASK_NAMES = ("div_16bit", "LFSR", "freq_divbyodd")
 L2_PREVIOUSLY_QUALIFIED_TASK_NAMES = (
     "counter_12",
     "up_down_counter",
@@ -470,6 +472,8 @@ if not set(L2_BATCH1_TASK_NAMES).issubset(TASK_MANIFESTS):
     raise RuntimeError("RTLLM L2 batch-one tasks are outside the frozen manifest")
 if not set(L2_BATCH2_TASK_NAMES).issubset(TASK_MANIFESTS):
     raise RuntimeError("RTLLM L2 batch-two tasks are outside the frozen manifest")
+if not set(PPA_DIAGNOSTIC3_TASK_NAMES).issubset(HARDER_TASK_NAMES):
+    raise RuntimeError("RTLLM PPA diagnostic tasks must be qualified harder tasks")
 if len(L2_FULL_REMAINING_TASK_NAMES) != 38:
     raise RuntimeError("RTLLM full L2 remainder must cover exactly 38 tasks")
 
@@ -486,8 +490,10 @@ __all__ = [
     "HARDER_TASK_NAMES",
     "L2_BATCH1_TASK_NAMES",
     "L2_BATCH2_TASK_NAMES",
+    "L2_DIAGNOSTIC3_TASK_NAMES",
     "L2_FULL_REMAINING_TASK_NAMES",
     "L2_PREVIOUSLY_QUALIFIED_TASK_NAMES",
+    "PPA_DIAGNOSTIC3_TASK_NAMES",
     "RTLLMTaskManifest",
     "TASK_MANIFESTS",
 ]

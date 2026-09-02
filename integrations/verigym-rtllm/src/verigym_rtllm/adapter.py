@@ -62,7 +62,9 @@ from .manifest import (
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
     L2_BATCH2_TASK_NAMES,
+    L2_DIAGNOSTIC3_TASK_NAMES,
     L2_FULL_REMAINING_TASK_NAMES,
+    PPA_DIAGNOSTIC3_TASK_NAMES,
     TASK_MANIFESTS,
     RTLLMTaskManifest,
 )
@@ -79,6 +81,17 @@ FUNCTIONAL_AGENT_EVAL_V2_ADAPTER_VERSION = "0.5.0"
 HARDER_VARIANT = "v2-agent-eval-functional-harder-v1"
 HARDER_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-harder-v1"
 HARDER_ADAPTER_VERSION = "0.6.0"
+PPA_DIAGNOSTIC3_VARIANT = "v2-agent-eval-functional-ppa3-v1"
+PPA_DIAGNOSTIC3_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-ppa3-v1"
+PPA_DIAGNOSTIC3_ADAPTER_VERSION = "0.12.0"
+PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256 = {
+    "radix2_div": "1e362ef8c0d2e2ab3643a01de647c906b650191d8f43ae593899a6d4d155222e",
+    "multi_pipe_8bit": "2fb805ad96b763e20ceea8a4ed684d3c3f9f1aa8986b8657e80c6e8a2849db6b",
+    "LIFObuffer": "6652bebc9e2ccdb2a0695eee18b9ada4281fc9a12f121e6206d814c1794116a5",
+}
+PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256 = (
+    "f2477aee14579046161d73dd427b059f4502fc786f74bf15becbcebd065bfdaa"
+)
 ALL_AGENT_EVAL_VARIANT = "v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_ADAPTER_VERSION = "0.7.0"
@@ -98,6 +111,17 @@ L2_BATCH2_PUBLIC_SMOKE_SHA256 = {
     "synchronizer": "ce1663a66d4c9cb93f6328559bc5a6c6bc35565cfa04bcf1a4ab0b9c4dd7a296",
     "RAM": "57b07132eaee886a2957730036fd879ea9bddc2b242aada596afdc654acba464",
 }
+L2_DIAGNOSTIC3_VARIANT = "v2-agent-eval-functional-l2-diagnostic3-v1"
+L2_DIAGNOSTIC3_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-l2-diagnostic3-v1"
+L2_DIAGNOSTIC3_ADAPTER_VERSION = "0.11.0"
+L2_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256 = {
+    "div_16bit": "5bc52e81b079c67fca11c1a45121bb1f3689122cf1bc03b1fcca693ea75b6655",
+    "LFSR": "8f91095e663e03ba459150a92c33bd8d27ac74318e5cf9cb288962d3b3566174",
+    "freq_divbyodd": "0eb84a162792ed278a04a5b8031838ef9ab073ca703742216c370615fc58f04c",
+}
+L2_DIAGNOSTIC3_TASK_IDENTITIES_SHA256 = (
+    "450b098809e5827aaa096ac1e2c05f135941a4d7728cfb2884a54fab7b2ec7ae"
+)
 FULL_FUNCTIONAL_VARIANT = "v2-agent-eval-functional-all-v1"
 FULL_FUNCTIONAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-all-v1"
 FULL_FUNCTIONAL_ADAPTER_VERSION = "0.10.0"
@@ -200,6 +224,18 @@ _FUNCTIONAL_BATCH_SPECS = {
         evaluation_profile="icarus12-agent-eval-functional-l2-batch2-v1",
         public_feedback_semantics="compile_and_independent_functional_smoke_l2_batch2_v1",
     ),
+    L2_DIAGNOSTIC3_VARIANT: _FunctionalBatchSpec(
+        task_names=L2_DIAGNOSTIC3_TASK_NAMES,
+        suite_version=L2_DIAGNOSTIC3_SUITE_VERSION,
+        adapter_version=L2_DIAGNOSTIC3_ADAPTER_VERSION,
+        workspace_asset="workspace_l2_diagnostic3",
+        public_smoke_asset="public_smoke_l2_diagnostic3",
+        public_smoke_sha256=L2_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256,
+        evaluation_profile="icarus12-agent-eval-functional-l2-diagnostic3-v1",
+        public_feedback_semantics=(
+            "compile_and_independent_diagnostic_functional_smoke_l2_diagnostic3_v1"
+        ),
+    ),
     FULL_FUNCTIONAL_VARIANT: _FunctionalBatchSpec(
         task_names=ALL_TASK_NAMES,
         suite_version=FULL_FUNCTIONAL_SUITE_VERSION,
@@ -232,6 +268,7 @@ _SUPPORTED_VARIANTS = frozenset(
         _UP_DOWN_ICARUS_TRAINING_VARIANT,
         ALL_AGENT_EVAL_VARIANT,
         HARDER_VARIANT,
+        PPA_DIAGNOSTIC3_VARIANT,
         *_FUNCTIONAL_BATCH_SPECS,
         *_AGENT_EVAL_VARIANTS,
         *_FUNCTIONAL_AGENT_EVAL_VARIANTS,
@@ -240,9 +277,12 @@ _SUPPORTED_VARIANTS = frozenset(
 _MULTI_TASK_VARIANTS = {
     ALL_AGENT_EVAL_VARIANT: ALL_TASK_NAMES,
     HARDER_VARIANT: HARDER_TASK_NAMES,
+    PPA_DIAGNOSTIC3_VARIANT: PPA_DIAGNOSTIC3_TASK_NAMES,
     **{variant: spec.task_names for variant, spec in _FUNCTIONAL_BATCH_SPECS.items()},
 }
-_FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset({HARDER_VARIANT, *_FUNCTIONAL_BATCH_SPECS})
+_FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset(
+    {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT, *_FUNCTIONAL_BATCH_SPECS}
+)
 _NO_PPA_AGENT_EVAL_VARIANTS = frozenset({ALL_AGENT_EVAL_VARIANT, *_FUNCTIONAL_BATCH_SPECS})
 _BENCHMARK_ROOTS = ("Arithmetic", "Control", "Memory", "Miscellaneous")
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
@@ -351,7 +391,7 @@ class RTLLMSuite(SuiteAdapter):
     def load_task(self, ref: TaskRef) -> VeriTask:
         manifest = self._manifest_for_ref(ref)
         variant = self._variant()
-        harder = variant == HARDER_VARIANT
+        harder = variant in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
         multi_task_variant = variant in _MULTI_TASK_VARIANTS
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
@@ -759,7 +799,9 @@ class RTLLMSuite(SuiteAdapter):
                 compatibility = "reference_compatible"
             return ToolchainProfile(
                 id=(
-                    "rtllm-icarus12-agent-eval-harder-v1"
+                    "rtllm-icarus12-agent-eval-ppa3-v1"
+                    if self._variant() == PPA_DIAGNOSTIC3_VARIANT
+                    else "rtllm-icarus12-agent-eval-harder-v1"
                     if self._variant() == HARDER_VARIANT
                     else "rtllm-icarus12-agent-eval-l2-batch1-v1"
                     if self._variant() == L2_BATCH1_VARIANT
@@ -887,6 +929,8 @@ class RTLLMSuite(SuiteAdapter):
             return ALL_AGENT_EVAL_SUITE_VERSION
         if variant == HARDER_VARIANT:
             return HARDER_SUITE_VERSION
+        if variant == PPA_DIAGNOSTIC3_VARIANT:
+            return PPA_DIAGNOSTIC3_SUITE_VERSION
         if batch := _FUNCTIONAL_BATCH_SPECS.get(variant):
             return batch.suite_version
         if variant.endswith("_agent_eval_functional_v2"):
@@ -902,7 +946,7 @@ class RTLLMSuite(SuiteAdapter):
     def _workspace_asset_name(self, manifest: RTLLMTaskManifest) -> str:
         if self._variant() == ALL_AGENT_EVAL_VARIANT:
             return "workspace_all"
-        if self._variant() == HARDER_VARIANT:
+        if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return "workspace_harder"
         if self._variant() == FULL_FUNCTIONAL_VARIANT:
             return self._full_functional_asset_folders(manifest.name)[0]
@@ -913,7 +957,7 @@ class RTLLMSuite(SuiteAdapter):
     def _base_workspace(self, manifest: RTLLMTaskManifest) -> Path:
         if self._variant() == ALL_AGENT_EVAL_VARIANT:
             return self._all_workspace_root
-        if self._variant() == HARDER_VARIANT:
+        if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return self._harder_workspace_root
         if self._variant() == FULL_FUNCTIONAL_VARIANT:
             workspace, _ = self._full_functional_asset_folders(manifest.name)
@@ -945,8 +989,9 @@ class RTLLMSuite(SuiteAdapter):
             "// This intentionally incomplete scaffold contains no hidden implementation details.\n"
         )
 
-    @staticmethod
-    def _derived_projection_note(manifest: RTLLMTaskManifest, *, compile_only: bool = False) -> str:
+    def _derived_projection_note(
+        self, manifest: RTLLMTaskManifest, *, compile_only: bool = False
+    ) -> str:
         common = (
             "VeriGym derived projection: submit one repository-relative RTL entry at "
             f"`rtl/{manifest.name}.v`. "
@@ -961,6 +1006,29 @@ class RTLLMSuite(SuiteAdapter):
             "The public smoke is independently authored and candidate-only; the final verifier "
             "remains hidden."
         )
+        if self._variant() == L2_DIAGNOSTIC3_VARIANT:
+            diagnostic_note = {
+                "div_16bit": (
+                    " This diagnostic projection excludes division by zero, checks exact and "
+                    "non-exact boundary cases, and requires the remainder to be zero-extended "
+                    "in the 16-bit `odd` output. Public failures report the complete failing "
+                    "input and expected/observed quotient and remainder."
+                ),
+                "LFSR": (
+                    " This diagnostic projection samples active-high `rst` on a rising edge, as "
+                    "stated upstream; asynchronous reset assertion is not required. Public "
+                    "failures report the phase, cycle, and expected/observed state."
+                ),
+                "freq_divbyodd": (
+                    " This diagnostic projection checks `NUM_DIV=3` and `NUM_DIV=5`. It models "
+                    "the stated positive- and negative-edge phase windows, expects `clk_div` "
+                    "high after both edge domains sample active-low reset, and reports the "
+                    "failing edge plus expected/observed outputs."
+                ),
+            }.get(manifest.name)
+            if diagnostic_note is None:
+                raise ConfigurationError("unknown RTLLM diagnostic-three task")
+            return common + diagnostic_note
         task_note = {
             "radix2_div": (
                 " This projection uses the scaffolded `res_ready` handshake and the upstream "
@@ -1036,7 +1104,7 @@ class RTLLMSuite(SuiteAdapter):
         batch = _FUNCTIONAL_BATCH_SPECS.get(self._variant())
         folder = (
             "public_smoke_harder"
-            if self._variant() == HARDER_VARIANT
+            if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}
             else self._full_functional_asset_folders(name)[1]
             if self._variant() == FULL_FUNCTIONAL_VARIANT
             else batch.public_smoke_asset
@@ -1047,7 +1115,11 @@ class RTLLMSuite(SuiteAdapter):
         if path.is_symlink() or not path.is_file():
             raise ConfigurationError("RTLLM public smoke asset is unavailable")
         smoke = path.read_text(encoding="utf-8")
-        if batch is not None:
+        if self._variant() == PPA_DIAGNOSTIC3_VARIANT:
+            expected = PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256.get(name)
+            if expected is None or _hash_bytes(smoke.encode("utf-8")) != expected:
+                raise ConfigurationError("RTLLM PPA public smoke differs from its frozen hash")
+        elif batch is not None:
             expected = batch.public_smoke_sha256.get(name)
             if expected is None or _hash_bytes(smoke.encode("utf-8")) != expected:
                 raise ConfigurationError("RTLLM L2 public smoke differs from its frozen hash")
@@ -1527,6 +1599,8 @@ class RTLLMSuite(SuiteAdapter):
         adapter_version = (
             ALL_AGENT_EVAL_ADAPTER_VERSION
             if all_agent_eval
+            else PPA_DIAGNOSTIC3_ADAPTER_VERSION
+            if variant == PPA_DIAGNOSTIC3_VARIANT
             else batch.adapter_version
             if batch is not None
             else HARDER_ADAPTER_VERSION
@@ -1540,6 +1614,8 @@ class RTLLMSuite(SuiteAdapter):
         evaluation_profile = (
             "icarus12-agent-eval-all-v1"
             if all_agent_eval
+            else "icarus12-functional-opensta-dc-ppa3-v1"
+            if variant == PPA_DIAGNOSTIC3_VARIANT
             else batch.evaluation_profile
             if batch is not None
             else "icarus12-agent-eval-functional-harder-v1"
@@ -1583,6 +1659,8 @@ class RTLLMSuite(SuiteAdapter):
                     "public_feedback_semantics": (
                         "candidate_only_compile_l1_v1"
                         if all_agent_eval
+                        else "compile_functional_smoke_and_candidate_only_ppa_feedback_ppa3_v1"
+                        if variant == PPA_DIAGNOSTIC3_VARIANT
                         else batch.public_feedback_semantics
                         if batch is not None
                         else "compile_and_independent_functional_smoke_harder_v1"
@@ -1597,6 +1675,14 @@ class RTLLMSuite(SuiteAdapter):
             )
             if all_agent_eval:
                 metadata["gym_qualification_level"] = "L1_compile_only"
+            elif variant == PPA_DIAGNOSTIC3_VARIANT:
+                metadata["gym_qualification_level"] = "L4_correctness_gated_final_ppa"
+                metadata["gym_qualification_levels"] = [
+                    "L2_functional_smoke",
+                    "L3_candidate_synthesis_feedback",
+                    "L4_correctness_gated_final_ppa",
+                ]
+                metadata["ppa_backend_partitions"] = ["yosys_opensta", "synopsys_dc_mcp"]
             elif batch is not None:
                 metadata["gym_qualification_level"] = "L2_functional_smoke"
         if variant in _MULTI_TASK_VARIANTS:
@@ -1642,6 +1728,9 @@ class RTLLMSuite(SuiteAdapter):
             metadata["workspace_scaffold_sha256"] = self._full_workspace_asset_hashes()[
                 manifest.name
             ]
+        elif variant == L2_DIAGNOSTIC3_VARIANT:
+            scaffold = self._base_workspace(manifest) / "rtl" / f"{manifest.name}.v"
+            metadata["workspace_scaffold_sha256"] = _hash_bytes(scaffold.read_bytes())
         return metadata
 
     @staticmethod

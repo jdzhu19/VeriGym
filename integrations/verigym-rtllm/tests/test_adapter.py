@@ -21,7 +21,13 @@ from verigym_rtllm.adapter import (
     L2_BATCH1_VARIANT,
     L2_BATCH2_PUBLIC_SMOKE_SHA256,
     L2_BATCH2_VARIANT,
+    L2_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256,
+    L2_DIAGNOSTIC3_TASK_IDENTITIES_SHA256,
+    L2_DIAGNOSTIC3_VARIANT,
     PINNED_COMMIT,
+    PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256,
+    PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256,
+    PPA_DIAGNOSTIC3_VARIANT,
     _is_icarus12_version,
 )
 from verigym_rtllm.known_bad import known_bad_source
@@ -35,7 +41,9 @@ from verigym_rtllm.manifest import (
     HARDER_TASK_NAMES,
     L2_BATCH1_TASK_NAMES,
     L2_BATCH2_TASK_NAMES,
+    L2_DIAGNOSTIC3_TASK_NAMES,
     L2_FULL_REMAINING_TASK_NAMES,
+    PPA_DIAGNOSTIC3_TASK_NAMES,
     TASK_MANIFESTS,
 )
 
@@ -76,6 +84,17 @@ def test_harder_variant_is_explicit(tmp_path: Path) -> None:
     assert configured.validate_source().valid is False
 
 
+def test_ppa_diagnostic3_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=PPA_DIAGNOSTIC3_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+    assert PPA_DIAGNOSTIC3_TASK_NAMES == ("radix2_div", "multi_pipe_8bit", "LIFObuffer")
+    assert set(PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256) == set(PPA_DIAGNOSTIC3_TASK_NAMES)
+    assert all(len(digest) == 64 for digest in PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256.values())
+    assert len(PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256) == 64
+
+
 def test_full_corpus_l1_variant_is_explicit(tmp_path: Path) -> None:
     configured = RTLLMSuite().with_source(
         SuiteSourceConfig(source_root=tmp_path, variant=ALL_AGENT_EVAL_VARIANT)
@@ -99,6 +118,67 @@ def test_l2_batch2_variant_is_explicit(tmp_path: Path) -> None:
     assert configured.validate_source().valid is False
     assert set(L2_BATCH2_PUBLIC_SMOKE_SHA256) == set(L2_BATCH2_TASK_NAMES)
     assert all(len(digest) == 64 for digest in L2_BATCH2_PUBLIC_SMOKE_SHA256.values())
+
+
+def test_l2_diagnostic3_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=L2_DIAGNOSTIC3_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+    assert set(L2_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256) == set(L2_DIAGNOSTIC3_TASK_NAMES)
+    assert all(len(digest) == 64 for digest in L2_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256.values())
+    assert len(L2_DIAGNOSTIC3_TASK_IDENTITIES_SHA256) == 64
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check diagnostic-three task identities",
+)
+def test_l2_diagnostic3_task_identities_are_frozen() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=L2_DIAGNOSTIC3_VARIANT,
+        )
+    )
+    identities = {ref.native_id: content_hash(suite.load_task(ref)) for ref in suite.discover()}
+
+    assert content_hash(identities) == L2_DIAGNOSTIC3_TASK_IDENTITIES_SHA256
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to check the PPA-three projection",
+)
+def test_ppa_diagnostic3_discovery_identity_and_contract_are_frozen() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=PPA_DIAGNOSTIC3_VARIANT,
+        )
+    )
+    refs = list(suite.discover())
+    assert [ref.native_id for ref in refs] == list(PPA_DIAGNOSTIC3_TASK_NAMES)
+    identities = {ref.native_id: content_hash(suite.load_task(ref)) for ref in refs}
+    assert content_hash(identities) == PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256
+    for ref in refs:
+        task = suite.load_task(ref)
+        assert task.scoring.ppa_enabled is True
+        assert task.metadata["agent_eval"]["ppa_supported"] is True
+        assert task.metadata["gym_qualification_level"] == "L4_correctness_gated_final_ppa"
+        assert task.metadata["gym_qualification_levels"] == [
+            "L2_functional_smoke",
+            "L3_candidate_synthesis_feedback",
+            "L4_correctness_gated_final_ppa",
+        ]
+        assert task.metadata["ppa_backend_partitions"] == [
+            "yosys_opensta",
+            "synopsys_dc_mcp",
+        ]
+        assert task.metadata["diagnostic_only"] is True
+        assert task.metadata["benchmark_score_claimed"] is False
 
 
 def test_full_functional_variant_is_explicit_and_hash_complete(tmp_path: Path) -> None:
@@ -264,6 +344,7 @@ def test_frozen_manifest_covers_exactly_50_runnable_tasks_and_four_harder_tasks(
     assert {manifest.root for manifest in TASK_MANIFESTS.values()} == set(FROZEN_TASK_TREES)
     assert sum(len(manifest.file_hashes) for manifest in TASK_MANIFESTS.values()) == 207
     assert HARDER_TASK_NAMES == ("radix2_div", "multi_pipe_8bit", "LIFObuffer", "asyn_fifo")
+    assert set(PPA_DIAGNOSTIC3_TASK_NAMES).issubset(HARDER_TASK_NAMES)
     for name in HARDER_TASK_NAMES:
         manifest = TASK_MANIFESTS[name]
         assert manifest.root in FROZEN_TASK_TREES
