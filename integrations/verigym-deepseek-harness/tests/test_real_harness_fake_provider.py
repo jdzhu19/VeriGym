@@ -220,6 +220,11 @@ def test_official_harness_one_action_fake_provider_conformance(
         "broker_requests": broker_requests,
     }
     assert result.final_response == ""
+    assert result.provider_request_started is True
+    assert json.loads((session_root / "provider-request-started-v1.json").read_text()) == {
+        "format_id": "verigym_deepseek_harness_provider_request_started_v1",
+        "provider_request_ordinal": 1,
+    }
     assert broker_requests == [
         {
             "id": "call-finish",
@@ -330,6 +335,7 @@ def test_official_harness_v3_recovers_one_text_only_interval_in_same_session(
 
     assert result.finish_reason == "completed"
     assert result.final_response == "Recovered with a typed finish."
+    assert result.provider_request_started is True
     assert result.run_interval_count == 2
     assert len(result.format_repairs) == 1
     assert result.format_repairs[0].startswith("VERIGYM_HWE_FORMAT_RECOVERY_V1:")

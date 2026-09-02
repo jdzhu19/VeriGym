@@ -58,6 +58,7 @@ from .config import (
 from .process import (
     DeepSeekHarnessProcessError,
     DeepSeekHarnessProcessResult,
+    provider_request_started,
     run_harness_helper,
 )
 
@@ -121,8 +122,8 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
 
     def start(self, context: AgentContext) -> None:
         bridge = context.external_bridge
-        if bridge is None or bridge.execution_backend != "docker_outer_runtime_delegated":
-            raise ValueError("DeepSeek Harness HWE requires the Docker outer runtime")
+        self._validate_execution_surface(bridge)
+        assert bridge is not None
         if bridge.isolation_level != "docker_standard":
             raise ValueError("DeepSeek Harness HWE requires Docker standard isolation")
         if (
@@ -154,6 +155,24 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             },
         )
 
+    def _validate_execution_surface(self, bridge: ExternalAgentBridge | None) -> None:
+        """Fail closed unless the frozen contract owns the expected execution surfaces."""
+
+        if bridge is None:
+            raise ValueError("DeepSeek Harness HWE requires an external-agent bridge")
+        if self.harness_contract_version == "v4":
+            if (
+                bridge.execution_backend != "runtime_external_process_unavailable"
+                or bridge.command_execution_backend != "episode_container_exec_v1"
+            ):
+                raise ValueError(
+                    "DeepSeek Harness HWE v4 requires the host Harness control plane "
+                    "and episode command-image backend"
+                )
+            return
+        if bridge.execution_backend != "docker_outer_runtime_delegated":
+            raise ValueError("DeepSeek Harness HWE requires the Docker outer runtime")
+
     def act(self, observation: Observation) -> AgentAction:
         del observation
         if self._launched:
@@ -174,6 +193,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
         session_id = f"dsh-{content_hash({'run_id': context.run_id})[:24]}"
         process: DeepSeekHarnessProcessResult | None = None
         process_error: DeepSeekHarnessProcessError | None = None
+        provider_started = False
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="run-", dir=_CONTROL_ROOT) as raw_control:
             control = Path(raw_control)
@@ -216,6 +236,10 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
                 process_error = exc
             finally:
                 broker.stop()
+            try:
+                provider_started = provider_request_started(session_root)
+            except DeepSeekHarnessProcessError as exc:
+                process_error = exc
             stats = broker.stats()
             events = broker.events()
             call_ids = broker.call_ids()
@@ -224,6 +248,15 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             )
 
         duration_s = time.monotonic() - started
+        if provider_started:
+            bridge.emit_event(
+                "deepseek_harness_provider_request_started",
+                {
+                    "provider_request_started": True,
+                    "provider_request_count_lower_bound": 1,
+                    "credential_values_persisted": False,
+                },
+            )
         self._record_identity_and_accounting(
             process=process,
             stats=stats,
@@ -240,6 +273,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
             format_repair_budget=self.format_repair_budget,
             accepts_public_assistant_text=self.accepts_public_assistant_text,
             progress_receipt=progress_receipt,
+            provider_request_started=provider_started,
         )
         if process_error is not None:
             raise _termination(
@@ -674,6 +708,7 @@ def _write_collection_evidence(
     format_repair_budget: int,
     accepts_public_assistant_text: bool,
     progress_receipt: dict[str, Any] | None,
+    provider_request_started: bool,
 ) -> None:
     input_tokens, output_tokens = _usage(process.events if process is not None else ())
     model_calls = (
@@ -701,6 +736,8 @@ def _write_collection_evidence(
         "observed_provider_input_tokens": input_tokens,
         "observed_provider_output_tokens": output_tokens,
         "observed_provider_total_tokens": input_tokens + output_tokens,
+        "provider_request_started": provider_request_started,
+        "provider_request_count_lower_bound": 1 if provider_request_started else 0,
         "provider_budget_valid": (
             model_calls <= MAX_PROVIDER_CALLS
             and input_tokens + output_tokens <= MAX_PROVIDER_TOKENS
