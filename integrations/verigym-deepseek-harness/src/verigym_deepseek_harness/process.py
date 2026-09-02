@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -32,6 +33,33 @@ class DeepSeekHarnessProcessResult:
     stderr_bytes: int
     format_repairs: tuple[str, ...]
     run_interval_count: int
+    provider_request_started: bool
+
+
+_PROVIDER_MARKER_NAME = "provider-request-started-v1.json"
+_PROVIDER_MARKER_VALUE = {
+    "format_id": "verigym_deepseek_harness_provider_request_started_v1",
+    "provider_request_ordinal": 1,
+}
+
+
+def provider_request_started(session_root: Path) -> bool:
+    """Validate the private first-request marker without retaining provider data."""
+
+    marker = session_root / _PROVIDER_MARKER_NAME
+    try:
+        metadata = os.lstat(marker)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 256:
+        raise DeepSeekHarnessProcessError("DeepSeek Harness provider marker is unsafe")
+    try:
+        value = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise DeepSeekHarnessProcessError("DeepSeek Harness provider marker is malformed") from exc
+    if value != _PROVIDER_MARKER_VALUE:
+        raise DeepSeekHarnessProcessError("DeepSeek Harness provider marker identity changed")
+    return True
 
 
 def run_harness_helper(
@@ -147,6 +175,9 @@ def run_harness_helper(
         or run_interval_count != (0 if mode == "initialize" else 1 + len(format_repairs))
     ):
         raise DeepSeekHarnessProcessError("DeepSeek Harness helper result identity changed")
+    provider_started = provider_request_started(session_root)
+    if provider_started is not (mode == "run"):
+        raise DeepSeekHarnessProcessError("DeepSeek Harness provider marker state changed")
     return DeepSeekHarnessProcessResult(
         events=tuple(dict(event) for event in events),
         session_id=session_id,
@@ -158,6 +189,7 @@ def run_harness_helper(
         stderr_bytes=len(stderr),
         format_repairs=tuple(format_repairs),
         run_interval_count=run_interval_count,
+        provider_request_started=provider_started,
     )
 
 
@@ -186,5 +218,6 @@ def _kill_process_group(pid: int) -> None:
 __all__ = [
     "DeepSeekHarnessProcessError",
     "DeepSeekHarnessProcessResult",
+    "provider_request_started",
     "run_harness_helper",
 ]

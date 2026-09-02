@@ -104,7 +104,7 @@ def test_openhands_hwe_backend_is_static_and_training_gated(monkeypatch) -> None
     mcp = (root / "src" / "verigym_openhands" / "hwe_mcp_stdio.py").read_text(encoding="utf-8")
 
     assert "openhands-hwe-agent" in pyproject
-    assert 'hwe = ["verigym-deepseek-harness==0.3.0"]' in pyproject
+    assert 'hwe = ["verigym-deepseek-harness==0.4.0"]' in pyproject
     assert "include_default_tools=[]" in source
     assert "plugins=[]" in source
     assert "client_tools=[]" in source

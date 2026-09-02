@@ -240,7 +240,7 @@ def test_openhands_ci_freezes_and_scans_the_python312_plugin() -> None:
     assert 'version("litellm") == "1.93.0"' in openhands
     assert 'version("tiktoken") == "0.11.0"' in openhands
     assert 'version("tiktoken") == "0.7.0"' in openhands
-    assert 'version("verigym-deepseek-harness") == "0.3.0"' in openhands
+    assert 'version("verigym-deepseek-harness") == "0.4.0"' in openhands
     assert "verigym-tiktoken-0.7-overlay" in openhands
     assert "env -u PIP_CONSTRAINT" in openhands
     assert "MYPYPATH: integrations/verigym-openhands/src" in openhands

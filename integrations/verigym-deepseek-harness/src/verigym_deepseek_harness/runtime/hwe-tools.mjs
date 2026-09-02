@@ -1,17 +1,29 @@
 /** VeriGym's exclusive HWE native-shell v2 tool contribution. */
 
+import fs from 'node:fs'
 import net from 'node:net'
 
 export const name = 'verigym-hwe-tools'
 export const inject = ['tools']
 
 const SOCKET = process.env.DSH_BROKER_SOCKET
+const PROVIDER_MARKER = process.env.DSH_PROVIDER_START_MARKER
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_PROVIDER_CALLS = 64
 let providerCalls = 0
 
 if (typeof SOCKET !== 'string' || !SOCKET.startsWith('/broker/')) {
   throw new Error('DSH_BROKER_SOCKET must name the private /broker socket')
+}
+if (PROVIDER_MARKER !== '/sessions/provider-request-started-v1.json') {
+  throw new Error('DSH_PROVIDER_START_MARKER must use the frozen private marker path')
+}
+
+function markFirstProviderRequest() {
+  fs.writeFileSync(PROVIDER_MARKER, JSON.stringify({
+    format_id: 'verigym_deepseek_harness_provider_request_started_v1',
+    provider_request_ordinal: 1,
+  }), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
 }
 
 const objectSchema = (properties, required = []) => ({
@@ -134,6 +146,7 @@ export function apply(ctx) {
       throw new Error('VERIGYM_HWE_PROVIDER_CALL_BUDGET_EXHAUSTED')
     }
     providerCalls += 1
+    if (providerCalls === 1) markFirstProviderRequest()
     return {
       ...(await next()),
       temperature: 0,

@@ -33,6 +33,7 @@ _FORMAT_RECOVERY_PROMPT = (
     "Prefer exactly one tool call; if the repair is complete, call finish. Do not repeat the "
     "task, ask a question, or provide a text-only answer."
 )
+_PROVIDER_MARKER = "/sessions/provider-request-started-v1.json"
 
 
 def main() -> int:
@@ -129,6 +130,7 @@ def _run(request: dict[str, Any]) -> dict[str, Any]:
         cordis=f"{_RUNTIME_ASSETS_TARGET}/cordis.yml",
         env={
             "DSH_BROKER_SOCKET": "/broker/broker.sock",
+            "DSH_PROVIDER_START_MARKER": _PROVIDER_MARKER,
             "DSH_SYSTEM_PROMPT": system_prompt,
         },
         launch_args_override=tuple(launch),
@@ -248,6 +250,8 @@ def _controller_arguments(
         "DSH_CWD",
         "--env",
         "DSH_SESSION_ROOT",
+        "--env",
+        "DSH_PROVIDER_START_MARKER",
         "--env",
         "DSH_SYSTEM_PROMPT",
         "--env",
