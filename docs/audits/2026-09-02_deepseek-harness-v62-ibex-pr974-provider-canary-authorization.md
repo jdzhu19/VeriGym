@@ -82,16 +82,15 @@ The authorization change must pass:
 ruff check integrations/verigym-deepseek-harness \
   scripts/collect_ibex_hwe_deepseek_harness_v62_provider_canary.py \
   scripts/collect_cva6_hwe_deepseek.py \
-  tests/unit/test_hwe_deepseek_harness_v62_provider_canary.py
+  integrations/verigym-deepseek-harness/tests/test_v62_provider_canary.py
 ruff format --check integrations/verigym-deepseek-harness \
   scripts/collect_ibex_hwe_deepseek_harness_v62_provider_canary.py \
   scripts/collect_cva6_hwe_deepseek.py \
-  tests/unit/test_hwe_deepseek_harness_v62_provider_canary.py
+  integrations/verigym-deepseek-harness/tests/test_v62_provider_canary.py
 mypy integrations/verigym-deepseek-harness/src/verigym_deepseek_harness \
   scripts/collect_ibex_hwe_deepseek_harness_v62_provider_canary.py
 pytest -q integrations/verigym-deepseek-harness/tests \
-  tests/unit/test_hwe_deepseek_harness.py \
-  tests/unit/test_hwe_deepseek_harness_v62_provider_canary.py
+  tests/unit/test_hwe_deepseek_harness.py
 ```
 
 No provider request is allowed while validating this authorization pull request.

@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from scripts import collect_ibex_hwe_deepseek_harness_v62_provider_canary as canary
 from verigym.core.errors import ConfigurationError
 from verigym.hwe.image_lock import HweCommandImageLock
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from scripts import (  # noqa: E402
+    collect_ibex_hwe_deepseek_harness_v62_provider_canary as canary,
+)
 
 _AUTHORIZATION = Path(
     "configs/training/qwen35_hwe_deepseek_harness_v62_ibex_pr974_provider_canary_v1.json"
