@@ -7,6 +7,7 @@ ARG IBEX_VERIFIER_BASE_ID
 ARG HWE_TASK_ID
 ARG COMMAND_UID
 ARG COMMAND_GID
+ARG IBEX_TOOLCHAIN_PROFILE
 
 LABEL org.opencontainers.image.title="VeriGym Ibex HWE command image"
 LABEL org.opencontainers.image.version="15.2.0-hwe-command-v1"
@@ -19,6 +20,7 @@ LABEL org.verigym.command.rg.sha256="${RG_SHA256}"
 LABEL org.verigym.command.rg.release_archive.sha256="${RG_RELEASE_ARCHIVE_SHA256}"
 LABEL org.verigym.hwe.task_id="${HWE_TASK_ID}"
 LABEL org.verigym.ibex.verifier_base_image_id="${IBEX_VERIFIER_BASE_ID}"
+LABEL org.verigym.ibex.toolchain.profile="${IBEX_TOOLCHAIN_PROFILE}"
 LABEL org.verigym.ibex.source_whiteout="/home/ibex"
 LABEL org.verigym.codex.present="absent"
 LABEL org.verigym.provider_credentials="absent"
@@ -35,8 +37,11 @@ RUN rm -rf /home/ibex /home/ibex_base_commit.txt \
     && chown -R ${COMMAND_UID}:${COMMAND_GID} /workspace \
     && test -x /usr/bin/tail \
     && test -x /usr/bin/make \
-    && test -x /usr/bin/iverilog \
-    && test -x /usr/bin/vvp
+    && case "${IBEX_TOOLCHAIN_PROFILE}" in \
+        iverilog) test -x /usr/bin/iverilog && test -x /usr/bin/vvp ;; \
+        verilator) test -x /usr/bin/verilator && test -x /usr/bin/verilator_bin ;; \
+        *) exit 2 ;; \
+    esac
 
 COPY --chown=${COMMAND_UID}:${COMMAND_GID} rg /usr/local/lib/verigym-command-tools/rg
 

@@ -135,5 +135,8 @@ def test_ibex_command_image_builder_whites_out_source_and_keeps_only_public_tool
     assert 'source_whiteout_path": "/home/ibex"' in script
     assert "rm -rf /home/ibex /home/ibex_base_commit.txt" in dockerfile
     assert 'org.verigym.runtime.role="hwe-ibex-command"' in dockerfile
+    assert 'org.verigym.ibex.toolchain.profile="${IBEX_TOOLCHAIN_PROFILE}"' in dockerfile
+    assert "ibex-verilator-system-container-native-v1" in script
+    assert "iverilog|verilator" in script
     assert 'org.verigym.codex.present="absent"' in dockerfile
     assert 'CMD ["/usr/bin/tail", "-f", "/dev/null"]' in dockerfile
