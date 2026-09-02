@@ -143,6 +143,7 @@ class _RunContext:
     security_scan: dict[str, Any] | None = None
     command_lock: HweCommandImageLock | None = None
     active_stage: str | None = None
+    verified_layer_inventory: list[dict[str, str | int | bool]] | None = None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -414,9 +415,21 @@ def _qualification_stage(context: _RunContext, root: Path) -> dict[str, Any]:
     return context.qualification
 
 
-def _security_scan_stage(context: _RunContext, root: Path) -> dict[str, Any]:
+def _security_scan_stage(
+    context: _RunContext,
+    root: Path,
+    *,
+    image_tag: str = "verigym/cva6-openhands-v52-command-pr-2728:rg-15.2.0-v1",
+    format_id: str = "verigym_openhands_hwe_v52_pr2728_v2_security_scan_v1",
+    owner_identity: str = OPENHANDS_V52_IDENTITY,
+    name_version: str = "v52",
+) -> dict[str, Any]:
     qualification = _required(context.qualification, "qualification")
-    artifacts = _inventory_toolchain(str(qualification["verifier_image"]))
+    artifacts = _inventory_toolchain(
+        str(qualification["verifier_image"]),
+        owner_identity=owner_identity,
+        name_version=name_version,
+    )
     source_lock = build_hwe_command_source_lock(
         task_id=_TASK_ID,
         task_hash=qualification["task_hash"],
@@ -438,7 +451,6 @@ def _security_scan_stage(context: _RunContext, root: Path) -> dict[str, Any]:
     ):
         parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     atomic_dump_json(source_lock_path, source_lock.model_dump(mode="json"))
-    image_tag = "verigym/cva6-openhands-v52-command-pr-2728:rg-15.2.0-v1"
     built = _bounded_run(
         [
             str(_REPOSITORY / "scripts/build_cva6_hwe_command_image.sh"),
@@ -467,7 +479,7 @@ def _security_scan_stage(context: _RunContext, root: Path) -> dict[str, Any]:
     context.command_lock = lock
     base = {
         "schema_version": "1.0",
-        "format_id": "verigym_openhands_hwe_v52_pr2728_v2_security_scan_v1",
+        "format_id": format_id,
         "task_id": lock.task_id,
         "task_hash": lock.task_hash,
         "source_hash": lock.source_hash,
@@ -599,7 +611,12 @@ def _v33_revalidation_stage(context: _RunContext, root: Path) -> dict[str, Any]:
     return _sealed(base)
 
 
-def _inventory_toolchain(image_id: str) -> list[dict[str, str]]:
+def _inventory_toolchain(
+    image_id: str,
+    *,
+    owner_identity: str = OPENHANDS_V52_IDENTITY,
+    name_version: str = "v52",
+) -> list[dict[str, str]]:
     paths = (
         ("/usr/bin/make", "build_tool"),
         ("/tools/verilator/bin/verilator", "simulator"),
@@ -616,6 +633,8 @@ def _inventory_toolchain(image_id: str) -> list[dict[str, str]]:
         arguments=["-c", command],
         role="toolchain_inventory",
         timeout=120,
+        owner_identity=owner_identity,
+        name_version=name_version,
     )
     if stderr:
         raise ConfigurationError("OpenHands v52 toolchain inventory emitted stderr")
@@ -641,8 +660,12 @@ def _run_controlled_container(
     arguments: list[str],
     role: str,
     timeout: int,
+    owner_identity: str = OPENHANDS_V52_IDENTITY,
+    name_version: str = "v52",
 ) -> tuple[bytes, bytes]:
-    name = f"verigym-hwe-v52-{role}-{os.getpid()}-{secrets.token_hex(4)}"
+    if not re.fullmatch(r"v[0-9]+", name_version):
+        raise ConfigurationError("OpenHands controlled-container version is invalid")
+    name = f"verigym-hwe-{name_version}-{role}-{os.getpid()}-{secrets.token_hex(4)}"
     command = [
         "docker",
         "create",
@@ -651,7 +674,7 @@ def _run_controlled_container(
         "--name",
         name,
         "--label",
-        f"org.verigym.owner={OPENHANDS_V52_IDENTITY}",
+        f"org.verigym.owner={owner_identity}",
         "--label",
         f"org.verigym.role={role}",
         "--network",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import fcntl
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -43,6 +44,84 @@ class LayerCacheReceipt:
 
     def safe_dict(self) -> dict[str, str | int | bool]:
         return {"digest": self.digest, "size": self.size, "cache_hit": self.cache_hit}
+
+
+@dataclass(frozen=True)
+class RegistryBlobDescriptor:
+    """A digest-qualified, size-bounded registry blob descriptor."""
+
+    digest: str
+    size: int
+
+
+@dataclass(frozen=True)
+class RegistryImageManifest:
+    """The exact config and ordered layers from one platform image manifest."""
+
+    manifest_digest: str
+    manifest_size: int
+    config: RegistryBlobDescriptor
+    layers: tuple[RegistryBlobDescriptor, ...]
+
+
+def validate_registry_image_manifest(
+    raw: bytes,
+    *,
+    expected_digest: str,
+    maximum_layers: int = 512,
+) -> RegistryImageManifest:
+    """Validate crane manifest output without accepting an index or unbounded layer set."""
+
+    match = _DIGEST.fullmatch(expected_digest)
+    if match is None or not 1 <= maximum_layers <= 512:
+        raise ConfigurationError("HWE registry manifest policy is invalid")
+    payload = raw[:-1] if raw.endswith(b"\n") else raw
+    if not payload or hashlib.sha256(payload).hexdigest() != match.group(1):
+        raise ConfigurationError("HWE registry manifest digest changed")
+    try:
+        value = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("HWE registry manifest is malformed") from exc
+    if not isinstance(value, dict):
+        raise ConfigurationError("HWE registry manifest is not an object")
+    allowed_media_types = {
+        "application/vnd.docker.distribution.manifest.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+    }
+    layers_raw = value.get("layers")
+    if (
+        value.get("schemaVersion") != 2
+        or value.get("mediaType") not in allowed_media_types
+        or not isinstance(layers_raw, list)
+        or not 1 <= len(layers_raw) <= maximum_layers
+    ):
+        raise ConfigurationError("HWE registry platform manifest policy changed")
+    config = _registry_blob_descriptor(value.get("config"), label="config")
+    layers = tuple(_registry_blob_descriptor(item, label="layer") for item in layers_raw)
+    if len({item.digest for item in layers}) != len(layers):
+        raise ConfigurationError("HWE registry manifest repeats a layer digest")
+    return RegistryImageManifest(
+        manifest_digest=expected_digest,
+        manifest_size=len(payload),
+        config=config,
+        layers=layers,
+    )
+
+
+def _registry_blob_descriptor(value: Any, *, label: str) -> RegistryBlobDescriptor:
+    if not isinstance(value, dict):
+        raise ConfigurationError(f"HWE registry {label} descriptor is malformed")
+    digest = value.get("digest")
+    size = value.get("size")
+    if (
+        not isinstance(digest, str)
+        or _DIGEST.fullmatch(digest) is None
+        or isinstance(size, bool)
+        or not isinstance(size, int)
+        or size <= 0
+    ):
+        raise ConfigurationError(f"HWE registry {label} descriptor is invalid")
+    return RegistryBlobDescriptor(digest=digest, size=size)
 
 
 class LayerCachePromotionError(ConfigurationError):
@@ -117,12 +196,28 @@ class ContentAddressedLayerCache:
         self,
         staging: Path,
         *,
+        digests: list[str] | None = None,
         maximum_entries: int = 512,
     ) -> list[LayerCacheReceipt]:
         """Copy persistent blobs into crane's task cache without sharing writable inodes."""
 
         target_root = self._validated_task_staging(staging)
-        blobs = sorted(path for path in self._blob_root.iterdir() if not path.name.startswith("."))
+        if digests is None:
+            blobs = sorted(
+                path for path in self._blob_root.iterdir() if not path.name.startswith(".")
+            )
+        else:
+            if len(digests) > maximum_entries or len(set(digests)) != len(digests):
+                raise ConfigurationError("HWE layer-cache seed request is unbounded")
+            blobs = []
+            for digest in sorted(digests):
+                match = _DIGEST.fullmatch(digest)
+                if match is None:
+                    raise ConfigurationError("HWE layer-cache seed digest is invalid")
+                path = self._blob_root / match.group(1)
+                if not path.exists() and not path.is_symlink():
+                    raise ConfigurationError("HWE layer-cache seed blob is missing")
+                blobs.append(path)
         if len(blobs) > maximum_entries:
             raise ConfigurationError("HWE layer-cache seed inventory is unbounded")
         receipts: list[LayerCacheReceipt] = []
@@ -333,7 +428,10 @@ __all__ = [
     "ContentAddressedLayerCache",
     "LayerCacheReceipt",
     "LayerCachePromotionError",
+    "RegistryBlobDescriptor",
+    "RegistryImageManifest",
     "SingleCleanupArchive",
     "TransferErrorFamily",
     "redacted_transfer_failure",
+    "validate_registry_image_manifest",
 ]

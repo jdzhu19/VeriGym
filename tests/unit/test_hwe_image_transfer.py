@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from verigym.hwe.image_transfer import (
     LayerCachePromotionError,
     SingleCleanupArchive,
     redacted_transfer_failure,
+    validate_registry_image_manifest,
 )
 
 
@@ -39,6 +41,67 @@ def test_persistent_layer_cache_miss_then_hit_is_digest_bound(tmp_path: Path) ->
     assert cache.bounded_inventory([digest]) == [
         {"digest": digest, "size": len(b"layer-payload"), "cache_hit": True}
     ]
+
+
+def test_registry_platform_manifest_freezes_ordered_digest_and_size_inventory() -> None:
+    value = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:" + "1" * 64,
+            "size": 41,
+        },
+        "layers": [
+            {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "digest": "sha256:" + "2" * 64,
+                "size": 101,
+            },
+            {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "digest": "sha256:" + "3" * 64,
+                "size": 202,
+            },
+        ],
+    }
+    raw = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    manifest = validate_registry_image_manifest(raw + b"\n", expected_digest=digest)
+
+    assert manifest.manifest_digest == digest
+    assert manifest.manifest_size == len(raw)
+    assert manifest.config.digest == "sha256:" + "1" * 64
+    assert [(item.digest, item.size) for item in manifest.layers] == [
+        ("sha256:" + "2" * 64, 101),
+        ("sha256:" + "3" * 64, 202),
+    ]
+
+
+@pytest.mark.parametrize("mutation", ["digest", "index", "duplicate", "empty"])
+def test_registry_platform_manifest_fails_closed_on_identity_or_shape_drift(
+    mutation: str,
+) -> None:
+    value = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+        "config": {"digest": "sha256:" + "1" * 64, "size": 1},
+        "layers": [{"digest": "sha256:" + "2" * 64, "size": 2}],
+    }
+    if mutation == "index":
+        value["mediaType"] = "application/vnd.oci.image.index.v1+json"
+    elif mutation == "duplicate":
+        value["layers"].append(dict(value["layers"][0]))
+    elif mutation == "empty":
+        value["layers"] = []
+    raw = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    if mutation == "digest":
+        digest = "sha256:" + "0" * 64
+
+    with pytest.raises(ConfigurationError, match="manifest|layer"):
+        validate_registry_image_manifest(raw, expected_digest=digest)
 
 
 def test_layer_cache_rejects_digest_or_size_drift_before_publication(tmp_path: Path) -> None:
@@ -93,6 +156,29 @@ def test_crane_staging_is_promoted_then_seeded_without_writable_inode_sharing(
     third_staging = cache.task_staging("pr2728-crane-third")
     cache.seed_task_staging(third_staging)
     assert (third_staging / digest).read_bytes() == payload
+
+
+def test_crane_staging_can_seed_only_the_manifest_requested_digests(tmp_path: Path) -> None:
+    cache = ContentAddressedLayerCache(tmp_path / "persistent-cache")
+    digests: list[str] = []
+    for index, payload in enumerate((b"current-layer", b"unrelated-old-layer")):
+        staging = cache.task_staging(f"seed-source-{index}")
+        path = staging / "layer.part"
+        path.write_bytes(payload)
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        cache.commit(path, digest=digest, size=len(payload))
+        digests.append(digest)
+    target = cache.task_staging("manifest-only")
+
+    receipts = cache.seed_task_staging(target, digests=[digests[0]])
+
+    assert [item.digest for item in receipts] == [digests[0]]
+    assert (target / digests[0]).is_file()
+    assert (target / digests[1]).exists() is False
+
+    missing = cache.task_staging("missing-manifest-layer")
+    with pytest.raises(ConfigurationError, match="missing"):
+        cache.seed_task_staging(missing, digests=["sha256:" + "0" * 64])
 
 
 def test_crane_promotion_commits_valid_layers_before_reporting_incomplete_layer(
