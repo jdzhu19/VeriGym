@@ -649,6 +649,7 @@ class ExternalAgentCallIdentity(StrictModel):
             "openhands_sdk_agent",
             "deepseek_harness_hwe_native_shell",
             "deepseek_harness_hwe_native_shell_v3",
+            "deepseek_harness_hwe_native_shell_v4",
         ]
         | None
     ) = None
