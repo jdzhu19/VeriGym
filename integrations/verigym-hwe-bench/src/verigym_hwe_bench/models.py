@@ -190,7 +190,10 @@ REPOSITORY_PROFILES: dict[str, RepositoryProfile] = {
             language="SystemVerilog",
             license_expression="SHL-0.51",
             license_files=["LICENSE"],
-            workspace_excluded_paths=["verif/core-v-verif/vendor/riscv/riscv-isa-sim/build"],
+            workspace_excluded_paths=[
+                ".hwe_tools",
+                "verif/core-v-verif/vendor/riscv/riscv-isa-sim/build",
+            ],
             verifier_limits=_DEFAULT_LIMITS,
         ),
         _profile(

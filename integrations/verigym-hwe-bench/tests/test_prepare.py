@@ -268,6 +268,53 @@ def test_profile_workspace_exclusion_is_exact_and_contained(tmp_path: Path) -> N
     assert keep.read_text(encoding="utf-8") == "keep\n"
 
 
+def test_cva6_profile_removes_task_image_tool_bridge_before_symlink_scan(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    bridge = repository / ".hwe_tools"
+    source = repository / "rtl" / "core.sv"
+    bridge.mkdir(parents=True)
+    source.parent.mkdir()
+    source.write_text("module core; endmodule\n", encoding="utf-8")
+    (bridge / "verilator").symlink_to("/tools/verilator-v5.008")
+
+    profile = repository_profile("openhwgroup/cva6")
+    assert profile.workspace_excluded_paths == [
+        ".hwe_tools",
+        "verif/core-v-verif/vendor/riscv/riscv-isa-sim/build",
+    ]
+    _apply_workspace_exclusions(repository, profile.workspace_excluded_paths)
+    _materialize_internal_file_symlinks(repository)
+
+    assert not bridge.exists()
+    assert source.read_text(encoding="utf-8") == "module core; endmodule\n"
+
+
+def test_cva6_profile_does_not_allow_unlisted_escaping_symlink(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "escape").symlink_to("/tools/verilator-v5.008")
+
+    profile = repository_profile("openhwgroup/cva6")
+    _apply_workspace_exclusions(repository, profile.workspace_excluded_paths)
+    with pytest.raises(ConfigurationError, match="escaping symlink"):
+        _materialize_internal_file_symlinks(repository)
+
+
+def test_cva6_profile_does_not_allow_unlisted_relative_escape(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    outside = tmp_path / "outside"
+    outside.write_text("outside\n", encoding="utf-8")
+    (repository / "escape").symlink_to("../outside")
+
+    profile = repository_profile("openhwgroup/cva6")
+    _apply_workspace_exclusions(repository, profile.workspace_excluded_paths)
+    with pytest.raises(ConfigurationError, match="escaping symlink"):
+        _materialize_internal_file_symlinks(repository)
+
+
 def test_profile_workspace_exclusion_rejects_symlink(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
