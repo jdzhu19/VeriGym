@@ -135,6 +135,13 @@ Command-image build output is never persisted: v73 records only bounded byte cou
 digests, the exit code, and timeout status, so harmless nonempty tool output is accepted without
 weakening the diagnostic boundary.
 
+After the audited v73 scanner-path stop, v75 keeps the sidecar mount set narrow and moves only the
+scanner's temporary bind source below the already-mounted successor output root. The scanner takes
+an explicit absolute owner-controlled scratch parent, rejects symlinked or relative overrides, and
+removes each child workspace. The v75 runner checks `output/scan-workspaces` is mode `0700` and
+empty before execution and after every task. Its fixed socket cleanup list also includes the DinD
+`runc/` directory observed after the v73 stop.
+
 The bind backing must be new for its campaign identity. Never point it at `/data/docker`, an
 existing Docker root, a home directory, a repository, another experiment, or a symlink. A stale
 volume, nonempty inner container/volume inventory, unexpected mount, or failed cleanup is terminal.

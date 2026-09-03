@@ -188,6 +188,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--identity-lock", type=Path, required=True)
     parser.add_argument("--security-scan-output", type=Path, required=True)
     parser.add_argument("--lock-output", type=Path, required=True)
+    parser.add_argument("--runtime-scratch-parent", type=Path)
     return parser
 
 
@@ -328,6 +329,7 @@ def _container_scan(
     rg_sha256: str,
     artifacts: list[dict[str, Any]],
     profile: _RepositoryProfile = _CVA6_PROFILE,
+    runtime_scratch_parent: Path | None = None,
 ) -> tuple[dict[str, bool], dict[str, Any]]:
     assertions = [
         _checked(f'test "$(id -u):$(id -g)" = "{user}"', 61),
@@ -370,8 +372,20 @@ def _container_scan(
         for item in artifacts
     )
     command = "\n".join(("set -u", *assertions))
-    scratch_parent = _SCRATCH_PARENT if profile.name == "cva6" else _IBEX_SCRATCH_PARENT
-    scratch_parent.mkdir(parents=True, exist_ok=True)
+    if runtime_scratch_parent is None:
+        scratch_parent = _SCRATCH_PARENT if profile.name == "cva6" else _IBEX_SCRATCH_PARENT
+        scratch_parent.mkdir(parents=True, exist_ok=True)
+    else:
+        unresolved = Path(os.path.abspath(runtime_scratch_parent))
+        if (
+            not runtime_scratch_parent.is_absolute()
+            or runtime_scratch_parent.is_symlink()
+            or not runtime_scratch_parent.is_dir()
+        ):
+            raise ValueError("HWE command-image runtime scratch parent is unsafe")
+        scratch_parent = runtime_scratch_parent.resolve(strict=True)
+        if scratch_parent != unresolved or scratch_parent.stat().st_uid != os.getuid():
+            raise ValueError("HWE command-image runtime scratch parent is unsafe")
     workspace = Path(tempfile.mkdtemp(prefix="hwe-command-image-scan.", dir=scratch_parent))
     container_id: str | None = None
     checks: dict[str, bool] = {}
@@ -620,6 +634,7 @@ def scan_and_lock(
     security_output: Path,
     lock_output: Path,
     repository_profile: str = "cva6",
+    runtime_scratch_parent: Path | None = None,
 ) -> tuple[dict[str, Any], HweCommandImageLock]:
     if security_output.exists() or lock_output.exists():
         raise ValueError("HWE command-image scan and lock outputs must be new paths")
@@ -721,6 +736,7 @@ def scan_and_lock(
             rg_sha256=rg_sha256,
             artifacts=artifacts,
             profile=profile,
+            runtime_scratch_parent=runtime_scratch_parent,
         )
     except CommandImageScanFailure as exc:
         failure_base = {
@@ -797,6 +813,7 @@ def main() -> int:
         security_output=arguments.security_scan_output,
         lock_output=arguments.lock_output,
         repository_profile=arguments.repository_profile,
+        runtime_scratch_parent=arguments.runtime_scratch_parent,
     )
     print(
         json.dumps(

@@ -294,6 +294,7 @@ def _materialize_task(
     campaign_identity: str = IDENTITY,
     command_tag_version: str = "v69",
     build_command_runner: Callable[[list[str], int], dict[str, Any]] | None = None,
+    scan_scratch_parent: Path | None = None,
 ) -> dict[str, Any]:
     archive_receipt = inspect_offline_image_archive(task, archive_root=archive_root)
     atomic_dump_json(root / "archive-receipts" / f"pr-{task.pr_number}.json", archive_receipt)
@@ -369,6 +370,7 @@ def _materialize_task(
         security_output=scan_path,
         lock_output=lock_path,
         repository_profile="ibex-verilator" if task.repository == "ibex" else "cva6",
+        runtime_scratch_parent=scan_scratch_parent,
     )
     if scan.get("scan_passed") is not True or command_lock.security_scan_passed is not True:
         raise ConfigurationError("v69 task-specific command-image v2 scan failed")
