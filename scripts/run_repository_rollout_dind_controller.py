@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -255,6 +255,7 @@ def _start_dind(
     empty_home: Path,
     same_path_mounts: list[str],
     startup_timeout_s: int,
+    on_container_started: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     project_volumes: list[str] = []
     if source_volume is not None:
@@ -296,9 +297,14 @@ def _start_dind(
     started = _run(command, timeout_s=60)
     if started.returncode != 0:
         raise RuntimeError("isolated DinD daemon container failed to start")
+    if on_container_started is not None:
+        on_container_started()
     deadline = time.monotonic() + startup_timeout_s
     while time.monotonic() < deadline:
-        ready = _run(["docker", "exec", name, "docker", "info"], timeout_s=15)
+        try:
+            ready = _run(["docker", "exec", name, "docker", "info"], timeout_s=15)
+        except subprocess.TimeoutExpired:
+            continue
         if ready.returncode == 0:
             break
         time.sleep(0.25)
