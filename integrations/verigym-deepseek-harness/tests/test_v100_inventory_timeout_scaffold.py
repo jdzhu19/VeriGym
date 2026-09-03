@@ -330,9 +330,19 @@ def test_v100_contract_requires_complete_semantic_gates() -> None:
         runner._scaffold_contract(manifest, **common)  # noqa: SLF001
 
 
-def test_v100_rejects_any_other_post_merge_run_before_execution() -> None:
-    with pytest.raises(ConfigurationError, match="exact audited post-merge main run"):
-        runner.materialize(argparse.Namespace(post_merge_main_run_id=1))
+def test_v100_records_the_fresh_authorization_post_merge_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, Any] = {}
+
+    def fake_materialize(arguments: argparse.Namespace) -> dict[str, Any]:
+        observed["post_merge_main_run_id"] = arguments.post_merge_main_run_id
+        return {"status": "observed"}
+
+    monkeypatch.setattr(runner.v97, "materialize", fake_materialize)
+    result = runner.materialize(argparse.Namespace(post_merge_main_run_id=123456789))
+    assert result == {"status": "observed"}
+    assert observed == {"post_merge_main_run_id": 123456789}
 
 
 def test_v100_manifest_contains_no_provider_environment_names() -> None:

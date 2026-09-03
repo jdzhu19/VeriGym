@@ -93,8 +93,6 @@ def _parser() -> argparse.ArgumentParser:
 def materialize(arguments: argparse.Namespace) -> dict[str, Any]:
     """Execute the v97-tested workflow under fresh v100 bindings and timeouts."""
 
-    if arguments.post_merge_main_run_id != 33782913003:
-        raise ConfigurationError("v100 requires its exact audited post-merge main run")
     with _v100_base_configuration():
         return v97.materialize(arguments)
 
