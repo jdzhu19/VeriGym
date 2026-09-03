@@ -109,6 +109,28 @@ path deliberately mounted into it and shares the host kernel. Use narrow task/ou
 dedicated labeled data volume, digest-locked images, and a controlled worker. Do not mount the host
 home, repository root, Docker socket, credentials, hidden assets, or unrelated experiments.
 
+## Placing nested Docker storage on a separate filesystem
+
+An authorized campaign may use a local-driver volume backed by one exact owner-only directory on
+another filesystem. For example, the v71 zero-provider successor binds its inner
+`/var/lib/docker` to
+`/data2/jiadongzhu/docker/deepseek-harness-hwe-v71/data`. The host daemon still stores a small
+volume descriptor in its own data root, but the nested image layers and writable snapshots live in
+the inspected `/data2` backing directory. This does not change the host daemon's global
+`data-root`, restart Docker, or move/delete resources belonging to other checkouts.
+
+The campaign runner creates the bind-backed volume with local-driver `type=none`, `o=bind`, and
+the exact `device` path, then inspects those options and its owner/role labels. A second bind-backed
+volume exposes only the new nested Unix socket. The trusted host materializer temporarily sets
+`DOCKER_HOST` to that socket only for an explicitly zero-provider execution window; it restores
+the host connection before inspecting or removing the outer sidecar. This host-control variant is
+not a general substitute for the unprivileged controller on model-bearing rollouts.
+
+The bind backing must be new for its campaign identity. Never point it at `/data/docker`, an
+existing Docker root, a home directory, a repository, another experiment, or a symlink. A stale
+volume, nonempty inner container/volume inventory, unexpected mount, or failed cleanup is terminal.
+Do not use Docker prune as part of this flow.
+
 ## Troubleshooting failures
 
 | Failure | Meaning | Action |

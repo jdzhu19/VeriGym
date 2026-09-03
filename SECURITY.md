@@ -641,6 +641,19 @@ narrow mounts, and a dedicated data volume; they must not mount the host home, r
 credentials, hidden assets, or unrelated experiments. A nonempty inner runtime inventory or failed
 cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](docs/hwe_dind_runtime.md).
 
+A separately versioned zero-provider materializer may use the trusted non-root host control plane
+instead of the project controller when no agent or provider process exists. That path must reject
+provider configuration and any pre-existing Docker endpoint override, create a new campaign-bound
+Unix socket, and route Docker commands to it only inside the bounded offline materialization
+window. The sidecar may receive only the new campaign output root plus its sentinel and two
+campaign-specific volumes. The data and socket volumes may use exact, owner-only bind backing on a
+separate filesystem; their local-driver options and labels must be inspected before use so volume
+metadata in the host Docker root cannot redirect task layers there. The persistent data volume may
+retain only inner images. The provider contract is published only after the inner container and
+volume inventories are empty, the sidecar is removed, and the transient socket volume and socket
+are gone. The data volume remains labeled, identity-bound infrastructure for an independently
+authorized successor.
+
 ### Daemonless registry prewarm boundary
 
 The separately authorized OpenHands v20 prewarm preflight replaces the networked privileged DinD

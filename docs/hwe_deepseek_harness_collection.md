@@ -150,6 +150,27 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V69_ZERO_PROVIDER=1 \
 The new output root is fixed under `/data2/jiadongzhu/Agent/experiments/`. The runner writes atomic
 progress after each task, but `provider-contract.json` is the last publication and is never
 created for a partial matrix. A completed contract still states
-`provider_execution_authorized=false`; v70 must independently audit it before any v71 provider
-authorization. The v69 manifest and receipt models live in
+`provider_execution_authorized=false`; v70 must independently audit it before a successor can be
+authorized. The v69 manifest and receipt models live in
 `src/verigym/hwe/deepseek_harness_campaign.py`.
+
+V69 later stopped at its filesystem headroom gate before archive or Docker access. The v70 audit
+sealed that attempt with zero provider calls and no task consumption. The separately registered
+v71 successor reruns the complete five-task zero-provider materialization on a Docker 23.0.6 DinD
+daemon whose persistent local-driver volume is bind-backed by the exact campaign directory under
+`/data2/jiadongzhu/docker/`. It revalidates the v69 manifest and stopped report, all five patches,
+all archive/image/source locks, base-FAIL/reference-PASS, command-image scans, and cleanup; it does
+not import v69's partial receipts as qualification evidence.
+
+Run v71 only once from its clean merged `main` commit after all eight post-merge workflow classes
+pass and after removing provider variables without exposing their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V71_DIND_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v71_dind.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+V71 still publishes `provider_execution_authorized=false` and requires an independent v72 result
+audit. Because the failure consumed the next unused version, the official model matrix and later
+toolchain stages move to new identities after v72; no earlier planned version is silently reused.

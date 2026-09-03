@@ -100,6 +100,73 @@ def _volume(name: str, *, owner: str, role: str) -> None:
         raise RuntimeError(f"Docker volume does not satisfy the frozen {role} policy")
 
 
+def _bind_backed_volume(name: str, *, owner: str, role: str, backing: Path) -> Path:
+    """Require a labeled local volume whose bytes live in one exact host directory."""
+
+    resolved = _directory(backing)
+    value = _inspect("volume", name)
+    labels = value.get("Labels")
+    options = value.get("Options")
+    if (
+        value.get("Driver") != "local"
+        or not isinstance(labels, dict)
+        or labels.get("verigym.owner") != owner
+        or labels.get("verigym.role") != role
+        or options
+        != {
+            "device": str(resolved),
+            "o": "bind",
+            "type": "none",
+        }
+    ):
+        raise RuntimeError(f"Docker volume does not satisfy the frozen bind-backed {role} policy")
+    return resolved
+
+
+def _create_bind_backed_volume(
+    name: str,
+    *,
+    owner: str,
+    role: str,
+    backing: Path,
+) -> Path:
+    """Create one new labeled bind-backed volume without changing the daemon data root."""
+
+    resolved = _directory(backing)
+    existing = _run(["docker", "volume", "inspect", name], timeout_s=30)
+    if existing.returncode == 0:
+        raise RuntimeError(f"Docker bind-backed {role} volume already exists")
+    created = _run(
+        [
+            "docker",
+            "volume",
+            "create",
+            "--driver",
+            "local",
+            "--opt",
+            "type=none",
+            "--opt",
+            "o=bind",
+            "--opt",
+            f"device={resolved}",
+            "--label",
+            f"verigym.owner={owner}",
+            "--label",
+            f"verigym.role={role}",
+            name,
+        ],
+        timeout_s=30,
+    )
+    if created.returncode != 0 or created.stdout.decode().strip() != name:
+        raise RuntimeError(f"Docker bind-backed {role} volume creation failed")
+    return _bind_backed_volume(
+        name,
+        owner=owner,
+        role=role,
+        backing=resolved,
+    )
+
+
 def _image(image_id: str, *, role: str) -> dict[str, Any]:
     if not _IMAGE_ID.fullmatch(image_id):
         raise RuntimeError(f"{role} image must be an immutable image ID")

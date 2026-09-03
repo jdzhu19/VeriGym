@@ -155,6 +155,91 @@ def test_dind_data_volume_requires_private_role_labels(monkeypatch: pytest.Monke
         )
 
 
+def test_bind_backed_volume_freezes_the_data2_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    backing = Path("/data2/campaign/data")
+    monkeypatch.setattr(module, "_directory", lambda value: value)
+    monkeypatch.setattr(
+        module,
+        "_inspect",
+        lambda kind, value: {
+            "Driver": "local",
+            "Labels": {
+                "verigym.owner": "rollout-controller-dind",
+                "verigym.role": "data",
+            },
+            "Options": {
+                "device": str(backing),
+                "o": "bind",
+                "type": "none",
+            },
+        },
+    )
+    assert (
+        module._bind_backed_volume(  # noqa: SLF001
+            "dind-data",
+            owner="rollout-controller-dind",
+            role="data",
+            backing=backing,
+        )
+        == backing
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_inspect",
+        lambda kind, value: {
+            "Driver": "local",
+            "Labels": {
+                "verigym.owner": "rollout-controller-dind",
+                "verigym.role": "data",
+            },
+            "Options": {"device": "/data/docker", "o": "bind", "type": "none"},
+        },
+    )
+    with pytest.raises(RuntimeError, match="bind-backed data policy"):
+        module._bind_backed_volume(  # noqa: SLF001
+            "dind-data",
+            owner="rollout-controller-dind",
+            role="data",
+            backing=backing,
+        )
+
+
+def test_create_bind_backed_volume_uses_local_bind_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    backing = Path("/data2/campaign/data")
+    observed: list[list[str]] = []
+
+    def fake_run(argv: list[str], *, timeout_s: int = 60):  # type: ignore[no-untyped-def]
+        observed.append(argv)
+        if argv[:3] == ["docker", "volume", "inspect"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"")
+        return _completed(argv, b"dind-data\n")
+
+    monkeypatch.setattr(module, "_directory", lambda value: value)
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(module, "_bind_backed_volume", lambda *args, **kwargs: backing)
+    assert (
+        module._create_bind_backed_volume(  # noqa: SLF001
+            "dind-data",
+            owner="rollout-controller-dind",
+            role="data",
+            backing=backing,
+        )
+        == backing
+    )
+    create = observed[1]
+    assert "type=none" in create
+    assert "o=bind" in create
+    assert f"device={backing}" in create
+    assert "verigym.role=data" in create
+
+
 def test_dind_launcher_has_no_provider_or_host_socket_mount() -> None:
     source = (
         Path(__file__).parents[2] / "scripts/run_repository_rollout_dind_controller.py"
