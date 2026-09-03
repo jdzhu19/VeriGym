@@ -280,6 +280,77 @@ class DeepSeekHarnessV69Manifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV71DindSuccessorManifest(StrictModel):
+    """Frozen successor authorization for v69 materialization on isolated DinD storage."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v71_dind_successor_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v71-dind-zero-provider-successor-v1"]
+    upstream_manifest_sha256: str
+    upstream_manifest_hash: str
+    predecessor_identity: Literal["deepseek-harness-hwe-v69-multitask-zero-provider-v1"]
+    predecessor_report_sha256: str
+    predecessor_report_hash: str
+    predecessor_audit_sha256: str
+    predecessor_audit_commit: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v71-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v71-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v71/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v71/socket"]
+    outer_dind_network: Literal["none"]
+    host_docker_root_used_for_task_layers: Literal[False]
+    provider_clients_available: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    atomic_provider_contract: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "upstream_manifest_sha256",
+        "upstream_manifest_hash",
+        "predecessor_report_sha256",
+        "predecessor_report_hash",
+        "predecessor_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v71 successor manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("predecessor_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v71 successor manifest requires a full audit commit")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v71 successor manifest requires immutable DinD digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v71 successor manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -547,6 +618,17 @@ def load_v69_manifest(path: Path) -> DeepSeekHarnessV69Manifest:
         raise ConfigurationError("v69 manifest is invalid") from exc
 
 
+def load_v71_dind_successor_manifest(path: Path) -> DeepSeekHarnessV71DindSuccessorManifest:
+    """Load a bounded ordinary-file successor authorization manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v71 successor manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV71DindSuccessorManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v71 successor manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -687,6 +769,7 @@ __all__ = [
     "DeepSeekHarnessMatrixAttempt",
     "DeepSeekHarnessMatrixState",
     "DeepSeekHarnessV69Manifest",
+    "DeepSeekHarnessV71DindSuccessorManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -697,6 +780,7 @@ __all__ = [
     "V71_MATRIX_TASK_IDS",
     "inspect_offline_image_archive",
     "load_v69_manifest",
+    "load_v71_dind_successor_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",

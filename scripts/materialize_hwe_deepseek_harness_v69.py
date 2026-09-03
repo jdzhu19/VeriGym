@@ -290,6 +290,8 @@ def _materialize_task(
     rg_binary: Path,
     rg_archive: Path,
     root: Path,
+    campaign_identity: str = IDENTITY,
+    command_tag_version: str = "v69",
 ) -> dict[str, Any]:
     archive_receipt = inspect_offline_image_archive(task, archive_root=archive_root)
     atomic_dump_json(root / "archive-receipts" / f"pr-{task.pr_number}.json", archive_receipt)
@@ -313,7 +315,11 @@ def _materialize_task(
     smoke = run_zero_model_smoke(source=source, output=smoke_root)
     if not zero_model_infrastructure_valid(smoke) or not zero_model_fail_to_pass_eligible(smoke):
         raise ConfigurationError("v69 task did not reproduce base-FAIL/reference-PASS")
-    artifacts = _inventory_toolchain(task)
+    artifacts = _inventory_toolchain(
+        task,
+        campaign_identity=campaign_identity,
+        command_tag_version=command_tag_version,
+    )
     profile_id = (
         "ibex-verilator-system-container-native-v1"
         if task.repository == "ibex"
@@ -333,7 +339,7 @@ def _materialize_task(
     scan_path = root / "security-scans" / f"pr-{task.pr_number}.json"
     lock_path = root / "image-locks" / f"pr-{task.pr_number}.json"
     atomic_dump_json(source_lock_path, source_lock.model_dump(mode="json"))
-    tag = f"verigym/{task.repository}-hwe-command:harness-v69-pr{task.pr_number}"
+    tag = f"verigym/{task.repository}-hwe-command:harness-{command_tag_version}-pr{task.pr_number}"
     build_script = (
         _REPOSITORY / "scripts/build_ibex_hwe_command_image.sh"
         if task.repository == "ibex"
@@ -437,7 +443,12 @@ def _load_completed_archive(task: HweOfflineTaskLock, *, archive_root: Path) -> 
         raise ConfigurationError("v69 offline image tag binding changed")
 
 
-def _inventory_toolchain(task: HweOfflineTaskLock) -> list[dict[str, str]]:
+def _inventory_toolchain(
+    task: HweOfflineTaskLock,
+    *,
+    campaign_identity: str = IDENTITY,
+    command_tag_version: str = "v69",
+) -> list[dict[str, str]]:
     paths = (
         (
             ("/usr/bin/make", "build_tool"),
@@ -451,7 +462,7 @@ def _inventory_toolchain(task: HweOfflineTaskLock) -> list[dict[str, str]]:
             ("/tools/verilator/bin/verilator_bin", "simulator"),
         )
     )
-    name = f"verigym-hwe-v69-toolchain-{task.pr_number}-{secrets.token_hex(4)}"
+    name = f"verigym-hwe-{command_tag_version}-toolchain-{task.pr_number}-{secrets.token_hex(4)}"
     create = [
         "docker",
         "create",
@@ -460,7 +471,7 @@ def _inventory_toolchain(task: HweOfflineTaskLock) -> list[dict[str, str]]:
         "--name",
         name,
         "--label",
-        f"org.verigym.owner={IDENTITY}",
+        f"org.verigym.owner={campaign_identity}",
         "--label",
         "org.verigym.role=toolchain_inventory",
         "--network",
