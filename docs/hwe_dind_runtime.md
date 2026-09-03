@@ -126,6 +126,15 @@ volume exposes only the new nested Unix socket. The trusted host materializer te
 the host connection before inspecting or removing the outer sidecar. This host-control variant is
 not a general substitute for the unprivileged controller on model-bearing rollouts.
 
+After an audited v71 cleanup mismatch, v73 additionally requires a dedicated cleanup container
+before removing the socket volume. That container has `network=none`, a read-only root, one exact
+socket-volume mount, no added privileges beyond `CHOWN`, `DAC_OVERRIDE`, and `FOWNER`, and a fixed
+list of DinD runtime paths. Cleanup succeeds only when the container removes itself and the host
+confirms that the backing directory is empty, mode `0700`, and owned by the invoking UID:GID.
+Command-image build output is never persisted: v73 records only bounded byte counts, SHA-256
+digests, the exit code, and timeout status, so harmless nonempty tool output is accepted without
+weakening the diagnostic boundary.
+
 The bind backing must be new for its campaign identity. Never point it at `/data/docker`, an
 existing Docker root, a home directory, a repository, another experiment, or a symlink. A stale
 volume, nonempty inner container/volume inventory, unexpected mount, or failed cleanup is terminal.

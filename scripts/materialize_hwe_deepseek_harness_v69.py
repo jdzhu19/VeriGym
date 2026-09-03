@@ -11,6 +11,7 @@ import re
 import secrets
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -292,6 +293,7 @@ def _materialize_task(
     root: Path,
     campaign_identity: str = IDENTITY,
     command_tag_version: str = "v69",
+    build_command_runner: Callable[[list[str], int], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     archive_receipt = inspect_offline_image_archive(task, archive_root=archive_root)
     atomic_dump_json(root / "archive-receipts" / f"pr-{task.pr_number}.json", archive_receipt)
@@ -356,7 +358,11 @@ def _materialize_task(
     ]
     if task.repository == "ibex":
         command.append("verilator")
-    _bounded_command(command, timeout=1800)
+    command_diagnostic = (
+        build_command_runner(command, 1800) if build_command_runner is not None else None
+    )
+    if build_command_runner is None:
+        _bounded_command(command, timeout=1800)
     scan, command_lock = scan_and_lock(
         receipt_path=build_receipt_path,
         identity_lock_path=source_lock_path,
@@ -366,7 +372,7 @@ def _materialize_task(
     )
     if scan.get("scan_passed") is not True or command_lock.security_scan_passed is not True:
         raise ConfigurationError("v69 task-specific command-image v2 scan failed")
-    base = {
+    base: dict[str, Any] = {
         "task_id": task.task_id,
         "instance_id": instance.instance_id,
         "repository": task.repository,
@@ -390,6 +396,11 @@ def _materialize_task(
         "provider_calls": 0,
         "model_process_count": 0,
     }
+    if command_diagnostic is not None:
+        diagnostic_hash = command_diagnostic.get("diagnostic_hash")
+        if not isinstance(diagnostic_hash, str) or _HASH.fullmatch(diagnostic_hash) is None:
+            raise ConfigurationError("v69 build-command diagnostic hash is invalid")
+        base["command_diagnostic_hash"] = diagnostic_hash
     return {**base, "task_receipt_hash": content_hash(base)}
 
 

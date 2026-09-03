@@ -18,6 +18,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessMatrixAttempt,
     DeepSeekHarnessV69Manifest,
     DeepSeekHarnessV71DindSuccessorManifest,
+    DeepSeekHarnessV73DindSuccessorManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -186,6 +187,58 @@ def test_v71_dind_successor_manifest_freezes_data2_storage_and_closed_flags() ->
     changed["dind_data_backing"] = "/data/docker"
     with pytest.raises(ValueError, match="literal"):
         DeepSeekHarnessV71DindSuccessorManifest.model_validate(
+            {**changed, "manifest_hash": content_hash(changed)}
+        )
+
+
+def test_v73_dind_successor_manifest_forbids_v71_storage_reuse() -> None:
+    base: dict[str, object] = {
+        "schema_version": "1.0",
+        "format_id": "verigym_deepseek_harness_hwe_v73_dind_successor_manifest_v1",
+        "identity": "deepseek-harness-hwe-v73-dind-zero-provider-successor-v1",
+        "upstream_manifest_sha256": "1" * 64,
+        "upstream_manifest_hash": "2" * 64,
+        "predecessor_identity": "deepseek-harness-hwe-v71-dind-zero-provider-successor-v1",
+        "predecessor_report_sha256": "3" * 64,
+        "predecessor_report_hash": "4" * 64,
+        "predecessor_audit_sha256": "5" * 64,
+        "predecessor_audit_commit": "6" * 40,
+        "retired_dind_data_volume": "verigym-deepseek-harness-v71-dind-data",
+        "retired_dind_data_backing": ("/data2/jiadongzhu/docker/deepseek-harness-hwe-v71/data"),
+        "dind_image_id": "sha256:" + "7" * 64,
+        "dind_repository_digest": "sha256:" + "8" * 64,
+        "dind_server_version": "23.0.6",
+        "dind_storage_driver": "vfs",
+        "dind_default_runtime": "runc",
+        "dind_data_volume": "verigym-deepseek-harness-v73-dind-data",
+        "dind_socket_volume": "verigym-deepseek-harness-v73-dind-socket",
+        "dind_data_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v73/data",
+        "dind_socket_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v73/socket",
+        "command_diagnostic_max_bytes": 33554432,
+        "socket_cleanup_strategy": "networkless-readonly-fixed-path-v1",
+        "outer_dind_network": "none",
+        "host_docker_root_used_for_task_layers": False,
+        "provider_clients_available": False,
+        "registry_access_allowed": False,
+        "partial_archive_allowed": False,
+        "atomic_provider_contract": True,
+        "formal_collection_allowed": False,
+        "formal_collection_started": False,
+        "collection_started": False,
+        "training_started": False,
+        "production_training_ready": False,
+    }
+    manifest = DeepSeekHarnessV73DindSuccessorManifest.model_validate(
+        {**base, "manifest_hash": content_hash(base)}
+    )
+    assert manifest.dind_data_volume != manifest.retired_dind_data_volume
+    assert manifest.dind_data_backing != manifest.retired_dind_data_backing
+    assert manifest.command_diagnostic_max_bytes == 32 * 1024 * 1024
+
+    changed = dict(base)
+    changed["dind_data_volume"] = "verigym-deepseek-harness-v71-dind-data"
+    with pytest.raises(ValueError, match="literal"):
+        DeepSeekHarnessV73DindSuccessorManifest.model_validate(
             {**changed, "manifest_hash": content_hash(changed)}
         )
 
