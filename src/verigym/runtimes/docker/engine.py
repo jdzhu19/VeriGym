@@ -83,6 +83,16 @@ class DockerEngine(Protocol):
 
     def list_managed_volumes(self) -> list[str]: ...
 
+    def list_all_containers(self) -> list[str]: ...
+
+    def list_all_volumes(self) -> list[str]: ...
+
+    def inspect_network(self, name: str) -> dict[str, Any] | None: ...
+
+    def create_internal_network(self, name: str) -> str: ...
+
+    def remove_network(self, name: str) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -263,6 +273,16 @@ class DockerCliEngine:
         )
         self._closed = False
 
+    def _subprocess_environment(self) -> dict[str, str]:
+        environment = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        if self.docker_host is not None:
+            environment["DOCKER_HOST"] = validate_local_docker_host(self.docker_host)
+        return environment
+
     def _invoke(
         self,
         arguments: list[str],
@@ -284,13 +304,6 @@ class DockerCliEngine:
         started = time.monotonic()
         timed_out = False
         exit_code: int | None = None
-        environment = {
-            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        }
-        if self.docker_host is not None:
-            environment["DOCKER_HOST"] = validate_local_docker_host(self.docker_host)
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
             try:
                 process = subprocess.Popen(
@@ -298,7 +311,7 @@ class DockerCliEngine:
                     stdin=subprocess.DEVNULL,
                     stdout=stdout_file,
                     stderr=stderr_file,
-                    env=environment,
+                    env=self._subprocess_environment(),
                     shell=False,
                     text=False,
                     start_new_session=True,
@@ -537,11 +550,6 @@ class DockerCliEngine:
                 "Docker CLI is not installed or is not on PATH",
                 subreason="missing_cli",
             )
-        environment = {
-            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        }
         try:
             return subprocess.Popen(
                 [
@@ -554,7 +562,7 @@ class DockerCliEngine:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                env=environment,
+                env=self._subprocess_environment(),
                 shell=False,
                 text=False,
                 start_new_session=True,
@@ -618,6 +626,73 @@ class DockerCliEngine:
 
     def list_managed_volumes(self) -> list[str]:
         return self._list_values("volume", "{{.Name}}")
+
+    def list_all_containers(self) -> list[str]:
+        result = self._invoke(
+            ["ps", "--all", "--quiet"],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        if result.exit_code != 0 or result.timed_out:
+            self._raise_control_error(result, action="container_list")
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+    def list_all_volumes(self) -> list[str]:
+        result = self._invoke(
+            ["volume", "ls", "--quiet"],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        if result.exit_code != 0 or result.timed_out:
+            self._raise_control_error(result, action="volume_list")
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+    def inspect_network(self, name: str) -> dict[str, Any] | None:
+        result = self._invoke(
+            ["network", "inspect", name, "--format", "{{json .}}"],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        if result.timed_out:
+            self._raise_control_error(result, action="network_inspect")
+        if result.exit_code != 0:
+            detail = sanitize_diagnostic((result.stderr or result.stdout).strip()).lower()
+            if "no such network" in detail or "not found" in detail:
+                return None
+            self._raise_control_error(result, action="network_inspect")
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DockerDaemonError(
+                "Docker network inspection returned invalid JSON",
+                subreason="invalid_daemon_response",
+            ) from exc
+        if not isinstance(payload, dict):
+            raise DockerDaemonError(
+                "Docker network inspection returned an unexpected result",
+                subreason="invalid_daemon_response",
+            )
+        return payload
+
+    def create_internal_network(self, name: str) -> str:
+        result = self._invoke(
+            ["network", "create", "--driver", "bridge", "--internal", name],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        if result.exit_code != 0 or result.timed_out:
+            self._raise_control_error(result, action="network_create")
+        network_id = result.stdout.strip()
+        if not network_id:
+            raise DockerDaemonError(
+                "Docker network create returned no network ID",
+                subreason="invalid_daemon_response",
+            )
+        return network_id
+
+    def remove_network(self, name: str) -> None:
+        result = self._invoke(
+            ["network", "rm", name],
+            timeout_s=_CONTAINER_CONTROL_TIMEOUT_S,
+        )
+        if result.exit_code != 0 or result.timed_out:
+            self._raise_control_error(result, action="network_remove")
 
     def close(self) -> None:
         self._closed = True

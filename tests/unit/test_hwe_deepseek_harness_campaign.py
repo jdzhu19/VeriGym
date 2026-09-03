@@ -35,6 +35,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV109ProgressWriterScaffoldManifest,
     DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest,
     DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest,
+    DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -52,6 +53,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v109_progress_writer_scaffold_manifest,
     load_v112_data2_control_headroom_scaffold_manifest,
     load_v115_explicit_nested_docker_socket_scaffold_manifest,
+    load_v118_explicit_inner_inventory_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -95,6 +97,9 @@ _V112_MANIFEST = _REPOSITORY_ROOT / (
 _V115_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/"
     "qwen35_hwe_deepseek_harness_v115_explicit_nested_docker_socket_scaffold_v1.json"
+)
+_V118_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
 )
 
 
@@ -1060,3 +1065,50 @@ def test_v115_manifest_rejects_a_changed_socket_binding(field: str, value: objec
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest.model_validate(changed)
+
+
+def test_v118_manifest_freezes_explicit_all_resource_inner_inventory() -> None:
+    manifest = load_v118_explicit_inner_inventory_scaffold_manifest(_V118_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest)
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert manifest.v115_authorization_commit == "48bc47f0dbb020e41f330bf5350bad621d01df1c"
+    assert manifest.v116_audit_commit == "7faf47a4ba49139bf9e93200e104b8b9e9cbfea2"
+    assert manifest.v116_post_merge_main_run_id == 33815411217
+    assert manifest.nested_docker_host == (
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v118/socket/docker.sock"
+    )
+    assert manifest.inner_inventory_transport_policy == "explicit-bound-engine-all-resources-v1"
+    assert manifest.inner_inventory_all_containers_required is True
+    assert manifest.inner_inventory_all_volumes_required is True
+    assert manifest.host_sidecar_inventory_for_inner_allowed is False
+    assert manifest.inner_network_transport_policy == "explicit-bound-engine-v1"
+    assert manifest.host_sidecar_network_control_for_inner_allowed is False
+    assert manifest.streaming_attach_explicit_binding_required is True
+    assert manifest.v115_data_volume_reused is False
+    assert manifest.v117_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v120-official-matrix-v1"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("inner_inventory_transport_policy", "host-sidecar-exec"),
+        ("inner_inventory_all_containers_required", False),
+        ("inner_inventory_all_volumes_required", False),
+        ("host_sidecar_inventory_for_inner_allowed", True),
+        ("inner_network_transport_policy", "host-sidecar-exec"),
+        ("host_sidecar_network_control_for_inner_allowed", True),
+        ("streaming_attach_explicit_binding_required", False),
+        ("v115_data_volume_reused", True),
+        ("v117_identity_retired", False),
+    ],
+)
+def test_v118_manifest_rejects_a_changed_inventory_binding(field: str, value: object) -> None:
+    changed = json.loads(_V118_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest.model_validate(changed)
