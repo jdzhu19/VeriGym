@@ -296,6 +296,7 @@ def _materialize_task(
     build_command_runner: Callable[[list[str], int], dict[str, Any]] | None = None,
     source_binding_runner: Callable[[Path, HweOfflineTaskLock], dict[str, str]] | None = None,
     scan_scratch_parent: Path | None = None,
+    docker_control_timeout_s: int = 60,
 ) -> dict[str, Any]:
     archive_receipt = inspect_offline_image_archive(task, archive_root=archive_root)
     atomic_dump_json(root / "archive-receipts" / f"pr-{task.pr_number}.json", archive_receipt)
@@ -313,6 +314,7 @@ def _materialize_task(
                 "manifest_digest": task.registry_manifest_digest,
             }
         },
+        docker_control_timeout_s=docker_control_timeout_s,
     )
     binding = (
         _source_binding(source, task)
@@ -408,6 +410,8 @@ def _materialize_task(
         if not isinstance(diagnostic_hash, str) or _HASH.fullmatch(diagnostic_hash) is None:
             raise ConfigurationError("v69 build-command diagnostic hash is invalid")
         base["command_diagnostic_hash"] = diagnostic_hash
+    if docker_control_timeout_s != 60:
+        base["source_preparation_docker_control_timeout_seconds"] = docker_control_timeout_s
     return {**base, "task_receipt_hash": content_hash(base)}
 
 
