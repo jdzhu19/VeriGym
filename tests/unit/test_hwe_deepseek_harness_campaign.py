@@ -33,6 +33,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV103InspectOutputBoundScaffoldManifest,
     DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest,
     DeepSeekHarnessV109ProgressWriterScaffoldManifest,
+    DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -48,6 +49,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v103_inspect_output_bound_scaffold_manifest,
     load_v106_fresh_inventory_binding_scaffold_manifest,
     load_v109_progress_writer_scaffold_manifest,
+    load_v112_data2_control_headroom_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -84,6 +86,9 @@ _V106_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V109_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v109_progress_writer_scaffold_v1.json"
+)
+_V112_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v112_data2_control_headroom_scaffold_v1.json"
 )
 
 
@@ -968,3 +973,45 @@ def test_v109_manifest_rejects_an_indirect_progress_writer() -> None:
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV109ProgressWriterScaffoldManifest.model_validate(changed)
+
+
+def test_v112_manifest_freezes_the_real_data2_control_headroom_root() -> None:
+    manifest = load_v112_data2_control_headroom_scaffold_manifest(_V112_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v110_audit_commit == "557e11ffbca95175352e5221e2ee9d8c994588bf"
+    assert manifest.v110_post_merge_main_run_id == 33804279053
+    assert manifest.inherited_control_headroom_root == "/"
+    assert manifest.control_headroom_root.startswith("/data2/")
+    assert manifest.system_root_headroom_required is False
+    assert manifest.all_campaign_writable_roots_under_data2 is True
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v112-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.v109_data_volume_reused is False
+    assert manifest.v111_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v114-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("control_headroom_root", "/"),
+        ("system_root_headroom_required", True),
+        ("all_campaign_writable_roots_under_data2", False),
+    ],
+)
+def test_v112_manifest_rejects_a_changed_control_headroom_binding(
+    field: str, value: object
+) -> None:
+    changed = json.loads(_V112_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest.model_validate(changed)

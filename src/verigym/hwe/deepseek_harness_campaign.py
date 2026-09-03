@@ -2037,6 +2037,88 @@ class DeepSeekHarnessV109ProgressWriterScaffoldManifest(
         return self
 
 
+class DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest(
+    DeepSeekHarnessV109ProgressWriterScaffoldManifest
+):
+    """Fresh scaffold measuring its actual data2 control workspace."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v112_data2_control_headroom_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v112-data2-control-headroom-scaffold-v1"
+    ]
+    v109_manifest_sha256: str
+    v109_manifest_hash: str
+    v109_runner_sha256: str
+    v109_authorization_sha256: str
+    v109_report_sha256: str
+    v109_report_hash: str
+    v109_headroom_sha256: str
+    v109_headroom_hash: str
+    v109_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v109-progress-writer-scaffold-v1"
+    ]
+    v110_audit_sha256: str
+    v110_audit_commit: str
+    v110_post_merge_main_run_id: Literal[33804279053]
+    v110_post_merge_main_all_eight_classes_passed: Literal[True]
+    inherited_control_headroom_root: Literal["/"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v112-control"
+    ]
+    system_root_headroom_required: Literal[False]
+    all_campaign_writable_roots_under_data2: Literal[True]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v112-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v112-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v112/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v112/socket"
+    ]
+    v109_data_volume_reused: Literal[False]
+    v111_identity_retired: Literal[True]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v114-official-matrix-v1"
+    ]
+
+    @field_validator(
+        "v109_manifest_sha256",
+        "v109_manifest_hash",
+        "v109_runner_sha256",
+        "v109_authorization_sha256",
+        "v109_report_sha256",
+        "v109_report_hash",
+        "v109_headroom_sha256",
+        "v109_headroom_hash",
+        "v110_audit_sha256",
+    )
+    @classmethod
+    def validate_v112_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v112 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v110_audit_commit")
+    @classmethod
+    def validate_v112_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v112 scaffold manifest requires a full audit commit")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v112_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v112 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2521,6 +2603,23 @@ def load_v109_progress_writer_scaffold_manifest(
         raise ConfigurationError("v109 progress-writer scaffold manifest is invalid") from exc
 
 
+def load_v112_data2_control_headroom_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest:
+    """Load the bounded one-use v112 data2-control-headroom scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v112 data2-control-headroom scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError(
+            "v112 data2-control-headroom scaffold manifest is invalid"
+        ) from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2680,6 +2779,7 @@ __all__ = [
     "DeepSeekHarnessV103InspectOutputBoundScaffoldManifest",
     "DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest",
     "DeepSeekHarnessV109ProgressWriterScaffoldManifest",
+    "DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2708,6 +2808,7 @@ __all__ = [
     "load_v103_inspect_output_bound_scaffold_manifest",
     "load_v106_fresh_inventory_binding_scaffold_manifest",
     "load_v109_progress_writer_scaffold_manifest",
+    "load_v112_data2_control_headroom_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
