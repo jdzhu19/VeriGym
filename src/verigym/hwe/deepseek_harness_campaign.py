@@ -1481,6 +1481,126 @@ class DeepSeekHarnessV92OfficialMatrixManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV94RuntimeCompleteScaffoldManifest(StrictModel):
+    """Fresh zero-provider scaffold that includes the fixed workspace runtime image."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v94_runtime_complete_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v94-runtime-complete-scaffold-v1"]
+    v92_manifest_sha256: str
+    v92_manifest_hash: str
+    v92_report_sha256: str
+    v92_report_hash: str
+    v93_audit_sha256: str
+    v93_audit_commit: str
+    v93_post_merge_main_run_id: Literal[33766642633]
+    v93_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule: list[DeepSeekHarnessV92TaskBinding] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    v90_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v90-fresh-scaffold-timeout-successor-v1"
+    ]
+    v92_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v92-official-matrix-v1"
+    ]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v94-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v94-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v94/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v94/socket"]
+    scaffold_outer_network: Literal["none"]
+    preflight_inner_network: Literal["verigym-hwe-net"]
+    preflight_inner_network_internal: Literal[True]
+    task_network: Literal["none"]
+    verifier_network: Literal["none"]
+    controller_image_tag: Literal["node:22.19.0-bookworm-slim"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    controller_transfer: Literal["content_free_read_only_outer_canonical_tag_pipe_v2"]
+    workspace_runtime_image_id: str
+    workspace_runtime_host_repo_tags: list[str] = Field(min_length=2, max_length=2)
+    workspace_runtime_transfer: Literal["content_free_read_only_outer_image_id_pipe_v1"]
+    required_inner_image_count: Literal[12]
+    runtime_prepare_task_count: Literal[5]
+    harness_initialize_required: Literal[True]
+    synthetic_provider_values_only: Literal[True]
+    v90_task_qualification_reused_as_expected_binding: Literal[True]
+    tasks_rematerialized_from_completed_local_archives: Literal[True]
+    v90_data_volume_reused: Literal[False]
+    v92_data_volume_reused: Literal[False]
+    host_docker_root_used_for_task_layers: Literal[False]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v96-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v92_manifest_sha256",
+        "v92_manifest_hash",
+        "v92_report_sha256",
+        "v92_report_hash",
+        "v93_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v94 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v93_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v94 scaffold manifest requires a full audit commit")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+        "workspace_runtime_image_id",
+    )
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v94 scaffold manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        if tuple(item.task_id for item in self.schedule) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v94 scaffold schedule changed")
+        if any(
+            item.seed != self.seed or item.sample_index != self.sample_index
+            for item in self.schedule
+        ):
+            raise ValueError("v94 task seed/sample differs from the scaffold identity")
+        if self.workspace_runtime_host_repo_tags != [
+            "verigym/rtl-iverilog:12.0",
+            "verigym/rtl-iverilog:m10a-pre-ci",
+        ]:
+            raise ValueError("v94 workspace runtime tags changed")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v94 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -1873,6 +1993,21 @@ def load_v92_official_matrix_manifest(path: Path) -> DeepSeekHarnessV92OfficialM
         raise ConfigurationError("v92 official matrix manifest is invalid") from exc
 
 
+def load_v94_runtime_complete_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV94RuntimeCompleteScaffoldManifest:
+    """Load the bounded one-use v94 runtime-complete zero-provider scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v94 runtime-complete scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV94RuntimeCompleteScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v94 runtime-complete scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2026,6 +2161,7 @@ __all__ = [
     "DeepSeekHarnessV90FreshScaffoldManifest",
     "DeepSeekHarnessV92OfficialMatrixManifest",
     "DeepSeekHarnessV92TaskBinding",
+    "DeepSeekHarnessV94RuntimeCompleteScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2048,6 +2184,7 @@ __all__ = [
     "load_v87_fresh_scaffold_manifest",
     "load_v90_fresh_scaffold_manifest",
     "load_v92_official_matrix_manifest",
+    "load_v94_runtime_complete_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
