@@ -976,6 +976,37 @@ digest-verified assembly may atomically publish the environment manifest. Provid
 zero, verifier execution remains `--network none`, and later qualification/security/canary stages
 require separate authorization after revalidating this manifest.
 
+### DeepSeek Harness official-matrix execution on bind-backed DinD
+
+An audited zero-provider scaffold may authorize one official provider matrix only through
+a new, merged, immutable manifest. The runner must bind the complete predecessor report,
+contract, task/source/image locks, command-image scans, controller transfer provenance,
+DinD runtime and cleanup receipts, independent audit commit, and its successful post-merge
+main run. Partial authorization, task substitution, retry under the same identity, and
+registry repair are forbidden.
+
+The campaign reopens its purpose-bound DinD data volume at most once. The volume uses a
+local-driver bind under the declared `/data2` campaign directory; it does not change the
+host daemon data root. Its owner-only socket backing is recreated for the run and removed
+with a networkless, read-only cleanup container holding only `CHOWN`, `DAC_OVERRIDE`, and
+`FOWNER`. The runner never prunes Docker, restarts the daemon, changes VPN/proxy settings,
+or removes unrelated resources.
+
+Provider access is limited to the Harness controller on the named user-defined bridge.
+Task and verifier containers remain `network=none`. The command image is credential-free,
+Codex-free, task-specific, label-checked, digest-locked, and distinct from the official
+verifier image. An offline-loaded controller is accepted only when its exact image ID,
+canonical tag, empty inner `RepoDigests`, and audited source-receipt hash all match; this
+exception does not permit a pull or weaken the ordinary repository-digest path.
+
+The public provider-start marker defines consumption. Missing markers on infrastructure
+failure preserve the task; invalid or unreadable markers are conservative consumed stops.
+Infrastructure or security failures stop the matrix, ordinary model or verifier failures
+may continue, and two consecutive no-progress-like outcomes stop remaining tasks. Each
+attempt records verifier, protocol, trajectory, infrastructure, security, SFT-admission,
+and exact-64K planes independently. Candidate SFT files are published only after all
+planes pass and remain unauthorized for import until an independent result audit.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
