@@ -34,6 +34,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest,
     DeepSeekHarnessV109ProgressWriterScaffoldManifest,
     DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest,
+    DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -50,6 +51,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v106_fresh_inventory_binding_scaffold_manifest,
     load_v109_progress_writer_scaffold_manifest,
     load_v112_data2_control_headroom_scaffold_manifest,
+    load_v115_explicit_nested_docker_socket_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -89,6 +91,10 @@ _V109_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V112_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v112_data2_control_headroom_scaffold_v1.json"
+)
+_V115_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/"
+    "qwen35_hwe_deepseek_harness_v115_explicit_nested_docker_socket_scaffold_v1.json"
 )
 
 
@@ -1015,3 +1021,42 @@ def test_v112_manifest_rejects_a_changed_control_headroom_binding(
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest.model_validate(changed)
+
+
+def test_v115_manifest_freezes_the_explicit_nested_docker_socket() -> None:
+    manifest = load_v115_explicit_nested_docker_socket_scaffold_manifest(_V115_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest)
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert manifest.v113_audit_commit == "9f79f54725c365bd0ab9ba9389f2ac421db1b155"
+    assert manifest.v113_post_merge_main_run_id == 33810326256
+    assert manifest.nested_docker_host == (
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v115/socket/docker.sock"
+    )
+    assert manifest.docker_cli_explicit_binding_required is True
+    assert manifest.harness_helper_explicit_binding_required is True
+    assert manifest.inherited_docker_environment_allowed is False
+    assert manifest.remote_docker_endpoint_allowed is False
+    assert manifest.v112_data_volume_reused is False
+    assert manifest.v114_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v117-official-matrix-v1"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("nested_docker_host", "tcp://127.0.0.1:2375"),
+        ("docker_cli_explicit_binding_required", False),
+        ("harness_helper_explicit_binding_required", False),
+        ("inherited_docker_environment_allowed", True),
+        ("remote_docker_endpoint_allowed", True),
+        ("v112_data_volume_reused", True),
+    ],
+)
+def test_v115_manifest_rejects_a_changed_socket_binding(field: str, value: object) -> None:
+    changed = json.loads(_V115_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest.model_validate(changed)

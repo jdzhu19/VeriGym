@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import os
+import socket
 from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-from verigym.runtimes.docker.engine import DockerCliEngine, EngineResult, execute_container
+from verigym.runtimes.docker.engine import (
+    DockerCliEngine,
+    EngineResult,
+    execute_container,
+    validate_local_docker_host,
+)
 from verigym.runtimes.docker.errors import DockerDaemonError
 
 
@@ -255,3 +264,85 @@ def test_docker_cli_exec_uses_argv_options_and_a_candidate_only_deadline(
         ),
         (["top", "container-5", "-eo", "pid,ppid,comm"], 60, 256 * 1024),
     ]
+
+
+class _CompletedPopen:
+    def __init__(
+        self,
+        argv: list[str],
+        *,
+        stdout: Any,
+        stderr: Any,
+        env: dict[str, str],
+        **kwargs: Any,
+    ) -> None:
+        del argv, stderr, kwargs
+        self.pid = os.getpid()
+        self.returncode = 0
+        self.environment = dict(env)
+        stdout.write(b"{}\n")
+
+    def communicate(self, timeout: int | None = None) -> tuple[None, None]:
+        del timeout
+        return None, None
+
+
+def _unix_socket(path: Path) -> socket.socket:
+    endpoint = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    endpoint.bind(str(path))
+    return endpoint
+
+
+def test_docker_cli_propagates_only_an_explicit_local_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    socket_path = tmp_path / "docker.sock"
+    endpoint = _unix_socket(socket_path)
+    observed: list[dict[str, str]] = []
+
+    def popen(*args: Any, **kwargs: Any) -> _CompletedPopen:
+        process = _CompletedPopen(*args, **kwargs)
+        observed.append(process.environment)
+        return process
+
+    monkeypatch.setattr("verigym.runtimes.docker.engine.subprocess.Popen", popen)
+    monkeypatch.setenv("DOCKER_HOST", "tcp://untrusted.example:2375")
+    monkeypatch.setenv("DOCKER_CONTEXT", "untrusted-context")
+    monkeypatch.setenv("VERIGYM_UNRELATED_SECRET", "must-not-propagate")
+    try:
+        DockerCliEngine(executable="/usr/bin/docker").version()
+        DockerCliEngine(executable="/usr/bin/docker", docker_host=f"unix://{socket_path}").version()
+    finally:
+        endpoint.close()
+
+    assert "DOCKER_HOST" not in observed[0]
+    assert observed[1]["DOCKER_HOST"] == f"unix://{socket_path}"
+    assert set(observed[1]) == {"PATH", "LANG", "LC_ALL", "DOCKER_HOST"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "tcp://127.0.0.1:2375",
+        "ssh://docker.example",
+        "unix://relative/docker.sock",
+        "unix:///tmp/docker.sock?query=1",
+        "unix:///tmp/docker.sock#fragment",
+        "unix:///tmp/%64ocker.sock",
+    ],
+)
+def test_local_docker_host_rejects_remote_relative_or_encoded_endpoints(value: str) -> None:
+    with pytest.raises(ValueError, match="docker_host"):
+        validate_local_docker_host(value)
+
+
+def test_local_docker_host_rejects_symlinks_and_non_sockets(tmp_path: Path) -> None:
+    regular = tmp_path / "not-a-socket"
+    regular.write_text("not a socket", encoding="utf-8")
+    link = tmp_path / "socket-link"
+    link.symlink_to(regular)
+
+    with pytest.raises(ValueError, match="not a Unix socket"):
+        validate_local_docker_host(f"unix://{regular}")
+    with pytest.raises(ValueError, match="canonical and not a symlink"):
+        validate_local_docker_host(f"unix://{link}")

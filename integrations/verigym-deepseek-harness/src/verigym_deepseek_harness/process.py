@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from verigym.runtimes.docker.engine import validate_local_docker_host
+
 from .config import API_KEY_ENV, BASE_URL_ENV, DeepSeekHarnessSettings
 
 
@@ -72,6 +74,7 @@ def run_harness_helper(
     session_root: Path,
     broker_root: Path,
     max_format_repairs: int = 0,
+    docker_host: str | None = None,
 ) -> DeepSeekHarnessProcessResult:
     payload = {
         "mode": mode,
@@ -96,6 +99,11 @@ def run_harness_helper(
         "DEEPSEEK_API_KEY": os.environ[API_KEY_ENV],
         "DEEPSEEK_BASE_URL": os.environ[BASE_URL_ENV],
     }
+    if docker_host is not None:
+        try:
+            environment["DOCKER_HOST"] = validate_local_docker_host(docker_host)
+        except ValueError as exc:
+            raise DeepSeekHarnessProcessError("DeepSeek Harness Docker endpoint is unsafe") from exc
     helper = Path(__file__).with_name("helper.py").resolve(strict=True)
     started = time.monotonic()
     process = subprocess.Popen(
