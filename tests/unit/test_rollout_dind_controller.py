@@ -92,6 +92,78 @@ def test_dind_daemon_is_networkless_and_uses_only_nested_storage(
     assert "/var/run/docker.sock" not in launch
 
 
+def test_dind_readiness_retries_probe_timeout_after_recording_physical_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    readiness_calls = 0
+    lifecycle: list[str] = []
+
+    def fake_run(argv: list[str], *, timeout_s: int = 60):  # type: ignore[no-untyped-def]
+        nonlocal readiness_calls
+        if argv[:5] == ["docker", "exec", "daemon", "docker", "info"]:
+            if "--format" in argv:
+                value = {"Driver": "vfs", "DefaultRuntime": "runc"}
+                return _completed(argv, json.dumps(value).encode())
+            readiness_calls += 1
+            if readiness_calls == 1:
+                raise subprocess.TimeoutExpired(argv, timeout_s)
+        if argv[:5] == ["docker", "exec", "daemon", "docker", "version"]:
+            return _completed(argv, b"23.0.6\n")
+        if argv[:4] == ["docker", "exec", "daemon", "stat"]:
+            return _completed(argv, f"{os.getgid()}\n".encode())
+        return _completed(argv)
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    metadata = module._start_dind(  # noqa: SLF001
+        name="daemon",
+        image_id="sha256:" + "b" * 64,
+        socket_volume="socket-volume",
+        data_volume="data-volume",
+        source_volume=None,
+        scratch_volume=None,
+        empty_home=Path("/safe/empty-home"),
+        same_path_mounts=[],
+        startup_timeout_s=1,
+        on_container_started=lambda: lifecycle.append("physical_open_recorded"),
+    )
+
+    assert lifecycle == ["physical_open_recorded"]
+    assert readiness_calls == 2
+    assert metadata["Driver"] == "vfs"
+
+
+def test_dind_readiness_timeout_exhausts_total_deadline_after_recording_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    lifecycle: list[str] = []
+    monotonic_values = iter((0.0, 0.5, 2.0))
+
+    def fake_run(argv: list[str], *, timeout_s: int = 60):  # type: ignore[no-untyped-def]
+        if argv[:5] == ["docker", "exec", "daemon", "docker", "info"]:
+            raise subprocess.TimeoutExpired(argv, timeout_s)
+        return _completed(argv)
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(monotonic_values))
+    with pytest.raises(RuntimeError, match="did not become ready"):
+        module._start_dind(  # noqa: SLF001
+            name="daemon",
+            image_id="sha256:" + "b" * 64,
+            socket_volume="socket-volume",
+            data_volume="data-volume",
+            source_volume=None,
+            scratch_volume=None,
+            empty_home=Path("/safe/empty-home"),
+            same_path_mounts=[],
+            startup_timeout_s=1,
+            on_container_started=lambda: lifecycle.append("physical_open_recorded"),
+        )
+
+    assert lifecycle == ["physical_open_recorded"]
+
+
 def test_dind_image_requires_official_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _module()
     image_id = "sha256:" + "c" * 64

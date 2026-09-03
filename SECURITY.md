@@ -654,6 +654,13 @@ volume inventories are empty, the sidecar is removed, and the transient socket v
 are gone. The data volume remains labeled, identity-bound infrastructure for an independently
 authorized successor.
 
+If a predecessor's physical data-volume opening was observed but its logical reopen counter was
+not persisted, the physical observation wins: that volume is frozen and a successor must use a
+new exact bind backing and re-materialize from locked local archives. Opening is recorded
+immediately after the outer sidecar starts, before readiness polling. An individual bounded
+`docker info` timeout is a retryable not-ready observation; the enclosing startup deadline still
+fails closed, removes the sidecar, and cannot publish a partial scaffold.
+
 ### Daemonless registry prewarm boundary
 
 The separately authorized OpenHands v20 prewarm preflight replaces the networked privileged DinD
