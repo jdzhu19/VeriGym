@@ -32,6 +32,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV100InventoryTimeoutScaffoldManifest,
     DeepSeekHarnessV103InspectOutputBoundScaffoldManifest,
     DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest,
+    DeepSeekHarnessV109ProgressWriterScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -46,6 +47,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v100_inventory_timeout_scaffold_manifest,
     load_v103_inspect_output_bound_scaffold_manifest,
     load_v106_fresh_inventory_binding_scaffold_manifest,
+    load_v109_progress_writer_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -79,6 +81,9 @@ _V100_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V106_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v106_fresh_inventory_binding_scaffold_v1.json"
+)
+_V109_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v109_progress_writer_scaffold_v1.json"
 )
 
 
@@ -930,3 +935,36 @@ def test_v106_manifest_rejects_non_fresh_or_incomplete_inventory_binding(
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest.model_validate(changed)
+
+
+def test_v109_manifest_freezes_direct_progress_writer_and_fresh_storage() -> None:
+    manifest = load_v109_progress_writer_scaffold_manifest(_V109_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV109ProgressWriterScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v107_audit_commit == "96111d6073e4fe0944035a1a9a4b480e3f08d811"
+    assert manifest.v107_post_merge_main_run_id == 33800282289
+    assert manifest.progress_writer_source == "v97-captured-v94-base-writer"
+    assert manifest.v106_evidence_directory_count == 14
+    assert manifest.v106_evidence_regular_file_count == 0
+    assert manifest.v106_evidence_symlink_count == 0
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v109-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.final_inventory_command_image_source == "fresh-materialization-locks"
+    assert manifest.v106_data_volume_reused is False
+    assert manifest.v108_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v111-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+def test_v109_manifest_rejects_an_indirect_progress_writer() -> None:
+    changed = json.loads(_V109_MANIFEST.read_text(encoding="utf-8"))
+    changed["progress_writer_source"] = "v106-indirect-writer"
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV109ProgressWriterScaffoldManifest.model_validate(changed)
