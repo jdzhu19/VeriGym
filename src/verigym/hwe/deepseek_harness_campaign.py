@@ -1964,6 +1964,79 @@ class DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest(
         return self
 
 
+class DeepSeekHarnessV109ProgressWriterScaffoldManifest(
+    DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest
+):
+    """Fresh zero-provider scaffold with a directly tested progress writer."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v109_progress_writer_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v109-progress-writer-scaffold-v1"
+    ]
+    v106_manifest_sha256: str
+    v106_manifest_hash: str
+    v106_runner_sha256: str
+    v106_authorization_sha256: str
+    v106_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v106-fresh-inventory-binding-scaffold-v1"
+    ]
+    v106_evidence_directory_count: Literal[14]
+    v106_evidence_regular_file_count: Literal[0]
+    v106_evidence_symlink_count: Literal[0]
+    v107_audit_sha256: str
+    v107_audit_commit: str
+    v107_post_merge_main_run_id: Literal[33800282289]
+    v107_post_merge_main_all_eight_classes_passed: Literal[True]
+    progress_writer_source: Literal["v97-captured-v94-base-writer"]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v109-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v109-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v109/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v109/socket"
+    ]
+    v106_data_volume_reused: Literal[False]
+    v108_identity_retired: Literal[True]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v111-official-matrix-v1"
+    ]
+
+    @field_validator(
+        "v106_manifest_sha256",
+        "v106_manifest_hash",
+        "v106_runner_sha256",
+        "v106_authorization_sha256",
+        "v107_audit_sha256",
+    )
+    @classmethod
+    def validate_v109_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v109 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v107_audit_commit")
+    @classmethod
+    def validate_v109_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v109 scaffold manifest requires a full audit commit")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v109_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v109 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2433,6 +2506,21 @@ def load_v106_fresh_inventory_binding_scaffold_manifest(
         ) from exc
 
 
+def load_v109_progress_writer_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV109ProgressWriterScaffoldManifest:
+    """Load the bounded one-use v109 progress-writer scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v109 progress-writer scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV109ProgressWriterScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v109 progress-writer scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2591,6 +2679,7 @@ __all__ = [
     "DeepSeekHarnessV100InventoryTimeoutScaffoldManifest",
     "DeepSeekHarnessV103InspectOutputBoundScaffoldManifest",
     "DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest",
+    "DeepSeekHarnessV109ProgressWriterScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2618,6 +2707,7 @@ __all__ = [
     "load_v100_inventory_timeout_scaffold_manifest",
     "load_v103_inspect_output_bound_scaffold_manifest",
     "load_v106_fresh_inventory_binding_scaffold_manifest",
+    "load_v109_progress_writer_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
