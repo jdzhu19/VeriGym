@@ -6,10 +6,12 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from verigym.runtimes.docker.errors import (
@@ -85,6 +87,33 @@ class DockerEngine(Protocol):
 
 
 _DETACHED_EXECUTION_PROTOCOL = "docker_detached_start_wait_logs_v1"
+
+
+def validate_local_docker_host(value: str) -> str:
+    """Return an exact, canonical local Unix-socket Docker endpoint.
+
+    Explicit transport binding is deliberately narrower than the Docker CLI's general
+    ``DOCKER_HOST`` syntax.  VeriGym does not admit remote daemons, relative paths, encoded
+    paths, symlinks, or non-socket filesystem objects through this interface.
+    """
+
+    prefix = "unix://"
+    if not value.startswith(prefix):
+        raise ValueError("docker_host must use an absolute local Unix socket")
+    raw_path = value.removeprefix(prefix)
+    if not raw_path.startswith("/") or any(character in raw_path for character in "\x00?#%"):
+        raise ValueError("docker_host must use an absolute local Unix socket")
+    path = Path(raw_path)
+    try:
+        metadata = os.lstat(path)
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("docker_host Unix socket is unavailable") from exc
+    if path != resolved or stat.S_ISLNK(metadata.st_mode):
+        raise ValueError("docker_host Unix socket path must be canonical and not a symlink")
+    if not stat.S_ISSOCK(metadata.st_mode):
+        raise ValueError("docker_host path is not a Unix socket")
+    return value
 
 
 def _require_control_success(
@@ -227,8 +256,11 @@ class DockerCliEngine:
 
     backend_type = "docker_cli"
 
-    def __init__(self, executable: str | None = None) -> None:
+    def __init__(self, executable: str | None = None, *, docker_host: str | None = None) -> None:
         self.executable = executable or shutil.which("docker")
+        self.docker_host = (
+            validate_local_docker_host(docker_host) if docker_host is not None else None
+        )
         self._closed = False
 
     def _invoke(
@@ -257,6 +289,8 @@ class DockerCliEngine:
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
         }
+        if self.docker_host is not None:
+            environment["DOCKER_HOST"] = validate_local_docker_host(self.docker_host)
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
             try:
                 process = subprocess.Popen(
@@ -589,4 +623,10 @@ class DockerCliEngine:
         self._closed = True
 
 
-__all__ = ["DockerCliEngine", "DockerEngine", "EngineResult", "execute_container"]
+__all__ = [
+    "DockerCliEngine",
+    "DockerEngine",
+    "EngineResult",
+    "execute_container",
+    "validate_local_docker_host",
+]
