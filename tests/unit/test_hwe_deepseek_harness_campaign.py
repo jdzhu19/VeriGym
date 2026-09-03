@@ -31,6 +31,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV97RebuildIdentityScaffoldManifest,
     DeepSeekHarnessV100InventoryTimeoutScaffoldManifest,
     DeepSeekHarnessV103InspectOutputBoundScaffoldManifest,
+    DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -44,6 +45,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v97_rebuild_identity_scaffold_manifest,
     load_v100_inventory_timeout_scaffold_manifest,
     load_v103_inspect_output_bound_scaffold_manifest,
+    load_v106_fresh_inventory_binding_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -74,6 +76,9 @@ _V97_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V100_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v100_inventory_timeout_scaffold_v1.json"
+)
+_V106_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v106_fresh_inventory_binding_scaffold_v1.json"
 )
 
 
@@ -885,3 +890,43 @@ def test_v103_manifest_rejects_the_failed_inspect_output_bound() -> None:
     )
     with pytest.raises(ValueError, match="toolchain_inventory_inspect_output_bound_bytes"):
         DeepSeekHarnessV103InspectOutputBoundScaffoldManifest.model_validate(changed)
+
+
+def test_v106_manifest_freezes_fresh_lock_derived_inventory() -> None:
+    manifest = load_v106_fresh_inventory_binding_scaffold_manifest(_V106_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v104_audit_commit == "95b9a11dbb3833fd57fc5b0a43bcd8708bc25865"
+    assert manifest.v104_post_merge_main_run_id == 33795946043
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v106-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.final_inventory_command_image_source == "fresh-materialization-locks"
+    assert manifest.final_inventory_fresh_command_image_count == 5
+    assert manifest.required_inner_image_count == 12
+    assert manifest.v103_data_volume_reused is False
+    assert manifest.v105_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v108-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("final_inventory_command_image_source", "historical-schedule-command-images"),
+        ("final_inventory_fresh_command_image_count", 4),
+    ],
+)
+def test_v106_manifest_rejects_non_fresh_or_incomplete_inventory_binding(
+    field: str, value: object
+) -> None:
+    changed = json.loads(_V106_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest.model_validate(changed)
