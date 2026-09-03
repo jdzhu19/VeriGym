@@ -26,6 +26,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV85OfficialMatrixManifest,
     DeepSeekHarnessV87FreshScaffoldManifest,
     DeepSeekHarnessV90FreshScaffoldManifest,
+    DeepSeekHarnessV92OfficialMatrixManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -34,6 +35,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v85_official_matrix_manifest,
     load_v87_fresh_scaffold_manifest,
     load_v90_fresh_scaffold_manifest,
+    load_v92_official_matrix_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -49,6 +51,9 @@ _V87_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V90_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v90_fresh_scaffold_timeout_successor_v1.json"
+)
+_V92_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v92_official_matrix_v1.json"
 )
 
 
@@ -718,3 +723,33 @@ def test_v90_manifest_freezes_new_storage_and_bounded_control_timeout() -> None:
     assert manifest.provider_successor_reopen_budget == 1
     assert manifest.formal_collection_allowed is False
     assert manifest.training_started is False
+
+
+def test_v92_manifest_freezes_v90_receipts_order_and_closed_flags() -> None:
+    manifest = load_v92_official_matrix_manifest(_V92_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV92OfficialMatrixManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v91_audit_commit == "15919391354ddecdf29996893f4c745835101f17"
+    assert manifest.v91_post_merge_main_run_id == 33762766907
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v90-dind-data"
+    assert manifest.source_preparation_docker_control_timeout_seconds == 300
+    assert all(
+        item.source_preparation_docker_control_timeout_seconds == 300 for item in manifest.schedule
+    )
+    assert manifest.v90_data_volume_reopen_budget == 1
+    assert manifest.v90_data_volume_reopen_count_before == 0
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v92_manifest_rejects_reordered_tasks_even_with_a_recomputed_hash() -> None:
+    changed = json.loads(_V92_MANIFEST.read_text(encoding="utf-8"))
+    changed["schedule"][0], changed["schedule"][1] = (
+        changed["schedule"][1],
+        changed["schedule"][0],
+    )
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="schedule changed"):
+        DeepSeekHarnessV92OfficialMatrixManifest.model_validate(changed)
