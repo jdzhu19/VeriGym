@@ -235,3 +235,22 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V77_DIND_ZERO_PROVIDER=1 \
 Any failure remains pre-provider and publishes no partial contract. A complete v77 result still
 sets `provider_execution_authorized=false` until an independent v78 audit is merged and its own
 post-merge `main` checks pass.
+
+V77 subsequently completed all three Ibex tasks and the CVA6 source-profile repair, then stopped
+at the PR-2017 source-binding gate. V78 froze the result and found that the historic v69 helper
+conflated the public dataset base with the official image's digest-locked runtime marker. V79 uses
+one exact PR-2017 override, requires equality for every other task, and records both identities in
+canonical task receipts. It uses a new identity and new `/data2` storage and never reopens v77.
+
+Run v79 exactly once only after its authorization is merged and all eight post-merge `main` job
+classes pass, with provider and Docker routing variables removed without exposing their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V79_DIND_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v79_dind.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+Any failure remains pre-provider and publishes no partial contract. A complete v79 result still
+sets `provider_execution_authorized=false` until an independent v80 audit is merged and its own
+post-merge `main` checks pass.

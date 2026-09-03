@@ -99,6 +99,9 @@ def test_v69_runner_has_no_provider_surface_or_registry_command() -> None:
     assert "VERIGYM_DEEPSEEK_API_KEY" in source
     assert "VERIGYM_DEEPSEEK_API_BASE_URL" in source
     assert "refuses a provider configuration environment" in source
+    assert "source_binding_runner: Callable" in source
+    assert "if source_binding_runner is None" in source
+    assert "_source_binding(source, task)" in source
     manifest = json.loads(_MANIFEST.read_text(encoding="utf-8"))
     assert all(
         not task["archive_relpath"].endswith(".partial") for task in manifest["primary_tasks"]

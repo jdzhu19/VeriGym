@@ -294,6 +294,7 @@ def _materialize_task(
     campaign_identity: str = IDENTITY,
     command_tag_version: str = "v69",
     build_command_runner: Callable[[list[str], int], dict[str, Any]] | None = None,
+    source_binding_runner: Callable[[Path, HweOfflineTaskLock], dict[str, str]] | None = None,
     scan_scratch_parent: Path | None = None,
 ) -> dict[str, Any]:
     archive_receipt = inspect_offline_image_archive(task, archive_root=archive_root)
@@ -313,7 +314,11 @@ def _materialize_task(
             }
         },
     )
-    binding = _source_binding(source, task)
+    binding = (
+        _source_binding(source, task)
+        if source_binding_runner is None
+        else source_binding_runner(source, task)
+    )
     smoke_root = root / "qualification" / f"pr-{task.pr_number}"
     smoke = run_zero_model_smoke(source=source, output=smoke_root)
     if not zero_model_infrastructure_valid(smoke) or not zero_model_fail_to_pass_eligible(smoke):
