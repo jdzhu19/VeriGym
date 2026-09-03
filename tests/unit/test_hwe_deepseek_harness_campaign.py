@@ -20,6 +20,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV71DindSuccessorManifest,
     DeepSeekHarnessV73DindSuccessorManifest,
     DeepSeekHarnessV77DindSuccessorManifest,
+    DeepSeekHarnessV79DindSuccessorManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -299,6 +300,82 @@ def test_v77_dind_successor_binds_exact_cva6_profile_repair_and_fresh_storage() 
     changed["cva6_workspace_tool_bridge_exclusion"] = "tools"
     with pytest.raises(ValueError, match="literal"):
         DeepSeekHarnessV77DindSuccessorManifest.model_validate(
+            {**changed, "manifest_hash": content_hash(changed)}
+        )
+
+
+def test_v79_dind_successor_binds_only_pr_2017_runtime_override() -> None:
+    base: dict[str, object] = {
+        "schema_version": "1.0",
+        "format_id": "verigym_deepseek_harness_hwe_v79_dind_successor_manifest_v1",
+        "identity": "deepseek-harness-hwe-v79-dind-zero-provider-successor-v1",
+        "upstream_manifest_sha256": "1" * 64,
+        "upstream_manifest_hash": "2" * 64,
+        "predecessor_identity": "deepseek-harness-hwe-v77-dind-zero-provider-successor-v1",
+        "predecessor_report_sha256": "3" * 64,
+        "predecessor_report_hash": "4" * 64,
+        "predecessor_audit_sha256": "5" * 64,
+        "predecessor_audit_commit": "6" * 40,
+        "predecessor_prepared_source_image_lock_sha256": "7" * 64,
+        "predecessor_pr_2017_source_hash": "8" * 64,
+        "predecessor_pr_2017_task_bundle_hash": "9" * 64,
+        "pr_2711_offline_archive_receipt_hash": "a" * 64,
+        "retired_dind_data_volume": "verigym-deepseek-harness-v77-dind-data",
+        "retired_dind_data_backing": ("/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/data"),
+        "dind_image_id": "sha256:" + "b" * 64,
+        "dind_repository_digest": "sha256:" + "c" * 64,
+        "dind_server_version": "23.0.6",
+        "dind_storage_driver": "vfs",
+        "dind_default_runtime": "runc",
+        "dind_data_volume": "verigym-deepseek-harness-v79-dind-data",
+        "dind_socket_volume": "verigym-deepseek-harness-v79-dind-socket",
+        "dind_data_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v79/data",
+        "dind_socket_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v79/socket",
+        "scanner_workspace_policy": "successor-output-root-only-v1",
+        "scanner_workspace_relative_path": "scan-workspaces",
+        "source_profile_repair": "cva6-task-image-tool-bridge-exclusion-v1",
+        "cva6_repository_profile_id": "hwe-openhwgroup-cva6-v1",
+        "cva6_repository_profile_hash": "d" * 64,
+        "cva6_workspace_tool_bridge_exclusion": ".hwe_tools",
+        "escaping_symlink_policy": "reject-unlisted-v1",
+        "runtime_baseline_repair": "pr-2017-digest-locked-runtime-marker-v1",
+        "runtime_baseline_policy": "exact-task-override-otherwise-dataset-base-v1",
+        "runtime_base_commit_overrides": {
+            "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2017": (
+                "d87707a81fe8926dda2deff844797a491811983a"
+            )
+        },
+        "tasks_without_runtime_override_match_dataset_base": True,
+        "command_diagnostic_max_bytes": 33554432,
+        "socket_cleanup_strategy": "networkless-readonly-fixed-path-v2",
+        "outer_dind_network": "none",
+        "host_docker_root_used_for_task_layers": False,
+        "provider_clients_available": False,
+        "registry_access_allowed": False,
+        "partial_archive_allowed": False,
+        "atomic_provider_contract": True,
+        "formal_collection_allowed": False,
+        "formal_collection_started": False,
+        "collection_started": False,
+        "training_started": False,
+        "production_training_ready": False,
+    }
+    manifest = DeepSeekHarnessV79DindSuccessorManifest.model_validate(
+        {**base, "manifest_hash": content_hash(base)}
+    )
+    assert manifest.dind_data_volume != manifest.retired_dind_data_volume
+    assert list(manifest.runtime_base_commit_overrides) == [
+        "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2017"
+    ]
+
+    changed = dict(base)
+    changed["runtime_base_commit_overrides"] = {
+        "hwe-bench/repo-repair-v1/openhwgroup__cva6__pr-2711": (
+            "5518a41c08a1949c606d54b9ac631e8f7635e7f3"
+        )
+    }
+    with pytest.raises(ValueError, match="exact PR-2017 runtime override"):
+        DeepSeekHarnessV79DindSuccessorManifest.model_validate(
             {**changed, "manifest_hash": content_hash(changed)}
         )
 

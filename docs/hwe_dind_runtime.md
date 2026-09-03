@@ -149,6 +149,13 @@ beneath the repository and be a real directory; its child link is never followed
 escaping links remain terminal. V77 uses fresh bind-backed data/socket volumes beneath
 `/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/` and never opens the retired v75 data volume.
 
+After v77 safely stopped on PR-2017's distinct dataset and runtime baselines, v79 keeps the public
+dataset commit frozen and binds the digest-locked image marker separately. Only PR-2017 has an
+explicit runtime override; all other tasks must keep runtime and dataset commits equal. The
+override is tied to the frozen prepared source, repository profile, task bundle, official image,
+and registry digest. V79 writes its nested layers only beneath
+`/data2/jiadongzhu/docker/deepseek-harness-hwe-v79/` and never opens the retired v77 data volume.
+
 The bind backing must be new for its campaign identity. Never point it at `/data/docker`, an
 existing Docker root, a home directory, a repository, another experiment, or a symlink. A stale
 volume, nonempty inner container/volume inventory, unexpected mount, or failed cleanup is terminal.
