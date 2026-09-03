@@ -14,6 +14,7 @@ from verigym.schemas.task import ValidationIssue
 class VerilogEvalVariant(StrEnum):
     V2_SPEC_TO_RTL = "v2-spec-to-rtl"
     V2_SPEC_TO_RTL_AGENT_EVAL_V1 = "v2-spec-to-rtl-agent-eval-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1 = "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1 = "v2-spec-to-rtl-agent-eval-functional-v1"
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2 = "v2-spec-to-rtl-agent-eval-functional-v2"
     V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3 = "v2-spec-to-rtl-agent-eval-functional-v3"

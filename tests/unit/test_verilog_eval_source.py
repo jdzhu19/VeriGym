@@ -5,11 +5,19 @@ from pathlib import Path
 
 import pytest
 
+from tests.milestone9_helpers import experiment_config, offline_service
 from verigym.core.errors import ConfigurationError
-from verigym.core.hashing import hash_directory
+from verigym.core.hashing import content_hash, hash_directory
+from verigym.core.orchestrator import VeriGym
+from verigym.experiments.planner import ExperimentPlanner
 from verigym.registry.collections import build_registries
+from verigym.schemas.run import RunConfig
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.suites.verilog_eval.adapter import VerilogEvalSuite
+from verigym.suites.verilog_eval.commercial import (
+    VCS_MCP_EXCLUSIONS,
+    combined_reference_testbench,
+)
 from verigym.suites.verilog_eval.layout import MAX_TRIPLET_FILE_BYTES, natural_sort_key
 from verigym.suites.verilog_eval.normalization import transform_reference_candidate
 
@@ -211,6 +219,130 @@ def test_agent_eval_variant_materializes_public_compile_without_hidden_assets() 
     )
     assert "module RefModule" not in visible_text
     assert "module tb" not in visible_text
+
+
+def test_vcs_mcp_agent_eval_variant_is_isolated_and_keeps_old_task_identities() -> None:
+    commercial = adapter(variant="v2-spec-to-rtl-agent-eval-vcs-mcp-v1")
+    references = list(commercial.discover())
+    assert len(references) == 2
+
+    task = commercial.load_task(references[0])
+    assets = commercial.resolve_assets(task)
+    visible = Path(assets.visible_root)
+    node = task.verifier.nodes[0]
+
+    assert task.id == ("verilog-eval/v2-spec-to-rtl-agent-eval-vcs-mcp-v1/Prob900_fixture_and")
+    assert task.suite_version == "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
+    assert task.interaction.supported_modes == ["agent"]
+    assert "file.apply_codex_patch" in task.interaction.allowed_tools
+    assert task.workspace.entrypoints == ["repository/rtl/TopModule.sv"]
+    assert task.scoring.correctness_required_nodes == ["vcs_regression"]
+    assert task.scoring.ppa_enabled is False
+    assert node.id == "vcs_regression"
+    assert node.plugin == "synopsys.vcs.simulate"
+    assert node.visibility.value == "verifier_only"
+    assert node.request == {
+        "sources": ["repository/rtl/TopModule.sv"],
+        "testbench": "verifier/testbench.sv",
+        "top": "tb",
+        "pass_marker": "Mismatches: 0 in",
+        "fail_marker": "VERIGYM_VCS_EXPLICIT_FAIL",
+        "executable": "vcs",
+        "timeout_s": 180,
+    }
+    assert task.metadata["required_verifier_profile_target"] == "synopsys.vcs.mcp"
+    assert task.metadata["verification_partition"] == "verilog_eval_v2_vcs_mcp_v1"
+    assert task.metadata["verification_requires_final_submission"] is True
+    assert task.metadata["diagnostic_only"] is True
+    assert task.metadata["benchmark_score_claimed"] is False
+    assert task.metadata["upstream_tool_compatible"] is False
+    assert task.metadata["public_feedback_semantics"] == "compile_only_v1"
+    assert task.metadata["agent_eval"]["ppa_supported"] is False
+
+    assert len(task.workspace.hidden_assets) == 1
+    assert task.workspace.hidden_assets[0].content is None
+    assert task.workspace.hidden_assets[0].mount_path == "verifier/testbench.sv"
+    assert len(assets.hidden_assets) == 1
+    hidden = assets.hidden_assets[0]
+    assert hidden.content is not None
+    assert "module RefModule" in hidden.content
+    assert "module tb" in hidden.content
+    assert hidden.content_hash == task.workspace.hidden_assets[0].content_hash
+    visible_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in visible.rglob("*") if path.is_file()
+    )
+    assert "module RefModule" not in visible_text
+    assert "module tb" not in visible_text
+    assert "module RefModule" not in task.model_dump_json()
+
+    reference = commercial.reference_solution(task)
+    assert reference is not None
+    assert set(reference.files) == {"repository/rtl/TopModule.sv"}
+    assert "module TopModule" in reference.files["repository/rtl/TopModule.sv"]
+
+    base_task = adapter().load_task(list(adapter().discover())[0])
+    agent_suite = adapter(variant="v2-spec-to-rtl-agent-eval-v1")
+    agent_task = agent_suite.load_task(list(agent_suite.discover())[0])
+    assert content_hash(base_task) == (
+        "6544e7d5ad244cd5caeacacf6559a2a596c4657ebc2f876febd8f673d4f0f0f7"
+    )
+    assert content_hash(agent_task) == (
+        "c6af36b522e08b55694938c514fd3aa7b12e5ea408a768525a8e41675f786398"
+    )
+
+
+def test_vcs_mcp_agent_eval_fails_before_run_without_required_profile(tmp_path: Path) -> None:
+    service = VeriGym(build_registries(discover_external=False))
+    source = SuiteSourceConfig(
+        source_root=FIXTURE,
+        variant="v2-spec-to-rtl-agent-eval-vcs-mcp-v1",
+        strict_compatibility=True,
+    )
+    output = tmp_path / "runs"
+
+    with pytest.raises(ConfigurationError, match="requires a verifier profile targeting"):
+        service.run(
+            RunConfig(
+                task_id=("verilog-eval/v2-spec-to-rtl-agent-eval-vcs-mcp-v1/Prob900_fixture_and"),
+                suite_source=source,
+                output=output,
+            )
+        )
+
+    assert not output.exists()
+
+
+def test_vcs_mcp_experiment_fails_before_direct_vcs_health_lookup(tmp_path: Path) -> None:
+    base = experiment_config(
+        tmp_path / "experiment",
+        tasks=["Prob900_fixture_and"],
+        systems=[{"id": "scripted", "agent": {"id": "scripted"}}],
+        seeds=[0],
+    )
+    payload = base.model_dump(mode="python")
+    payload["suite"] = {
+        "id": "verilog-eval",
+        "source": FIXTURE,
+        "variant": "v2-spec-to-rtl-agent-eval-vcs-mcp-v1",
+        "strict_compatibility": True,
+        "tasks": {"include": ["Prob900_fixture_and"], "exclude": []},
+    }
+    config = type(base).model_validate(payload)
+
+    with pytest.raises(ConfigurationError, match="requires a verifier profile targeting"):
+        ExperimentPlanner(offline_service()).build(config)
+
+
+def test_vcs_combined_hidden_asset_copies_only_the_official_timescale_prelude() -> None:
+    reference = "module RefModule; endmodule\n"
+    testbench = "`timescale 1ns / 1ps\nmodule tb; endmodule\n"
+    combined = combined_reference_testbench(reference, testbench)
+
+    assert combined == f"`timescale 1ns / 1ps\n{reference}{testbench}"
+    assert combined_reference_testbench(f"`timescale 1ps/1ps\n{reference}", testbench) == (
+        f"`timescale 1ps/1ps\n{reference}{testbench}"
+    )
+    assert VCS_MCP_EXCLUSIONS == {"Prob099_m2014_q6c": "reference_testbench_port_contract_mismatch"}
 
 
 def test_functional_v2_variant_has_independent_identity() -> None:

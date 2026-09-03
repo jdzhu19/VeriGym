@@ -46,6 +46,10 @@ from verigym.schemas.task import (
 )
 from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.suites.base import SuiteAdapter
+from verigym.suites.verilog_eval.commercial import (
+    VCS_MCP_EXCLUSIONS,
+    combined_reference_testbench,
+)
 from verigym.suites.verilog_eval.layout import inspect_layout, validation_report
 from verigym.suites.verilog_eval.normalization import transform_reference_candidate
 from verigym.suites.verilog_eval.schemas import (
@@ -60,6 +64,8 @@ from verigym.suites.verilog_eval.toolchain import detect_icarus
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "v2-spec-to-rtl-compat-1"
 AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
+VCS_MCP_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
+VCS_MCP_AGENT_EVAL_ADAPTER_VERSION = "0.9.0"
 FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v1"
 FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.2.0"
 FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v2"
@@ -140,6 +146,12 @@ class VerilogEvalSuite(SuiteAdapter):
                 if problem.native_id in adapter._functional_smoke_tasks()
             ]
             if adapter._is_functional_agent_eval()
+            else [
+                problem
+                for problem in catalog.problems
+                if problem.native_id not in VCS_MCP_EXCLUSIONS
+            ]
+            if adapter._is_vcs_mcp_agent_eval()
             else catalog.problems
         )
         return [
@@ -159,6 +171,10 @@ class VerilogEvalSuite(SuiteAdapter):
         )
         if problem is None:
             raise ConfigurationError(f"unknown VerilogEval task: {ref.native_id}")
+        if self._is_vcs_mcp_agent_eval() and problem.native_id in VCS_MCP_EXCLUSIONS:
+            raise ConfigurationError(
+                f"VerilogEval VCS/MCP task is ineligible: {VCS_MCP_EXCLUSIONS[problem.native_id]}"
+            )
         if (
             self._is_functional_agent_eval()
             and problem.native_id not in self._functional_smoke_tasks()
@@ -232,9 +248,21 @@ class VerilogEvalSuite(SuiteAdapter):
         else:
             visible_root = str(self._workspace_root.resolve(strict=True))
             read_only_mounts = []
-        return ResolvedTaskAssets(
-            visible_root=visible_root,
-            hidden_assets=[
+        if self._is_vcs_mcp_agent_eval():
+            combined_testbench = combined_reference_testbench(
+                problem.reference,
+                problem.testbench,
+            )
+            hidden_assets = [
+                AssetRef(
+                    kind="inline",
+                    content=combined_testbench,
+                    content_hash=hash_bytes(combined_testbench.encode("utf-8")),
+                    mount_path="verifier/testbench.sv",
+                )
+            ]
+        else:
+            hidden_assets = [
                 AssetRef(
                     kind="inline",
                     content=problem.reference,
@@ -247,7 +275,10 @@ class VerilogEvalSuite(SuiteAdapter):
                     content_hash=hash_bytes(problem.testbench.encode("utf-8")),
                     mount_path="verifier/testbench.sv",
                 ),
-            ],
+            ]
+        return ResolvedTaskAssets(
+            visible_root=visible_root,
+            hidden_assets=hidden_assets,
             read_only_mounts=read_only_mounts,
         )
 
@@ -351,12 +382,19 @@ class VerilogEvalSuite(SuiteAdapter):
                 compatibility = IcarusCompatibility.UNVERIFIED
         return ToolchainProfile(
             id=(
-                "verilog-eval-v2-agent-eval-icarus12"
+                "verilog-eval-v2-agent-eval-public-icarus12-vcs-mcp-v1"
+                if self._is_vcs_mcp_agent_eval()
+                else "verilog-eval-v2-agent-eval-icarus12"
                 if self._is_agent_eval()
                 else "verilog-eval-v2-icarus"
             ),
             version="1.0.0",
-            description=("VerilogEval V2 Icarus profile; upstream reference is Icarus v12."),
+            description=(
+                "VerilogEval AgentEval public Icarus 12 compile profile; hidden VCS identity is "
+                "bound separately by the required verifier profile."
+                if self._is_vcs_mcp_agent_eval()
+                else "VerilogEval V2 Icarus profile; upstream reference is Icarus v12."
+            ),
             tools=[
                 ToolRequirement(name="iverilog", version=compiler_version),
                 ToolRequirement(name="vvp", version=runner_version),
@@ -417,6 +455,7 @@ class VerilogEvalSuite(SuiteAdapter):
         variant = snapshot.variant
         agent_eval = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
@@ -435,6 +474,7 @@ class VerilogEvalSuite(SuiteAdapter):
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }
         codex_patch_compatible = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
@@ -448,6 +488,7 @@ class VerilogEvalSuite(SuiteAdapter):
         functional_v4 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value
         functional_v3 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value
         functional_v2 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value
+        vcs_mcp = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
         candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
         public_smoke = self._public_smoke(problem.native_id) if functional_agent_eval else None
@@ -466,7 +507,9 @@ class VerilogEvalSuite(SuiteAdapter):
             )
         )
         suite_version = (
-            FUNCTIONAL_AGENT_EVAL_V7_SUITE_VERSION
+            VCS_MCP_AGENT_EVAL_SUITE_VERSION
+            if vcs_mcp
+            else FUNCTIONAL_AGENT_EVAL_V7_SUITE_VERSION
             if functional_v7
             else FUNCTIONAL_AGENT_EVAL_V6_SUITE_VERSION
             if functional_v6
@@ -484,18 +527,87 @@ class VerilogEvalSuite(SuiteAdapter):
             if agent_eval
             else SUITE_VERSION
         )
-        hidden_assets = [
-            AssetRef(
-                kind="inline",
-                content_hash=hash_bytes(problem.reference.encode("utf-8")),
-                mount_path="verifier/golden.sv",
-            ),
-            AssetRef(
-                kind="inline",
-                content_hash=hash_bytes(problem.testbench.encode("utf-8")),
-                mount_path="verifier/testbench.sv",
-            ),
-        ]
+        if vcs_mcp:
+            combined_testbench = combined_reference_testbench(
+                problem.reference,
+                problem.testbench,
+            )
+            hidden_assets = [
+                AssetRef(
+                    kind="inline",
+                    content_hash=hash_bytes(combined_testbench.encode("utf-8")),
+                    mount_path="verifier/testbench.sv",
+                )
+            ]
+            verifier = VerifierGraph(
+                nodes=[
+                    VerifierNode(
+                        id="vcs_regression",
+                        plugin="synopsys.vcs.simulate",
+                        gate=True,
+                        required=True,
+                        visibility=ToolVisibility.VERIFIER_ONLY,
+                        timeout_s=180,
+                        request={
+                            "sources": [candidate_path],
+                            "testbench": "verifier/testbench.sv",
+                            "top": problem.testbench_top,
+                            "pass_marker": "Mismatches: 0 in",
+                            "fail_marker": "VERIGYM_VCS_EXPLICIT_FAIL",
+                            "executable": "vcs",
+                            "timeout_s": 180,
+                        },
+                    )
+                ]
+            )
+            correctness_required_nodes = ["vcs_regression"]
+        else:
+            hidden_assets = [
+                AssetRef(
+                    kind="inline",
+                    content_hash=hash_bytes(problem.reference.encode("utf-8")),
+                    mount_path="verifier/golden.sv",
+                ),
+                AssetRef(
+                    kind="inline",
+                    content_hash=hash_bytes(problem.testbench.encode("utf-8")),
+                    mount_path="verifier/testbench.sv",
+                ),
+            ]
+            verifier = VerifierGraph(
+                nodes=[
+                    VerifierNode(
+                        id="compile_hidden",
+                        plugin="verilog_eval.v2.compile",
+                        gate=True,
+                        required=True,
+                        visibility=ToolVisibility.VERIFIER_ONLY,
+                        timeout_s=30,
+                        request={
+                            "sources": [
+                                "verifier/golden.sv",
+                                "verifier/testbench.sv",
+                                candidate_path,
+                            ],
+                            "candidate": candidate_path,
+                            "top": problem.testbench_top,
+                            "output": ".verigym_internal/verilog_eval/simv",
+                            "language": "2012",
+                        },
+                    ),
+                    VerifierNode(
+                        id="run_hidden",
+                        plugin="verilog_eval.v2.regression",
+                        depends_on=["compile_hidden"],
+                        gate=True,
+                        required=True,
+                        visibility=ToolVisibility.VERIFIER_ONLY,
+                        timeout_s=30,
+                        request={"executable_from": "compile_hidden"},
+                    ),
+                ]
+            )
+            correctness_required_nodes = ["compile_hidden", "run_hidden"]
         return VeriTask(
             id=task_id,
             suite="verilog-eval",
@@ -565,41 +677,9 @@ class VerilogEvalSuite(SuiteAdapter):
                 max_output_bytes_per_tool=1_000_000,
                 max_workspace_bytes=2_000_000,
             ),
-            verifier=VerifierGraph(
-                nodes=[
-                    VerifierNode(
-                        id="compile_hidden",
-                        plugin="verilog_eval.v2.compile",
-                        gate=True,
-                        required=True,
-                        visibility=ToolVisibility.VERIFIER_ONLY,
-                        timeout_s=30,
-                        request={
-                            "sources": [
-                                "verifier/golden.sv",
-                                "verifier/testbench.sv",
-                                candidate_path,
-                            ],
-                            "candidate": candidate_path,
-                            "top": problem.testbench_top,
-                            "output": ".verigym_internal/verilog_eval/simv",
-                            "language": "2012",
-                        },
-                    ),
-                    VerifierNode(
-                        id="run_hidden",
-                        plugin="verilog_eval.v2.regression",
-                        depends_on=["compile_hidden"],
-                        gate=True,
-                        required=True,
-                        visibility=ToolVisibility.VERIFIER_ONLY,
-                        timeout_s=30,
-                        request={"executable_from": "compile_hidden"},
-                    ),
-                ]
-            ),
+            verifier=verifier,
             scoring=ScoringSpec(
-                correctness_required_nodes=["compile_hidden", "run_hidden"],
+                correctness_required_nodes=correctness_required_nodes,
                 ppa_enabled=False,
             ),
             metadata={
@@ -613,7 +693,9 @@ class VerilogEvalSuite(SuiteAdapter):
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "task_content_hash": problem.content_hash,
                 "adapter_version": (
-                    FUNCTIONAL_AGENT_EVAL_V7_ADAPTER_VERSION
+                    VCS_MCP_AGENT_EVAL_ADAPTER_VERSION
+                    if vcs_mcp
+                    else FUNCTIONAL_AGENT_EVAL_V7_ADAPTER_VERSION
                     if functional_v7
                     else FUNCTIONAL_AGENT_EVAL_V6_ADAPTER_VERSION
                     if functional_v6
@@ -661,6 +743,18 @@ class VerilogEvalSuite(SuiteAdapter):
                     if agent_eval
                     else {}
                 ),
+                **(
+                    {
+                        "required_verifier_profile_target": "synopsys.vcs.mcp",
+                        "verification_partition": "verilog_eval_v2_vcs_mcp_v1",
+                        "verification_requires_final_submission": True,
+                        "diagnostic_only": True,
+                        "benchmark_score_claimed": False,
+                        "upstream_tool_compatible": False,
+                    }
+                    if vcs_mcp
+                    else {}
+                ),
             },
         )
 
@@ -670,6 +764,7 @@ class VerilogEvalSuite(SuiteAdapter):
             and self._config.variant
             in {
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
@@ -678,6 +773,13 @@ class VerilogEvalSuite(SuiteAdapter):
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
             }
+        )
+
+    def _is_vcs_mcp_agent_eval(self) -> bool:
+        return bool(
+            self._config is not None
+            and self._config.variant
+            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
         )
 
     def _is_functional_agent_eval(self) -> bool:

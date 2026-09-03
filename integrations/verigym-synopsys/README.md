@@ -84,6 +84,43 @@ verigym run --suite rtllm --task counter_12 --suite-source /datasets/RTLLM \
   --output runs/
 ```
 
+For VerilogEval, select the dedicated
+`v2-spec-to-rtl-agent-eval-vcs-mcp-v1` suite variant. Its VCS server profile uses
+`repository/rtl/TopModule.sv` as the sole candidate source and a private combined testbench made
+from the selected task's official `RefModule` followed by its official testbench. If needed, copy
+the testbench's own `` `timescale`` line before both exact bodies so VCS sees one consistent
+compilation unit. Freeze
+`Mismatches: 0 in` as the pass marker, the variant's explicit-failure sentinel as the fail marker,
+`tb` (or the normalized task's recorded testbench top) as top, and 180 seconds as timeout. The
+process timeout and absence of a zero-mismatch summary reject hangs; this avoids treating a
+same-timestep watchdog print after a complete zero-mismatch run as a failure. The task requires
+`synopsys.vcs.mcp`, so an absent/wrong profile fails before model startup; direct VCS fallback is
+not allowed. This partition performs no DC synthesis and reports no PPA.
+
+For a locally hosted licensed verifier, the integration also provides bulk site-only preparation
+and zero-model qualification commands:
+
+```bash
+verigym-synopsys-prepare-verilog-eval-vcs-bundle \
+  --source-root /datasets/verilog-eval \
+  --output-root /private/profiles/verilog-eval-vcs-mcp-v1 \
+  --vcs /opt/synopsys/vcs/bin/vcs
+
+verigym-synopsys-qualify-verilog-eval-vcs-bundle \
+  --source-root /datasets/verilog-eval \
+  --bundle-root /private/profiles/verilog-eval-vcs-mcp-v1 \
+  --work-root /private/work/verilog-eval-vcs \
+  --output /private/results/verilog-eval-vcs-qualification.json
+```
+
+The preparation command refuses to overwrite an existing directory and leaves an `INCOMPLETE`
+sentinel until the catalog is complete. `--defer-live-resolve` is intended for large bundles whose
+qualification is run immediately afterward; the qualification command still resolves every
+profile live before executing it. Bounded runs may use deterministic `--task` or
+`--shard-index`/`--shard-count` selection, then the merge command accepts only a complete,
+non-overlapping shard set. Site login-shell and environment-name options configure a fixed local
+transport without placing environment values in profiles or reports.
+
 Resolution occurs before model lookup. Manifest, scorecard, experiment plan, and replay bind the
 wrapper, server declared/resolved profile, public task contract, hidden-testbench result identity,
 and exact VCS version. Candidate verdicts expose no stdout, stderr, VCS log, report, hidden RTL,

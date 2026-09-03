@@ -8,7 +8,7 @@ caches, or packages the benchmark.
 ## Supported source and variant
 
 Supply either the root of a local checkout containing `dataset_spec-to-rtl/` or that dataset
-directory directly. Milestone 6 supports only `v2-spec-to-rtl`, whose tasks are complete triplets:
+directory directly. The base and AgentEval variants all project the same complete triplets:
 
 ```text
 dataset_spec-to-rtl/
@@ -130,8 +130,40 @@ Nonreference tools may be used for development, but their reports do not claim e
 comparability. PPA and synthesis fields remain `null`.
 
 The host may keep Icarus 13 side by side, but reference-compatible execution must resolve Icarus
-and vvp 12. VerilogEval does not accept VCS/DC verifier or PPA profiles; commercial RTLLM profiles
-are a separate partition. See [verifier backend profiles](verifier_profiles.md).
+and vvp 12.
+
+## Commercial VCS/MCP functional partition
+
+`v2-spec-to-rtl-agent-eval-vcs-mcp-v1` is an independent AgentEval projection for sites that want
+VCS to replace the final hidden Icarus compile/simulation path. Public multi-turn
+feedback remains the candidate-only Icarus 12 compile check; after a typed `finish`, the one hidden
+functional verdict runs through a required, task-bound `synopsys.vcs.mcp` profile. The task fails
+before model startup if that profile is absent or targets another backend. VCS, the official
+reference, testbench, raw output, license setup, and executable path remain on the verifier side.
+
+The server-owned testbench asset contains the exact official `RefModule` body followed by the
+exact official testbench body. When the reference has no directive, the builder first copies the
+official testbench's own `` `timescale`` line as a VCS compilation-unit prelude; this resolves
+VCS's stricter timescale consistency check without changing vectors or RTL behavior. The client
+sends only `repository/rtl/TopModule.sv`. Each server profile freezes that combined asset hash,
+task ID, source path, testbench top, `Mismatches: 0 in` pass marker, explicit-failure sentinel,
+180-second process bound, and exact VCS version. Some official testbenches schedule their watchdog
+at the same simulation time as the successful summary; VCS may print both before `$finish` takes
+effect. Therefore the watchdog text is not used as a higher-priority fail marker: a real timeout
+or a normal exit without the zero-mismatch summary still fails. Use the private profile workflow in
+[verifier backend profiles](verifier_profiles.md); neither private profile nor combined hidden
+asset belongs in the repository.
+
+This is a separate diagnostic partition, not reproduction of the upstream Icarus result. It is
+functional verification only: `ppa_enabled=false`, no DC profile is accepted as a substitute,
+and no synthesis metric is produced. Existing base, AgentEval, and functional-smoke task
+identities remain unchanged.
+
+The projection excludes `Prob099_m2014_q6c` with stable reason code
+`reference_testbench_port_contract_mismatch`: the frozen reference/testbench pair requests ports
+that its `RefModule` does not define and fails compilation under both Icarus 12 and VCS. This is a
+source-task eligibility exclusion, not a model verdict or retry. On the qualified 156-task source
+snapshot, the commercial partition therefore contains 155 tasks.
 
 With `--runtime docker`, tool discovery and compatibility come from the immutable resolved image,
 not host `iverilog` or `vvp`. Native simulation runs beside the compiled artifact in the verifier's

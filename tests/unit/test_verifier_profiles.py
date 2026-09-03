@@ -12,12 +12,15 @@ from tests.milestone9_helpers import experiment_config, offline_service
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_bytes
 from verigym.core.replay import replay_run
-from verigym.core.verifier_profiles import task_with_verifier_profile
+from verigym.core.verifier_profiles import (
+    task_with_verifier_profile,
+    uses_controller_verifier_transport,
+    validate_required_verifier_profile,
+)
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.runner import BatchRunner
 from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.schemas.common import ErrorCategory, ToolDescriptor, ToolVisibility
-from verigym.schemas.run import RunConfig
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.tools.base import ToolContext, VerifierBackendPlugin
@@ -181,25 +184,71 @@ def test_verifier_profile_loader_rejects_duplicate_keys_and_symlinks(tmp_path: P
 
 
 def test_only_remote_mcp_may_use_local_controller_transport_for_docker(tmp_path: Path) -> None:
-    from verigym.core.orchestrator import _uses_controller_verifier_transport
-
     profile, _ = _profile(tmp_path)
-    config = RunConfig(
-        task_id=profile.task_id,
-        runtime="docker",
-        verifier_profile_id=profile.id,
-        verifier_profile=profile,
-    )
     backend = _FakeVerifierBackend()
 
-    assert not _uses_controller_verifier_transport(config, backend)
+    assert not uses_controller_verifier_transport(
+        runtime="docker", profile=profile, backend=backend
+    )
     backend.descriptor = backend.descriptor.model_copy(
         update={"capabilities": ["fixed_profile", "remote_mcp"]}
     )
-    assert _uses_controller_verifier_transport(config, backend)
-    assert not _uses_controller_verifier_transport(
-        config.model_copy(update={"runtime": "local"}), backend
+    assert uses_controller_verifier_transport(runtime="docker", profile=profile, backend=backend)
+    assert not uses_controller_verifier_transport(runtime="local", profile=profile, backend=backend)
+
+
+def test_experiment_planner_allows_remote_mcp_controller_transport_for_docker(
+    tmp_path: Path,
+) -> None:
+    profile, profile_path = _profile(tmp_path)
+    service = offline_service()
+    backend = _FakeVerifierBackend()
+    backend.descriptor = backend.descriptor.model_copy(
+        update={"capabilities": ["fixed_profile", "remote_mcp"]}
     )
+    service.registries.tools.register(backend)
+    base_config = experiment_config(
+        tmp_path / "out",
+        tasks=["and-gate-basic"],
+        systems=[{"id": "good", "agent": {"id": "scripted"}}],
+        seeds=[0],
+    )
+    payload = base_config.model_dump(mode="python")
+    payload["verifier_profile"] = profile.id
+    payload["verifier_profile_file"] = profile_path
+    payload["runtime"] = {"id": "docker", "docker": {"image": "example:test"}}
+    config = type(base_config).model_validate(payload)
+    planner = ExperimentPlanner(service)
+    suite, tasks, _ = planner._resolve_tasks(config, check_tools=False)
+
+    selected, resolved, transformed = planner._resolve_verifier_profiles(config, tasks)
+
+    assert suite is not None
+    assert selected == profile
+    assert resolved[profile.task_id].target_plugin == backend.descriptor.name
+    assert transformed[0].verifier.nodes[0].plugin == backend.descriptor.name
+
+
+def test_experiment_planner_rejects_non_mcp_local_profile_for_docker(tmp_path: Path) -> None:
+    profile, profile_path = _profile(tmp_path)
+    service = offline_service()
+    service.registries.tools.register(_FakeVerifierBackend())
+    base_config = experiment_config(
+        tmp_path / "out",
+        tasks=["and-gate-basic"],
+        systems=[{"id": "good", "agent": {"id": "scripted"}}],
+        seeds=[0],
+    )
+    payload = base_config.model_dump(mode="python")
+    payload["verifier_profile"] = profile.id
+    payload["verifier_profile_file"] = profile_path
+    payload["runtime"] = {"id": "docker", "docker": {"image": "example:test"}}
+    config = type(base_config).model_validate(payload)
+    planner = ExperimentPlanner(service)
+    _, tasks, _ = planner._resolve_tasks(config, check_tools=False)
+
+    with pytest.raises(ConfigurationError, match="runtime differs"):
+        planner._resolve_verifier_profiles(config, tasks)
 
 
 def test_hidden_verification_can_require_a_typed_final_submission() -> None:
@@ -213,3 +262,32 @@ def test_hidden_verification_can_require_a_typed_final_submission() -> None:
         _verification_requires_final_submission(
             SimpleNamespace(metadata={"verification_requires_final_submission": "true"})
         )
+
+
+def test_task_can_fail_closed_on_a_required_verifier_profile_target(tmp_path: Path) -> None:
+    profile, _ = _profile(tmp_path)
+    service = offline_service()
+    _, task, _ = service.load_task(profile.task_id)
+    required = task.model_copy(
+        update={
+            "metadata": {
+                **task.metadata,
+                "required_verifier_profile_target": "test.verifier.mcp",
+            }
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="requires a verifier profile targeting"):
+        validate_required_verifier_profile(required, None)
+    with pytest.raises(ConfigurationError, match="does not satisfy task-required target"):
+        validate_required_verifier_profile(
+            required,
+            profile.model_copy(update={"target_plugin": "test.wrong.mcp"}),
+        )
+    validate_required_verifier_profile(required, profile)
+
+    malformed = required.model_copy(
+        update={"metadata": {**required.metadata, "required_verifier_profile_target": True}}
+    )
+    with pytest.raises(ConfigurationError, match="must be a nonempty string"):
+        validate_required_verifier_profile(malformed, profile)

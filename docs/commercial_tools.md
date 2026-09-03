@@ -72,6 +72,11 @@ executable, and tool-version contract. Requests contain bounded hash-checked can
 testbench, command, flags, environment, or artifact policy. Responses contain a sanitized verdict
 but no raw output, log, report, hidden RTL, license value, or server path.
 
+The VerilogEval `v2-spec-to-rtl-agent-eval-vcs-mcp-v1` projection uses this path as a commercial
+replacement for its final hidden functional regression. Its public multi-turn compile feedback
+still uses Icarus 12, and it intentionally exposes neither DC nor PPA. The VCS result belongs to a
+separate profile partition and is not reported as an upstream-Icarus benchmark result.
+
 `synopsys.dc.mcp` is selected independently by `--toolchain-profile` and supplies final
 synthesis-only PPA after hidden correctness passes. New commercial RTLLM runs can select both
 profiles; their requested, declared, and resolved identities are frozen separately in manifests,

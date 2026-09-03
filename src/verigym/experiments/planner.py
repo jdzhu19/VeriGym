@@ -19,6 +19,8 @@ from verigym.core.synthesis_projection import resolve_synthesis_source_projectio
 from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
     task_with_verifier_profile,
+    uses_controller_verifier_transport,
+    validate_required_verifier_profile,
 )
 from verigym.experiments.identity import (
     correctness_definition_hash,
@@ -258,6 +260,7 @@ class ExperimentPlanner:
         for task in tasks:
             if task.id != task.id.strip() or not task.id.startswith(f"{config.suite.id}/"):
                 raise ConfigurationError(f"suite returned an invalid task identity: {task.id!r}")
+            validate_required_verifier_profile(task, configured_verifier)
             if config.runs.mode not in task.interaction.supported_modes:
                 raise ConfigurationError(
                     f"task {task.id!r} does not support mode {config.runs.mode.value!r}"
@@ -287,15 +290,23 @@ class ExperimentPlanner:
         list[VeriTask],
     ]:
         if config.verifier_profile_file is None:
+            for task in tasks:
+                validate_required_verifier_profile(task, None)
             return None, {}, tasks
-        if config.runtime.id != "local":
-            raise ConfigurationError("verifier MCP profiles require runtime.id='local'")
         profile = load_verifier_profile(config.verifier_profile_file)
         if profile.id != config.verifier_profile:
             raise ConfigurationError("experiment verifier profile ID differs from its file")
+        backend = self.service.registries.tools.get(profile.target_plugin)
+        if config.runtime.id != profile.runtime and not uses_controller_verifier_transport(
+            runtime=config.runtime.id,
+            profile=profile,
+            backend=backend,
+        ):
+            raise ConfigurationError("verifier profile runtime differs from the experiment runtime")
         resolved: dict[str, ResolvedVerifierToolProfile] = {}
         transformed: list[VeriTask] = []
         for task in tasks:
+            validate_required_verifier_profile(task, profile)
             item = resolve_verifier_profile(
                 task=task,
                 profile=profile,

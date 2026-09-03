@@ -36,6 +36,15 @@ from verigym.schemas.verifier import VerifierGraph, VerifierNode
 from verigym.tools.base import ToolPlugin
 
 from verigym_synopsys.export_vcs_mcp_profile import main as export_vcs_profile
+from verigym_synopsys.merge_verilog_eval_vcs_qualifications import (
+    main as merge_verilog_eval_vcs_qualifications,
+)
+from verigym_synopsys.prepare_verilog_eval_vcs_bundle import (
+    main as prepare_verilog_eval_vcs_bundle,
+)
+from verigym_synopsys.qualify_verilog_eval_vcs_bundle import (
+    main as qualify_verilog_eval_vcs_bundle,
+)
 from verigym_synopsys.reissue_vcs_mcp_profile import main as reissue_vcs_profile
 from verigym_synopsys.vcs_mcp_client import (
     DEFAULT_VCS_MCP_PROFILE_ENVIRONMENT,
@@ -121,6 +130,98 @@ def _client_profile(server: VcsMcpServerProfile, wrapper: Path) -> VerifierToolP
         server_contract_hash=server.contract_hash,
         accepted_tool_version=server.accepted_tool_version,
     )
+
+
+def test_prepare_verilog_eval_vcs_bundle_freezes_every_fixture_task(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[3]
+    fixture = repository / "tests/fixtures/verilog_eval_v2_synthetic"
+    executable = tmp_path / "vcs"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '-ID' in sys.argv:\n"
+        " print('Compiler version = VCS V-2023.12-SP2-2_Full64')\n"
+        " raise SystemExit(0)\n"
+        "print('Mismatches: 0 in 1 samples')\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    output = tmp_path / "bundle"
+
+    assert (
+        prepare_verilog_eval_vcs_bundle(
+            [
+                "--source-root",
+                str(fixture),
+                "--output-root",
+                str(output),
+                "--vcs",
+                str(executable),
+                "--python-executable",
+                sys.executable,
+            ]
+        )
+        == 0
+    )
+
+    catalog = json.loads((output / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["kind"] == "verilog_eval_vcs_mcp_profile_bundle_v1"
+    assert catalog["variant"] == "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
+    assert catalog["task_count"] == 2
+    assert catalog["model_calls"] == 0
+    assert len(catalog["bundle_identity_hash"]) == 64
+    assert not (output / "INCOMPLETE").exists()
+    for record in catalog["records"]:
+        client = load_verifier_profile(output / record["client_profile"])
+        server = load_vcs_server_profile(output / record["server_profile"])
+        assert client.task_id == record["task_id"]
+        assert client.source_plugin == "synopsys.vcs.simulate"
+        assert client.target_plugin == "synopsys.vcs.mcp"
+        assert server.sources == ["repository/rtl/TopModule.sv"]
+        assert server.testbench_mount_path == "verifier/testbench.sv"
+        assert server.pass_marker == "Mismatches: 0 in"
+        assert server.fail_marker == "VERIGYM_VCS_EXPLICIT_FAIL"
+        assert server.timeout_s == 180
+        assert Path(server.testbench).stat().st_mode & 0o777 == 0o600
+        assert Path(client.transport_executable).stat().st_mode & 0o777 == 0o700
+
+    receipt_path = tmp_path / "qualification.json"
+    assert (
+        qualify_verilog_eval_vcs_bundle(
+            [
+                "--source-root",
+                str(fixture),
+                "--bundle-root",
+                str(output),
+                "--work-root",
+                str(tmp_path / "qualification-work"),
+                "--output",
+                str(receipt_path),
+                "--reference-only",
+            ]
+        )
+        == 0
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["passed"] is True
+    assert receipt["task_count"] == 2
+    assert receipt["commercial_jobs"] == 2
+    assert receipt["model_calls"] == 0
+    assert receipt["automatic_retries"] == 0
+
+    aggregate_path = tmp_path / "qualification-aggregate.json"
+    assert (
+        merge_verilog_eval_vcs_qualifications(
+            ["--input", str(receipt_path), "--output", str(aggregate_path)]
+        )
+        == 0
+    )
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert aggregate["passed"] is True
+    assert aggregate["task_count"] == 2
+    assert aggregate["commercial_jobs"] == 2
+    assert aggregate["reference_passes"] == 2
+    assert aggregate["known_bad_rejections"] == 0
 
 
 def test_vcs_exporter_can_replace_an_iverilog_hidden_node(tmp_path: Path) -> None:

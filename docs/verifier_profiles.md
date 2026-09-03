@@ -101,13 +101,19 @@ Planning probes the transport and exact server/tool identity. Each plan item fre
 and resolved profile objects; child runs must resolve the same identities before model-process
 authorization.
 
+VerilogEval's commercial functional partition uses one such profile per eligible task. The
+site-only bulk preparation and qualification commands are documented in the
+[`verigym-synopsys` README](../integrations/verigym-synopsys/README.md). Its qualification evidence
+is recorded in the [VCS/MCP v1 audit](audits/verilog_eval_vcs_mcp_qualification_v1.md).
+
 ## Version and benchmark boundaries
 
 | Partition | Functional verifier | Compatibility rule |
 | --- | --- | --- |
 | RTLLM single-turn commercial | VCS through `synopsys.vcs.mcp` | Exact VCS version and task-bound server contract |
 | RTLLM AgentEval v1 | Icarus and vvp 12 | Both resolved major versions must be 12 |
-| VerilogEval V2, including AgentEval | Icarus and vvp | Major 12 is upstream-reference-compatible; major 13 is incompatible |
+| VerilogEval V2 base and existing AgentEval variants | Icarus and vvp | Major 12 is upstream-reference-compatible; major 13 is incompatible |
+| VerilogEval AgentEval VCS/MCP v1 | VCS through required `synopsys.vcs.mcp` | Separate functional partition; exact VCS and task/server contract, no upstream-tool claim |
 | RTL-Repo official completion, including AgentEval | Native Exact Match/Edit Similarity | No Icarus or VCS requirement |
 
 Icarus 13 may remain installed side by side for development, but it must not be selected for a
@@ -130,7 +136,9 @@ not a candidate rejection.
 
 Direct `synopsys.vcs.simulate` and `synopsys.dc.synth` remain trusted verifier backends for legacy
 or server-internal use. New commercial RTLLM campaigns should use `synopsys.vcs.mcp` for
-functional verification and `synopsys.dc.mcp` for final PPA.
+functional verification and `synopsys.dc.mcp` for final PPA. The VerilogEval
+`v2-spec-to-rtl-agent-eval-vcs-mcp-v1` variant also requires `synopsys.vcs.mcp`, but deliberately
+has no DC/PPA path.
 
 Phase-two DC/MCP feedback is enabled only by a separately resolved disposable-worker contract.
 It remains behind `run_public_test("ppa")`; neither the DC MCP tools nor VCS MCP are added to the

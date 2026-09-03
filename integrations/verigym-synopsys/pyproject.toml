@@ -32,6 +32,9 @@ verigym-synopsys-prepare-vcs-profile = "verigym_synopsys.prepare_vcs_profile:mai
 verigym-synopsys-export-vcs-mcp-profile = "verigym_synopsys.export_vcs_mcp_profile:main"
 verigym-synopsys-vcs-mcp-server = "verigym_synopsys.vcs_mcp_server:main"
 verigym-synopsys-reissue-vcs-mcp-profile = "verigym_synopsys.reissue_vcs_mcp_profile:main"
+verigym-synopsys-prepare-verilog-eval-vcs-bundle = "verigym_synopsys.prepare_verilog_eval_vcs_bundle:main"
+verigym-synopsys-qualify-verilog-eval-vcs-bundle = "verigym_synopsys.qualify_verilog_eval_vcs_bundle:main"
+verigym-synopsys-merge-verilog-eval-vcs-qualifications = "verigym_synopsys.merge_verilog_eval_vcs_qualifications:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

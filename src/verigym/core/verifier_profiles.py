@@ -10,6 +10,46 @@ from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, Verifi
 from verigym.tools.base import ToolPlugin, VerifierBackendPlugin
 
 
+def uses_controller_verifier_transport(
+    *,
+    runtime: str,
+    profile: VerifierToolProfile,
+    backend: ToolPlugin,
+) -> bool:
+    """Return whether Docker staging may call a fixed local verifier-control transport."""
+
+    return bool(
+        isinstance(backend, VerifierBackendPlugin)
+        and "remote_mcp" in backend.descriptor.capabilities
+        and runtime == "docker"
+        and profile.runtime == "local"
+    )
+
+
+def validate_required_verifier_profile(
+    task: VeriTask,
+    profile: VerifierToolProfile | None,
+) -> None:
+    """Fail closed when a task is restricted to one verifier-profile backend."""
+
+    required_target = task.metadata.get("required_verifier_profile_target")
+    if required_target is None:
+        return
+    if not isinstance(required_target, str) or not required_target:
+        raise ConfigurationError(
+            "task required_verifier_profile_target metadata must be a nonempty string"
+        )
+    if profile is None:
+        raise ConfigurationError(
+            f"task {task.id!r} requires a verifier profile targeting {required_target!r}"
+        )
+    if profile.target_plugin != required_target:
+        raise ConfigurationError(
+            f"verifier profile target {profile.target_plugin!r} does not satisfy task-required "
+            f"target {required_target!r}"
+        )
+
+
 def resolve_verifier_profile(
     *,
     task: VeriTask,
@@ -17,6 +57,7 @@ def resolve_verifier_profile(
     tools: PluginRegistry[ToolPlugin],
     expected: ResolvedVerifierToolProfile | None = None,
 ) -> ResolvedVerifierToolProfile:
+    validate_required_verifier_profile(task, profile)
     if task.id != profile.task_id:
         raise ConfigurationError(
             f"verifier profile {profile.id!r} is fixed to task {profile.task_id!r}"
@@ -55,6 +96,7 @@ def task_with_verifier_profile(
     task: VeriTask,
     profile: VerifierToolProfile,
 ) -> VeriTask:
+    validate_required_verifier_profile(task, profile)
     replacements = 0
     nodes = []
     for node in task.verifier.nodes:
@@ -71,4 +113,9 @@ def task_with_verifier_profile(
     )
 
 
-__all__ = ["resolve_verifier_profile", "task_with_verifier_profile"]
+__all__ = [
+    "resolve_verifier_profile",
+    "task_with_verifier_profile",
+    "uses_controller_verifier_transport",
+    "validate_required_verifier_profile",
+]

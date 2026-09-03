@@ -41,6 +41,8 @@ from verigym.core.verifier_dag import VerifierExecutor, has_infrastructure_error
 from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
     task_with_verifier_profile,
+    uses_controller_verifier_transport,
+    validate_required_verifier_profile,
 )
 from verigym.core.workspace import copy_tree_safely, merge_tree_safely, normalize_relative_path
 from verigym.models.base import ModelClient
@@ -80,7 +82,7 @@ from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext, VerifierBackendPlugin
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext
 from verigym.version import __version__
 
 
@@ -133,18 +135,6 @@ def _configured_observation_policy(
     return resolve_repository_observation_policy(raw)
 
 
-def _uses_controller_verifier_transport(config: RunConfig, verifier_backend: Any) -> bool:
-    """Allow only a Docker verifier staging tree to feed a fixed host-side MCP transport."""
-
-    return bool(
-        isinstance(verifier_backend, VerifierBackendPlugin)
-        and "remote_mcp" in verifier_backend.descriptor.capabilities
-        and config.runtime == "docker"
-        and config.verifier_profile is not None
-        and config.verifier_profile.runtime == "local"
-    )
-
-
 class VeriGym:
     """High-level service for deterministic task execution."""
 
@@ -186,10 +176,15 @@ class VeriGym:
             suite, task, assets = self.load_task(config.task_id)
         else:
             suite, task, assets = self.load_task(config.task_id, config.suite_source)
+        validate_required_verifier_profile(task, config.verifier_profile)
         resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
         if config.verifier_profile is not None:
             verifier_backend = self.registries.tools.get(config.verifier_profile.target_plugin)
-            controller_transport = _uses_controller_verifier_transport(config, verifier_backend)
+            controller_transport = uses_controller_verifier_transport(
+                runtime=config.runtime,
+                profile=config.verifier_profile,
+                backend=verifier_backend,
+            )
             if config.runtime != config.verifier_profile.runtime and not controller_transport:
                 raise ConfigurationError(
                     "verifier profile requires the local control-plane runtime"
@@ -1126,6 +1121,7 @@ class VeriGym:
         verifier_profile: VerifierToolProfile | None = None,
         resolved_verifier_profile: ResolvedVerifierToolProfile | None = None,
     ) -> list[VerifierResult]:
+        validate_required_verifier_profile(task, verifier_profile)
         if suite is not None:
             managed = suite.verify_candidate(
                 task=task,

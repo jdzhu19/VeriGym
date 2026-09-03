@@ -37,6 +37,7 @@ from verigym.core.sampling import classify_sample_outcome
 from verigym.core.verifier_profiles import (
     resolve_verifier_profile,
     task_with_verifier_profile,
+    validate_required_verifier_profile,
 )
 from verigym.experiments.identity import plan_items_hash_payload
 from verigym.experiments.planner import ExperimentPlanner
@@ -823,6 +824,7 @@ class BatchRunner:
 
         service = self.planner.service
         _, task, _ = service.load_task(item.task_id, item.suite_source)
+        validate_required_verifier_profile(task, config.verifier_profile)
         if config.verifier_profile is not None:
             resolved_verifier = resolve_verifier_profile(
                 task=task,
