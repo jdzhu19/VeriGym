@@ -22,10 +22,12 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV77DindSuccessorManifest,
     DeepSeekHarnessV79DindSuccessorManifest,
     DeepSeekHarnessV81ExecutionScaffoldManifest,
+    DeepSeekHarnessV83ExecutionScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
     load_v81_execution_scaffold_manifest,
+    load_v83_execution_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -401,6 +403,30 @@ def test_checked_in_v81_scaffold_manifest_is_hash_bound_and_purpose_limited() ->
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV81ExecutionScaffoldManifest.model_validate(
             {**value, "v80_audit_sha256": "0" * 64}
+        )
+
+
+def test_checked_in_v83_scaffold_successor_is_hash_bound_and_fresh() -> None:
+    path = _REPOSITORY_ROOT / (
+        "configs/training/qwen35_hwe_deepseek_harness_v83_controller_tag_successor_v1.json"
+    )
+    manifest = load_v83_execution_scaffold_manifest(path)
+    assert isinstance(manifest, DeepSeekHarnessV83ExecutionScaffoldManifest)
+    assert manifest.dind_data_backing.startswith("/data2/jiadongzhu/docker/")
+    assert manifest.dind_data_backing.endswith("deepseek-harness-hwe-v83/data")
+    assert manifest.v79_data_volume_reused is False
+    assert manifest.v81_data_volume_reused is False
+    assert manifest.controller_image_tag == "node:22.19.0-bookworm-slim"
+    assert manifest.controller_transfer.endswith("canonical_tag_pipe_v2")
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v85-official-matrix-v1"
+    assert manifest.provider_successor_reopen_budget == 1
+    assert manifest.provider_clients_available is False
+    assert manifest.formal_collection_allowed is False
+
+    value = manifest.model_dump(mode="json")
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV83ExecutionScaffoldManifest.model_validate(
+            {**value, "v81_report_sha256": "0" * 64}
         )
 
 
