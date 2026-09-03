@@ -1887,6 +1887,83 @@ class DeepSeekHarnessV103InspectOutputBoundScaffoldManifest(
         return self
 
 
+class DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest(
+    DeepSeekHarnessV103InspectOutputBoundScaffoldManifest
+):
+    """Fresh zero-provider scaffold binding final inventory to fresh image locks."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v106_fresh_inventory_binding_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v106-fresh-inventory-binding-scaffold-v1"
+    ]
+    v103_manifest_sha256: str
+    v103_manifest_hash: str
+    v103_runner_sha256: str
+    v103_report_sha256: str
+    v103_report_hash: str
+    v103_task_materialization_sha256: str
+    v103_task_materialization_hash: str
+    v104_audit_sha256: str
+    v104_audit_commit: str
+    v104_post_merge_main_run_id: Literal[33795946043]
+    v104_post_merge_main_all_eight_classes_passed: Literal[True]
+    v103_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v103-inspect-output-bound-scaffold-v1"
+    ]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v106-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v106-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v106/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v106/socket"
+    ]
+    final_inventory_command_image_source: Literal["fresh-materialization-locks"]
+    final_inventory_fresh_command_image_count: Literal[5]
+    v103_data_volume_reused: Literal[False]
+    v105_identity_retired: Literal[True]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v108-official-matrix-v1"
+    ]
+
+    @field_validator(
+        "v103_manifest_sha256",
+        "v103_manifest_hash",
+        "v103_runner_sha256",
+        "v103_report_sha256",
+        "v103_report_hash",
+        "v103_task_materialization_sha256",
+        "v103_task_materialization_hash",
+        "v104_audit_sha256",
+    )
+    @classmethod
+    def validate_v106_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v106 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v104_audit_commit")
+    @classmethod
+    def validate_v106_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v106 scaffold manifest requires a full audit commit")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v106_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v106 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2339,6 +2416,23 @@ def load_v103_inspect_output_bound_scaffold_manifest(
         raise ConfigurationError("v103 inspect-output-bound scaffold manifest is invalid") from exc
 
 
+def load_v106_fresh_inventory_binding_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest:
+    """Load the bounded one-use v106 fresh-inventory-binding scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v106 fresh-inventory-binding scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError(
+            "v106 fresh-inventory-binding scaffold manifest is invalid"
+        ) from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2496,6 +2590,7 @@ __all__ = [
     "DeepSeekHarnessV97RebuildIdentityScaffoldManifest",
     "DeepSeekHarnessV100InventoryTimeoutScaffoldManifest",
     "DeepSeekHarnessV103InspectOutputBoundScaffoldManifest",
+    "DeepSeekHarnessV106FreshInventoryBindingScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2522,6 +2617,7 @@ __all__ = [
     "load_v97_rebuild_identity_scaffold_manifest",
     "load_v100_inventory_timeout_scaffold_manifest",
     "load_v103_inspect_output_bound_scaffold_manifest",
+    "load_v106_fresh_inventory_binding_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
