@@ -142,6 +142,13 @@ removes each child workspace. The v75 runner checks `output/scan-workspaces` is 
 empty before execution and after every task. Its fixed socket cleanup list also includes the DinD
 `runc/` directory observed after the v73 stop.
 
+After v75 safely rejected the CVA6 task-image bridge
+`.hwe_tools/verilator -> /tools/verilator-v5.008`, v77 removes only the profile-owned
+`.hwe_tools` directory before generic symlink materialization. The exclusion must itself resolve
+beneath the repository and be a real directory; its child link is never followed. Unlisted
+escaping links remain terminal. V77 uses fresh bind-backed data/socket volumes beneath
+`/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/` and never opens the retired v75 data volume.
+
 The bind backing must be new for its campaign identity. Never point it at `/data/docker`, an
 existing Docker root, a home directory, a repository, another experiment, or a symlink. A stale
 volume, nonempty inner container/volume inventory, unexpected mount, or failed cleanup is terminal.

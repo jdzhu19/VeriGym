@@ -19,6 +19,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV69Manifest,
     DeepSeekHarnessV71DindSuccessorManifest,
     DeepSeekHarnessV73DindSuccessorManifest,
+    DeepSeekHarnessV77DindSuccessorManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -239,6 +240,65 @@ def test_v73_dind_successor_manifest_forbids_v71_storage_reuse() -> None:
     changed["dind_data_volume"] = "verigym-deepseek-harness-v71-dind-data"
     with pytest.raises(ValueError, match="literal"):
         DeepSeekHarnessV73DindSuccessorManifest.model_validate(
+            {**changed, "manifest_hash": content_hash(changed)}
+        )
+
+
+def test_v77_dind_successor_binds_exact_cva6_profile_repair_and_fresh_storage() -> None:
+    base: dict[str, object] = {
+        "schema_version": "1.0",
+        "format_id": "verigym_deepseek_harness_hwe_v77_dind_successor_manifest_v1",
+        "identity": "deepseek-harness-hwe-v77-dind-zero-provider-successor-v1",
+        "upstream_manifest_sha256": "1" * 64,
+        "upstream_manifest_hash": "2" * 64,
+        "predecessor_identity": "deepseek-harness-hwe-v75-dind-zero-provider-successor-v1",
+        "predecessor_report_sha256": "3" * 64,
+        "predecessor_report_hash": "4" * 64,
+        "predecessor_audit_sha256": "5" * 64,
+        "predecessor_audit_commit": "6" * 40,
+        "retired_dind_data_volume": "verigym-deepseek-harness-v75-dind-data",
+        "retired_dind_data_backing": ("/data2/jiadongzhu/docker/deepseek-harness-hwe-v75/data"),
+        "dind_image_id": "sha256:" + "7" * 64,
+        "dind_repository_digest": "sha256:" + "8" * 64,
+        "dind_server_version": "23.0.6",
+        "dind_storage_driver": "vfs",
+        "dind_default_runtime": "runc",
+        "dind_data_volume": "verigym-deepseek-harness-v77-dind-data",
+        "dind_socket_volume": "verigym-deepseek-harness-v77-dind-socket",
+        "dind_data_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/data",
+        "dind_socket_backing": "/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/socket",
+        "scanner_workspace_policy": "successor-output-root-only-v1",
+        "scanner_workspace_relative_path": "scan-workspaces",
+        "source_profile_repair": "cva6-task-image-tool-bridge-exclusion-v1",
+        "cva6_repository_profile_id": "hwe-openhwgroup-cva6-v1",
+        "cva6_repository_profile_hash": "9" * 64,
+        "cva6_workspace_tool_bridge_exclusion": ".hwe_tools",
+        "escaping_symlink_policy": "reject-unlisted-v1",
+        "command_diagnostic_max_bytes": 33554432,
+        "socket_cleanup_strategy": "networkless-readonly-fixed-path-v2",
+        "outer_dind_network": "none",
+        "host_docker_root_used_for_task_layers": False,
+        "provider_clients_available": False,
+        "registry_access_allowed": False,
+        "partial_archive_allowed": False,
+        "atomic_provider_contract": True,
+        "formal_collection_allowed": False,
+        "formal_collection_started": False,
+        "collection_started": False,
+        "training_started": False,
+        "production_training_ready": False,
+    }
+    manifest = DeepSeekHarnessV77DindSuccessorManifest.model_validate(
+        {**base, "manifest_hash": content_hash(base)}
+    )
+    assert manifest.dind_data_volume != manifest.retired_dind_data_volume
+    assert manifest.cva6_workspace_tool_bridge_exclusion == ".hwe_tools"
+    assert manifest.escaping_symlink_policy == "reject-unlisted-v1"
+
+    changed = dict(base)
+    changed["cva6_workspace_tool_bridge_exclusion"] = "tools"
+    with pytest.raises(ValueError, match="literal"):
+        DeepSeekHarnessV77DindSuccessorManifest.model_validate(
             {**changed, "manifest_hash": content_hash(changed)}
         )
 

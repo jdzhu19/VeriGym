@@ -216,3 +216,22 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V75_DIND_ZERO_PROVIDER=1 \
 Any failure remains pre-provider and publishes no partial contract. A complete v75 result still
 sets `provider_execution_authorized=false` until an independent v76 audit is merged and its own
 post-merge `main` checks pass.
+
+V75 subsequently completed all three Ibex tasks, then stopped during PR-2017 source preparation.
+V76 froze the result and identified the exact CVA6 task-image bridge
+`.hwe_tools/verilator -> /tools/verilator-v5.008`; the generic source sanitizer correctly rejected
+that escaping link. V77 uses a new identity and new `/data2` storage. It adds only `.hwe_tools` to
+the CVA6 profile exclusions and keeps the generic rejection of every unlisted escaping symlink.
+
+Run v77 exactly once only after its authorization is merged and all eight post-merge `main` job
+classes pass, with provider and Docker routing variables removed without exposing their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V77_DIND_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v77_dind.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+Any failure remains pre-provider and publishes no partial contract. A complete v77 result still
+sets `provider_execution_authorized=false` until an independent v78 audit is merged and its own
+post-merge `main` checks pass.

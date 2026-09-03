@@ -158,7 +158,10 @@ def test_repository_profiles_cover_cva6_and_rocket_semantics() -> None:
 
     assert cva6.license_expression == "SHL-0.51"
     assert cva6.baseline_identity_policy == "digest_locked_runtime_marker"
-    assert cva6.workspace_excluded_paths == ["verif/core-v-verif/vendor/riscv/riscv-isa-sim/build"]
+    assert cva6.workspace_excluded_paths == [
+        ".hwe_tools",
+        "verif/core-v-verif/vendor/riscv/riscv-isa-sim/build",
+    ]
     assert rocket.repository_home == "/home/rocket-chip"
     assert rocket.base_commit_marker == "/home/base_commit.txt"
     assert rocket.language == "Chisel/Scala"

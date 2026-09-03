@@ -503,6 +503,89 @@ class DeepSeekHarnessV75DindSuccessorManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV77DindSuccessorManifest(StrictModel):
+    """Fresh successor after the audited v75 CVA6 source-profile safety stop."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v77_dind_successor_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v77-dind-zero-provider-successor-v1"]
+    upstream_manifest_sha256: str
+    upstream_manifest_hash: str
+    predecessor_identity: Literal["deepseek-harness-hwe-v75-dind-zero-provider-successor-v1"]
+    predecessor_report_sha256: str
+    predecessor_report_hash: str
+    predecessor_audit_sha256: str
+    predecessor_audit_commit: str
+    retired_dind_data_volume: Literal["verigym-deepseek-harness-v75-dind-data"]
+    retired_dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v75/data"]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v77-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v77-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v77/socket"]
+    scanner_workspace_policy: Literal["successor-output-root-only-v1"]
+    scanner_workspace_relative_path: Literal["scan-workspaces"]
+    source_profile_repair: Literal["cva6-task-image-tool-bridge-exclusion-v1"]
+    cva6_repository_profile_id: Literal["hwe-openhwgroup-cva6-v1"]
+    cva6_repository_profile_hash: str
+    cva6_workspace_tool_bridge_exclusion: Literal[".hwe_tools"]
+    escaping_symlink_policy: Literal["reject-unlisted-v1"]
+    command_diagnostic_max_bytes: Literal[33554432]
+    socket_cleanup_strategy: Literal["networkless-readonly-fixed-path-v2"]
+    outer_dind_network: Literal["none"]
+    host_docker_root_used_for_task_layers: Literal[False]
+    provider_clients_available: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    atomic_provider_contract: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "upstream_manifest_sha256",
+        "upstream_manifest_hash",
+        "predecessor_report_sha256",
+        "predecessor_report_hash",
+        "predecessor_audit_sha256",
+        "cva6_repository_profile_hash",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v77 successor manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("predecessor_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v77 successor manifest requires a full audit commit")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v77 successor manifest requires immutable DinD digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v77 successor manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -803,6 +886,17 @@ def load_v75_dind_successor_manifest(path: Path) -> DeepSeekHarnessV75DindSucces
         raise ConfigurationError("v75 successor manifest is invalid") from exc
 
 
+def load_v77_dind_successor_manifest(path: Path) -> DeepSeekHarnessV77DindSuccessorManifest:
+    """Load the bounded v77 CVA6 source-profile successor authorization manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v77 successor manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV77DindSuccessorManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v77 successor manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -946,6 +1040,7 @@ __all__ = [
     "DeepSeekHarnessV71DindSuccessorManifest",
     "DeepSeekHarnessV73DindSuccessorManifest",
     "DeepSeekHarnessV75DindSuccessorManifest",
+    "DeepSeekHarnessV77DindSuccessorManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -959,6 +1054,7 @@ __all__ = [
     "load_v71_dind_successor_manifest",
     "load_v73_dind_successor_manifest",
     "load_v75_dind_successor_manifest",
+    "load_v77_dind_successor_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
