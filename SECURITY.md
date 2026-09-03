@@ -985,6 +985,14 @@ require separate authorization after revalidating this manifest.
 
 ### DeepSeek Harness official-matrix execution on bind-backed DinD
 
+HWE source preparation uses a caller-selected Docker control-plane timeout only when a reviewed
+campaign manifest requires extra cold-start headroom. The default remains 60 seconds and the
+integration rejects values outside the integer range 1--300 seconds before any Docker access.
+The bound covers image inspection, runtime baseline reads, and container create/remove controls;
+the existing 300-second repository-copy bound is unchanged. Extending this timeout does not
+authorize a retry, network access, provider execution, verifier relabelling, or reuse of a frozen
+Docker data root.
+
 An audited zero-provider scaffold may authorize one official provider matrix only through
 a new, merged, immutable manifest. The runner must bind the complete predecessor report,
 contract, task/source/image locks, command-image scans, controller transfer provenance,

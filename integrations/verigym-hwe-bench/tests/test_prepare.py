@@ -11,7 +11,9 @@ from verigym_hwe_bench import prepare
 from verigym_hwe_bench.models import HweInstance, VerifierDependencyFile, repository_profile
 from verigym_hwe_bench.prepare import (
     _apply_workspace_exclusions,
+    _extract_repository,
     _image_baseline,
+    _inspect_image,
     _materialize_internal_file_symlinks,
     _prepare_verifier_dependencies,
     _reference_candidate_files,
@@ -362,6 +364,58 @@ def test_daemonless_import_binding_recovers_manifest_identity() -> None:
     ) == (image_id, manifest)
 
 
+def test_image_inspection_uses_caller_selected_docker_control_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[int] = []
+
+    def fake_command(
+        argv: list[str],
+        *,
+        timeout_s: int = 300,
+        input_bytes: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del input_bytes
+        observed.append(timeout_s)
+        return subprocess.CompletedProcess(argv, 0, b'[{"Id":"image"}]', b"")
+
+    monkeypatch.setattr(prepare, "_command", fake_command)
+
+    assert _inspect_image("local:test", pull=False, docker_control_timeout_s=300) == {"Id": "image"}
+    assert observed == [300]
+
+
+def test_repository_extract_keeps_copy_bound_and_extends_only_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: list[tuple[str, int]] = []
+
+    def fake_command(
+        argv: list[str],
+        *,
+        timeout_s: int = 300,
+        input_bytes: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del input_bytes
+        observed.append((argv[1], timeout_s))
+        stdout = b"container-id\n" if argv[1] == "create" else b""
+        return subprocess.CompletedProcess(argv, 0, stdout, b"")
+
+    monkeypatch.setattr(prepare, "_command", fake_command)
+    destination = tmp_path / "repository"
+    destination.mkdir()
+
+    _extract_repository(
+        image_id="sha256:" + "1" * 64,
+        repository_home="/home/repository",
+        destination=destination,
+        excluded_paths=[],
+        docker_control_timeout_s=240,
+    )
+
+    assert observed == [("create", 240), ("cp", 300), ("rm", 240)]
+
+
 def test_daemonless_import_binding_rejects_local_or_registry_drift() -> None:
     image_id = "sha256:" + "1" * 64
     manifest = "sha256:" + "2" * 64
@@ -409,6 +463,59 @@ def test_synthetic_runtime_baseline_is_bound_to_official_base(
         )
         == runtime
     )
+
+
+def test_image_baseline_uses_bounded_caller_selected_docker_control_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    official = "1" * 40
+    runtime = "2" * 40
+    observed_timeouts: list[int] = []
+
+    def fake_command(
+        argv: list[str],
+        *,
+        timeout_s: int = 300,
+        input_bytes: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del input_bytes
+        observed_timeouts.append(timeout_s)
+        payload = official if argv[-1].endswith("/.baseline_commit") else runtime
+        return subprocess.CompletedProcess(argv, 0, f"{payload}\n".encode(), b"")
+
+    monkeypatch.setattr(prepare, "_command", fake_command)
+
+    assert (
+        _image_baseline(
+            image_id=f"sha256:{'3' * 64}",
+            repository_home="/home/ibex",
+            base_commit=official,
+            docker_control_timeout_s=300,
+        )
+        == runtime
+    )
+    assert observed_timeouts == [300, 300]
+
+
+@pytest.mark.parametrize("timeout", [True, 0, -1, 301])
+def test_prepare_source_rejects_unbounded_docker_control_timeout_before_docker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: int
+) -> None:
+    dataset = tmp_path / "dataset.jsonl"
+    dataset.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        prepare,
+        "_inspect_image",
+        lambda *_args, **_kwargs: pytest.fail("invalid timeout must fail before Docker"),
+    )
+
+    with pytest.raises(ConfigurationError, match="integer from 1 through 300"):
+        prepare.prepare_source(
+            dataset=dataset,
+            output=tmp_path / "prepared",
+            selected_tasks=["lowRISC/ibex:pr-465"],
+            docker_control_timeout_s=timeout,
+        )
 
 
 def test_digest_locked_runtime_marker_policy_accepts_official_image_drift(

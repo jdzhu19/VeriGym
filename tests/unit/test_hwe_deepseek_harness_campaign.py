@@ -25,6 +25,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV83ExecutionScaffoldManifest,
     DeepSeekHarnessV85OfficialMatrixManifest,
     DeepSeekHarnessV87FreshScaffoldManifest,
+    DeepSeekHarnessV90FreshScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -32,6 +33,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v83_execution_scaffold_manifest,
     load_v85_official_matrix_manifest,
     load_v87_fresh_scaffold_manifest,
+    load_v90_fresh_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -44,6 +46,9 @@ _V85_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V87_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v87_fresh_scaffold_successor_v1.json"
+)
+_V90_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v90_fresh_scaffold_timeout_successor_v1.json"
 )
 
 
@@ -695,6 +700,21 @@ def test_v87_manifest_freezes_fresh_storage_and_timeout_accounting() -> None:
     assert manifest.v85_data_volume_reused is False
     assert manifest.physical_volume_open_accounting == "immediate_after_container_start_v1"
     assert manifest.readiness_probe_timeout_retryable is True
+    assert manifest.provider_successor_reopen_budget == 1
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v90_manifest_freezes_new_storage_and_bounded_control_timeout() -> None:
+    manifest = load_v90_fresh_scaffold_manifest(_V90_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV90FreshScaffoldManifest)
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert "v90" in manifest.dind_data_backing
+    assert manifest.source_preparation_docker_control_timeout_seconds == 300
+    assert manifest.v83_data_volume_reused is False
+    assert manifest.v85_data_volume_reused is False
+    assert manifest.v87_data_volume_reused is False
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v92-official-matrix-v1"
     assert manifest.provider_successor_reopen_budget == 1
     assert manifest.formal_collection_allowed is False
     assert manifest.training_started is False

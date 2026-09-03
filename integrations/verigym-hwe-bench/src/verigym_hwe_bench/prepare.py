@@ -39,6 +39,7 @@ _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _PATCH_SUMMARY_CREATE = re.compile(rb"^create mode ([0-7]{6}) ")
 _MAX_PATCH_METADATA_BYTES = 8 * 1024 * 1024
 _MAX_PATCH_PATH_BYTES = 4096
+_MAX_DOCKER_CONTROL_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -346,12 +347,16 @@ def load_selected_instances(dataset: Path, selected: set[str]) -> list[HweInstan
     return _official_instances(dataset, selected)
 
 
-def _inspect_image(reference: str, *, pull: bool) -> dict[str, Any]:
+def _inspect_image(
+    reference: str, *, pull: bool, docker_control_timeout_s: int = 60
+) -> dict[str, Any]:
     if pull:
         pulled = _command(["docker", "pull", reference], timeout_s=3600)
         if pulled.returncode != 0:
             raise ConfigurationError(f"could not pull selected HWE-Bench image: {reference}")
-    inspected = _command(["docker", "image", "inspect", reference], timeout_s=60)
+    inspected = _command(
+        ["docker", "image", "inspect", reference], timeout_s=docker_control_timeout_s
+    )
     if inspected.returncode != 0:
         raise ConfigurationError(
             f"selected HWE-Bench image is not local; rerun with --pull: {reference}"
@@ -409,10 +414,11 @@ def _extract_repository(
     repository_home: str,
     destination: Path,
     excluded_paths: list[str],
+    docker_control_timeout_s: int = 60,
 ) -> None:
     created = _command(
         ["docker", "create", "--network", "none", "--entrypoint", "/bin/true", image_id],
-        timeout_s=60,
+        timeout_s=docker_control_timeout_s,
     )
     if created.returncode != 0:
         raise ConfigurationError("could not create the selected HWE-Bench image")
@@ -425,7 +431,10 @@ def _extract_repository(
         if copied.returncode != 0:
             raise ConfigurationError("could not extract the selected HWE-Bench base repository")
     finally:
-        _command(["docker", "rm", "--force", container], timeout_s=60)
+        _command(
+            ["docker", "rm", "--force", container],
+            timeout_s=docker_control_timeout_s,
+        )
     metadata = destination / ".git"
     if metadata.exists():
         shutil.rmtree(metadata)
@@ -507,6 +516,7 @@ def _image_baseline(
     base_commit: str,
     marker: str | None = None,
     baseline_identity_policy: str = "official_base_or_bound_synthetic",
+    docker_control_timeout_s: int = 60,
 ) -> str:
     """Read the runtime baseline and bind a synthetic baseline to the official PR base."""
 
@@ -527,7 +537,7 @@ def _image_baseline(
             image_id,
             marker,
         ],
-        timeout_s=60,
+        timeout_s=docker_control_timeout_s,
     )
     observed = checked.stdout.decode("utf-8", errors="replace").strip()
     if checked.returncode != 0 or not _COMMIT.fullmatch(observed):
@@ -551,7 +561,7 @@ def _image_baseline(
             image_id,
             provenance_path,
         ],
-        timeout_s=60,
+        timeout_s=docker_control_timeout_s,
     )
     prepared_from = provenance.stdout.decode("utf-8", errors="replace").strip()
     if provenance.returncode == 0 and prepared_from == base_commit:
@@ -575,9 +585,16 @@ def prepare_source(
     official_source_commit: str | None = None,
     verifier_cache: Path | None = None,
     imported_image_bindings: Mapping[str, Mapping[str, str]] | None = None,
+    docker_control_timeout_s: int = 60,
 ) -> Path:
     """Prepare only explicitly selected tasks; never infer or pull a full repository set."""
 
+    if (
+        isinstance(docker_control_timeout_s, bool)
+        or not isinstance(docker_control_timeout_s, int)
+        or not 1 <= docker_control_timeout_s <= _MAX_DOCKER_CONTROL_TIMEOUT_SECONDS
+    ):
+        raise ConfigurationError("Docker control timeout must be an integer from 1 through 300")
     if not selected_tasks or len(selected_tasks) > 32:
         raise ConfigurationError("prepare-source requires between 1 and 32 explicit --task values")
     if len(selected_tasks) != len(set(selected_tasks)):
@@ -625,7 +642,11 @@ def prepare_source(
                 f"ghcr.io/pku-liang/{instance.org.lower()}_m_{instance.repo.lower()}:"
                 f"pr-{instance.number}"
             )
-            image = _inspect_image(reference, pull=pull)
+            image = _inspect_image(
+                reference,
+                pull=pull,
+                docker_control_timeout_s=docker_control_timeout_s,
+            )
             image_id, manifest_digest = _resolve_image_identity(
                 reference=reference,
                 image=image,
@@ -641,6 +662,7 @@ def prepare_source(
                 base_commit=instance.base_commit,
                 marker=profile.base_commit_marker,
                 baseline_identity_policy=profile.baseline_identity_policy,
+                docker_control_timeout_s=docker_control_timeout_s,
             )
             workspace = prepared / "workspaces" / instance.slug
             repository = workspace / "repository"
@@ -650,6 +672,7 @@ def prepare_source(
                 repository_home=repository_home,
                 destination=repository,
                 excluded_paths=profile.workspace_excluded_paths,
+                docker_control_timeout_s=docker_control_timeout_s,
             )
             repository_hash = hash_directory(repository)
             license_inventory = _license_inventory(repository, profile)

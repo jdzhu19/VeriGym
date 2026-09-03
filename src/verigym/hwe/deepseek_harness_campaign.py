@@ -1174,6 +1174,104 @@ class DeepSeekHarnessV87FreshScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV90FreshScaffoldManifest(StrictModel):
+    """Fresh zero-provider scaffold after the audited v87 cold-VFS stop."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v90_fresh_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v90-fresh-scaffold-timeout-successor-v1"]
+    upstream_manifest_sha256: str
+    upstream_manifest_hash: str
+    v79_manifest_sha256: str
+    v79_manifest_hash: str
+    v79_provider_contract_sha256: str
+    v79_provider_contract_hash: str
+    v87_report_sha256: str
+    v87_report_hash: str
+    v88_audit_sha256: str
+    v88_audit_commit: str
+    v88_post_merge_main_run_id: Literal[33757519337]
+    v88_post_merge_main_all_eight_classes_passed: Literal[True]
+    source_preparation_docker_control_timeout_seconds: Literal[300]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v90-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v90-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v90/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v90/socket"]
+    scaffold_outer_network: Literal["none"]
+    provider_outer_network: Literal["verigym-hwe-net"]
+    provider_inner_network: Literal["verigym-hwe-net"]
+    controller_image_tag: Literal["node:22.19.0-bookworm-slim"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    controller_transfer: Literal["content_free_read_only_outer_canonical_tag_pipe_v2"]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v92-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    physical_volume_open_accounting: Literal["immediate_after_container_start_v1"]
+    readiness_probe_timeout_retryable: Literal[True]
+    host_docker_root_used_for_task_layers: Literal[False]
+    v83_data_volume_reused: Literal[False]
+    v85_data_volume_reused: Literal[False]
+    v87_data_volume_reused: Literal[False]
+    provider_clients_available: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "upstream_manifest_sha256",
+        "upstream_manifest_hash",
+        "v79_manifest_sha256",
+        "v79_manifest_hash",
+        "v79_provider_contract_sha256",
+        "v79_provider_contract_hash",
+        "v87_report_sha256",
+        "v87_report_hash",
+        "v88_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v90 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v88_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v90 scaffold manifest requires a full audit commit")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+    )
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v90 scaffold manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v90 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -1544,6 +1642,17 @@ def load_v87_fresh_scaffold_manifest(path: Path) -> DeepSeekHarnessV87FreshScaff
         raise ConfigurationError("v87 fresh scaffold manifest is invalid") from exc
 
 
+def load_v90_fresh_scaffold_manifest(path: Path) -> DeepSeekHarnessV90FreshScaffoldManifest:
+    """Load the bounded one-use v90 zero-provider scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v90 fresh scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV90FreshScaffoldManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v90 fresh scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -1694,6 +1803,7 @@ __all__ = [
     "DeepSeekHarnessV85OfficialMatrixManifest",
     "DeepSeekHarnessV85TaskBinding",
     "DeepSeekHarnessV87FreshScaffoldManifest",
+    "DeepSeekHarnessV90FreshScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -1714,6 +1824,7 @@ __all__ = [
     "load_v83_execution_scaffold_manifest",
     "load_v85_official_matrix_manifest",
     "load_v87_fresh_scaffold_manifest",
+    "load_v90_fresh_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
