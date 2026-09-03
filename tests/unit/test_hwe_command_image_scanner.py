@@ -91,15 +91,18 @@ def _run_scan(
     stdout: bytes = b"",
     stderr: bytes = b"",
     create_workspace_proof: bool = False,
+    runtime_scratch_parent: Path | None = None,
 ):
-    workspace = tmp_path / "scan-workspace"
+    scratch_parent = runtime_scratch_parent or tmp_path
+    workspace = scratch_parent / "scan-workspace"
     workspace.mkdir()
     monkeypatch.setattr(_scanner, "_SCRATCH_PARENT", tmp_path)
-    monkeypatch.setattr(
-        _scanner.tempfile,
-        "mkdtemp",
-        lambda **_kwargs: str(workspace),
-    )
+
+    def fake_mkdtemp(**kwargs):
+        assert kwargs["dir"] == scratch_parent.resolve()
+        return str(workspace)
+
+    monkeypatch.setattr(_scanner.tempfile, "mkdtemp", fake_mkdtemp)
     removed: list[str] = []
 
     def fake_subprocess_run(arguments, **_kwargs):
@@ -137,8 +140,55 @@ def _run_scan(
         user="1000:1000",
         rg_sha256="2" * 64,
         artifacts=[{"path": "/usr/bin/make", "sha256": "3" * 64}],
+        runtime_scratch_parent=runtime_scratch_parent,
     )
     return result, removed
+
+
+def test_container_scan_uses_explicit_same_path_scratch_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch_parent = tmp_path / "successor-output" / "scan-workspaces"
+    scratch_parent.mkdir(parents=True)
+    (checks, diagnostic), _removed = _run_scan(
+        tmp_path,
+        monkeypatch,
+        start_returncode=0,
+        container_exit_code=0,
+        create_workspace_proof=True,
+        runtime_scratch_parent=scratch_parent,
+    )
+
+    assert all(checks.values())
+    assert diagnostic["temporary_workspace_removed"] is True
+    assert list(scratch_parent.iterdir()) == []
+
+
+def test_container_scan_rejects_symlinked_explicit_scratch_parent(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="scratch parent is unsafe"):
+        _scanner._container_scan(
+            "sha256:" + "1" * 64,
+            user="1000:1000",
+            rg_sha256="2" * 64,
+            artifacts=[],
+            runtime_scratch_parent=linked,
+        )
+
+
+def test_container_scan_rejects_relative_explicit_scratch_parent(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="scratch parent is unsafe"):
+        _scanner._container_scan(
+            "sha256:" + "1" * 64,
+            user="1000:1000",
+            rg_sha256="2" * 64,
+            artifacts=[],
+            runtime_scratch_parent=Path(tmp_path.name),
+        )
 
 
 def test_container_assertion_failure_is_attributable_and_output_is_not_persisted(

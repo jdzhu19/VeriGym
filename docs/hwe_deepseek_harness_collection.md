@@ -195,3 +195,24 @@ Every command-image build gets a content-free bounded diagnostic, and provider-c
 requires the separately hashed socket-cleanup receipt. A successful result remains
 `provider_execution_authorized=false` until the independent v74 audit is merged and its post-merge
 `main` run passes all eight classes.
+
+V73 subsequently stopped before its first command-image runtime scan could create a container.
+V74 froze the zero-provider result and traced the failure to a scanner bind source outside the
+single same-path output mount visible to the nested daemon; it also identified the transient
+`runc/` socket-volume path missing from the cleanup allowlist. V75 is the next fresh identity. It
+retires and never reopens the v73 data volume, uses new `/data2`-backed data/socket volumes, places
+every scanner workspace below `output/scan-workspaces`, and verifies that directory is empty after
+each task. Its cleanup allowlist includes `runc/`.
+
+Run v75 exactly once only after its authorization is merged and all eight post-merge `main` job
+classes pass, with provider and Docker routing variables removed without exposing their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V75_DIND_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v75_dind.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+Any failure remains pre-provider and publishes no partial contract. A complete v75 result still
+sets `provider_execution_authorized=false` until an independent v76 audit is merged and its own
+post-merge `main` checks pass.

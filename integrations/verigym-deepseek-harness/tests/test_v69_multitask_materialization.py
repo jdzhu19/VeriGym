@@ -124,6 +124,11 @@ def test_cva6_command_image_uses_the_campaign_scratch_root() -> None:
     assert "scratch_parent=/data2/jiadongzhu/Agent/.verigym-tmp" in source
     assert "scratch_parent=/data/jzhu484/Agent/.verigym-tmp" not in source
 
+    runner_source = (
+        _REPOSITORY_ROOT / "scripts/materialize_hwe_deepseek_harness_v69.py"
+    ).read_text(encoding="utf-8")
+    assert "runtime_scratch_parent=scan_scratch_parent" in runner_source
+
 
 @pytest.mark.parametrize(
     "name",
