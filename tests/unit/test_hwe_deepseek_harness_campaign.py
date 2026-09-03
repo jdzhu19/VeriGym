@@ -28,6 +28,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV90FreshScaffoldManifest,
     DeepSeekHarnessV92OfficialMatrixManifest,
     DeepSeekHarnessV94RuntimeCompleteScaffoldManifest,
+    DeepSeekHarnessV97RebuildIdentityScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -38,6 +39,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v90_fresh_scaffold_manifest,
     load_v92_official_matrix_manifest,
     load_v94_runtime_complete_scaffold_manifest,
+    load_v97_rebuild_identity_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -59,6 +61,9 @@ _V92_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V94_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v94_runtime_complete_scaffold_v1.json"
+)
+_V97_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v97_rebuild_identity_scaffold_v1.json"
 )
 
 
@@ -786,3 +791,31 @@ def test_v94_manifest_rejects_missing_workspace_runtime_transfer() -> None:
     )
     with pytest.raises(ValueError, match="runtime tags changed"):
         DeepSeekHarnessV94RuntimeCompleteScaffoldManifest.model_validate(changed)
+
+
+def test_v97_manifest_freezes_fresh_storage_and_build_identity_policy() -> None:
+    manifest = load_v97_rebuild_identity_scaffold_manifest(_V97_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV97RebuildIdentityScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v95_audit_commit == "57cf77be8d9992e5fcc2e5833ec64ff458365d00"
+    assert manifest.v95_post_merge_main_run_id == 33776059453
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v97-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.cross_build_command_image_identity_policy == "fresh-materialization-lock-v1"
+    assert manifest.historical_derived_image_identity_required is False
+    assert manifest.historical_task_semantics_required is True
+    assert manifest.v94_data_volume_reused is False
+    assert manifest.v96_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v99-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v97_manifest_rejects_historical_image_identity_as_a_gate() -> None:
+    changed = json.loads(_V97_MANIFEST.read_text(encoding="utf-8"))
+    changed["historical_derived_image_identity_required"] = True
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="historical_derived_image_identity_required"):
+        DeepSeekHarnessV97RebuildIdentityScaffoldManifest.model_validate(changed)
