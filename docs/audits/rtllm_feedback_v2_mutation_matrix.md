@@ -82,15 +82,19 @@ variant. Finite mutation testing measures the frozen contract; it is not a proof
 functional correctness.
 
 The current source digest map was qualified with host Icarus Verilog 12.0 stable (`v12_0`) using
-the same bounded batch runner as the opt-in Docker test. A no-pull replay in the already frozen
-image
-`sha256:e33186333e904f120cad7651c56c45be6715df1cc9745a93b137d82b9a5a05f1`
-was also attempted after source hardening, but the Docker daemon could not create a container
-because the host root filesystem had no free space. That attempt produced no functional verdict
-and is classified as an infrastructure failure, not a verifier rejection; exact container-identity
-replay of the final source map remains pending.
+the same bounded batch runner as the opt-in Docker test. The initial no-pull container replay could
+not create a container because the host root filesystem was full. It produced no verdict and
+remains immutably recorded as an infrastructure failure, not a verifier rejection or automatic
+retry. Its sanitized result SHA-256 is
+`36adad008b512d01599754118d04977cf688dbd5a3b2ff0cd5582101d615b7cf`.
 
-The sanitized external qualification summary has SHA-256
-`36adad008b512d01599754118d04977cf688dbd5a3b2ff0cd5582101d615b7cf`. It records only identities,
-aggregate verdict counts, the stable infrastructure reason code, and cleanup status; it contains
-no source text, hidden vectors, verifier path, credential, or full trajectory.
+After temporary-space health was restored, a new invocation completed the exact 1,300-verdict
+matrix in the already frozen image
+`sha256:e33186333e904f120cad7651c56c45be6715df1cc9745a93b137d82b9a5a05f1`
+with Docker networking disabled: all 50 references passed public and hidden checks, and all 600
+mutants were rejected by each partition. The new immutable sanitized result is
+`rtllm-feedback-v2-functional-qualification-docker-v3.json`, SHA-256
+`a7ded4d37450e468710bc69dab6e87f0dae07974b1d5eac36f78aeb4140c7e2e`. It binds the image,
+catalog, mutant-source map, variant, aggregate and per-task verdicts, zero model calls, zero
+automatic retries, and cleanup status. Neither result contains source text, hidden vectors,
+verifier paths, credentials, or full trajectories.

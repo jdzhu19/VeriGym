@@ -29,10 +29,22 @@ A default `verigym doctor` run with only `VERIGYM_VCS_MCP_PROFILE_V2` configured
 `synopsys.vcs.mcp` healthy. No legacy environment alias was needed for that check.
 
 During final source-hardening requalification on 2026-09-03, the frozen transport still listed the
-same server identity but its VCS identity probe could not complete after the host root filesystem
-reached full capacity. Resolution stopped before a simulation job. A direct `VCS -ID` probe using
-an existing dedicated `/data` scratch root still returned `V-2023.12-SP2-2_Full64`, confirming an
-infrastructure-local temporary-space failure rather than license loss or profile drift. The client
-and direct VCS launch paths now forward only a pre-existing, non-symlink, writable `TMPDIR` chosen
-by the trusted process environment; verifier requests still cannot select it. The already frozen
+same server identity but its VCS identity probe initially could not complete after the host root
+filesystem reached full capacity. Resolution stopped before a simulation job. A direct `VCS -ID`
+probe using an existing dedicated `/data` scratch root still returned
+`V-2023.12-SP2-2_Full64`, confirming an infrastructure-local temporary-space failure rather than
+license loss or profile drift. This failed preflight remains recorded and was not converted into a
+candidate verdict or automatic retry.
+
+After temporary-space health was restored, the same frozen client resolved to
+`0c814c8dedaf…30b71` and a new qualification invocation completed all 22 strengthened-control jobs
+with zero mismatches, model calls, or automatic retries. Private staging reported complete cleanup
+and zero residual paths. The result file is
+`rtllm-fifo-vcs-behavior-qualification-v2-strengthened-controls-v2.json`, SHA-256
+`84c2ecd59303e2263f88bc0e6bdebe7fdc4f2a21e09bb49c2289e4b44981ea0c`; the source catalog and
+mutant digest-map identities bound by the companion FIFO audit are unchanged from the final
+feedback-v2 qualification.
+
+The client and direct VCS launch paths forward only a pre-existing, non-symlink, writable `TMPDIR`
+chosen by the trusted process environment; verifier requests cannot select it. The already frozen
 wrapper continues to load its deployment snapshot and was not modified in place.
