@@ -91,3 +91,40 @@ an identity partition without mutating a historical task identity.
 This qualification establishes compiler replacement and isolation behavior. It does not claim
 that compile success proves functional correctness, that the finite controls exhaust possible
 errors, or that VCS results are numerically interchangeable with an upstream Icarus partition.
+
+## Real Codex CLI integration smoke
+
+One bounded scoring episode subsequently exercised the same route with the real Codex CLI rather
+than the scripted zero-model agent. The frozen source commit was `80b6b76353ba…03b4201`; the source
+tree was clean at planning time. The run used `codex-cli 0.147.0`, requested GPT-5.4 with `xhigh`
+reasoning, and bound the `codex-cli-agenteval-gpt54-xhigh-v10` agent identity. The provider event
+stream did not echo a model identifier, so the model identity remains explicitly
+`requested_only`; no observed-model claim is made.
+
+The single `Prob001_zero` episode completed successfully:
+
+| Check | Result |
+| --- | --- |
+| Codex processes / automatic retries | 1 / 0 |
+| Model calls reported by the complete CLI event stream | 1 |
+| Repository tool calls | 10 |
+| Reads / patches / diff inspections | 3 / 1 / 1 |
+| Iterative public VCS/MCP compiles | 1, passed |
+| Typed `finish` calls | 1 |
+| Final hidden VCS/MCP regression | passed |
+| Candidate resolved | yes |
+| Process wall time | 66.935 s |
+| Input / output / total tokens | 92,492 / 1,750 / 94,242 |
+
+The public evaluation hash matched the frozen public profile, the final verifier hash matched the
+frozen hidden profile, and the two resolved hashes were unequal. The Docker workspace used
+`network=none`; its agent and verifier sessions reported complete cleanup, and the Codex process
+group was cleaned. Offline replay and the model-facing leakage scan both passed. Raw event output,
+message content, and reasoning content were not persisted.
+
+The opt-in launcher is `scripts/run_verilog_eval_vcs_public_codex_smoke.py`. The external campaign
+is `verilog-eval-vcs-public-codex-gpt54-xhigh-smoke-v1`; its plan, authorization ledger, manifest,
+scorecard, replay, and security summaries remain outside the repository. This one-task smoke proves
+that a real Codex CLI episode can consume iterative public VCS/MCP feedback and then receive a
+separate hidden VCS/MCP verdict. It is not a benchmark score or a claim about all 155 eligible
+tasks.
