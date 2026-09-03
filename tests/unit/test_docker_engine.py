@@ -320,6 +320,141 @@ def test_docker_cli_propagates_only_an_explicit_local_socket(
     assert set(observed[1]) == {"PATH", "LANG", "LC_ALL", "DOCKER_HOST"}
 
 
+def test_streaming_attach_uses_the_same_sanitized_explicit_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    socket_path = tmp_path / "docker.sock"
+    endpoint = _unix_socket(socket_path)
+    observed: list[tuple[list[str], dict[str, Any]]] = []
+    sentinel = object()
+
+    def popen(argv: list[str], **kwargs: Any) -> object:
+        observed.append((argv, kwargs))
+        return sentinel
+
+    monkeypatch.setattr("verigym.runtimes.docker.engine.subprocess.Popen", popen)
+    monkeypatch.setenv("DOCKER_HOST", "tcp://untrusted.example:2375")
+    monkeypatch.setenv("DOCKER_CONTEXT", "untrusted-context")
+    monkeypatch.setenv("VERIGYM_UNRELATED_SECRET", "must-not-propagate")
+    try:
+        unbound = DockerCliEngine(executable="/usr/bin/docker").start_attach_streaming("one")
+        bound = DockerCliEngine(
+            executable="/usr/bin/docker", docker_host=f"unix://{socket_path}"
+        ).start_attach_streaming("two")
+    finally:
+        endpoint.close()
+
+    assert unbound is sentinel
+    assert bound is sentinel
+    assert observed[0][0] == [
+        "/usr/bin/docker",
+        "start",
+        "--attach",
+        "--interactive",
+        "one",
+    ]
+    assert "DOCKER_HOST" not in observed[0][1]["env"]
+    assert observed[1][1]["env"]["DOCKER_HOST"] == f"unix://{socket_path}"
+    assert set(observed[1][1]["env"]) == {"PATH", "LANG", "LC_ALL", "DOCKER_HOST"}
+    assert observed[1][1]["shell"] is False
+    assert observed[1][1]["close_fds"] is True
+
+
+def test_docker_cli_lists_all_resources_without_managed_label_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = DockerCliEngine(executable="/usr/bin/docker")
+    observed: list[tuple[list[str], int]] = []
+
+    def invoke(
+        arguments: list[str],
+        *,
+        timeout_s: int,
+        max_output_bytes: int = 1024 * 1024,
+    ) -> EngineResult:
+        del max_output_bytes
+        observed.append((arguments, timeout_s))
+        stdout = "container-b\ncontainer-a\n" if arguments[0] == "ps" else "volume-b\nvolume-a\n"
+        return _result(["docker", *arguments], stdout=stdout)
+
+    monkeypatch.setattr(engine, "_invoke", invoke)
+
+    assert engine.list_all_containers() == ["container-a", "container-b"]
+    assert engine.list_all_volumes() == ["volume-a", "volume-b"]
+    assert observed == [
+        (["ps", "--all", "--quiet"], 60),
+        (["volume", "ls", "--quiet"], 60),
+    ]
+
+
+@pytest.mark.parametrize("resource", ["containers", "volumes"])
+def test_docker_cli_all_resource_inventory_fails_closed(
+    resource: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = DockerCliEngine(executable="/usr/bin/docker")
+    monkeypatch.setattr(
+        engine,
+        "_invoke",
+        lambda *args, **kwargs: _result(
+            ["docker", "inventory"], exit_code=1, stderr="daemon unavailable"
+        ),
+    )
+
+    with pytest.raises(DockerDaemonError, match=f"{resource[:-1]}_list"):
+        if resource == "containers":
+            engine.list_all_containers()
+        else:
+            engine.list_all_volumes()
+
+
+def test_docker_cli_network_lifecycle_uses_bounded_argument_arrays(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = DockerCliEngine(executable="/usr/bin/docker")
+    observed: list[list[str]] = []
+    inspections = iter(
+        [
+            _result(["docker", "network", "inspect"], exit_code=1, stderr="no such network"),
+            _result(
+                ["docker", "network", "inspect"],
+                stdout='{"Name":"isolated","Driver":"bridge","Internal":true,"Scope":"local"}\n',
+            ),
+        ]
+    )
+
+    def invoke(
+        arguments: list[str],
+        *,
+        timeout_s: int,
+        max_output_bytes: int = 1024 * 1024,
+    ) -> EngineResult:
+        del timeout_s, max_output_bytes
+        observed.append(arguments)
+        if arguments[:2] == ["network", "inspect"]:
+            return next(inspections)
+        if arguments[:2] == ["network", "create"]:
+            return _result(["docker", *arguments], stdout="network-id\n")
+        return _result(["docker", *arguments])
+
+    monkeypatch.setattr(engine, "_invoke", invoke)
+
+    assert engine.inspect_network("isolated") is None
+    assert engine.create_internal_network("isolated") == "network-id"
+    assert engine.inspect_network("isolated") == {
+        "Name": "isolated",
+        "Driver": "bridge",
+        "Internal": True,
+        "Scope": "local",
+    }
+    engine.remove_network("isolated")
+    assert observed == [
+        ["network", "inspect", "isolated", "--format", "{{json .}}"],
+        ["network", "create", "--driver", "bridge", "--internal", "isolated"],
+        ["network", "inspect", "isolated", "--format", "{{json .}}"],
+        ["network", "rm", "isolated"],
+    ]
+
+
 @pytest.mark.parametrize(
     "value",
     [

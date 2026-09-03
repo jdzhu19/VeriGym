@@ -2222,6 +2222,174 @@ class DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest(StrictModel)
         return self
 
 
+class DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest(StrictModel):
+    """One-use scaffold with all inner inventory bound to the explicit DinD endpoint."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal[
+        "verigym_deepseek_harness_hwe_v118_explicit_inner_inventory_scaffold_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v118-explicit-inner-inventory-scaffold-v1"]
+    v112_manifest_sha256: str
+    v112_manifest_hash: str
+    v112_runner_sha256: str
+    v112_authorization_sha256: str
+    v112_report_sha256: str
+    v112_report_hash: str
+    v112_headroom_sha256: str
+    v112_headroom_hash: str
+    v112_task_materialization_sha256: str
+    v112_task_materialization_hash: str
+    v112_inventory_sha256: str
+    v112_inventory_hash: str
+    v112_cleanup_sha256: str
+    v112_cleanup_hash: str
+    v112_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v112-data2-control-headroom-scaffold-v1"
+    ]
+    v112_evidence_directory_count: Literal[1780]
+    v112_evidence_regular_file_count: Literal[10477]
+    v112_evidence_symlink_count: Literal[0]
+    v113_audit_sha256: str
+    v113_audit_commit: Literal["9f79f54725c365bd0ab9ba9389f2ac421db1b155"]
+    v113_post_merge_main_run_id: Literal[33810326256]
+    v113_post_merge_main_all_eight_classes_passed: Literal[True]
+    v115_manifest_sha256: str
+    v115_manifest_hash: str
+    v115_runner_sha256: str
+    v115_authorization_sha256: str
+    v115_engine_sha256: str
+    v115_process_sha256: str
+    v115_report_sha256: str
+    v115_report_hash: str
+    v115_headroom_sha256: str
+    v115_headroom_hash: str
+    v115_task_materialization_sha256: str
+    v115_task_materialization_hash: str
+    v115_inventory_sha256: str
+    v115_inventory_hash: str
+    v115_runtime_receipt_sha256: str
+    v115_runtime_receipt_hash: str
+    v115_transfer_set_sha256: str
+    v115_transfer_set_hash: str
+    v115_cleanup_sha256: str
+    v115_cleanup_hash: str
+    v115_authorization_commit: Literal["48bc47f0dbb020e41f330bf5350bad621d01df1c"]
+    v115_post_merge_main_run_id: Literal[33812788683]
+    v115_post_merge_main_all_eight_classes_passed: Literal[True]
+    v115_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v115-explicit-nested-docker-socket-scaffold-v1"
+    ]
+    v115_evidence_directory_count: Literal[1780]
+    v115_evidence_regular_file_count: Literal[10477]
+    v115_evidence_symlink_count: Literal[0]
+    v116_audit_sha256: str
+    v116_audit_commit: Literal["7faf47a4ba49139bf9e93200e104b8b9e9cbfea2"]
+    v116_post_merge_main_run_id: Literal[33815411217]
+    v116_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v115-manifest"]
+    schedule_task_ids: list[str] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    dind_data_volume: Literal["verigym-deepseek-harness-v118-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v118-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v118/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v118/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v118-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v118-runtime"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v118/socket/docker.sock"
+    ]
+    docker_host_binding_policy: Literal["explicit-canonical-local-unix-socket-v1"]
+    docker_cli_explicit_binding_required: Literal[True]
+    harness_helper_explicit_binding_required: Literal[True]
+    inherited_docker_environment_allowed: Literal[False]
+    remote_docker_endpoint_allowed: Literal[False]
+    inner_inventory_transport_policy: Literal["explicit-bound-engine-all-resources-v1"]
+    inner_inventory_all_containers_required: Literal[True]
+    inner_inventory_all_volumes_required: Literal[True]
+    host_sidecar_inventory_for_inner_allowed: Literal[False]
+    inner_network_transport_policy: Literal["explicit-bound-engine-v1"]
+    host_sidecar_network_control_for_inner_allowed: Literal[False]
+    streaming_attach_explicit_binding_required: Literal[True]
+    v112_data_volume_reused: Literal[False]
+    v114_identity_retired: Literal[True]
+    v115_data_volume_reused: Literal[False]
+    v115_socket_control_runtime_empty_required: Literal[True]
+    v117_identity_retired: Literal[True]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v120-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v112_manifest_sha256",
+        "v112_manifest_hash",
+        "v112_runner_sha256",
+        "v112_authorization_sha256",
+        "v112_report_sha256",
+        "v112_report_hash",
+        "v112_headroom_sha256",
+        "v112_headroom_hash",
+        "v112_task_materialization_sha256",
+        "v112_task_materialization_hash",
+        "v112_inventory_sha256",
+        "v112_inventory_hash",
+        "v112_cleanup_sha256",
+        "v112_cleanup_hash",
+        "v113_audit_sha256",
+        "v115_manifest_sha256",
+        "v115_manifest_hash",
+        "v115_runner_sha256",
+        "v115_authorization_sha256",
+        "v115_engine_sha256",
+        "v115_process_sha256",
+        "v115_report_sha256",
+        "v115_report_hash",
+        "v115_headroom_sha256",
+        "v115_headroom_hash",
+        "v115_task_materialization_sha256",
+        "v115_task_materialization_hash",
+        "v115_inventory_sha256",
+        "v115_inventory_hash",
+        "v115_runtime_receipt_sha256",
+        "v115_runtime_receipt_hash",
+        "v115_transfer_set_sha256",
+        "v115_transfer_set_hash",
+        "v115_cleanup_sha256",
+        "v115_cleanup_hash",
+        "v116_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v118_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v118 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v118_identity(self) -> Self:
+        if tuple(self.schedule_task_ids) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v118 scaffold schedule changed")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v118 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2738,6 +2906,23 @@ def load_v115_explicit_nested_docker_socket_scaffold_manifest(
         raise ConfigurationError("v115 nested-Docker-socket scaffold manifest is invalid") from exc
 
 
+def load_v118_explicit_inner_inventory_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest:
+    """Load the one-use v118 explicit inner-inventory scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v118 explicit inner-inventory scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError(
+            "v118 explicit inner-inventory scaffold manifest is invalid"
+        ) from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2899,6 +3084,7 @@ __all__ = [
     "DeepSeekHarnessV109ProgressWriterScaffoldManifest",
     "DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest",
     "DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest",
+    "DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2929,6 +3115,7 @@ __all__ = [
     "load_v109_progress_writer_scaffold_manifest",
     "load_v112_data2_control_headroom_scaffold_manifest",
     "load_v115_explicit_nested_docker_socket_scaffold_manifest",
+    "load_v118_explicit_inner_inventory_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
