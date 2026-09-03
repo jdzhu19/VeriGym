@@ -21,14 +21,18 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV73DindSuccessorManifest,
     DeepSeekHarnessV77DindSuccessorManifest,
     DeepSeekHarnessV79DindSuccessorManifest,
+    DeepSeekHarnessV81ExecutionScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
+    load_v81_execution_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
     require_toolchain_verifier_binding,
 )
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _repository_parts(task_id: str) -> tuple[str, str, int]:
@@ -377,6 +381,26 @@ def test_v79_dind_successor_binds_only_pr_2017_runtime_override() -> None:
     with pytest.raises(ValueError, match="exact PR-2017 runtime override"):
         DeepSeekHarnessV79DindSuccessorManifest.model_validate(
             {**changed, "manifest_hash": content_hash(changed)}
+        )
+
+
+def test_checked_in_v81_scaffold_manifest_is_hash_bound_and_purpose_limited() -> None:
+    path = _REPOSITORY_ROOT / (
+        "configs/training/qwen35_hwe_deepseek_harness_v81_provider_execution_scaffold_v1.json"
+    )
+    manifest = load_v81_execution_scaffold_manifest(path)
+    assert isinstance(manifest, DeepSeekHarnessV81ExecutionScaffoldManifest)
+    assert manifest.dind_data_backing.startswith("/data2/jiadongzhu/docker/")
+    assert manifest.v79_data_volume_reused is False
+    assert manifest.provider_successor_reopen_budget == 1
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v83-official-matrix-v1"
+    assert manifest.provider_clients_available is False
+    assert manifest.formal_collection_allowed is False
+
+    value = manifest.model_dump(mode="json")
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV81ExecutionScaffoldManifest.model_validate(
+            {**value, "v80_audit_sha256": "0" * 64}
         )
 
 

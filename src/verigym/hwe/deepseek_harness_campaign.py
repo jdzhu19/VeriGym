@@ -693,6 +693,90 @@ class DeepSeekHarnessV79DindSuccessorManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV81ExecutionScaffoldManifest(StrictModel):
+    """Credential-free execution scaffold for the audited five-task provider matrix."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v81_execution_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v81-provider-execution-scaffold-v1"]
+    upstream_manifest_sha256: str
+    upstream_manifest_hash: str
+    v79_provider_contract_sha256: str
+    v79_provider_contract_hash: str
+    v80_audit_sha256: str
+    v80_audit_commit: str
+    v80_post_merge_main_run_id: Literal[33735930859]
+    v80_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v81-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v81-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v81/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v81/socket"]
+    scaffold_outer_network: Literal["none"]
+    provider_outer_network: Literal["verigym-hwe-net"]
+    provider_inner_network: Literal["verigym-hwe-net"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    controller_transfer: Literal["content_free_read_only_outer_image_pipe_v1"]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v83-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    host_docker_root_used_for_task_layers: Literal[False]
+    v79_data_volume_reused: Literal[False]
+    provider_clients_available: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "upstream_manifest_sha256",
+        "upstream_manifest_hash",
+        "v79_provider_contract_sha256",
+        "v79_provider_contract_hash",
+        "v80_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v81 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v80_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v81 scaffold manifest requires a full audit commit")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+    )
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v81 scaffold manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v81 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -1015,6 +1099,19 @@ def load_v79_dind_successor_manifest(path: Path) -> DeepSeekHarnessV79DindSucces
         raise ConfigurationError("v79 successor manifest is invalid") from exc
 
 
+def load_v81_execution_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV81ExecutionScaffoldManifest:
+    """Load the bounded v81 credential-free execution-scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v81 scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV81ExecutionScaffoldManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v81 scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -1160,6 +1257,7 @@ __all__ = [
     "DeepSeekHarnessV75DindSuccessorManifest",
     "DeepSeekHarnessV77DindSuccessorManifest",
     "DeepSeekHarnessV79DindSuccessorManifest",
+    "DeepSeekHarnessV81ExecutionScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -1175,6 +1273,7 @@ __all__ = [
     "load_v75_dind_successor_manifest",
     "load_v77_dind_successor_manifest",
     "load_v79_dind_successor_manifest",
+    "load_v81_execution_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
