@@ -23,11 +23,13 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV79DindSuccessorManifest,
     DeepSeekHarnessV81ExecutionScaffoldManifest,
     DeepSeekHarnessV83ExecutionScaffoldManifest,
+    DeepSeekHarnessV85OfficialMatrixManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
     load_v81_execution_scaffold_manifest,
     load_v83_execution_scaffold_manifest,
+    load_v85_official_matrix_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -35,6 +37,9 @@ from verigym.hwe.deepseek_harness_campaign import (
 )
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_V85_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v85_official_matrix_v1.json"
+)
 
 
 def _repository_parts(task_id: str) -> tuple[str, str, int]:
@@ -640,3 +645,37 @@ def test_agent_toolchain_cannot_impersonate_official_verifier() -> None:
             expected_agent_toolchain_id="verigym-open-rtl-tools-v1",
             expected_official_verifier_image="sha256:" + "9" * 64,
         )
+
+
+def test_v85_manifest_freezes_official_order_storage_and_closed_flags() -> None:
+    manifest = load_v85_official_matrix_manifest(_V85_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV85OfficialMatrixManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert [item.repository for item in manifest.schedule] == [
+        "ibex",
+        "ibex",
+        "ibex",
+        "cva6",
+        "cva6",
+    ]
+    assert manifest.seed == 502
+    assert manifest.sample_index == 18
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.v83_data_volume_reopen_budget == 1
+    assert manifest.task_network == "none"
+    assert manifest.verifier_network == "none"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v85_manifest_rejects_reordered_tasks_even_with_a_recomputed_hash() -> None:
+    changed = json.loads(_V85_MANIFEST.read_text(encoding="utf-8"))
+    changed["schedule"][0], changed["schedule"][1] = (
+        changed["schedule"][1],
+        changed["schedule"][0],
+    )
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="schedule changed"):
+        DeepSeekHarnessV85OfficialMatrixManifest.model_validate(changed)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ CONTROLLER_IMAGE_ID = "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da6406
 CONTROLLER_IMAGE_REPO_DIGEST = (
     "node@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90"
 )
+CONTROLLER_IMAGE_TAG = "node:22.19.0-bookworm-slim"
 CONTROLLER_NETWORK = "verigym-hwe-net"
 API_KEY_ENV = "VERIGYM_DEEPSEEK_API_KEY"
 BASE_URL_ENV = "VERIGYM_DEEPSEEK_API_BASE_URL"
@@ -40,6 +42,8 @@ class DeepSeekHarnessSettings:
     runtime_assets: Path
     controller_image_id: str
     controller_image_repo_digest: str
+    controller_image_provenance: str
+    controller_image_source_receipt_hash: str | None
     source_tree_hash: str
     runtime_entry_hash: str
     cordis_config_hash: str
@@ -49,7 +53,7 @@ class DeepSeekHarnessSettings:
     max_output_bytes: int
 
     def harness_identity(self) -> dict[str, Any]:
-        return {
+        identity = {
             "revision": DEEPSEEK_HARNESS_REVISION,
             "version": DEEPSEEK_HARNESS_VERSION,
             "sdk_transport": "python_sdk_source_controller_container",
@@ -64,6 +68,17 @@ class DeepSeekHarnessSettings:
             "tool_plugin_hash": self.tool_plugin_hash,
             "configuration_fingerprint": self.configuration_fingerprint,
         }
+        if self.controller_image_provenance != "repository_digest":
+            source_receipt_hash = self.controller_image_source_receipt_hash
+            if source_receipt_hash is None:
+                raise ValueError("offline controller provenance lacks its source receipt")
+            identity.update(
+                {
+                    "controller_image_provenance": self.controller_image_provenance,
+                    "controller_image_source_receipt_hash": source_receipt_hash,
+                }
+            )
+        return identity
 
 
 def resolve_settings(
@@ -98,8 +113,18 @@ def resolve_settings(
     controller_image_id = str(options.get("controller_image_id", CONTROLLER_IMAGE_ID))
     if controller_image_id != CONTROLLER_IMAGE_ID:
         raise ValueError("DeepSeek Harness controller image identity is frozen")
+    offline_controller = options.get("controller_image_offline_load") is True
+    source_receipt_hash = options.get("controller_image_source_receipt_hash")
+    if offline_controller:
+        if (
+            not isinstance(source_receipt_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", source_receipt_hash) is None
+        ):
+            raise ValueError("offline controller requires a frozen source receipt hash")
+    elif source_receipt_hash is not None:
+        raise ValueError("controller source receipt is valid only for an offline load")
     if verify_controller:
-        _verify_controller_image(controller_image_id)
+        _verify_controller_image(controller_image_id, allow_offline_load=offline_controller)
     process_timeout_s = float(options.get("max_process_time_s", task_wall_time_s))
     if process_timeout_s <= 0 or process_timeout_s > min(task_wall_time_s, 3600):
         raise ValueError("DeepSeek Harness process timeout exceeds the task budget")
@@ -130,6 +155,13 @@ def resolve_settings(
         "credential_environment_name": API_KEY_ENV,
         "base_url_environment_name": BASE_URL_ENV,
     }
+    if offline_controller:
+        identity.update(
+            {
+                "controller_image_provenance": "audited_offline_canonical_tag_load_v1",
+                "controller_image_source_receipt_hash": source_receipt_hash,
+            }
+        )
     return DeepSeekHarnessSettings(
         source_root=source_root,
         sdk_source_root=sdk_source,
@@ -137,6 +169,12 @@ def resolve_settings(
         runtime_assets=runtime_assets,
         controller_image_id=controller_image_id,
         controller_image_repo_digest=CONTROLLER_IMAGE_REPO_DIGEST,
+        controller_image_provenance=(
+            "audited_offline_canonical_tag_load_v1" if offline_controller else "repository_digest"
+        ),
+        controller_image_source_receipt_hash=(
+            str(source_receipt_hash) if source_receipt_hash is not None else None
+        ),
         source_tree_hash=source_tree_hash,
         runtime_entry_hash=str(identity["runtime_entry_hash"]),
         cordis_config_hash=str(identity["cordis_config_hash"]),
@@ -185,7 +223,7 @@ def _git(root: Path, *arguments: str) -> bytes:
     return completed.stdout
 
 
-def _verify_controller_image(image_id: str) -> None:
+def _verify_controller_image(image_id: str, *, allow_offline_load: bool = False) -> None:
     completed = subprocess.run(
         ["docker", "image", "inspect", image_id, "--format", "{{json .}}"],
         stdin=subprocess.DEVNULL,
@@ -197,9 +235,16 @@ def _verify_controller_image(image_id: str) -> None:
     if completed.returncode != 0:
         raise ValueError("DeepSeek Harness controller image is unavailable")
     value = json.loads(completed.stdout)
-    if value.get("Id") != image_id or CONTROLLER_IMAGE_REPO_DIGEST not in value.get(
-        "RepoDigests", []
-    ):
+    repo_digests = value.get("RepoDigests")
+    repo_tags = value.get("RepoTags")
+    digest_valid = isinstance(repo_digests, list) and CONTROLLER_IMAGE_REPO_DIGEST in repo_digests
+    offline_valid = (
+        allow_offline_load
+        and repo_digests == []
+        and isinstance(repo_tags, list)
+        and CONTROLLER_IMAGE_TAG in repo_tags
+    )
+    if value.get("Id") != image_id or not (digest_valid or offline_valid):
         raise ValueError("DeepSeek Harness controller image digest changed")
 
 
@@ -219,6 +264,7 @@ __all__ = [
     "BASE_URL_ENV",
     "CONTROLLER_IMAGE_ID",
     "CONTROLLER_IMAGE_REPO_DIGEST",
+    "CONTROLLER_IMAGE_TAG",
     "CONTROLLER_NETWORK",
     "DEEPSEEK_HARNESS_SOURCE_ROOT",
     "DEEPSEEK_HARNESS_VERSION",

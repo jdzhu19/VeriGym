@@ -871,6 +871,213 @@ class DeepSeekHarnessV83ExecutionScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV85TaskBinding(StrictModel):
+    """One immutable task/source/image binding in the official v85 matrix."""
+
+    task_id: str
+    repository: Repository
+    pr_number: int = Field(ge=1)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    task_hash: str
+    source_hash: str
+    task_receipt_hash: str
+    prepared_source_image_lock_sha256: str
+    command_image_lock_file_sha256: str
+    command_image_lock_hash: str
+    command_image: str
+    security_scan_file_sha256: str
+    security_scan_id: str
+    official_verifier_image: str
+    agent_toolchain_id: Literal["hwe-official-task-toolchain-v1"]
+    toolchain_profile_id: Literal[
+        "ibex-verilator-system-container-native-v1",
+        "cva6-verilator-5.008-container-native-v2",
+    ]
+
+    @field_validator(
+        "task_hash",
+        "source_hash",
+        "task_receipt_hash",
+        "prepared_source_image_lock_sha256",
+        "command_image_lock_file_sha256",
+        "command_image_lock_hash",
+        "security_scan_file_sha256",
+        "security_scan_id",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v85 task binding requires lowercase SHA-256")
+        return value
+
+    @field_validator("command_image", "official_verifier_image")
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v85 task binding requires immutable image IDs")
+        return value
+
+    @model_validator(mode="after")
+    def bind_task(self) -> Self:
+        matched = _TASK_ID.fullmatch(self.task_id)
+        expected_repository = "ibex" if "lowRISC__ibex" in self.task_id else "cva6"
+        expected_profile = (
+            "ibex-verilator-system-container-native-v1"
+            if self.repository == "ibex"
+            else "cva6-verilator-5.008-container-native-v2"
+        )
+        if (
+            matched is None
+            or self.repository != expected_repository
+            or int(matched.group("pr")) != self.pr_number
+            or self.toolchain_profile_id != expected_profile
+        ):
+            raise ValueError("v85 task, repository, PR, or toolchain binding differs")
+        return self
+
+
+class DeepSeekHarnessV85OfficialMatrixManifest(StrictModel):
+    """One-use official five-task provider matrix authorized by the v84 audit."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v85_official_matrix_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v85-official-matrix-v1"]
+    v83_manifest_sha256: str
+    v83_manifest_hash: str
+    v83_report_sha256: str
+    v83_report_hash: str
+    v83_contract_sha256: str
+    v83_contract_hash: str
+    v83_inventory_sha256: str
+    v83_inventory_hash: str
+    v83_controller_receipt_sha256: str
+    v83_controller_receipt_hash: str
+    v83_runtime_receipt_sha256: str
+    v83_runtime_receipt_hash: str
+    v83_cleanup_receipt_sha256: str
+    v83_cleanup_receipt_hash: str
+    v84_audit_sha256: str
+    v84_audit_commit: str
+    v84_post_merge_main_run_id: Literal[33747143064]
+    v84_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule: list[DeepSeekHarnessV85TaskBinding] = Field(min_length=5, max_length=5)
+    provider: Literal["deepseek-official"]
+    model: Literal["deepseek-v4-flash"]
+    harness_version: Literal["0.1.1-rc.2"]
+    integration_version: Literal["0.5.0"]
+    harness_revision: Literal["b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"]
+    seed: Literal[502]
+    sample_index: Literal[18]
+    max_provider_calls_per_task: Literal[64]
+    max_provider_tokens_per_task: Literal[1000000]
+    max_context_tokens: Literal[65536]
+    max_output_tokens: Literal[2048]
+    temperature: Literal[0]
+    provider_request_retries: Literal[0]
+    whole_episode_retries: Literal[0]
+    ordinary_tool_choice: Literal["auto"]
+    public_rationale_allowed: Literal[True]
+    sibling_calls_allowed: Literal[True]
+    provider_hidden_thinking: Literal["disabled"]
+    foreign_tools_rejected: Literal[True]
+    illegal_paths_rejected: Literal[True]
+    unpaired_observations_rejected: Literal[True]
+    decision_only_loss_mask: Literal[True]
+    exact_tokenizer_hash: str
+    base_model_snapshot_hash: str
+    base_model_lock_sha256: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v83-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v83-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v83/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v83/socket"]
+    provider_outer_network: Literal["verigym-hwe-net"]
+    provider_inner_network: Literal["verigym-hwe-net"]
+    task_network: Literal["none"]
+    verifier_network: Literal["none"]
+    controller_image_tag: Literal["node:22.19.0-bookworm-slim"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    controller_image_provenance: Literal["audited_v83_offline_canonical_tag_load_v1"]
+    v83_data_volume_reopen_budget: Literal[1]
+    v83_data_volume_reopen_count_before: Literal[0]
+    atomic_progress: Literal[True]
+    stop_on_infrastructure_or_security_failure: Literal[True]
+    continue_after_ordinary_model_or_verifier_failure: Literal[True]
+    consecutive_no_progress_stop_limit: Literal[2]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v83_manifest_sha256",
+        "v83_manifest_hash",
+        "v83_report_sha256",
+        "v83_report_hash",
+        "v83_contract_sha256",
+        "v83_contract_hash",
+        "v83_inventory_sha256",
+        "v83_inventory_hash",
+        "v83_controller_receipt_sha256",
+        "v83_controller_receipt_hash",
+        "v83_runtime_receipt_sha256",
+        "v83_runtime_receipt_hash",
+        "v83_cleanup_receipt_sha256",
+        "v83_cleanup_receipt_hash",
+        "v84_audit_sha256",
+        "exact_tokenizer_hash",
+        "base_model_snapshot_hash",
+        "base_model_lock_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v85 official matrix manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v84_audit_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v85 official matrix manifest requires a full audit commit")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+    )
+    @classmethod
+    def validate_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v85 official matrix manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> Self:
+        if tuple(item.task_id for item in self.schedule) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v85 official matrix schedule changed")
+        if any(
+            item.seed != self.seed or item.sample_index != self.sample_index
+            for item in self.schedule
+        ):
+            raise ValueError("v85 task seed/sample differs from the matrix identity")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v85 official matrix manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -1219,6 +1426,17 @@ def load_v83_execution_scaffold_manifest(
         raise ConfigurationError("v83 scaffold manifest is invalid") from exc
 
 
+def load_v85_official_matrix_manifest(path: Path) -> DeepSeekHarnessV85OfficialMatrixManifest:
+    """Load the bounded one-use v85 official provider-matrix manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v85 official matrix manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV85OfficialMatrixManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v85 official matrix manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -1365,9 +1583,13 @@ __all__ = [
     "DeepSeekHarnessV77DindSuccessorManifest",
     "DeepSeekHarnessV79DindSuccessorManifest",
     "DeepSeekHarnessV81ExecutionScaffoldManifest",
+    "DeepSeekHarnessV83ExecutionScaffoldManifest",
+    "DeepSeekHarnessV85OfficialMatrixManifest",
+    "DeepSeekHarnessV85TaskBinding",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
+    "ProviderMarker",
     "V69_CVA6_FALLBACK_TASK_IDS",
     "V69_IBEX_FALLBACK_TASK_IDS",
     "V69_OPEN_TOOL_TASK_ID",
@@ -1381,6 +1603,8 @@ __all__ = [
     "load_v77_dind_successor_manifest",
     "load_v79_dind_successor_manifest",
     "load_v81_execution_scaffold_manifest",
+    "load_v83_execution_scaffold_manifest",
+    "load_v85_official_matrix_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
