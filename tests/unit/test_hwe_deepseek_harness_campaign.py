@@ -27,6 +27,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV87FreshScaffoldManifest,
     DeepSeekHarnessV90FreshScaffoldManifest,
     DeepSeekHarnessV92OfficialMatrixManifest,
+    DeepSeekHarnessV94RuntimeCompleteScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -36,6 +37,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v87_fresh_scaffold_manifest,
     load_v90_fresh_scaffold_manifest,
     load_v92_official_matrix_manifest,
+    load_v94_runtime_complete_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -54,6 +56,9 @@ _V90_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V92_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v92_official_matrix_v1.json"
+)
+_V94_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v94_runtime_complete_scaffold_v1.json"
 )
 
 
@@ -753,3 +758,31 @@ def test_v92_manifest_rejects_reordered_tasks_even_with_a_recomputed_hash() -> N
     )
     with pytest.raises(ValueError, match="schedule changed"):
         DeepSeekHarnessV92OfficialMatrixManifest.model_validate(changed)
+
+
+def test_v94_manifest_freezes_runtime_complete_fresh_scaffold() -> None:
+    manifest = load_v94_runtime_complete_scaffold_manifest(_V94_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV94RuntimeCompleteScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v93_audit_commit == "04ce5601446078db6084c90ac0eb812807807d0b"
+    assert manifest.v93_post_merge_main_run_id == 33766642633
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v94-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.required_inner_image_count == 12
+    assert manifest.runtime_prepare_task_count == 5
+    assert manifest.harness_initialize_required is True
+    assert manifest.v90_data_volume_reused is False
+    assert manifest.v92_data_volume_reused is False
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v96-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v94_manifest_rejects_missing_workspace_runtime_transfer() -> None:
+    changed = json.loads(_V94_MANIFEST.read_text(encoding="utf-8"))
+    changed["workspace_runtime_host_repo_tags"].reverse()
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="runtime tags changed"):
+        DeepSeekHarnessV94RuntimeCompleteScaffoldManifest.model_validate(changed)
