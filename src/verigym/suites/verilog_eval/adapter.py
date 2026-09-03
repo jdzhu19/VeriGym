@@ -66,6 +66,8 @@ SUITE_VERSION = "v2-spec-to-rtl-compat-1"
 AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
 VCS_MCP_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
 VCS_MCP_AGENT_EVAL_ADAPTER_VERSION = "0.9.0"
+VCS_MCP_PUBLIC_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1"
+VCS_MCP_PUBLIC_AGENT_EVAL_ADAPTER_VERSION = "0.10.0"
 FUNCTIONAL_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v1"
 FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION = "0.2.0"
 FUNCTIONAL_AGENT_EVAL_V2_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-functional-v2"
@@ -354,6 +356,27 @@ class VerilogEvalSuite(SuiteAdapter):
         runtime: Runtime,
         tools: PluginRegistry[Any],
     ) -> ToolchainProfile | None:
+        if self._is_vcs_mcp_public_agent_eval():
+            runtime_image = runtime.descriptor.image
+            return ToolchainProfile(
+                id="verilog-eval-v2-agent-eval-public-vcs-mcp-v1",
+                version="1.0.0",
+                description=(
+                    "VerilogEval AgentEval public VCS/MCP compile profile; the independent "
+                    "hidden VCS/MCP identity is bound separately."
+                ),
+                tools=[],
+                runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
+                container_image=(
+                    runtime_image.requested_reference if runtime_image is not None else None
+                ),
+                container_digest=(
+                    runtime_image.resolved_image_id if runtime_image is not None else None
+                ),
+                deterministic=True,
+                reproducibility_scope="site_specific",
+                compatibility_status="public_vcs_mcp_profile_bound",
+            )
         runtime_image = runtime.descriptor.image
         if runtime_image is not None:
             compiler_version = runtime_image.iverilog_version
@@ -456,6 +479,7 @@ class VerilogEvalSuite(SuiteAdapter):
         agent_eval = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
@@ -475,6 +499,7 @@ class VerilogEvalSuite(SuiteAdapter):
         }
         codex_patch_compatible = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value,
@@ -488,7 +513,13 @@ class VerilogEvalSuite(SuiteAdapter):
         functional_v4 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4.value
         functional_v3 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value
         functional_v2 = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value
-        vcs_mcp = variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
+        vcs_mcp_public = (
+            variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value
+        )
+        vcs_mcp = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
+        }
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
         candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
         public_smoke = self._public_smoke(problem.native_id) if functional_agent_eval else None
@@ -507,7 +538,9 @@ class VerilogEvalSuite(SuiteAdapter):
             )
         )
         suite_version = (
-            VCS_MCP_AGENT_EVAL_SUITE_VERSION
+            VCS_MCP_PUBLIC_AGENT_EVAL_SUITE_VERSION
+            if vcs_mcp_public
+            else VCS_MCP_AGENT_EVAL_SUITE_VERSION
             if vcs_mcp
             else FUNCTIONAL_AGENT_EVAL_V7_SUITE_VERSION
             if functional_v7
@@ -693,7 +726,9 @@ class VerilogEvalSuite(SuiteAdapter):
                 "dataset_content_hash": snapshot.dataset_content_hash,
                 "task_content_hash": problem.content_hash,
                 "adapter_version": (
-                    VCS_MCP_AGENT_EVAL_ADAPTER_VERSION
+                    VCS_MCP_PUBLIC_AGENT_EVAL_ADAPTER_VERSION
+                    if vcs_mcp_public
+                    else VCS_MCP_AGENT_EVAL_ADAPTER_VERSION
                     if vcs_mcp
                     else FUNCTIONAL_AGENT_EVAL_V7_ADAPTER_VERSION
                     if functional_v7
@@ -727,6 +762,8 @@ class VerilogEvalSuite(SuiteAdapter):
                     if functional_v2
                     else "compile_and_independent_functional_smoke_v1"
                     if functional_agent_eval
+                    else "compile_only_vcs_mcp_v1"
+                    if vcs_mcp_public
                     else "compile_only_v1"
                     if agent_eval
                     else None
@@ -746,13 +783,29 @@ class VerilogEvalSuite(SuiteAdapter):
                 **(
                     {
                         "required_verifier_profile_target": "synopsys.vcs.mcp",
-                        "verification_partition": "verilog_eval_v2_vcs_mcp_v1",
+                        "verification_partition": (
+                            "verilog_eval_v2_vcs_mcp_public_v1"
+                            if vcs_mcp_public
+                            else "verilog_eval_v2_vcs_mcp_v1"
+                        ),
                         "verification_requires_final_submission": True,
                         "diagnostic_only": True,
                         "benchmark_score_claimed": False,
                         "upstream_tool_compatible": False,
                     }
                     if vcs_mcp
+                    else {}
+                ),
+                **(
+                    {
+                        "required_public_test_profile_target": ("synopsys.vcs.public-compile.mcp"),
+                        "public_test_profile_source_plugin": "repository.public_test",
+                        "public_test_profile_test_id": "compile",
+                        "public_test_profile_sources": [candidate_path],
+                        "public_test_profile_top": "TopModule",
+                        "public_feedback_partition": ("verilog_eval_v2_public_vcs_mcp_compile_v1"),
+                    }
+                    if vcs_mcp_public
                     else {}
                 ),
             },
@@ -765,6 +818,7 @@ class VerilogEvalSuite(SuiteAdapter):
             in {
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3.value,
@@ -779,7 +833,17 @@ class VerilogEvalSuite(SuiteAdapter):
         return bool(
             self._config is not None
             and self._config.variant
-            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
+            in {
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
+            }
+        )
+
+    def _is_vcs_mcp_public_agent_eval(self) -> bool:
+        return bool(
+            self._config is not None
+            and self._config.variant
+            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value
         )
 
     def _is_functional_agent_eval(self) -> bool:

@@ -60,6 +60,9 @@ class RunConfig(StrictModel):
     verifier_profile_id: str | None = None
     verifier_profile: VerifierToolProfile | None = None
     expected_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    public_test_profile_id: str | None = None
+    public_test_profile: VerifierToolProfile | None = None
+    expected_resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
     agent_ppa_feedback: bool = False
     agent_ppa_max_calls: int = Field(default=3, ge=1, le=8)
     seed: int = 0
@@ -106,6 +109,17 @@ class RunConfig(StrictModel):
             payload.pop("verifier_profile_id", None)
             payload.pop("verifier_profile", None)
             payload.pop("expected_resolved_verifier_profile", None)
+        if all(
+            payload.get(field) is None
+            for field in (
+                "public_test_profile_id",
+                "public_test_profile",
+                "expected_resolved_public_test_profile",
+            )
+        ):
+            payload.pop("public_test_profile_id", None)
+            payload.pop("public_test_profile", None)
+            payload.pop("expected_resolved_public_test_profile", None)
         prompt_binding_fields = (
             "expected_prompt_policy",
             "expected_prompt_policy_hash",
@@ -174,6 +188,18 @@ class RunConfig(StrictModel):
             raise ValueError("verifier profile ID differs from the loaded document")
         if self.expected_resolved_verifier_profile is not None and self.verifier_profile is None:
             raise ValueError("an expected resolved verifier profile requires a profile")
+        if (self.public_test_profile_id is None) != (self.public_test_profile is None):
+            raise ValueError("public-test profile ID and document must be supplied together")
+        if (
+            self.public_test_profile is not None
+            and self.public_test_profile.id != self.public_test_profile_id
+        ):
+            raise ValueError("public-test profile ID differs from the loaded document")
+        if (
+            self.expected_resolved_public_test_profile is not None
+            and self.public_test_profile is None
+        ):
+            raise ValueError("an expected resolved public-test profile requires a profile")
         experiment_fields = (
             self.experiment_id,
             self.plan_item_id,
@@ -257,6 +283,11 @@ class RunManifest(StrictModel):
     verifier_declared_profile_hash: str | None = None
     resolved_verifier_profile_hash: str | None = None
     resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    requested_public_test_profile_id: str | None = None
+    requested_public_test_profile_version: str | None = None
+    public_test_declared_profile_hash: str | None = None
+    resolved_public_test_profile_hash: str | None = None
+    resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
     synthesis_flow_script_hash: str | None = None
     reference_summary_hash: str | None = None
     reference_strategy: str | None = None

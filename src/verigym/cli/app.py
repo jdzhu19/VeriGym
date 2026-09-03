@@ -541,6 +541,18 @@ def run_task(
         dir_okay=False,
         help="Load a site-specific verifier profile from YAML or JSON.",
     ),
+    public_test_profile: str | None = typer.Option(
+        None,
+        "--public-test-profile",
+        help="Opt in to one hash-bound public-test backend/transport profile.",
+    ),
+    public_test_profile_file: Path | None = typer.Option(
+        None,
+        "--public-test-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load a site-specific public-test profile from YAML or JSON.",
+    ),
     agent_ppa_feedback: bool = typer.Option(
         False,
         "--agent-ppa-feedback",
@@ -605,6 +617,23 @@ def run_task(
                 f"verifier profile file declares {loaded_verifier_profile.id!r}, "
                 f"expected {verifier_profile!r}"
             )
+        if (public_test_profile is None) != (public_test_profile_file is None):
+            raise ValueError(
+                "--public-test-profile and --public-test-profile-file must be supplied together"
+            )
+        loaded_public_test_profile = (
+            load_verifier_profile(public_test_profile_file)
+            if public_test_profile_file is not None
+            else None
+        )
+        if (
+            loaded_public_test_profile is not None
+            and loaded_public_test_profile.id != public_test_profile
+        ):
+            raise ValueError(
+                f"public-test profile file declares {loaded_public_test_profile.id!r}, "
+                f"expected {public_test_profile!r}"
+            )
         config = RunConfig(
             task_id=task_id,
             mode=mode,
@@ -633,6 +662,8 @@ def run_task(
             toolchain_profile=toolchain_profile,
             verifier_profile_id=verifier_profile,
             verifier_profile=loaded_verifier_profile,
+            public_test_profile_id=public_test_profile,
+            public_test_profile=loaded_public_test_profile,
             agent_ppa_feedback=agent_ppa_feedback,
             agent_ppa_max_calls=agent_ppa_max_calls,
             seed=seed,
@@ -754,6 +785,12 @@ def batch(
                     verifier = load_verifier_profile(effective_config.verifier_profile_file)
                     if verifier.id != effective_config.verifier_profile:
                         raise ValueError("experiment verifier profile ID differs from its file")
+                if effective_config.public_test_profile_file is not None:
+                    public_profile = load_verifier_profile(
+                        effective_config.public_test_profile_file
+                    )
+                    if public_profile.id != effective_config.public_test_profile:
+                        raise ValueError("experiment public-test profile ID differs from its file")
             return VeriGym(registries)
 
         runner = BatchRunner(

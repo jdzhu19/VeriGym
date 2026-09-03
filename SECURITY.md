@@ -301,15 +301,17 @@ narrow mounts, and a dedicated data volume; they must not mount the host home, r
 credentials, hidden assets, or unrelated experiments. A nonempty inner runtime inventory or failed
 cleanup is an infrastructure/security failure. See [the HWE DinD runtime guide](docs/hwe_dind_runtime.md).
 
-### Verifier-only Synopsys MCP transport
+### Model-invisible Synopsys MCP transports
 
-RTL AgentEval keeps VCS/MCP functional-verifier-only and DC/MCP control-plane-only. A strict
-verifier profile may replace one functional-verifier DAG node with `synopsys.vcs.mcp`, while a
-separately resolved toolchain profile may select `synopsys.dc.mcp` for final PPA or phase-two
-candidate-only feedback. Neither MCP service is registered as a model-visible tool. Both profiles
-resolve and bind their fixed transports and server identities before model lookup. MCP transport,
-license configuration, hidden testbenches, PDK/library paths, raw reports, and reference artifacts
-never enter the agent container.
+RTL AgentEval keeps `synopsys.vcs.mcp` functional-verifier-only and DC/MCP control-plane-only. A
+strict verifier profile may replace one functional-verifier DAG node with `synopsys.vcs.mcp`,
+while a separately resolved toolchain profile may select `synopsys.dc.mcp` for final PPA or
+phase-two candidate-only feedback. VerilogEval may additionally use the separate
+`synopsys.vcs.public-compile.mcp` service for iterative, compile-only public feedback. None of
+these MCP services is registered as a model-visible tool. Each profile resolves and binds its
+fixed transport and server identity before model lookup. MCP transport, license configuration,
+hidden testbenches, PDK/library paths, raw reports, and reference artifacts never enter the agent
+container.
 
 The VCS stdio service approves task-bound profiles at startup and exposes only list, resolve, and
 simulate operations. The server owns the exact source order, task ID, top, hidden-testbench bytes
@@ -325,10 +327,22 @@ are staged read-only only in the final verifier workspace and never enter model 
 smokes, traces, or persisted VCS results. License failures remain infrastructure failures rather
 than candidate rejections.
 
-For Docker AgentEval, `synopsys.vcs.mcp` uses the same narrow controller-transport exception as
-the DC MCP path below. The run runtime may be `docker` while a verifier-only `remote_mcp` profile
-is `local`: candidate bytes are read from the policy-checked, separate verifier session, while the
-fixed wrapper executes on the trusted host control plane. Other runtime mismatches still fail
+The public VCS service uses a distinct protocol, executable entry point, server profile, client
+profile, and task partition. Its server profile contains only the candidate source order, top,
+compile test ID, timeout, exact VCS identity, and environment-variable names. It has no testbench,
+reference RTL, pass/fail marker, simulation operation, arbitrary command, user-supplied flag,
+artifact-return field, or hidden asset. The fixed invocation compiles with VCS but never runs the
+resulting executable. Only pass/fail, a stable error category, and bounded diagnostics containing
+the controlled candidate path, line number, and VCS diagnostic code cross back into the public
+feedback protocol. Raw stdout, stderr, logs, source excerpts, absolute paths, license values, and
+commercial assets are rejected. A public profile can never satisfy the final hidden verifier
+profile requirement, or vice versa.
+
+For Docker AgentEval, `synopsys.vcs.mcp` and `synopsys.vcs.public-compile.mcp` use the same narrow
+controller-transport exception as the DC MCP path below. The run runtime may be `docker` while a
+model-invisible `remote_mcp` profile is `local`: candidate bytes are read from the policy-checked
+runtime session, while the fixed wrapper executes on the trusted host control plane. Hidden VCS
+still reads candidates only from its separate verifier staging. Other runtime mismatches fail
 closed. This exception adds no agent-container network, mount, executable, or model-visible tool.
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered

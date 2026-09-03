@@ -10,6 +10,9 @@ site-local tools plus verifier-only MCP transports:
 - `synopsys.vcs.mcp` replaces that hidden-regression DAG node through a task-bound verifier
   profile. VCS, its license setup, hidden testbench, raw output, and reports stay behind a fixed
   local or SSH-connected stdio service.
+- `synopsys.vcs.public-compile.mcp` optionally replaces VerilogEval AgentEval's iterative public
+  compile check. It accepts only the candidate source and returns a sanitized compile verdict;
+  it has no simulation or hidden-test interface.
 - `synopsys.dc.synth` runs a generated DC flow and emits mapped area, mapped cell count,
   maximum-path delay, worst-negative slack, total dynamic plus cell leakage power, and QoR reports
   from an exact `.db`/SDC pair.
@@ -76,6 +79,16 @@ The VerilogEval `v2-spec-to-rtl-agent-eval-vcs-mcp-v1` projection uses this path
 replacement for its final hidden functional regression. Its public multi-turn compile feedback
 still uses Icarus 12, and it intentionally exposes neither DC nor PPA. The VCS result belongs to a
 separate profile partition and is not reported as an upstream-Icarus benchmark result.
+
+The distinct `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` projection uses two independently
+resolved profiles: `--public-test-profile` selects compile-only VCS/MCP during iteration, while
+`--verifier-profile` selects the final hidden VCS/MCP regression. The public service exposes only
+compile pass/fail and bounded candidate-file/line/error-code diagnostics. It neither links nor
+runs a testbench, and it contains no hidden or reference asset. Therefore this is a commercial
+replacement for the existing compile feedback, not an added PPA signal or stronger correctness
+oracle. Results remain diagnostic-only and belong to their own public and final VCS partitions.
+The [qualification audit](audits/verilog_eval_vcs_public_feedback_v1.md) records the real 155-task
+commercial compile sweep and a dual-profile multi-turn smoke.
 
 `synopsys.dc.mcp` is selected independently by `--toolchain-profile` and supplies final
 synthesis-only PPA after hidden correctness passes. New commercial RTLLM runs can select both

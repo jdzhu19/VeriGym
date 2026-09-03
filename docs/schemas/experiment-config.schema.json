@@ -846,6 +846,31 @@
       "default": null,
       "title": "Profile File"
     },
+    "public_test_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Profile"
+    },
+    "public_test_profile_file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Profile File"
+    },
     "runs": {
       "$ref": "#/$defs/ExperimentRunsConfig"
     },

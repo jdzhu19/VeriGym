@@ -27,6 +27,11 @@ from verigym.core.integrity import write_run_artifact_manifest
 from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
+from verigym.core.public_test_profiles import (
+    PublicTestProfileController,
+    resolve_public_test_profile,
+    validate_required_public_test_profile,
+)
 from verigym.core.repository_candidate import repository_plan_identity
 from verigym.core.repository_observation import (
     RawObservationAuditWriter,
@@ -82,7 +87,7 @@ from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext, VerifierBackendPlugin
 from verigym.version import __version__
 
 
@@ -196,6 +201,31 @@ class VeriGym:
                 expected=config.expected_resolved_verifier_profile,
             )
             task = task_with_verifier_profile(task, config.verifier_profile)
+        validate_required_public_test_profile(task, config.public_test_profile)
+        resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
+        public_test_backend: VerifierBackendPlugin | None = None
+        if config.public_test_profile is not None:
+            candidate_public_backend = self.registries.tools.get(
+                config.public_test_profile.target_plugin
+            )
+            if not isinstance(candidate_public_backend, VerifierBackendPlugin):
+                raise ConfigurationError("public-test profile target is not a profile backend")
+            controller_transport = uses_controller_verifier_transport(
+                runtime=config.runtime,
+                profile=config.public_test_profile,
+                backend=candidate_public_backend,
+            )
+            if config.runtime != config.public_test_profile.runtime and not controller_transport:
+                raise ConfigurationError(
+                    "public-test profile requires the local control-plane runtime"
+                )
+            resolved_public_test_profile = resolve_public_test_profile(
+                task=task,
+                profile=config.public_test_profile,
+                tools=self.registries.tools,
+                expected=config.expected_resolved_public_test_profile,
+            )
+            public_test_backend = candidate_public_backend
         task_hash = content_hash(task)
         source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
         source_snapshot = suite.source_snapshot()
@@ -229,6 +259,7 @@ class VeriGym:
         resolved_profile: ResolvedToolchainProfile | None = None
         synthesis_backend: SynthesisBackendPlugin | None = None
         feedback_controller: AgentFeedbackController | None = None
+        public_test_controller: PublicTestProfileController | None = None
         try:
             runtime.prepare(run_id)
             if config.toolchain_profile is not None:
@@ -277,6 +308,15 @@ class VeriGym:
                 and config.resolved_agent_feedback_contract != agent_feedback_contract
             ):
                 raise ConfigurationError("batch agent feedback resolution was not preserved")
+            if config.public_test_profile is not None:
+                assert resolved_public_test_profile is not None
+                assert public_test_backend is not None
+                public_test_controller = PublicTestProfileController(
+                    task=task,
+                    profile=config.public_test_profile,
+                    resolved_profile=resolved_public_test_profile,
+                    backend=public_test_backend,
+                )
             execution_task = task_with_agent_feedback_contract(task, agent_feedback_contract)
             # Agent and model registries are intentionally consulted only after profile
             # resolution, so a bad image/tool/asset can never trigger a model lookup.
@@ -520,6 +560,25 @@ class VeriGym:
                 else None
             ),
             resolved_verifier_profile=resolved_verifier_profile,
+            requested_public_test_profile_id=(
+                config.public_test_profile.id if config.public_test_profile is not None else None
+            ),
+            requested_public_test_profile_version=(
+                config.public_test_profile.version
+                if config.public_test_profile is not None
+                else None
+            ),
+            public_test_declared_profile_hash=(
+                resolved_public_test_profile.declared_profile_hash
+                if resolved_public_test_profile is not None
+                else None
+            ),
+            resolved_public_test_profile_hash=(
+                resolved_public_test_profile.resolved_profile_hash
+                if resolved_public_test_profile is not None
+                else None
+            ),
+            resolved_public_test_profile=resolved_public_test_profile,
             synthesis_flow_script_hash=(
                 resolved_profile.generated_script_hash if resolved_profile is not None else None
             ),
@@ -579,6 +638,16 @@ class VeriGym:
                 layout.artifacts / "resolved_verifier_profile.json",
                 resolved_verifier_profile,
             )
+        if config.public_test_profile is not None:
+            dump_json(
+                layout.artifacts / "public_test_profile.json",
+                config.public_test_profile,
+            )
+        if resolved_public_test_profile is not None:
+            dump_json(
+                layout.artifacts / "resolved_public_test_profile.json",
+                resolved_public_test_profile,
+            )
         append_json_log(
             layout.logs / "runtime.log",
             event="runtime_created",
@@ -623,6 +692,14 @@ class VeriGym:
                 profile=synthesis_profile,
                 resolved_profile=resolved_profile,
                 backend=synthesis_backend,
+                compile_executor=(
+                    public_test_controller.execute if public_test_controller is not None else None
+                ),
+                compile_profile_hash=(
+                    public_test_controller.resolved_profile_hash
+                    if public_test_controller is not None
+                    else None
+                ),
             )
         env = VeriGymEnv(
             task=execution_task,
@@ -1003,15 +1080,19 @@ class VeriGym:
             external_accounting = (
                 external_bridge.accounting if external_bridge is not None else None
             )
-            if manifest.repository_task_identity is not None:
-                manifest.repository_public_tool_invocation_count = (
-                    runtime_public_test_invocation_count
-                    + (
-                        external_accounting.public_test_invocation_count
-                        if external_accounting is not None
-                        and external_accounting.public_test_invocation_count is not None
-                        else 0
-                    )
+            if manifest.repository_task_identity is not None or feedback_controller is not None:
+                observed_public_test_invocation_count = runtime_public_test_invocation_count + (
+                    external_accounting.public_test_invocation_count
+                    if external_accounting is not None
+                    and external_accounting.public_test_invocation_count is not None
+                    else 0
+                )
+                feedback_evaluation_count = (
+                    len(feedback_controller.evaluations) if feedback_controller is not None else 0
+                )
+                manifest.repository_public_tool_invocation_count = max(
+                    observed_public_test_invocation_count,
+                    feedback_evaluation_count,
                 )
             if (
                 external_bridge is not None

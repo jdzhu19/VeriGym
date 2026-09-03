@@ -28,6 +28,10 @@ from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
 from .vcs_mcp_client import McpVcsSimulationTool
 
 VARIANT = VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
+SUPPORTED_VARIANTS = {
+    VARIANT,
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
+}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -63,7 +67,7 @@ def _load_catalog(bundle_root: Path) -> dict[str, Any]:
         raise ConfigurationError("VerilogEval VCS/MCP bundle catalog must be an object")
     if payload.get("kind") != "verilog_eval_vcs_mcp_profile_bundle_v1":
         raise ConfigurationError("unexpected VerilogEval VCS/MCP bundle kind")
-    if payload.get("variant") != VARIANT:
+    if payload.get("variant") not in SUPPORTED_VARIANTS:
         raise ConfigurationError("unexpected VerilogEval VCS/MCP bundle variant")
     records = payload.get("records")
     if not isinstance(records, list) or payload.get("task_count") != len(records):
@@ -212,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     source_config = SuiteSourceConfig(
         source_root=arguments.source_root,
-        variant=VARIANT,
+        variant=str(catalog["variant"]),
         strict_compatibility=True,
     )
     suite = VerilogEvalSuite(source_config)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,7 @@ from tests.milestone9_helpers import experiment_config, offline_service
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
+from verigym.core.public_test_profiles import validate_required_public_test_profile
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.registry.collections import build_registries
 from verigym.schemas.run import RunConfig
@@ -289,6 +291,43 @@ def test_vcs_mcp_agent_eval_variant_is_isolated_and_keeps_old_task_identities() 
     assert content_hash(agent_task) == (
         "c6af36b522e08b55694938c514fd3aa7b12e5ea408a768525a8e41675f786398"
     )
+
+
+def test_vcs_mcp_public_variant_freezes_two_separate_commercial_interfaces() -> None:
+    suite = adapter(variant="v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1")
+    references = list(suite.discover())
+    assert len(references) == 2
+
+    task = suite.load_task(references[0])
+    assert task.id == (
+        "verilog-eval/v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1/Prob900_fixture_and"
+    )
+    assert task.suite_version == "v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1"
+    assert task.metadata["required_verifier_profile_target"] == "synopsys.vcs.mcp"
+    assert task.metadata["required_public_test_profile_target"] == (
+        "synopsys.vcs.public-compile.mcp"
+    )
+    assert task.metadata["public_test_profile_source_plugin"] == "repository.public_test"
+    assert task.metadata["public_test_profile_test_id"] == "compile"
+    assert task.metadata["public_test_profile_sources"] == ["repository/rtl/TopModule.sv"]
+    assert task.metadata["public_test_profile_top"] == "TopModule"
+    assert task.metadata["public_feedback_semantics"] == "compile_only_vcs_mcp_v1"
+    assert task.metadata["public_feedback_partition"] == (
+        "verilog_eval_v2_public_vcs_mcp_compile_v1"
+    )
+    assert task.metadata["verification_partition"] == ("verilog_eval_v2_vcs_mcp_public_v1")
+    assert task.verifier.nodes[0].plugin == "synopsys.vcs.simulate"
+    with pytest.raises(ConfigurationError, match="requires a public-test profile"):
+        validate_required_public_test_profile(task, None)
+
+    profile = suite.toolchain_profile(
+        SimpleNamespace(descriptor=SimpleNamespace(image=None, name="local")),
+        SimpleNamespace(),
+    )
+    assert profile is not None
+    assert profile.id == "verilog-eval-v2-agent-eval-public-vcs-mcp-v1"
+    assert profile.tools == []
+    assert profile.reproducibility_scope == "site_specific"
 
 
 def test_vcs_mcp_agent_eval_fails_before_run_without_required_profile(tmp_path: Path) -> None:

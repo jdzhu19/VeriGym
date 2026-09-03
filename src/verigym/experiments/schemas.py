@@ -258,6 +258,8 @@ class ExperimentConfig(StrictModel):
     profile_file: Path | None = None
     verifier_profile: str | None = None
     verifier_profile_file: Path | None = None
+    public_test_profile: str | None = None
+    public_test_profile_file: Path | None = None
     execution: ExperimentExecutionConfig = Field(default_factory=ExperimentExecutionConfig)
     output: ExperimentOutputConfig
 
@@ -279,6 +281,10 @@ class ExperimentConfig(StrictModel):
             raise ValueError("profile_file requires a profile ID")
         if (self.verifier_profile is None) != (self.verifier_profile_file is None):
             raise ValueError("verifier_profile and verifier_profile_file are required together")
+        if (self.public_test_profile is None) != (self.public_test_profile_file is None):
+            raise ValueError(
+                "public_test_profile and public_test_profile_file are required together"
+            )
         return self
 
     def identity_payload(self) -> dict[str, Any]:
@@ -294,6 +300,9 @@ class ExperimentConfig(StrictModel):
         if payload.get("verifier_profile") is None:
             payload.pop("verifier_profile", None)
             payload.pop("verifier_profile_file", None)
+        if payload.get("public_test_profile") is None:
+            payload.pop("public_test_profile", None)
+            payload.pop("public_test_profile_file", None)
         # The original Milestone 9 hash contract had an implicit 10,000-item
         # bound. Omitting the additive default here preserves those hashes.
         if payload["execution"]["max_plan_items"] == DEFAULT_MAX_PLAN_ITEMS:
@@ -385,6 +394,8 @@ class PlanItem(StrictModel):
     resolved_profile: ResolvedToolchainProfile | None = None
     verifier_profile: VerifierToolProfile | None = None
     resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    public_test_profile: VerifierToolProfile | None = None
+    resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
     reference_candidate_hash: str | None = None
     repository_task_identity: RepositoryPlanIdentity | None = None
     evaluation_contract_hash: str

@@ -16,8 +16,10 @@ verigym doctor
 candidate source list and hidden testbench, invokes VCS without a shell, recognizes pass/fail
 sentinels, and maps license failures to `license_unavailable`. New remote or isolated campaigns
 should select `synopsys.vcs.mcp` through a task-bound verifier profile instead. The MCP server owns
-the hidden testbench and returns only a structured verdict. `synopsys.dc.synth` is a synthesis
-backend that reports
+the hidden testbench and returns only a structured verdict.
+`synopsys.vcs.public-compile.mcp` is a separate, compile-only service for optional VerilogEval
+iterative feedback. It never accepts or runs a testbench and returns only a sanitized result.
+`synopsys.dc.synth` is a synthesis backend that reports
 mapped area, maximum-path delay, worst-negative slack, and estimated power from a hash-bound DB and
 SDC pair. The current explicit-power v4 flow runs `compile_ultra`, records mapped cell count, and
 retains `report_area`, `report_timing`, `report_power`, and `report_qor` artifacts. It annotates
@@ -29,9 +31,10 @@ bytes and identity remain unchanged for single-clock replay. The v1/v2 area/timi
 legacy vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same
 DC metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
 compares separately staged reference and implementation RTL, supports Verilog and SystemVerilog,
-and emits a script-bound structured equivalence result. All plugins are verifier-only and intended
-for site-controlled runtimes. Detailed Formality point reports are not exported because they can
-reveal golden-design identifiers.
+and emits a script-bound structured equivalence result. All plugins are model-invisible and
+intended for site-controlled runtimes; the core broker projects only the approved public compile
+result into an agent observation. Detailed Formality point reports are not exported because they
+can reveal golden-design identifiers.
 
 A bounded two-host run through the MCP client, fixed SSH transport, and real Design Compiler is
 recorded in the [remote Synopsys MCP smoke audit](../../docs/audits/synopsys_mcp_real_dc_smoke.md).
@@ -140,6 +143,60 @@ assets, and hidden checker contents remain server-owned. See the
 The trusted launcher may set `TMPDIR` to an existing writable, executable, non-symlink directory
 when the host default temporary filesystem is constrained. The client passes that value to the
 fixed transport and direct VCS launches, but tool requests cannot supply or override it.
+
+## Iterative public VCS MCP compile feedback
+
+Use `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` when both iterative compile feedback and final
+hidden verification should use commercial VCS. It requires two different task-bound profiles:
+
+- `--public-test-profile` targets `synopsys.vcs.public-compile.mcp` and may run repeatedly before
+  submission;
+- `--verifier-profile` targets `synopsys.vcs.mcp` and runs only after final submission.
+
+The public server surface is limited to list, resolve, and compile. It binds
+`repository/rtl/TopModule.sv`, top `TopModule`, a 30-second timeout, and the exact VCS version. It
+does not accept a testbench, reference, simulation option, command, flags, environment values, or
+artifact policy. VCS is invoked without `-R`; only pass/fail, a stable category, and bounded
+candidate-path/line/error-code diagnostics are returned. Raw output, logs, source excerpts,
+absolute paths, and license details stay on the commercial host.
+
+Prepare and qualify public profiles independently from the final hidden bundle:
+
+```bash
+verigym-synopsys-prepare-verilog-eval-vcs-public-bundle \
+  --source-root /datasets/verilog-eval \
+  --output-root /private/profiles/verilog-eval-vcs-public-mcp-v1 \
+  --vcs /opt/synopsys/vcs/bin/vcs
+
+verigym-synopsys-qualify-verilog-eval-vcs-public-bundle \
+  --source-root /datasets/verilog-eval \
+  --bundle-root /private/profiles/verilog-eval-vcs-public-mcp-v1 \
+  --work-root /private/work/verilog-eval-vcs-public \
+  --output /private/results/verilog-eval-vcs-public-qualification.json
+```
+
+Qualification resolves every profile live, compiles the reference, rejects one compile-shaped
+syntax control, makes zero model calls, performs zero automatic retries, and stops immediately on
+an infrastructure failure. A task run then selects the matching public and hidden client files:
+
+```bash
+verigym run --suite verilog-eval --suite-source /datasets/verilog-eval \
+  --suite-variant v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1 \
+  --task verilog-eval/v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1/Prob001_zero \
+  --mode agent --agent YOUR_AGENT --runtime docker \
+  --public-test-profile verilog-eval-Prob001_zero-vcs-public-mcp-v1 \
+  --public-test-profile-file /private/profiles/verilog-eval-vcs-public-mcp-v1/client/Prob001_zero.yaml \
+  --verifier-profile verilog-eval-Prob001_zero-vcs-mcp-v1 \
+  --verifier-profile-file /private/profiles/verilog-eval-vcs-mcp-v1/client/Prob001_zero.yaml \
+  --output runs/
+```
+
+Both profiles resolve before agent/model lookup and are frozen separately in run and experiment
+identities. Replay validates the stored public profile documents and hashes offline; verifier
+re-execution remains a separate, explicitly requested operation. The new variant is
+diagnostic-only, makes no upstream-tool compatibility claim, and adds no DC or PPA result. Real
+155-task evidence is recorded in the
+[iterative VCS/MCP feedback audit](../../docs/audits/verilog_eval_vcs_public_feedback_v1.md).
 
 ## Prepare a site profile
 

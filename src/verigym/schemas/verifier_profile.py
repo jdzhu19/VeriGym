@@ -1,4 +1,4 @@
-"""Hash-bound verifier backend and transport profiles."""
+"""Hash-bound model-invisible backend and transport profiles."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _TRANSPORT_ENVIRONMENT = frozenset({"SSH_AUTH_SOCK", "KRB5CCNAME"})
 
 
 class VerifierToolProfile(StrictModel):
-    """Sanitized client contract for replacing one verifier-only tool backend."""
+    """Sanitized client contract for one fixed model-invisible tool backend."""
 
     schema_version: str = SCHEMA_VERSION
     id: str

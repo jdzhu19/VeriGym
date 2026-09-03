@@ -14,6 +14,10 @@ from verigym.core.agent_feedback import (
 from verigym.core.errors import ConfigurationError, MissingDependencyError
 from verigym.core.hashing import content_hash, hash_directory
 from verigym.core.orchestrator import VeriGym
+from verigym.core.public_test_profiles import (
+    resolve_public_test_profile,
+    validate_required_public_test_profile,
+)
 from verigym.core.repository_candidate import repository_plan_identity
 from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.verifier_profiles import (
@@ -75,6 +79,10 @@ class ExperimentPlanner:
             config,
             tasks,
         )
+        public_test_profile, resolved_public_test_profiles = self._resolve_public_test_profiles(
+            config,
+            tasks,
+        )
         task_records = [
             {
                 "task_id": task.id,
@@ -118,6 +126,8 @@ class ExperimentPlanner:
                 resolved_profiles=resolved_profiles,
                 verifier_profile=verifier_profile,
                 resolved_verifier_profiles=resolved_verifier_profiles,
+                public_test_profile=public_test_profile,
+                resolved_public_test_profiles=resolved_public_test_profiles,
             )
             items = self._order_items(items, config.execution.plan_order_policy)
             child_seeds = [item.child_seed for item in items]
@@ -129,6 +139,7 @@ class ExperimentPlanner:
                 config,
                 task_records,
                 resolved_verifier_profiles,
+                resolved_public_test_profiles,
             )
         finally:
             runtime.close()
@@ -161,6 +172,11 @@ class ExperimentPlanner:
             tasks,
         )
         del verifier_profile
+        public_test_profile, current_public_test_profiles = self._resolve_public_test_profiles(
+            config,
+            tasks,
+        )
+        del public_test_profile
         planned_verifier_profiles: dict[str, ResolvedVerifierToolProfile] = {}
         for item in plan.items:
             if item.resolved_verifier_profile is not None:
@@ -174,6 +190,19 @@ class ExperimentPlanner:
                     )
         if current_verifier_profiles != planned_verifier_profiles:
             raise ConfigurationError("resolved verifier profile changed after planning")
+        planned_public_test_profiles: dict[str, ResolvedVerifierToolProfile] = {}
+        for item in plan.items:
+            if item.resolved_public_test_profile is not None:
+                previous = planned_public_test_profiles.setdefault(
+                    item.task_id,
+                    item.resolved_public_test_profile,
+                )
+                if previous != item.resolved_public_test_profile:
+                    raise ConfigurationError(
+                        "planned public-test profile identity differs across repeated task items"
+                    )
+        if current_public_test_profiles != planned_public_test_profiles:
+            raise ConfigurationError("resolved public-test profile changed after planning")
         task_records = [
             {
                 "task_id": task.id,
@@ -257,10 +286,16 @@ class ExperimentPlanner:
             if config.verifier_profile_file is not None
             else None
         )
+        configured_public_test = (
+            load_verifier_profile(config.public_test_profile_file)
+            if config.public_test_profile_file is not None
+            else None
+        )
         for task in tasks:
             if task.id != task.id.strip() or not task.id.startswith(f"{config.suite.id}/"):
                 raise ConfigurationError(f"suite returned an invalid task identity: {task.id!r}")
             validate_required_verifier_profile(task, configured_verifier)
+            validate_required_public_test_profile(task, configured_public_test)
             if config.runs.mode not in task.interaction.supported_modes:
                 raise ConfigurationError(
                     f"task {task.id!r} does not support mode {config.runs.mode.value!r}"
@@ -315,6 +350,38 @@ class ExperimentPlanner:
             resolved[task.id] = item
             transformed.append(task_with_verifier_profile(task, profile))
         return profile, resolved, transformed
+
+    def _resolve_public_test_profiles(
+        self,
+        config: ExperimentConfig,
+        tasks: list[VeriTask],
+    ) -> tuple[
+        VerifierToolProfile | None,
+        dict[str, ResolvedVerifierToolProfile],
+    ]:
+        if config.public_test_profile_file is None:
+            for task in tasks:
+                validate_required_public_test_profile(task, None)
+            return None, {}
+        profile = load_verifier_profile(config.public_test_profile_file)
+        if profile.id != config.public_test_profile:
+            raise ConfigurationError("experiment public-test profile ID differs from its file")
+        backend = self.service.registries.tools.get(profile.target_plugin)
+        if config.runtime.id != profile.runtime and not uses_controller_verifier_transport(
+            runtime=config.runtime.id,
+            profile=profile,
+            backend=backend,
+        ):
+            raise ConfigurationError("public-test profile runtime differs from the experiment")
+        resolved: dict[str, ResolvedVerifierToolProfile] = {}
+        for task in tasks:
+            validate_required_public_test_profile(task, profile)
+            resolved[task.id] = resolve_public_test_profile(
+                task=task,
+                profile=profile,
+                tools=self.service.registries.tools,
+            )
+        return profile, resolved
 
     @staticmethod
     def _select_references(
@@ -529,6 +596,8 @@ class ExperimentPlanner:
         resolved_profiles: dict[str, ResolvedToolchainProfile],
         verifier_profile: VerifierToolProfile | None,
         resolved_verifier_profiles: dict[str, ResolvedVerifierToolProfile],
+        public_test_profile: VerifierToolProfile | None,
+        resolved_public_test_profiles: dict[str, ResolvedVerifierToolProfile],
     ) -> list[PlanItem]:
         runtime_descriptor = normalized_runtime_descriptor(runtime.descriptor)
         runtime_hash = runtime_identity_hash(runtime_descriptor)
@@ -567,6 +636,7 @@ class ExperimentPlanner:
             tool_policy = self._tool_policy(task, config.runs.mode)
             resolved = resolved_profiles.get(task.id)
             resolved_verifier = resolved_verifier_profiles.get(task.id)
+            resolved_public_test = resolved_public_test_profiles.get(task.id)
             feedback_contract = resolve_agent_feedback_contract(
                 task=task,
                 ppa_enabled=config.runs.agent_ppa_feedback,
@@ -675,6 +745,8 @@ class ExperimentPlanner:
                             "resolved_profile": resolved,
                             "verifier_profile": verifier_profile,
                             "resolved_verifier_profile": resolved_verifier,
+                            "public_test_profile": public_test_profile,
+                            "resolved_public_test_profile": resolved_public_test,
                             "reference_candidate_hash": (
                                 resolved.reference_candidate_hash if resolved is not None else None
                             ),
@@ -700,6 +772,8 @@ class ExperimentPlanner:
                             "resolved_profile_hash": raw["resolved_profile_hash"],
                             "verifier_profile": verifier_profile,
                             "resolved_verifier_profile": resolved_verifier,
+                            "public_test_profile": public_test_profile,
+                            "resolved_public_test_profile": resolved_public_test,
                             "agent_feedback_contract": feedback_contract,
                         }
                         if action_protocol is not None:
@@ -766,11 +840,15 @@ class ExperimentPlanner:
         config: ExperimentConfig,
         expected: list[dict[str, str]],
         expected_verifier_profiles: dict[str, ResolvedVerifierToolProfile],
+        expected_public_test_profiles: dict[str, ResolvedVerifierToolProfile],
     ) -> None:
         suite, tasks, _snapshot = self._resolve_tasks(config, check_tools=False)
         _profile, resolved, tasks = self._resolve_verifier_profiles(config, tasks)
         if resolved != expected_verifier_profiles:
             raise ConfigurationError("verifier profile changed during plan construction")
+        _public_profile, public_resolved = self._resolve_public_test_profiles(config, tasks)
+        if public_resolved != expected_public_test_profiles:
+            raise ConfigurationError("public-test profile changed during plan construction")
         actual = [
             {
                 "task_id": task.id,

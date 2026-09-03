@@ -964,6 +964,31 @@
           "default": null,
           "title": "Profile File"
         },
+        "public_test_profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Test Profile"
+        },
+        "public_test_profile_file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Test Profile File"
+        },
         "runs": {
           "$ref": "#/$defs/ExperimentRunsConfig"
         },
@@ -1760,6 +1785,17 @@
           "default": null,
           "title": "Prompt Policy Hash"
         },
+        "public_test_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerifierToolProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "reference_candidate_hash": {
           "anyOf": [
             {
@@ -1829,6 +1865,17 @@
           ],
           "default": null,
           "title": "Resolved Profile Hash"
+        },
+        "resolved_public_test_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResolvedVerifierToolProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "resolved_verifier_profile": {
           "anyOf": [
@@ -3908,7 +3955,7 @@
     },
     "VerifierToolProfile": {
       "additionalProperties": false,
-      "description": "Sanitized client contract for replacing one verifier-only tool backend.",
+      "description": "Sanitized client contract for one fixed model-invisible tool backend.",
       "properties": {
         "accepted_tool_version": {
           "title": "Accepted Tool Version",

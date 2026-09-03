@@ -1,8 +1,11 @@
-# Verifier backend profiles
+# Model-invisible backend profiles
 
-Verifier profiles replace one verifier-only DAG node with a hash-bound backend before any model
-lookup. The first profile type is `synopsys.vcs.mcp`: it keeps VCS, its license setup, hidden
-testbench, and raw reports on a fixed local or SSH-connected verifier worker.
+Verifier profiles normally replace one verifier-only DAG node with a hash-bound backend before
+any model lookup. The same strict profile schema may bind a separately declared public-test
+interface, but only when the task explicitly requires it. `synopsys.vcs.mcp` keeps VCS, its
+license setup, hidden testbench, and raw reports on a fixed local or SSH-connected verifier
+worker. `synopsys.vcs.public-compile.mcp` is a distinct compile-only VerilogEval interface with no
+hidden inputs.
 
 This is separate from a synthesis `--toolchain-profile`. A run may select both: the verifier
 profile controls hidden functional verification, while the toolchain profile controls final PPA.
@@ -114,6 +117,7 @@ is recorded in the [VCS/MCP v1 audit](audits/verilog_eval_vcs_mcp_qualification_
 | RTLLM AgentEval v1 | Icarus and vvp 12 | Both resolved major versions must be 12 |
 | VerilogEval V2 base and existing AgentEval variants | Icarus and vvp | Major 12 is upstream-reference-compatible; major 13 is incompatible |
 | VerilogEval AgentEval VCS/MCP v1 | VCS through required `synopsys.vcs.mcp` | Separate functional partition; exact VCS and task/server contract, no upstream-tool claim |
+| VerilogEval AgentEval public VCS/MCP v1 | Public compile through `synopsys.vcs.public-compile.mcp`; final hidden through `synopsys.vcs.mcp` | Two separately resolved profiles and partitions; compile-only public result, no upstream-tool claim |
 | RTL-Repo official completion, including AgentEval | Native Exact Match/Edit Similarity | No Icarus or VCS requirement |
 
 Icarus 13 may remain installed side by side for development, but it must not be selected for a
@@ -139,6 +143,13 @@ or server-internal use. New commercial RTLLM campaigns should use `synopsys.vcs.
 functional verification and `synopsys.dc.mcp` for final PPA. The VerilogEval
 `v2-spec-to-rtl-agent-eval-vcs-mcp-v1` variant also requires `synopsys.vcs.mcp`, but deliberately
 has no DC/PPA path.
+
+The separate `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` variant additionally requires a
+`--public-test-profile` targeting `synopsys.vcs.public-compile.mcp`. The agent still invokes only
+`repository.public_test` with test ID `compile`; core routes it through the resolved controller
+profile and returns a bounded public observation. That server has no testbench/reference fields or
+simulation operation, and the final hidden `--verifier-profile` is still mandatory. Declared and
+resolved public profile identities are stored in the manifest, plan, and replay artifacts.
 
 Phase-two DC/MCP feedback is enabled only by a separately resolved disposable-worker contract.
 It remains behind `run_public_test("ppa")`; neither the DC MCP tools nor VCS MCP are added to the

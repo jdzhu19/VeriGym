@@ -2421,7 +2421,7 @@
     },
     "VerifierToolProfile": {
       "additionalProperties": false,
-      "description": "Sanitized client contract for replacing one verifier-only tool backend.",
+      "description": "Sanitized client contract for one fixed model-invisible tool backend.",
       "properties": {
         "accepted_tool_version": {
           "title": "Accepted Tool Version",
@@ -2638,6 +2638,17 @@
       ],
       "default": null
     },
+    "expected_resolved_public_test_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedVerifierToolProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "expected_resolved_verifier_profile": {
       "anyOf": [
         {
@@ -2749,6 +2760,29 @@
       ],
       "default": null,
       "title": "Plan Item Id"
+    },
+    "public_test_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerifierToolProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "public_test_profile_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Profile Id"
     },
     "resolved_action_protocol": {
       "anyOf": [

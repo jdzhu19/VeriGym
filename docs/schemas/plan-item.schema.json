@@ -2927,7 +2927,7 @@
     },
     "VerifierToolProfile": {
       "additionalProperties": false,
-      "description": "Sanitized client contract for replacing one verifier-only tool backend.",
+      "description": "Sanitized client contract for one fixed model-invisible tool backend.",
       "properties": {
         "accepted_tool_version": {
           "title": "Accepted Tool Version",
@@ -3171,6 +3171,17 @@
       "default": null,
       "title": "Prompt Policy Hash"
     },
+    "public_test_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerifierToolProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "reference_candidate_hash": {
       "anyOf": [
         {
@@ -3240,6 +3251,17 @@
       ],
       "default": null,
       "title": "Resolved Profile Hash"
+    },
+    "resolved_public_test_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedVerifierToolProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "resolved_verifier_profile": {
       "anyOf": [

@@ -1,7 +1,7 @@
 {
   "$id": "https://verigym.dev/schemas/1.0/verifier-tool-profile.schema.json",
   "additionalProperties": false,
-  "description": "Sanitized client contract for replacing one verifier-only tool backend.",
+  "description": "Sanitized client contract for one fixed model-invisible tool backend.",
   "properties": {
     "accepted_tool_version": {
       "title": "Accepted Tool Version",

@@ -278,6 +278,45 @@ def replay_run(
         or scorecard.reproducibility.resolved_verifier_profile_hashes
     ):
         raise ReplayError("scorecard has verifier profile identities without manifest artifacts")
+    public_test_profile_path = run_dir / "artifacts" / "public_test_profile.json"
+    resolved_public_test_profile_path = run_dir / "artifacts" / "resolved_public_test_profile.json"
+    if manifest.resolved_public_test_profile_hash is not None:
+        if (
+            not public_test_profile_path.is_file()
+            or not resolved_public_test_profile_path.is_file()
+        ):
+            raise ReplayError("public-test-profile run lacks its declared or resolved artifact")
+        stored_public_test_profile = load_model(
+            public_test_profile_path,
+            VerifierToolProfile,
+        )
+        stored_resolved_public_test_profile = load_model(
+            resolved_public_test_profile_path,
+            ResolvedVerifierToolProfile,
+        )
+        if (
+            stored_public_test_profile.id != manifest.requested_public_test_profile_id
+            or stored_public_test_profile.version != manifest.requested_public_test_profile_version
+            or content_hash(stored_public_test_profile)
+            != manifest.public_test_declared_profile_hash
+            or stored_resolved_public_test_profile.declared_profile_hash
+            != manifest.public_test_declared_profile_hash
+            or stored_resolved_public_test_profile.resolved_profile_hash
+            != manifest.resolved_public_test_profile_hash
+            or content_hash(stored_resolved_public_test_profile.identity_payload())
+            != stored_resolved_public_test_profile.resolved_profile_hash
+            or manifest.resolved_public_test_profile != stored_resolved_public_test_profile
+        ):
+            raise ReplayError("resolved public-test profile identity does not match the manifest")
+    elif (
+        public_test_profile_path.exists()
+        or resolved_public_test_profile_path.exists()
+        or manifest.requested_public_test_profile_id is not None
+        or manifest.requested_public_test_profile_version is not None
+        or manifest.public_test_declared_profile_hash is not None
+        or manifest.resolved_public_test_profile is not None
+    ):
+        raise ReplayError("run has an incomplete public-test profile identity")
     events = read_trace(run_dir / "trace.jsonl", expected_run_id=manifest.run_id)
     if not events or events[0].event_type != "episode_started":
         raise ReplayError("trace does not begin with episode_started")

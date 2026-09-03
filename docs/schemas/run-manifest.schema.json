@@ -4629,6 +4629,18 @@
       "default": null,
       "title": "Prompt Policy Hash"
     },
+    "public_test_declared_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Declared Profile Hash"
+    },
     "reference_candidate_hash": {
       "anyOf": [
         {
@@ -4712,6 +4724,30 @@
       ],
       "default": null
     },
+    "requested_public_test_profile_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Public Test Profile Id"
+    },
+    "requested_public_test_profile_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Public Test Profile Version"
+    },
     "requested_toolchain_profile_id": {
       "anyOf": [
         {
@@ -4771,6 +4807,29 @@
       ],
       "default": null,
       "title": "Resolved Profile Hash"
+    },
+    "resolved_public_test_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedVerifierToolProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "resolved_public_test_profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved Public Test Profile Hash"
     },
     "resolved_toolchain_profile": {
       "anyOf": [

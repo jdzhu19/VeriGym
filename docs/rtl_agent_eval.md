@@ -158,6 +158,13 @@ report, scheduler identity, or control-plane path. The worker's network policy i
 `site_license_controlled`, not `none`; only the agent container remains networkless. VCS/MCP stays
 functional-verifier-only and is not part of iterative PPA.
 
+VerilogEval's separate `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` variant may route the existing
+`compile` public-test action through `synopsys.vcs.public-compile.mcp`. This does not expose the MCP
+service itself to the model: core returns only a sanitized compile verdict and bounded candidate
+path/line/error-code diagnostics. The compile service has no testbench, reference, simulation, or
+artifact interface. Final hidden verification still requires an independent `synopsys.vcs.mcp`
+profile, and neither path adds DC or PPA feedback.
+
 Commercial single-turn RTLLM runs may replace their native VCS verifier node with a task-bound
 `synopsys.vcs.mcp` profile. This is a verifier transport selection, not an agent tool or a new
 benchmark variant. Manifest, scorecard, experiment plan, and replay bind the client profile,

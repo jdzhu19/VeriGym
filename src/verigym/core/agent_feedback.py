@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from verigym.core.errors import ConfigurationError
@@ -284,6 +285,8 @@ class AgentFeedbackController:
         profile: ToolchainProfile | None,
         resolved_profile: ResolvedToolchainProfile | None,
         backend: SynthesisBackendPlugin | None,
+        compile_executor: Callable[[str, RuntimeSession], CompletedCommand] | None = None,
+        compile_profile_hash: str | None = None,
     ) -> None:
         self.contract = contract
         self._task = task
@@ -291,6 +294,8 @@ class AgentFeedbackController:
         self._profile = profile
         self._resolved_profile = resolved_profile
         self._backend = backend
+        self._compile_executor = compile_executor
+        self._compile_profile_hash = compile_profile_hash
         self._compile_passed_hash: str | None = None
         self._ppa_executions = 0
         self._ppa_tool_calls = 0
@@ -314,7 +319,11 @@ class AgentFeedbackController:
             )
             if test_id == self.contract.compile_test_id:
                 started = time.monotonic()
-                completed = session.execute_public_test(test_id)
+                completed = (
+                    self._compile_executor(test_id, session)
+                    if self._compile_executor is not None
+                    else session.execute_public_test(test_id)
+                )
                 infrastructure = _compile_infrastructure_failure(completed)
                 passed = completed.exit_code == 0 and not infrastructure
                 self._compile_passed_hash = candidate_hash if passed else None
@@ -328,7 +337,7 @@ class AgentFeedbackController:
                 self._record(
                     test_id=test_id,
                     candidate_hash=candidate_hash,
-                    profile_hash=None,
+                    profile_hash=self._compile_profile_hash,
                     cache_hit=False,
                     synthesis_executed=False,
                     duration_s=time.monotonic() - started,

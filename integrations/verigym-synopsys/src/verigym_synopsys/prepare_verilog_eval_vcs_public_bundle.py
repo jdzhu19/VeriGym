@@ -1,4 +1,4 @@
-"""Prepare private per-task VCS/MCP profiles for the VerilogEval commercial variant."""
+"""Prepare private public-compile VCS/MCP profiles for VerilogEval."""
 
 from __future__ import annotations
 
@@ -12,60 +12,40 @@ from typing import Any
 
 import yaml
 from verigym.core.hashing import content_hash, hash_bytes
-from verigym.core.verifier_profiles import resolve_verifier_profile
+from verigym.core.public_test_profiles import resolve_public_test_profile
 from verigym.plugin_api import ConfigurationError, VerifierToolProfile
 from verigym.registry.base import PluginRegistry
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile
 from verigym.suites.verilog_eval.adapter import VerilogEvalSuite
-from verigym.suites.verilog_eval.commercial import (
-    VCS_MCP_EXCLUSIONS,
-    combined_reference_testbench,
-)
 from verigym.suites.verilog_eval.layout import inspect_layout, validation_report
 from verigym.suites.verilog_eval.schemas import VerilogEvalVariant
 from verigym.suites.verilog_eval.source import resolve_layout
 from verigym.tools.base import ToolPlugin
 
 from .vcs import probe_vcs
-from .vcs_mcp_client import McpVcsSimulationTool
-from .vcs_mcp_profile import SERVER_VERSION, SERVICE_PROTOCOL, VcsMcpServerProfile
-
-VARIANT = VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value
-SUPPORTED_VARIANTS = (
-    VARIANT,
-    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
+from .vcs_public_mcp_client import McpVcsPublicCompileTool
+from .vcs_public_mcp_profile import (
+    SERVER_VERSION,
+    SERVICE_PROTOCOL,
+    VcsPublicMcpServerProfile,
 )
+
+VARIANT = VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Prepare a private, hash-bound VCS/MCP profile bundle for VerilogEval."
+        description="Prepare hash-bound public VCS/MCP compile profiles for VerilogEval."
     )
     parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--variant", choices=SUPPORTED_VARIANTS, default=VARIANT)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--vcs", required=True)
     parser.add_argument("--environment", action="append", default=[])
-    parser.add_argument(
-        "--login-home",
-        type=Path,
-        help="Use a fixed login shell with this HOME to restore site VCS/license setup.",
-    )
-    parser.add_argument(
-        "--login-user",
-        help="USER supplied to the optional fixed login shell.",
-    )
-    parser.add_argument(
-        "--python-executable",
-        type=Path,
-        default=Path(sys.executable),
-    )
-    parser.add_argument(
-        "--defer-live-resolve",
-        action="store_true",
-        help="Derive identities now; require the qualification command to resolve every profile.",
-    )
+    parser.add_argument("--python-executable", type=Path, default=Path(sys.executable))
+    parser.add_argument("--login-home", type=Path)
+    parser.add_argument("--login-user")
+    parser.add_argument("--defer-live-resolve", action="store_true")
     return parser
 
 
@@ -73,6 +53,16 @@ def _write_private(path: Path, content: str, *, executable: bool = False) -> Non
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     path.chmod(0o700 if executable else 0o600)
+
+
+def _validated_output_root(requested: Path) -> Path:
+    expanded = requested.expanduser()
+    if expanded.exists() or expanded.is_symlink():
+        raise ConfigurationError("VCS public MCP bundle output root already exists")
+    parent = expanded.parent.resolve(strict=True)
+    output = parent / expanded.name
+    output.mkdir(mode=0o700)
+    return output
 
 
 def _transport_script(
@@ -86,7 +76,7 @@ def _transport_script(
     command = [
         str(python_executable),
         "-m",
-        "verigym_synopsys.vcs_mcp_server",
+        "verigym_synopsys.vcs_public_mcp_server",
         "--profile",
         str(server_profile),
         "--work-root",
@@ -107,18 +97,8 @@ def _transport_script(
     return "#!/bin/sh\nset -eu\nexec " + " ".join(shlex.quote(item) for item in outer) + "\n"
 
 
-def _validated_output_root(requested: Path) -> Path:
-    expanded = requested.expanduser()
-    if expanded.exists() or expanded.is_symlink():
-        raise ConfigurationError("VCS/MCP bundle output root already exists")
-    parent = expanded.parent.resolve(strict=True)
-    output = parent / expanded.name
-    output.mkdir(mode=0o700)
-    return output
-
-
 def _derived_resolved_profile(
-    server: VcsMcpServerProfile,
+    server: VcsPublicMcpServerProfile,
     client: VerifierToolProfile,
 ) -> ResolvedVerifierToolProfile:
     server_payload = {
@@ -163,12 +143,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ConfigurationError("Python executable must be a regular file")
     health = probe_vcs(arguments.vcs)
     if not health.healthy or health.version is None or health.executable is None:
-        raise ConfigurationError("VCS identity probe failed while preparing VerilogEval profiles")
+        raise ConfigurationError("VCS identity probe failed while preparing public profiles")
     vcs_executable = Path(health.executable).resolve(strict=True)
-
     source_config = SuiteSourceConfig(
         source_root=arguments.source_root,
-        variant=arguments.variant,
+        variant=VARIANT,
         strict_compatibility=True,
     )
     catalog = inspect_layout(resolve_layout(source_config))
@@ -177,67 +156,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ConfigurationError(f"invalid VerilogEval source: {'; '.join(report.errors[:3])}")
     suite = VerilogEvalSuite(source_config)
     references = {reference.native_id: reference for reference in suite.discover()}
-
     output = _validated_output_root(arguments.output_root)
-    _write_private(output / "INCOMPLETE", "profile bundle preparation is in progress\n")
+    _write_private(output / "INCOMPLETE", "public profile preparation is in progress\n")
     records: list[dict[str, object]] = []
     tools: PluginRegistry[ToolPlugin] = PluginRegistry("tool")
-    tools.register(McpVcsSimulationTool())
-    for problem in catalog.problems:
-        if problem.native_id in VCS_MCP_EXCLUSIONS:
-            continue
-        reference = references.get(problem.native_id)
-        if reference is None:
-            raise ConfigurationError("VerilogEval discovery differs from the validated catalog")
+    tools.register(McpVcsPublicCompileTool())
+    for native_id, reference in sorted(references.items()):
         task = suite.load_task(reference)
-        if len(task.verifier.nodes) != 1:
-            raise ConfigurationError("VerilogEval VCS task must contain one verifier node")
-        node = task.verifier.nodes[0]
-        if node.plugin != "synopsys.vcs.simulate":
-            raise ConfigurationError("VerilogEval VCS task selected an unexpected source backend")
-        testbench = combined_reference_testbench(problem.reference, problem.testbench)
-        testbench_path = (output / "hidden" / f"{problem.native_id}.sv").resolve()
-        _write_private(testbench_path, testbench)
-        if task.workspace.hidden_assets[0].content_hash != hash_bytes(testbench.encode("utf-8")):
-            raise ConfigurationError("combined VerilogEval hidden-testbench identity changed")
-
-        server_id = f"verilog-eval-{problem.native_id}-vcs-v1"
-        server_path = (output / "server" / f"{problem.native_id}.yaml").resolve()
-        work_root = (output / "work" / problem.native_id).resolve()
-        request = node.request
-        sources = request.get("sources")
-        top = request.get("top")
-        if not isinstance(sources, list) or not all(isinstance(item, str) for item in sources):
-            raise ConfigurationError("VerilogEval VCS source contract is invalid")
-        if not isinstance(top, str):
-            raise ConfigurationError("VerilogEval VCS top contract is invalid")
-        server = VcsMcpServerProfile(
-            id=server_id,
+        raw_sources = task.metadata.get("public_test_profile_sources")
+        top = task.metadata.get("public_test_profile_top")
+        if (
+            not isinstance(raw_sources, list)
+            or not all(isinstance(item, str) for item in raw_sources)
+            or not isinstance(top, str)
+        ):
+            raise ConfigurationError("VerilogEval public VCS task contract is malformed")
+        server = VcsPublicMcpServerProfile(
+            id=f"verilog-eval-{native_id}-vcs-public-v1",
             task_id=task.id,
             executable=str(vcs_executable),
             accepted_tool_version=health.version,
-            sources=sources,
-            testbench=str(testbench_path),
-            testbench_mount_path=str(request["testbench"]),
-            testbench_sha256=hash_bytes(testbench.encode("utf-8")),
+            sources=raw_sources,
             top=top,
-            pass_marker=str(request["pass_marker"]),
-            fail_marker=str(request["fail_marker"]),
-            timeout_s=int(request["timeout_s"]),
+            timeout_s=30,
             environment_allowlist=arguments.environment,
         )
+        server_path = (output / "server" / f"{native_id}.yaml").resolve()
         _write_private(
             server_path,
             yaml.safe_dump(server.model_dump(mode="json"), sort_keys=False),
         )
-
-        transport_path = (output / "transport" / problem.native_id).resolve()
+        transport_path = (output / "transport" / native_id).resolve()
         _write_private(
             transport_path,
             _transport_script(
                 python_executable=python_executable,
                 server_profile=server_path,
-                work_root=work_root,
+                work_root=(output / "work" / native_id).resolve(),
                 login_home=(
                     arguments.login_home.expanduser().resolve(strict=True)
                     if arguments.login_home is not None
@@ -248,15 +203,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             executable=True,
         )
         client = VerifierToolProfile(
-            id=f"verilog-eval-{problem.native_id}-vcs-mcp-v1",
+            id=f"verilog-eval-{native_id}-vcs-public-mcp-v1",
             version="1.0.0",
             description=(
-                "Fixed VerilogEval verifier-only VCS/MCP profile; no commercial or hidden "
-                "assets are embedded."
+                "Fixed VerilogEval public compile-only VCS/MCP profile; no hidden or "
+                "commercial assets are embedded."
             ),
             task_id=task.id,
-            source_plugin=node.plugin,
-            target_plugin="synopsys.vcs.mcp",
+            source_plugin="repository.public_test",
+            target_plugin="synopsys.vcs.public-compile.mcp",
             runtime="local",
             transport_executable=str(transport_path),
             transport_sha256=hash_bytes(transport_path.read_bytes()),
@@ -270,19 +225,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         resolved = (
             _derived_resolved_profile(server, client)
             if arguments.defer_live_resolve
-            else resolve_verifier_profile(task=task, profile=client, tools=tools)
+            else resolve_public_test_profile(task=task, profile=client, tools=tools)
         )
-        client_path = output / "client" / f"{problem.native_id}.yaml"
+        client_path = output / "client" / f"{native_id}.yaml"
         _write_private(
             client_path,
             yaml.safe_dump(client.model_dump(mode="json"), sort_keys=False),
         )
         records.append(
             {
-                "native_id": problem.native_id,
+                "native_id": native_id,
                 "task_id": task.id,
                 "task_hash": content_hash(task),
-                "hidden_testbench_sha256": server.testbench_sha256,
                 "server_profile": server_path.relative_to(output).as_posix(),
                 "server_declared_profile_hash": content_hash(server),
                 "server_contract_hash": server.contract_hash,
@@ -294,33 +248,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "server_resolved_profile_hash": resolved.server_resolved_profile_hash,
             }
         )
-
     identity = {
-        "variant": arguments.variant,
+        "variant": VARIANT,
         "dataset_content_hash": catalog.dataset_content_hash,
         "task_count": len(records),
         "accepted_vcs_version": health.version,
-        "excluded_tasks": [
-            {"native_id": native_id, "reason_code": reason_code}
-            for native_id, reason_code in sorted(VCS_MCP_EXCLUSIONS.items())
-            if any(problem.native_id == native_id for problem in catalog.problems)
-        ],
+        "public_test_id": "compile",
         "profile_resolution_mode": (
             "derived_pending_qualification" if arguments.defer_live_resolve else "live"
         ),
         "records": records,
     }
-    catalog_payload = {
+    payload = {
         "schema_version": "1.0",
-        "kind": "verilog_eval_vcs_mcp_profile_bundle_v1",
+        "kind": "verilog_eval_vcs_public_mcp_profile_bundle_v1",
         **identity,
         "bundle_identity_hash": content_hash(identity),
         "model_calls": 0,
     }
-    _write_private(
-        output / "catalog.json",
-        json.dumps(catalog_payload, indent=2, sort_keys=True) + "\n",
-    )
+    _write_private(output / "catalog.json", json.dumps(payload, indent=2, sort_keys=True) + "\n")
     (output / "INCOMPLETE").unlink()
     return 0
 
