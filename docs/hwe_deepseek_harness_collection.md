@@ -174,3 +174,24 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V71_DIND_ZERO_PROVIDER=1 \
 V71 still publishes `provider_execution_authorized=false` and requires an independent v72 result
 audit. Because the failure consumed the next unused version, the official model matrix and later
 toolchain stages move to new identities after v72; no earlier planned version is silently reused.
+
+V71 subsequently stopped after PR-465 qualification and command-image build but before its
+security scan. V72 froze the attempt because the inherited bounded helper rejected nonempty build
+output and the exception path incorrectly inferred socket cleanup from outer resource removal.
+V73 is a new clean-room successor: it neither reuses nor opens the v71 data backing, reruns all five
+tasks from the original completed archives, and uses new `verigym-deepseek-harness-v73-dind-*`
+volumes backed under `/data2/jiadongzhu/docker/deepseek-harness-hwe-v73/`.
+
+Run v73 only once from its clean merged `main` commit after all eight post-merge workflow classes
+pass, again with provider and Docker routing variables removed without exposing their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V73_DIND_ZERO_PROVIDER=1 \
+  python scripts/materialize_hwe_deepseek_harness_v73_dind.py \
+  --post-merge-main-run-id <successful-main-run-id>
+```
+
+Every command-image build gets a content-free bounded diagnostic, and provider-contract publication
+requires the separately hashed socket-cleanup receipt. A successful result remains
+`provider_execution_authorized=false` until the independent v74 audit is merged and its post-merge
+`main` run passes all eight classes.
