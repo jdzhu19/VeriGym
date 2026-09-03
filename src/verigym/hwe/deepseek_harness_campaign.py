@@ -1742,6 +1742,78 @@ class DeepSeekHarnessV97RebuildIdentityScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV100InventoryTimeoutScaffoldManifest(
+    DeepSeekHarnessV97RebuildIdentityScaffoldManifest
+):
+    """Fresh zero-provider scaffold with bounded task-inventory Docker controls."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v100_inventory_timeout_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v100-inventory-timeout-scaffold-v1"
+    ]
+    v97_manifest_sha256: str
+    v97_manifest_hash: str
+    v97_report_sha256: str
+    v97_report_hash: str
+    v98_audit_sha256: str
+    v98_audit_commit: str
+    v98_post_merge_main_run_id: Literal[33782913003]
+    v98_post_merge_main_all_eight_classes_passed: Literal[True]
+    v97_evidence_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v97-rebuild-identity-scaffold-v1"
+    ]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v100-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v100-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v100/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v100/socket"
+    ]
+    toolchain_inventory_create_timeout_seconds: Literal[300]
+    toolchain_inventory_inspect_timeout_seconds: Literal[300]
+    toolchain_inventory_execute_timeout_seconds: Literal[120]
+    toolchain_inventory_remove_timeout_seconds: Literal[300]
+    v97_data_volume_reused: Literal[False]
+    v99_identity_retired: Literal[True]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v102-official-matrix-v1"
+    ]
+
+    @field_validator(
+        "v97_manifest_sha256",
+        "v97_manifest_hash",
+        "v97_report_sha256",
+        "v97_report_hash",
+        "v98_audit_sha256",
+    )
+    @classmethod
+    def validate_v100_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v100 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("v98_audit_commit")
+    @classmethod
+    def validate_v100_commit(cls, value: str) -> str:
+        if _COMMIT.fullmatch(value) is None:
+            raise ValueError("v100 scaffold manifest requires a full audit commit")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v100_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v100 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2164,6 +2236,21 @@ def load_v97_rebuild_identity_scaffold_manifest(
         raise ConfigurationError("v97 rebuild-identity scaffold manifest is invalid") from exc
 
 
+def load_v100_inventory_timeout_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV100InventoryTimeoutScaffoldManifest:
+    """Load the bounded one-use v100 task-inventory-timeout scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v100 inventory-timeout scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV100InventoryTimeoutScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v100 inventory-timeout scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -2319,6 +2406,7 @@ __all__ = [
     "DeepSeekHarnessV92TaskBinding",
     "DeepSeekHarnessV94RuntimeCompleteScaffoldManifest",
     "DeepSeekHarnessV97RebuildIdentityScaffoldManifest",
+    "DeepSeekHarnessV100InventoryTimeoutScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -2343,6 +2431,7 @@ __all__ = [
     "load_v92_official_matrix_manifest",
     "load_v94_runtime_complete_scaffold_manifest",
     "load_v97_rebuild_identity_scaffold_manifest",
+    "load_v100_inventory_timeout_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",

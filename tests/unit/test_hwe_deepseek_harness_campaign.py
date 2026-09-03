@@ -29,6 +29,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV92OfficialMatrixManifest,
     DeepSeekHarnessV94RuntimeCompleteScaffoldManifest,
     DeepSeekHarnessV97RebuildIdentityScaffoldManifest,
+    DeepSeekHarnessV100InventoryTimeoutScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -40,6 +41,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v92_official_matrix_manifest,
     load_v94_runtime_complete_scaffold_manifest,
     load_v97_rebuild_identity_scaffold_manifest,
+    load_v100_inventory_timeout_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -64,6 +66,9 @@ _V94_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V97_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v97_rebuild_identity_scaffold_v1.json"
+)
+_V100_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v100_inventory_timeout_scaffold_v1.json"
 )
 
 
@@ -819,3 +824,32 @@ def test_v97_manifest_rejects_historical_image_identity_as_a_gate() -> None:
     )
     with pytest.raises(ValueError, match="historical_derived_image_identity_required"):
         DeepSeekHarnessV97RebuildIdentityScaffoldManifest.model_validate(changed)
+
+
+def test_v100_manifest_freezes_fresh_storage_and_bounded_inventory_controls() -> None:
+    manifest = load_v100_inventory_timeout_scaffold_manifest(_V100_MANIFEST)
+    assert isinstance(manifest, DeepSeekHarnessV100InventoryTimeoutScaffoldManifest)
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.v98_audit_commit == "a766cc9d564f89c96170b1e451852e29e107388e"
+    assert manifest.v98_post_merge_main_run_id == 33782913003
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v100-dind-data"
+    assert manifest.dind_data_backing.startswith("/data2/")
+    assert manifest.toolchain_inventory_create_timeout_seconds == 300
+    assert manifest.toolchain_inventory_inspect_timeout_seconds == 300
+    assert manifest.toolchain_inventory_execute_timeout_seconds == 120
+    assert manifest.toolchain_inventory_remove_timeout_seconds == 300
+    assert manifest.v97_data_volume_reused is False
+    assert manifest.v99_identity_retired is True
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v102-official-matrix-v1"
+    assert manifest.formal_collection_allowed is False
+    assert manifest.training_started is False
+
+
+def test_v100_manifest_rejects_unbounded_inventory_timeout() -> None:
+    changed = json.loads(_V100_MANIFEST.read_text(encoding="utf-8"))
+    changed["toolchain_inventory_create_timeout_seconds"] = 0
+    changed["manifest_hash"] = content_hash(
+        {key: value for key, value in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="toolchain_inventory_create_timeout_seconds"):
+        DeepSeekHarnessV100InventoryTimeoutScaffoldManifest.model_validate(changed)
