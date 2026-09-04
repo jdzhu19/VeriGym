@@ -1324,6 +1324,16 @@ V146 otherwise repeats the v144 five-task, local-archive, base-FAIL/reference-PA
 independent v147 audit. The v146 official-matrix identity is retired; any provider execution moves
 to a distinct later identity after successful audit and eight green post-merge `main` checks.
 
+The sole v146 execution fixed the environment boundary and passed all five local archive imports,
+base-FAIL/reference-PASS qualifications, command-image v2 scans, 300-second command-image probes,
+empty inventories, and synthetic Harness initialization. It stopped only after the outer DinD was
+removed, when the inherited v142 cleanup implementation rejected the correct v146 socket volume
+against a literal v142 volume name. No provider request or model process started. The v146 data
+and socket volumes and evidence are frozen; no v146 container remains. A provider-free successor
+may use fresh `/data2` resources and change only cleanup identity binding so the exact successor
+manifest volume, owner, and backing replace the predecessor literal. It requires an independent
+audit before any later provider identity can be authorized.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
