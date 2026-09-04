@@ -118,6 +118,15 @@ The continuation did not inspect or mutate any predecessor volume. It did not to
 image downloader, its `.partial` files, the host Docker data root, VPN/proxy configuration, or any
 unrelated checkout. It issued no prune or daemon restart operation.
 
+During preparation of this independent audit, a generic read-only disk-usage command was
+mistakenly given the exact v127 data-backing directory. It returned only the aggregate `4.0K`
+directory usage: it did not enumerate names, open an image layer, address the Docker volume through
+the daemon, or mutate the directory. This is an audit-process policy deviation and is disclosed
+here rather than being represented by the v130 runner's
+`predecessor_volumes_inspected=false` field. No v127 evidence is used by this audit as newly
+qualified data, and every successor remains forbidden from inspecting or mutating the frozen v127
+volume.
+
 The terminal report records `provider_credentials_available=false`,
 `provider_request_started=false`, `provider_calls=0`, `model_process_count=0`,
 `task_execution_started=false`, `base_reference_verification_started=false`,
