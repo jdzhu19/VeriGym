@@ -10,6 +10,7 @@ from verigym.registry.collections import build_registries
 from verigym.runtimes.docker import runtime as docker_runtime_module
 from verigym.runtimes.docker.engine import EngineResult
 from verigym.runtimes.docker.errors import DockerCapabilityError, DockerImageError
+from verigym.runtimes.docker.external_command import command_image_runtime_config
 from verigym.runtimes.docker.image import inspect_backend, resolve_image
 from verigym.runtimes.docker.resources import (
     effective_timeout,
@@ -18,7 +19,11 @@ from verigym.runtimes.docker.resources import (
 )
 from verigym.runtimes.docker.runtime import DockerRuntime
 from verigym.schemas.common import RuntimeDescriptor
-from verigym.schemas.runtime import DockerExternalAgentRuntimeConfig, DockerRuntimeConfig
+from verigym.schemas.runtime import (
+    DockerCommandImageRuntimeConfig,
+    DockerExternalAgentRuntimeConfig,
+    DockerRuntimeConfig,
+)
 from verigym.schemas.tool import CompletedCommand
 
 IMAGE_ID = "sha256:" + "a" * 64
@@ -128,6 +133,89 @@ class ImageEngine:
 def test_docker_config_rejects_disabled_or_unbounded_controls(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         DockerRuntimeConfig.model_validate({"image": "example:test", field: value})
+
+
+@pytest.mark.parametrize("value", [9, 301])
+def test_command_image_config_rejects_probe_timeout_outside_control_bound(value: int) -> None:
+    with pytest.raises(ValidationError):
+        DockerCommandImageRuntimeConfig.model_validate(
+            {
+                "image": "command:test",
+                "expected_image_id": "sha256:" + "b" * 64,
+                "expected_rg_version": "ripgrep 15.2.0",
+                "expected_rg_sha256": "c" * 64,
+                "protocol": "hwe-native-shell-v2",
+                "required_image_labels": {"org.verigym.runtime.role": "command"},
+                "run_as_user": "1004:100",
+                "identity_probe_timeout_s": value,
+            }
+        )
+
+
+def test_command_image_probe_uses_the_explicit_control_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command_id = "sha256:" + "b" * 64
+    rg_hash = "c" * 64
+    command = DockerCommandImageRuntimeConfig(
+        image=command_id,
+        expected_image_id=command_id,
+        expected_rg_version="ripgrep 15.2.0",
+        expected_rg_sha256=rg_hash,
+        protocol="hwe-native-shell-v2",
+        required_image_labels={"org.verigym.runtime.role": "command"},
+        run_as_user="1004:100",
+        identity_probe_timeout_s=300,
+    )
+    engine = ImageEngine(image_id=command_id, user="1004:100")
+    original_inspect = engine.inspect_image
+
+    def inspect_with_labels(reference: str) -> dict[str, Any] | None:
+        payload = original_inspect(reference)
+        assert payload is not None
+        payload["Config"]["Labels"] = {"org.verigym.runtime.role": "command"}
+        return payload
+
+    engine.inspect_image = inspect_with_labels  # type: ignore[method-assign]
+    observed: dict[str, int] = {}
+
+    class ProbeSession:
+        def __init__(self, **kwargs: Any) -> None:
+            observed["config_timeout"] = kwargs["config"].max_command_time_s
+
+        def execute(self, spec: Any) -> CompletedCommand:
+            observed["command_timeout"] = spec.timeout_s
+            return CompletedCommand(
+                argv=spec.argv,
+                cwd=".",
+                exit_code=0,
+                stdout=(
+                    "__VERIGYM_IMAGE_PROBE_V1__:uid\n1004\n"
+                    "__VERIGYM_IMAGE_PROBE_V1__:gid\n100\n"
+                    "__VERIGYM_IMAGE_PROBE_V1__:rg_version\nripgrep 15.2.0\n"
+                    f"__VERIGYM_IMAGE_PROBE_V1__:rg_sha256\n"
+                    f"{rg_hash}  ../usr/local/bin/rg\n"
+                    "__VERIGYM_IMAGE_PROBE_V1__:keepalive\ntail\n"
+                ),
+            )
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(docker_runtime_module, "DockerRuntimeSession", ProbeSession)
+    runtime = DockerRuntime(
+        DockerRuntimeConfig(image="verifier:test", command_image=command),
+        engine=engine,
+    )
+    runtime._run_id = "probe-timeout-test"  # noqa: SLF001
+    runtime._command_image = resolve_image(  # noqa: SLF001
+        engine,
+        command_image_runtime_config(command),
+    )
+
+    runtime._probe_command_image()  # noqa: SLF001
+
+    assert observed == {"config_timeout": 300, "command_timeout": 300}
 
 
 @pytest.mark.parametrize("name", ["API_TOKEN", "PRIVATE_KEY", "SECRET", "PASSWORD", "AUTH"])

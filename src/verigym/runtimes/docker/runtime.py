@@ -697,7 +697,7 @@ class DockerRuntime(Runtime):
         command = self._require_config().command_image
         if command is None:
             raise RuntimeError("Docker command-image configuration is unavailable")
-        health_timeout_s = min(60, max(10, command.max_command_time_s))
+        health_timeout_s = command.identity_probe_timeout_s
         probe_config = command_image_runtime_config(command).model_copy(
             update={"max_command_time_s": health_timeout_s}
         )

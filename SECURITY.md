@@ -1286,6 +1286,21 @@ diagnostic, and an explicit probe-control bound of at most 300 seconds while lea
 identity, probe semantics, runtime limits, and Harness behavior unchanged. It requires another
 independent audit before any later unused official DeepSeek identity can be authorized.
 
+The separately authorized v144 command-probe control scaffold is that provider-free successor.
+It uses fresh v144 bind-backed VFS data/socket volumes and never opens the frozen v142 data volume.
+The five-task schedule, completed local archives, official verifier semantics, task-specific v2
+command-image scans, and synthetic network-isolated Harness initialization remain unchanged.
+Existing command-image configurations retain their 60-second probe default; v144 explicitly binds
+each of its five command-image identity probes to a maximum 300-second control timeout.
+
+The v144 probe diagnostic retains only fixed task identity, allowlisted subreason and protocol,
+failure reason/origin, timeout/OOM/truncation booleans, exit code, and the fixed control bound. Raw
+output, raw exception text, arbitrary detail fields, and nonempty output or exception hashes are
+forbidden. All five probes and empty inner inventories must pass before atomic publication. V144
+has no provider surface and can produce evidence only for an independent v145 audit. The retired
+v144 official-matrix identity remains unusable; a later official matrix requires a distinct unused
+identity, a successful v144 contract, the merged v145 audit, and green post-merge `main` checks.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

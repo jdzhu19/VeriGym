@@ -366,6 +366,13 @@
           "title": "Expected Rg Version",
           "type": "string"
         },
+        "identity_probe_timeout_s": {
+          "default": 60,
+          "maximum": 300,
+          "minimum": 10,
+          "title": "Identity Probe Timeout S",
+          "type": "integer"
+        },
         "image": {
           "title": "Image",
           "type": "string"

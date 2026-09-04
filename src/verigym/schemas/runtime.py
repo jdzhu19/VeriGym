@@ -159,6 +159,7 @@ class DockerCommandImageRuntimeConfig(StrictModel):
         le=512 * 1024**2,
     )
     stop_timeout_s: int = Field(default=3, ge=1, le=30)
+    identity_probe_timeout_s: int = Field(default=60, ge=10, le=300)
     max_command_time_s: int = Field(default=300, ge=1, le=3600)
     max_output_bytes: int = Field(
         default=8 * 1024 * 1024,

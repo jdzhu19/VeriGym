@@ -46,6 +46,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV138FreshExplicitScaffoldManifest,
     DeepSeekHarnessV140VerifierControlScaffoldManifest,
     DeepSeekHarnessV142CleanupControlScaffoldManifest,
+    DeepSeekHarnessV144CommandProbeControlScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -74,6 +75,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v138_fresh_explicit_scaffold_manifest,
     load_v140_verifier_control_scaffold_manifest,
     load_v142_cleanup_control_scaffold_manifest,
+    load_v144_command_probe_control_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -129,6 +131,9 @@ _V140_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V142_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v142_cleanup_control_scaffold_v1.json"
+)
+_V144_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v144_command_probe_control_scaffold_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -1771,3 +1776,66 @@ def test_v142_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV142CleanupControlScaffoldManifest.model_validate(changed)
+
+
+def test_v144_manifest_freezes_the_command_probe_control_scaffold() -> None:
+    manifest = load_v144_command_probe_control_scaffold_manifest(_V144_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV144CommandProbeControlScaffoldManifest)
+    assert manifest.v143_audit_merge == "0f2735e1720291a60debdadd18392626589775b0"
+    assert manifest.v143_post_merge_main_run_id == 33907426320
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert manifest.seed == 502
+    assert manifest.sample_index == 18
+    assert manifest.command_image_probe_control_timeout_seconds == 300
+    assert manifest.command_image_probe_stage_metadata_required is True
+    assert manifest.command_image_probe_raw_output_allowed is False
+    assert manifest.command_image_probe_nonempty_output_hashing_allowed is False
+    assert manifest.v142_volume_inspection_allowed is False
+    assert manifest.v142_volume_mutation_allowed is False
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v146-official-matrix-v1"
+    assert manifest.requires_independent_v145_audit is True
+    assert all(
+        getattr(manifest, name) is False
+        for name in (
+            "formal_collection_allowed",
+            "formal_collection_started",
+            "collection_started",
+            "training_started",
+            "production_training_ready",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("command_image_probe_control_timeout_seconds", 60),
+        ("command_image_probe_stage_metadata_required", False),
+        ("command_image_probe_raw_output_allowed", True),
+        ("command_image_probe_nonempty_output_hashing_allowed", True),
+        ("v142_volume_inspection_allowed", True),
+        ("v142_volume_mutation_allowed", True),
+        ("requires_independent_v145_audit", False),
+        ("provider_credentials_available", True),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v144_manifest_rejects_a_broadened_or_changed_scaffold(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V144_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV144CommandProbeControlScaffoldManifest.model_validate(changed)
+
+
+def test_v144_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V144_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV144CommandProbeControlScaffoldManifest.model_validate(changed)
