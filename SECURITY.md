@@ -1253,6 +1253,22 @@ fresh `/data2` volumes and may widen only the socket-cleanup control wait to 300
 retaining the qualified task, verifier, scanner, runtime, and zero-provider semantics. It requires
 another independent audit before any DeepSeek authorization.
 
+The separately authorized v142 cleanup-control scaffold is that provider-free successor. It uses
+fresh bind-backed v142 VFS data/socket volumes under `/data2` and never opens the frozen v140 data
+volume. The five-task schedule, local completed archives, verifier-control split, official test
+semantics, task-specific v2 command-image scans, runtime probes, and synthetic zero-provider
+Harness initialization remain unchanged. Only the socket-cleanup controller wait and exact
+socket-volume removal wait are widened from the inherited 60 seconds to a maximum of 300 seconds.
+
+Each cleanup attempt uses an exact v142 owner-labelled, `network=none`, read-only-root,
+capability-minimized helper. Its receipt and separate stage diagnostic retain only allowlisted
+status, category, exit-code, byte-count, timeout, ownership, mode, and cleanup fields. Raw output,
+raw exceptions, and nonempty output hashes remain forbidden. A timeout, nonzero helper result,
+oversized output, failed socket-volume removal, or unconfirmed empty restored backing prevents the
+atomic scaffold contract. V142 has no provider surface and can produce evidence only for a v143
+audit. Only a successful v142 contract followed by the independent merged v143 audit and green
+post-merge `main` checks may authorize the distinct v144 official DeepSeek matrix identity.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
