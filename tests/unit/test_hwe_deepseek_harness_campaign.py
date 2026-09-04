@@ -39,6 +39,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV121BoundedDindStartDiagnosticManifest,
     DeepSeekHarnessV123BoundedDindIdentityProbeManifest,
     DeepSeekHarnessV125BoundedDindReadinessProbeManifest,
+    DeepSeekHarnessV127ReadinessGatedScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -60,6 +61,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v121_bounded_dind_start_diagnostic_manifest,
     load_v123_bounded_dind_identity_probe_manifest,
     load_v125_bounded_dind_readiness_probe_manifest,
+    load_v127_readiness_gated_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -115,6 +117,9 @@ _V123_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V125_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v125_bounded_dind_readiness_probe_v1.json"
+)
+_V127_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v127_readiness_gated_scaffold_v1.json"
 )
 
 
@@ -1299,3 +1304,74 @@ def test_v125_manifest_rejects_a_broadened_probe(field: str, value: object) -> N
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV125BoundedDindReadinessProbeManifest.model_validate(changed)
+
+
+def test_v127_manifest_freezes_the_readiness_gated_five_task_scaffold() -> None:
+    manifest = load_v127_readiness_gated_scaffold_manifest(_V127_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV127ReadinessGatedScaffoldManifest)
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert manifest.seed == 502
+    assert manifest.sample_index == 18
+    assert manifest.v125_readiness_poll_count == 16
+    assert manifest.v126_audit_commit == "084afb7c6e690f222d8274871c4fcc51ecf1a56a"
+    assert manifest.v126_post_merge_main_run_id == 33830266674
+    assert manifest.startup_attempt_limit == 1
+    assert manifest.startup_command_timeout_seconds == 60
+    assert manifest.readiness_timeout_seconds == 120
+    assert manifest.readiness_command_timeout_seconds == 5
+    assert manifest.readiness_poll_interval_seconds == 1
+    assert manifest.readiness_probe_policy == ("explicit-three-field-exact-monotonic-deadline-v1")
+    assert manifest.json_info_readiness_allowed is False
+    assert manifest.fixed_poll_count_cap_allowed is False
+    assert manifest.predecessor_volume_inspection_allowed is False
+    assert manifest.predecessor_volume_mutation_allowed is False
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v129-official-matrix-v1"
+    assert manifest.requires_independent_v128_audit is True
+    assert all(
+        getattr(manifest, name) is False
+        for name in (
+            "formal_collection_allowed",
+            "formal_collection_started",
+            "collection_started",
+            "training_started",
+            "production_training_ready",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("startup_attempt_limit", 2),
+        ("startup_command_timeout_seconds", 61),
+        ("readiness_timeout_seconds", 60),
+        ("readiness_command_timeout_seconds", 15),
+        ("readiness_poll_interval_seconds", 2),
+        ("json_info_readiness_allowed", True),
+        ("fixed_poll_count_cap_allowed", True),
+        ("explicit_readiness_requires_empty_stderr", False),
+        ("explicit_readiness_requires_three_values", False),
+        ("explicit_readiness_requires_exact_identity", False),
+        ("predecessor_volume_inspection_allowed", True),
+        ("predecessor_volume_mutation_allowed", True),
+        ("registry_access_allowed", True),
+        ("provider_credentials_available", True),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v127_manifest_rejects_a_broadened_scaffold(field: str, value: object) -> None:
+    changed = json.loads(_V127_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV127ReadinessGatedScaffoldManifest.model_validate(changed)
+
+
+def test_v127_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V127_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV127ReadinessGatedScaffoldManifest.model_validate(changed)

@@ -2756,6 +2756,148 @@ class DeepSeekHarnessV125BoundedDindReadinessProbeManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV127ReadinessGatedScaffoldManifest(StrictModel):
+    """One-use five-task scaffold gated by the audited exact DinD readiness predicate."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v127_readiness_gated_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v127-readiness-gated-scaffold-v1"]
+    v118_manifest_sha256: str
+    v118_manifest_hash: str
+    v118_runner_sha256: str
+    v118_authorization_sha256: str
+    v118_authorization_merge: Literal["928b117882ae8be4c60520f8d4a49d82edc548b8"]
+    v118_post_merge_main_run_id: Literal[33819300080]
+    v119_audit_sha256: str
+    v119_audit_commit: Literal["c22066916ba51e8c74678be2b0af6ac8d438ac9a"]
+    v119_post_merge_main_run_id: Literal[33820413201]
+    v125_manifest_sha256: str
+    v125_manifest_hash: str
+    v125_runner_sha256: str
+    v125_authorization_sha256: str
+    v125_source_commit: Literal["70cfa0393b3d2bfa06e26ca11fdccc09cde69d1f"]
+    v125_post_merge_main_run_id: Literal[33829039148]
+    v125_report_sha256: str
+    v125_report_hash: str
+    v125_probe_sha256: str
+    v125_probe_hash: str
+    v125_readiness_poll_count: Literal[16]
+    v125_cleanup_sha256: str
+    v125_cleanup_hash: str
+    v125_evidence_directory_count: Literal[1]
+    v125_evidence_regular_file_count: Literal[8]
+    v125_evidence_symlink_count: Literal[0]
+    v126_audit_sha256: str
+    v126_audit_commit: Literal["084afb7c6e690f222d8274871c4fcc51ecf1a56a"]
+    v126_post_merge_main_run_id: Literal[33830266674]
+    v126_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v118-manifest"]
+    schedule_task_ids: list[str] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v127-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v127-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v127/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v127/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v127-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v127-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v127-readiness-gated-scaffold-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v127/socket/docker.sock"
+    ]
+    dind_owner: Literal["deepseek-harness-hwe-v127-readiness-gated-scaffold-v1"]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    readiness_probe_policy: Literal["explicit-three-field-exact-monotonic-deadline-v1"]
+    json_info_readiness_allowed: Literal[False]
+    fixed_poll_count_cap_allowed: Literal[False]
+    explicit_readiness_requires_empty_stderr: Literal[True]
+    explicit_readiness_requires_three_values: Literal[True]
+    explicit_readiness_requires_exact_identity: Literal[True]
+    docker_host_binding_policy: Literal["explicit-canonical-local-unix-socket-v1"]
+    docker_cli_explicit_binding_required: Literal[True]
+    harness_helper_explicit_binding_required: Literal[True]
+    inherited_docker_environment_allowed: Literal[False]
+    remote_docker_endpoint_allowed: Literal[False]
+    inner_inventory_transport_policy: Literal["explicit-bound-engine-all-resources-v1"]
+    inner_inventory_all_containers_required: Literal[True]
+    inner_inventory_all_volumes_required: Literal[True]
+    host_sidecar_inventory_for_inner_allowed: Literal[False]
+    inner_network_transport_policy: Literal["explicit-bound-engine-v1"]
+    host_sidecar_network_control_for_inner_allowed: Literal[False]
+    streaming_attach_explicit_binding_required: Literal[True]
+    fresh_bind_backed_volumes_required: Literal[True]
+    predecessor_volume_inspection_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v129-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    requires_independent_v128_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v118_manifest_sha256",
+        "v118_manifest_hash",
+        "v118_runner_sha256",
+        "v118_authorization_sha256",
+        "v119_audit_sha256",
+        "v125_manifest_sha256",
+        "v125_manifest_hash",
+        "v125_runner_sha256",
+        "v125_authorization_sha256",
+        "v125_report_sha256",
+        "v125_report_hash",
+        "v125_probe_sha256",
+        "v125_probe_hash",
+        "v125_cleanup_sha256",
+        "v125_cleanup_hash",
+        "v126_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v127_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v127 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_v127_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v127 scaffold manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v127_identity(self) -> Self:
+        if tuple(self.schedule_task_ids) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v127 scaffold schedule changed")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v127 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -3334,6 +3476,21 @@ def load_v125_bounded_dind_readiness_probe_manifest(
         raise ConfigurationError("v125 DinD readiness-probe manifest is invalid") from exc
 
 
+def load_v127_readiness_gated_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV127ReadinessGatedScaffoldManifest:
+    """Load the one-use v127 zero-provider readiness-gated scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v127 readiness-gated scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV127ReadinessGatedScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v127 readiness-gated scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -3499,6 +3656,7 @@ __all__ = [
     "DeepSeekHarnessV121BoundedDindStartDiagnosticManifest",
     "DeepSeekHarnessV123BoundedDindIdentityProbeManifest",
     "DeepSeekHarnessV125BoundedDindReadinessProbeManifest",
+    "DeepSeekHarnessV127ReadinessGatedScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -3533,6 +3691,7 @@ __all__ = [
     "load_v121_bounded_dind_start_diagnostic_manifest",
     "load_v123_bounded_dind_identity_probe_manifest",
     "load_v125_bounded_dind_readiness_probe_manifest",
+    "load_v127_readiness_gated_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
