@@ -1133,6 +1133,28 @@ independent analysis; it never permits broad deletion. An independent v133 resul
 separate merged v134 authorization are required before any provider request. Collection, SFT
 training, and production readiness remain closed.
 
+The separately authorized v134 official matrix binds the byte-exact v132 tree and merged v133
+audit, and reuses the retained v132 DinD data volume exactly once. The predecessor data volume
+keeps its v132 owner label; only the recreated socket volume, provider DinD sidecar, and cleanup
+helper use the v134 runtime owner. This owner split prevents a successor from relabeling or broadly
+claiming predecessor storage. The v92 runner and manifest are hash-bound only as the audited
+provider-protocol baseline; v134 uses fresh campaign, episode, progress, attempt, decision, and
+dataset identities and the fresh v132 task-specific command-image locks.
+
+V134 permits the fixed PR-465, PR-1135, PR-1780, PR-2017, PR-2711 order with seed/sample `502/18`,
+DeepSeek v4 Flash, Harness `0.1.1-rc.2`, 64 calls and 1,000,000 provider tokens per task, 65,536
+context tokens, 2,048 output tokens, temperature zero, and no request or episode retry. Only the
+outer provider DinD and inner controller use `verigym-hwe-net`; task command and official verifier
+containers remain `network=none`. Agent-toolchain diagnostics remain non-authoritative and cannot
+replace the separately bound official verifier result.
+
+An infrastructure or security invalidity stops immediately. An ordinary model or verifier failure
+consumes its task and may continue, while two consecutive no-modification, no-progress, or
+trajectory-structure failures stop the remainder. Every candidate requires all six admission
+planes, the exact Qwen tokenizer, decision-only masking, at most 65,536 tokens per decision, and no
+truncation. V134 may list candidates pending an independent v135 audit, but cannot import them,
+start formal collection or training, claim a benchmark score, or authorize production use.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
