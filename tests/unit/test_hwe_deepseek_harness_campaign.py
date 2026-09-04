@@ -43,6 +43,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV130BoundedCommandScanProbeManifest,
     DeepSeekHarnessV132BoundedScanScaffoldManifest,
     DeepSeekHarnessV136CommandRuntimeDiagnosticManifest,
+    DeepSeekHarnessV138FreshExplicitScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -68,6 +69,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v130_bounded_command_scan_probe_manifest,
     load_v132_bounded_scan_scaffold_manifest,
     load_v136_command_runtime_diagnostic_manifest,
+    load_v138_fresh_explicit_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -114,6 +116,9 @@ _V115_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V136_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v136_command_runtime_diagnostic_v1.json"
+)
+_V138_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v138_fresh_explicit_scaffold_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -1611,3 +1616,46 @@ def test_v136_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV136CommandRuntimeDiagnosticManifest.model_validate(changed)
+
+
+def test_v138_manifest_freezes_the_fresh_explicit_scaffold() -> None:
+    manifest = load_v138_fresh_explicit_scaffold_manifest(_V138_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV138FreshExplicitScaffoldManifest)
+    assert manifest.v137_audit_merge == "98c083b7dfc6cb378d0ee7239148370308f7c06f"
+    assert manifest.v137_post_merge_main_run_id == 33861403120
+    assert manifest.archive_import_timeout_seconds == 1800
+    assert manifest.archive_import_explicit_endpoint_required is True
+    assert manifest.archive_import_stage_diagnostic_required is True
+    assert manifest.archive_import_raw_output_allowed is False
+    assert manifest.archive_import_nonempty_output_hashing_allowed is False
+    assert manifest.v132_volume_inspection_allowed is False
+    assert manifest.v132_volume_mutation_allowed is False
+    assert manifest.requires_independent_v139_audit is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("archive_import_timeout_seconds", 60),
+        ("archive_import_explicit_endpoint_required", False),
+        ("archive_import_stage_diagnostic_required", False),
+        ("archive_import_raw_output_allowed", True),
+        ("archive_import_nonempty_output_hashing_allowed", True),
+        ("v132_volume_inspection_allowed", True),
+        ("v132_volume_mutation_allowed", True),
+        ("requires_independent_v139_audit", False),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v138_manifest_rejects_a_broadened_or_changed_scaffold(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V138_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV138FreshExplicitScaffoldManifest.model_validate(changed)

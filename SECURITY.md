@@ -1194,6 +1194,22 @@ bind-backed volumes. V136 remains failed and frozen. Any successor must use fres
 resources, retain stage-specific allowlisted import diagnostics without raw output, and establish
 an explicitly bound nested Docker endpoint before a separate provider authorization.
 
+The separately authorized v138 scaffold returns to the audited v132 five-task materialization path
+with a fresh identity and fresh bind-backed VFS DinD volumes under `/data2`. It validates the
+completed local tar and immutable image metadata for each task, then runs every load, image-ID
+check, and tag operation through an environment explicitly bound to the exact v138 Unix socket.
+Each import produces a stage-specific receipt containing only exit codes, byte counts, bounds, and
+an allowlisted category; raw output and exceptions are neither persisted nor hashed. Registry
+access, `.partial` archives, provider configuration, and all v132 volume access remain forbidden.
+
+V138 retains the v132 base-FAIL/reference-PASS checks, task-specific credential-free command-image
+build, v2 scan, and five-task runtime-prepare preflight. The preflight injects a
+`DockerCliEngine` with the exact nested endpoint for every runtime and requires empty bound inner
+container/volume inventories. A task import, materialization, security, infrastructure, or cleanup
+failure prevents the atomic scaffold contract. Success retains only the exact v138 data volume for
+one separately audited and authorized successor; v138 itself cannot contact a provider or start
+collection or training.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

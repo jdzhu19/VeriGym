@@ -3560,6 +3560,120 @@ class DeepSeekHarnessV136CommandRuntimeDiagnosticManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV138FreshExplicitScaffoldManifest(
+    DeepSeekHarnessV132BoundedScanScaffoldManifest
+):
+    """Fresh five-task scaffold with explicit and observable archive imports."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v138_fresh_explicit_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v138-fresh-explicit-scaffold-v1"
+    ]
+    v132_manifest_sha256: str
+    v132_manifest_hash: str
+    v132_runner_sha256: str
+    v132_report_sha256: str
+    v132_report_hash: str
+    v132_contract_sha256: str
+    v132_contract_hash: str
+    v133_audit_sha256: str
+    v133_audit_commit: Literal["270fc62c2b6c9d970b435609607a2e24c13aac87"]
+    v133_audit_merge: Literal["7fe5de7dd116b01e9e74925aea5af11327924094"]
+    v133_post_merge_main_run_id: Literal[33852258490]
+    v133_post_merge_main_all_eight_classes_passed: Literal[True]
+    v136_manifest_sha256: str
+    v136_manifest_hash: str
+    v136_runner_sha256: str
+    v136_authorization_sha256: str
+    v136_source_commit: Literal["1801d64a965a083d3d156d3598d3a4fa4672a5e1"]
+    v136_post_merge_main_run_id: Literal[33858934056]
+    v136_report_sha256: str
+    v136_report_hash: str
+    v136_cleanup_sha256: str
+    v136_cleanup_hash: str
+    v137_audit_sha256: str
+    v137_audit_commit: Literal["6f06d79169a32295bf49f929cf89c5e525ac5558"]
+    v137_audit_merge: Literal["98c083b7dfc6cb378d0ee7239148370308f7c06f"]
+    v137_post_merge_main_run_id: Literal[33861403120]
+    v137_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v138-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v138-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v138/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v138/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v138-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v138-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v138-fresh-explicit-scaffold-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v138/socket/docker.sock"
+    ]
+    dind_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v138-fresh-explicit-scaffold-v1"
+    ]
+    scanner_policy_source: Literal[  # type: ignore[assignment]
+        "exact-audited-v132-policy-with-fresh-identity"
+    ]
+    scanner_policy_id: Literal[  # type: ignore[assignment]
+        "deepseek-harness-v138-bounded-command-scan-v1"
+    ]
+    scanner_container_prefix: Literal[  # type: ignore[assignment]
+        "verigym-hwe-v138-command-scan-pr-"
+    ]
+    archive_import_timeout_seconds: Literal[1800]
+    archive_import_maximum_output_bytes: Literal[1048576]
+    archive_import_explicit_endpoint_required: Literal[True]
+    archive_import_stage_diagnostic_required: Literal[True]
+    archive_import_raw_output_allowed: Literal[False]
+    archive_import_nonempty_output_hashing_allowed: Literal[False]
+    v132_volume_inspection_allowed: Literal[False]
+    v132_volume_mutation_allowed: Literal[False]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v140-official-matrix-v1"
+    ]
+    requires_independent_v133_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v139_audit: Literal[True]
+
+    @field_validator(
+        "v132_manifest_sha256",
+        "v132_manifest_hash",
+        "v132_runner_sha256",
+        "v132_report_sha256",
+        "v132_report_hash",
+        "v132_contract_sha256",
+        "v132_contract_hash",
+        "v133_audit_sha256",
+        "v136_manifest_sha256",
+        "v136_manifest_hash",
+        "v136_runner_sha256",
+        "v136_authorization_sha256",
+        "v136_report_sha256",
+        "v136_report_hash",
+        "v136_cleanup_sha256",
+        "v136_cleanup_hash",
+        "v137_audit_sha256",
+    )
+    @classmethod
+    def validate_v138_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v138 fresh scaffold requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4207,6 +4321,21 @@ def load_v136_command_runtime_diagnostic_manifest(
         raise ConfigurationError("v136 command-runtime diagnostic manifest is invalid") from exc
 
 
+def load_v138_fresh_explicit_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV138FreshExplicitScaffoldManifest:
+    """Load the one-use provider-free v138 five-task scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v138 fresh scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV138FreshExplicitScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v138 fresh scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4378,6 +4507,7 @@ __all__ = [
     "DeepSeekHarnessV134OfficialMatrixManifest",
     "DeepSeekHarnessV134TaskBinding",
     "DeepSeekHarnessV136CommandRuntimeDiagnosticManifest",
+    "DeepSeekHarnessV138FreshExplicitScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4417,6 +4547,7 @@ __all__ = [
     "load_v132_bounded_scan_scaffold_manifest",
     "load_v134_official_matrix_manifest",
     "load_v136_command_runtime_diagnostic_manifest",
+    "load_v138_fresh_explicit_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
