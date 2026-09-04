@@ -1084,6 +1084,31 @@ streaming attach use the explicitly bound v127 Unix socket. All five tasks and d
 cleanup must pass before one atomic scaffold contract can be published. A partial contract is
 forbidden, and an independent v128 audit is required before any provider execution.
 
+The separately authorized v130 command-image probe narrows the successor work to Ibex PR-465 and
+the scanner boundary that stopped v127. It uses a fresh VFS DinD data/socket identity under
+`/data2`, revalidates the byte-exact audited v127 evidence without inspecting or mutating the
+frozen v127 volume, and reads only the completed local PR-465 archive. Importing that immutable
+task image and rebuilding the credential-free, Codex-free command image are allowed solely to
+place the same task/toolchain binding in the fresh daemon. Task execution, base/reference
+verification, Harness initialization, registry access, model startup, and provider access remain
+forbidden.
+
+V130 assigns the scan container a deterministic owner/name identity and bounds Docker create,
+each inspect, diagnostic start, removal, and the overall scan at 300, 60, 180, 120, and 720 seconds
+respectively. The scanner retains only byte counts, empty-stream hashes, allowlisted categories,
+control booleans, and the frozen timeout policy; nonempty output and raw exceptions are neither
+persisted nor hashed. A timed-out create triggers deterministic name-based removal, and final
+success additionally requires an empty all-container/all-volume inventory on the explicitly bound
+inner daemon. The outer daemon uses `network=none`; the scan container remains non-root,
+read-only, capability-free, no-new-privileges, resource-bounded, and limited to one workspace
+mount.
+
+V130 is one-shot and requires its implementation merge plus all eight post-merge `main` checks.
+Cleanup validates exact v130 ownership before removing the outer container or bind-backed volumes,
+uses a networkless least-capability helper to restore only the fresh backing paths, and must be
+confirmed even after scan failure. The probe can publish evidence only, never a provider contract;
+an independent v131 audit is required before deciding any later scaffold or provider authorization.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

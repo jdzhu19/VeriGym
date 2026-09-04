@@ -2898,6 +2898,152 @@ class DeepSeekHarnessV127ReadinessGatedScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV130BoundedCommandScanProbeManifest(StrictModel):
+    """One-use provider-free probe for the VFS command-image create boundary."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v130_bounded_command_scan_probe_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v130-bounded-command-scan-create-probe-v1"]
+    v127_manifest_sha256: str
+    v127_manifest_hash: str
+    v127_runner_sha256: str
+    v127_authorization_sha256: str
+    v127_source_commit: Literal["def5d9d086203c83e39842534c999c5004dc27f1"]
+    v127_post_merge_main_run_id: Literal[33832410957]
+    v127_report_sha256: str
+    v127_report_hash: str
+    v127_runtime_receipt_sha256: str
+    v127_runtime_receipt_hash: str
+    v127_archive_receipt_sha256: str
+    v127_archive_receipt_hash: str
+    v127_source_lock_sha256: str
+    v127_source_lock_hash: str
+    v127_failed_scan_sha256: str
+    v127_failed_scan_id: str
+    v127_failed_diagnostic_hash: str
+    v127_derived_command_image_id: str
+    v127_cleanup_sha256: str
+    v127_cleanup_hash: str
+    v127_evidence_directory_count: Literal[81]
+    v127_evidence_regular_file_count: Literal[281]
+    v127_evidence_symlink_count: Literal[0]
+    v128_audit_sha256: str
+    v128_audit_merge: Literal["dafe5a4fd3a5b64690a9b352ffc93556abba7425"]
+    v128_post_merge_main_run_id: Literal[33835870104]
+    v128_post_merge_main_all_eight_classes_passed: Literal[True]
+    task_id: Literal["hwe-bench/repo-repair-v1/lowRISC__ibex__pr-465"]
+    archive_root: Literal["/data2/jiadongzhu/Agent/hwe-bench-public-images"]
+    archive_relpath: Literal["docker-tar-archives/lowrisc_m_ibex/pr-465.tar"]
+    archive_sha256_relpath: Literal["docker-tar-archives/lowrisc_m_ibex/pr-465.tar.sha256"]
+    archive_sha256: str
+    registry_digest_relpath: Literal["digest-locks/lowrisc_m_ibex/pr-465.digest"]
+    registry_manifest_digest: str
+    image_config_digest: str
+    official_verifier_image: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v130-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v130-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v130/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v130/socket"]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v130-bounded-command-scan-create-probe-v1"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v130-runtime"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v130/socket/docker.sock"
+    ]
+    scanner_policy_id: Literal["deepseek-harness-v130-bounded-command-scan-v1"]
+    scanner_container_name: Literal["verigym-hwe-v130-command-scan-pr-465"]
+    create_timeout_seconds: Literal[300]
+    inspect_timeout_seconds: Literal[60]
+    start_timeout_seconds: Literal[180]
+    remove_timeout_seconds: Literal[120]
+    overall_timeout_seconds: Literal[720]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    task_archive_access_allowed: Literal[True]
+    task_image_import_allowed: Literal[True]
+    command_image_build_allowed: Literal[True]
+    task_execution_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    harness_controller_allowed: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    predecessor_volume_inspection_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_started: Literal[False]
+    provider_calls: Literal[0]
+    requires_independent_v131_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v127_manifest_sha256",
+        "v127_manifest_hash",
+        "v127_runner_sha256",
+        "v127_authorization_sha256",
+        "v127_report_sha256",
+        "v127_report_hash",
+        "v127_runtime_receipt_sha256",
+        "v127_runtime_receipt_hash",
+        "v127_archive_receipt_sha256",
+        "v127_archive_receipt_hash",
+        "v127_source_lock_sha256",
+        "v127_source_lock_hash",
+        "v127_failed_scan_sha256",
+        "v127_failed_scan_id",
+        "v127_failed_diagnostic_hash",
+        "v127_cleanup_sha256",
+        "v127_cleanup_hash",
+        "v128_audit_sha256",
+        "archive_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v130_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v130 command-scan probe manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator(
+        "v127_derived_command_image_id",
+        "registry_manifest_digest",
+        "image_config_digest",
+        "official_verifier_image",
+        "dind_image_id",
+        "dind_repository_digest",
+    )
+    @classmethod
+    def validate_v130_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v130 command-scan probe manifest requires immutable digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v130_identity(self) -> Self:
+        if self.image_config_digest != self.official_verifier_image:
+            raise ValueError("v130 command-scan probe verifier image binding changed")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v130 command-scan probe manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -3491,6 +3637,21 @@ def load_v127_readiness_gated_scaffold_manifest(
         raise ConfigurationError("v127 readiness-gated scaffold manifest is invalid") from exc
 
 
+def load_v130_bounded_command_scan_probe_manifest(
+    path: Path,
+) -> DeepSeekHarnessV130BoundedCommandScanProbeManifest:
+    """Load the one-use v130 provider-free command-image scan probe manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v130 command-scan probe manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV130BoundedCommandScanProbeManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v130 command-scan probe manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -3657,6 +3818,7 @@ __all__ = [
     "DeepSeekHarnessV123BoundedDindIdentityProbeManifest",
     "DeepSeekHarnessV125BoundedDindReadinessProbeManifest",
     "DeepSeekHarnessV127ReadinessGatedScaffoldManifest",
+    "DeepSeekHarnessV130BoundedCommandScanProbeManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -3692,6 +3854,7 @@ __all__ = [
     "load_v123_bounded_dind_identity_probe_manifest",
     "load_v125_bounded_dind_readiness_probe_manifest",
     "load_v127_readiness_gated_scaffold_manifest",
+    "load_v130_bounded_command_scan_probe_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",

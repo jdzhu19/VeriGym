@@ -7,10 +7,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,59 @@ _EXPECTED_IMAGE_ENVIRONMENT = [
 ]
 _RG_VERSION = "ripgrep 15.2.0 (rev e89fff89ac)"
 _RG_SOURCE = "github.com/BurntSushi/ripgrep/releases/15.2.0"
+_SAFE_CONTAINER_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")
+_SAFE_LABEL = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")
+
+
+@dataclass(frozen=True)
+class CommandImageScanRuntimePolicy:
+    """Explicit finite Docker bounds for a versioned command-image scan."""
+
+    policy_id: str
+    create_timeout_seconds: int
+    inspect_timeout_seconds: int
+    start_timeout_seconds: int
+    remove_timeout_seconds: int
+    overall_timeout_seconds: int
+    container_name: str
+    owner_label: str
+
+    def __post_init__(self) -> None:
+        values = (
+            self.create_timeout_seconds,
+            self.inspect_timeout_seconds,
+            self.start_timeout_seconds,
+            self.remove_timeout_seconds,
+            self.overall_timeout_seconds,
+        )
+        if (
+            _SAFE_LABEL.fullmatch(self.policy_id) is None
+            or _SAFE_CONTAINER_NAME.fullmatch(self.container_name) is None
+            or _SAFE_LABEL.fullmatch(self.owner_label) is None
+            or any(type(value) is not int or value <= 0 for value in values)
+            or self.overall_timeout_seconds
+            < sum(
+                (
+                    self.create_timeout_seconds,
+                    2 * self.inspect_timeout_seconds,
+                    self.start_timeout_seconds,
+                    self.remove_timeout_seconds,
+                )
+            )
+        ):
+            raise ValueError("HWE command-image scan runtime policy is invalid")
+
+    def as_dict(self) -> dict[str, int | str]:
+        return {
+            "policy_id": self.policy_id,
+            "create_timeout_seconds": self.create_timeout_seconds,
+            "inspect_timeout_seconds": self.inspect_timeout_seconds,
+            "start_timeout_seconds": self.start_timeout_seconds,
+            "remove_timeout_seconds": self.remove_timeout_seconds,
+            "overall_timeout_seconds": self.overall_timeout_seconds,
+            "container_name": self.container_name,
+            "owner_label": self.owner_label,
+        }
 
 
 @dataclass(frozen=True)
@@ -147,8 +202,10 @@ _ERROR_CATEGORIES = frozenset(
         "diagnostic_output_over_bound",
         "docker_create_failed",
         "docker_create_output_invalid",
+        "docker_create_timeout",
         "docker_start_failed",
         "docker_start_timeout",
+        "scan_overall_timeout",
         "unexpected_command_output",
         "unknown",
         "workspace_cleanup_failed",
@@ -256,6 +313,11 @@ def _stream_receipt(stdout: bytes | str | None, stderr: bytes | str | None) -> d
     }
 
 
+def _container_not_found(stdout: bytes | str | None, stderr: bytes | str | None) -> bool:
+    value = (_bytes(stdout) + b"\n" + _bytes(stderr)).lower()
+    return b"no such container" in value or b"no such object" in value
+
+
 def _empty_diagnostic() -> dict[str, Any]:
     empty = hashlib.sha256(b"").hexdigest()
     return {
@@ -330,6 +392,7 @@ def _container_scan(
     artifacts: list[dict[str, Any]],
     profile: _RepositoryProfile = _CVA6_PROFILE,
     runtime_scratch_parent: Path | None = None,
+    runtime_policy: CommandImageScanRuntimePolicy | None = None,
 ) -> tuple[dict[str, bool], dict[str, Any]]:
     assertions = [
         _checked(f'test "$(id -u):$(id -g)" = "{user}"', 61),
@@ -390,6 +453,32 @@ def _container_scan(
     container_id: str | None = None
     checks: dict[str, bool] = {}
     diagnostic = _empty_diagnostic()
+    scan_started = time.monotonic()
+    deadline = (
+        scan_started + runtime_policy.overall_timeout_seconds
+        if runtime_policy is not None
+        else None
+    )
+    if runtime_policy is not None:
+        diagnostic.update(
+            {
+                "cleanup_error_category": None,
+                "runtime_policy": runtime_policy.as_dict(),
+                "elapsed_milliseconds": None,
+                "create_timed_out": False,
+            }
+        )
+
+    def stage_timeout(*, configured: int, legacy: int) -> float:
+        if runtime_policy is None:
+            return float(legacy)
+        assert deadline is not None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            diagnostic["error_category"] = "scan_overall_timeout"
+            raise TimeoutError("HWE command-image scan exceeded its overall deadline")
+        return min(float(configured), remaining)
+
     failure: BaseException | None = None
     phase = "docker_create"
     try:
@@ -421,6 +510,17 @@ def _container_scan(
             "--workdir",
             "/workspace/repository",
         ]
+        if runtime_policy is not None:
+            create.extend(
+                (
+                    "--name",
+                    runtime_policy.container_name,
+                    "--label",
+                    f"verigym.owner={runtime_policy.owner_label}",
+                    "--label",
+                    "verigym.role=command-image-scan",
+                )
+            )
         for entry in profile.exact_environment:
             create.extend(("--env", entry))
         create.extend(
@@ -433,7 +533,30 @@ def _container_scan(
                 command,
             )
         )
-        created = subprocess.run(create, check=False, capture_output=True, timeout=60)
+        try:
+            created = subprocess.run(
+                create,
+                check=False,
+                capture_output=True,
+                timeout=stage_timeout(
+                    configured=(
+                        runtime_policy.create_timeout_seconds if runtime_policy is not None else 60
+                    ),
+                    legacy=60,
+                ),
+            )
+        except subprocess.TimeoutExpired as exc:
+            if runtime_policy is None:
+                raise
+            create_streams = _stream_receipt(exc.stdout, exc.stderr)
+            diagnostic.update(
+                {
+                    "create_timed_out": True,
+                    **{f"create_{key}": value for key, value in create_streams.items()},
+                }
+            )
+            diagnostic["error_category"] = "docker_create_timeout"
+            raise RuntimeError("HWE command-image Docker create timed out") from exc
         create_streams = _stream_receipt(created.stdout, created.stderr)
         diagnostic.update(
             {
@@ -458,7 +581,15 @@ def _container_scan(
         diagnostic["temporary_container_created"] = True
         phase = "container_control_inspection"
         inspection_values = json.loads(
-            _run(["docker", "container", "inspect", container_id], timeout=30).stdout
+            _run(
+                ["docker", "container", "inspect", container_id],
+                timeout=stage_timeout(
+                    configured=(
+                        runtime_policy.inspect_timeout_seconds if runtime_policy is not None else 30
+                    ),
+                    legacy=30,
+                ),
+            ).stdout
         )
         if (
             not isinstance(inspection_values, list)
@@ -509,7 +640,12 @@ def _container_scan(
                 ["docker", "start", "--attach", container_id],
                 check=False,
                 capture_output=True,
-                timeout=180,
+                timeout=stage_timeout(
+                    configured=(
+                        runtime_policy.start_timeout_seconds if runtime_policy is not None else 180
+                    ),
+                    legacy=180,
+                ),
             )
         except subprocess.TimeoutExpired as exc:
             diagnostic.update(_stream_receipt(exc.stdout, exc.stderr))
@@ -526,7 +662,15 @@ def _container_scan(
             raise RuntimeError("HWE command-image diagnostic output exceeded its bound")
         phase = "container_state_inspection"
         state_values = json.loads(
-            _run(["docker", "container", "inspect", container_id], timeout=30).stdout
+            _run(
+                ["docker", "container", "inspect", container_id],
+                timeout=stage_timeout(
+                    configured=(
+                        runtime_policy.inspect_timeout_seconds if runtime_policy is not None else 30
+                    ),
+                    legacy=30,
+                ),
+            ).stdout
         )
         if (
             not isinstance(state_values, list)
@@ -584,13 +728,21 @@ def _container_scan(
             "container_state_inspection": "container_inspect_failed",
             "workspace_proof_validation": "workspace_proof_missing",
         }.get(phase, "unknown")
-    if container_id:
+    cleanup_target = container_id
+    if cleanup_target is None and runtime_policy is not None and diagnostic.get("create_timed_out"):
+        cleanup_target = runtime_policy.container_name
+    if cleanup_target:
         try:
             removed = subprocess.run(
-                ["docker", "container", "rm", "--force", container_id],
+                ["docker", "container", "rm", "--force", cleanup_target],
                 check=False,
                 capture_output=True,
-                timeout=30,
+                timeout=stage_timeout(
+                    configured=(
+                        runtime_policy.remove_timeout_seconds if runtime_policy is not None else 30
+                    ),
+                    legacy=30,
+                ),
             )
             cleanup_streams = _stream_receipt(removed.stdout, removed.stderr)
             diagnostic.update(
@@ -599,21 +751,36 @@ def _container_scan(
                     **{f"cleanup_{key}": value for key, value in cleanup_streams.items()},
                 }
             )
-            if removed.returncode != 0 or not cleanup_streams["output_within_bound"]:
+            absent_after_timed_out_create = (
+                diagnostic.get("create_timed_out") is True
+                and removed.returncode != 0
+                and _container_not_found(removed.stdout, removed.stderr)
+            )
+            if (
+                removed.returncode != 0 and not absent_after_timed_out_create
+            ) or not cleanup_streams["output_within_bound"]:
                 raise RuntimeError("HWE command-image temporary container cleanup failed")
             diagnostic["temporary_container_removed"] = True
         except (Exception, KeyboardInterrupt) as exc:
-            failure = exc
-            diagnostic["failure_stage"] = "container_cleanup"
-            diagnostic["error_category"] = "container_cleanup_failed"
+            diagnostic["cleanup_error_category"] = "container_cleanup_failed"
+            if failure is None:
+                failure = exc
+                diagnostic["failure_stage"] = "container_cleanup"
+                diagnostic["error_category"] = "container_cleanup_failed"
     try:
         shutil.rmtree(workspace)
         diagnostic["temporary_workspace_removed"] = True
     except (Exception, KeyboardInterrupt) as exc:
-        failure = exc
-        diagnostic["failure_stage"] = "workspace_cleanup"
-        diagnostic["error_category"] = "workspace_cleanup_failed"
+        diagnostic["cleanup_error_category"] = "workspace_cleanup_failed"
+        if failure is None:
+            failure = exc
+            diagnostic["failure_stage"] = "workspace_cleanup"
+            diagnostic["error_category"] = "workspace_cleanup_failed"
     if failure is not None:
+        if runtime_policy is not None:
+            diagnostic["elapsed_milliseconds"] = max(
+                0, round((time.monotonic() - scan_started) * 1000)
+            )
         diagnostic["status"] = "failed"
         raise CommandImageScanFailure(_seal_diagnostic(diagnostic)) from None
     diagnostic.update(
@@ -624,6 +791,8 @@ def _container_scan(
             "assertion_id": None,
         }
     )
+    if runtime_policy is not None:
+        diagnostic["elapsed_milliseconds"] = max(0, round((time.monotonic() - scan_started) * 1000))
     return checks, _seal_diagnostic(diagnostic)
 
 
@@ -635,6 +804,7 @@ def scan_and_lock(
     lock_output: Path,
     repository_profile: str = "cva6",
     runtime_scratch_parent: Path | None = None,
+    runtime_policy: CommandImageScanRuntimePolicy | None = None,
 ) -> tuple[dict[str, Any], HweCommandImageLock]:
     if security_output.exists() or lock_output.exists():
         raise ValueError("HWE command-image scan and lock outputs must be new paths")
@@ -737,6 +907,7 @@ def scan_and_lock(
             artifacts=artifacts,
             profile=profile,
             runtime_scratch_parent=runtime_scratch_parent,
+            runtime_policy=runtime_policy,
         )
     except CommandImageScanFailure as exc:
         failure_base = {

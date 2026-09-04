@@ -191,6 +191,91 @@ def test_container_scan_rejects_relative_explicit_scratch_parent(tmp_path: Path)
         )
 
 
+def _v130_runtime_policy() -> _scanner.CommandImageScanRuntimePolicy:
+    return _scanner.CommandImageScanRuntimePolicy(
+        policy_id="deepseek-harness-v130-bounded-command-scan-v1",
+        create_timeout_seconds=300,
+        inspect_timeout_seconds=60,
+        start_timeout_seconds=180,
+        remove_timeout_seconds=120,
+        overall_timeout_seconds=720,
+        container_name="verigym-hwe-v130-command-scan-pr-465",
+        owner_label="deepseek-harness-hwe-v130-bounded-command-scan-create-probe-v1",
+    )
+
+
+def test_explicit_scan_runtime_policy_is_finite_and_self_describing() -> None:
+    policy = _v130_runtime_policy()
+
+    assert policy.as_dict()["create_timeout_seconds"] == 300
+    assert policy.as_dict()["overall_timeout_seconds"] == 720
+    with pytest.raises(ValueError, match="runtime policy"):
+        _scanner.CommandImageScanRuntimePolicy(
+            policy_id=policy.policy_id,
+            create_timeout_seconds=300,
+            inspect_timeout_seconds=60,
+            start_timeout_seconds=180,
+            remove_timeout_seconds=120,
+            overall_timeout_seconds=719,
+            container_name=policy.container_name,
+            owner_label=policy.owner_label,
+        )
+
+
+def test_create_timeout_uses_deterministic_name_and_cleans_without_container_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "scan-workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(_scanner.tempfile, "mkdtemp", lambda **_kwargs: str(workspace))
+    policy = _v130_runtime_policy()
+    calls: list[tuple[list[str], float]] = []
+    sensitive = b"daemon output that must not persist"
+
+    def fake_subprocess_run(arguments, **kwargs):
+        calls.append((arguments, kwargs["timeout"]))
+        if arguments[:2] == ["docker", "create"]:
+            raise subprocess.TimeoutExpired(arguments, kwargs["timeout"], stderr=sensitive)
+        if arguments[:4] == ["docker", "container", "rm", "--force"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                1,
+                stdout=b"",
+                stderr=b"Error: No such container: deterministic-name\n",
+            )
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(_scanner.subprocess, "run", fake_subprocess_run)
+
+    with pytest.raises(_scanner.CommandImageScanFailure) as raised:
+        _scanner._container_scan(
+            "sha256:" + "1" * 64,
+            user="1000:1000",
+            rg_sha256="2" * 64,
+            artifacts=[],
+            runtime_scratch_parent=tmp_path,
+            runtime_policy=policy,
+        )
+
+    diagnostic = raised.value.diagnostic
+    create, remove = calls
+    assert create[1] <= 300
+    assert ["--name", policy.container_name] == create[0][
+        create[0].index("--name") : create[0].index("--name") + 2
+    ]
+    assert f"verigym.owner={policy.owner_label}" in create[0]
+    assert remove[0][-1] == policy.container_name
+    assert remove[1] <= 120
+    assert diagnostic["error_category"] == "docker_create_timeout"
+    assert diagnostic["create_timed_out"] is True
+    assert diagnostic["temporary_container_created"] is False
+    assert diagnostic["temporary_container_removed"] is True
+    assert diagnostic["temporary_workspace_removed"] is True
+    assert diagnostic["runtime_policy"] == policy.as_dict()
+    assert sensitive.decode() not in json.dumps(diagnostic)
+    assert hashlib.sha256(sensitive).hexdigest() not in json.dumps(diagnostic)
+
+
 def test_container_assertion_failure_is_attributable_and_output_is_not_persisted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
