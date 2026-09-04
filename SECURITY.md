@@ -1184,6 +1184,16 @@ owner-checked cleanup restores and removes only v136 resources. It is one-shot, 
 implementation merge and eight green post-merge `main` check classes, and produces evidence for an
 independent v137 audit only; it does not authorize provider execution or collection.
 
+The sole v136 execution stopped during local PR-465 task-image import after the trusted
+workspace-runtime transfer and before any command-image build, runtime probe, task execution,
+Harness startup, or provider request. Its broad controller boundary retained only
+`unexpected_controller_failure`, so the intended nested-endpoint diagnosis was not reached and
+must not be inferred. The cleanup controller timed out just before its exact owner-scoped helper
+exited zero; independently verified late cleanup removed only the v136 helper and two empty
+bind-backed volumes. V136 remains failed and frozen. Any successor must use fresh `/data2`
+resources, retain stage-specific allowlisted import diagnostics without raw output, and establish
+an explicitly bound nested Docker endpoint before a separate provider authorization.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
