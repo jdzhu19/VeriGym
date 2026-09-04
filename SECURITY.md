@@ -1210,6 +1210,17 @@ failure prevents the atomic scaffold contract. Success retains only the exact v1
 one separately audited and authorized successor; v138 itself cannot contact a provider or start
 collection or training.
 
+The sole v138 execution explicitly imported and identity-checked the completed local PR-465 HWE
+image, then reproduced base-FAIL without an infrastructure error. Its reference verifier returned
+an infrastructure timeout with no execution metadata or output and therefore did not establish
+reference-PASS. V138 stopped before command-image build, scan, runtime preparation, Harness, or any
+provider request; its atomic scaffold contract was not published and all five tasks remain
+provider-unconsumed. The planned v140 official matrix identity is consequently unreachable and is
+not authorized. V138 and its retained owner-labelled data volume are frozen. A provider-free
+successor must use fresh `/data2` resources, record separate content-free Docker verifier control
+stages, and may widen only the cold-VFS Docker control bound while leaving official verifier
+semantics and test timeout unchanged.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
