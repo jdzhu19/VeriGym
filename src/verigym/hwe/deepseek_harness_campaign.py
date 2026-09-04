@@ -2390,6 +2390,112 @@ class DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV121BoundedDindStartDiagnosticManifest(StrictModel):
+    """One-use, provider-free diagnosis of the outer DinD startup boundary."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal[
+        "verigym_deepseek_harness_hwe_v121_bounded_dind_start_diagnostic_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v121-bounded-dind-start-diagnostic-v1"]
+    v118_manifest_sha256: str
+    v118_manifest_hash: str
+    v118_authorization_sha256: str
+    v118_authorization_merge: Literal["928b117882ae8be4c60520f8d4a49d82edc548b8"]
+    v118_post_merge_main_run_id: Literal[33819300080]
+    v118_report_sha256: str
+    v118_report_hash: str
+    v118_headroom_sha256: str
+    v118_headroom_hash: str
+    v118_evidence_directory_count: Literal[14]
+    v118_evidence_regular_file_count: Literal[8]
+    v118_evidence_symlink_count: Literal[0]
+    v119_audit_sha256: str
+    v119_audit_commit: Literal["c22066916ba51e8c74678be2b0af6ac8d438ac9a"]
+    v119_post_merge_main_run_id: Literal[33820413201]
+    v119_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v121-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v121-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v121/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v121/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v121-control"
+    ]
+    diagnostic_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v121-scratch"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v121-bounded-dind-start-diagnostic-v1"
+    ]
+    frozen_v118_data_volume: Literal["verigym-deepseek-harness-v118-dind-data"]
+    frozen_v118_socket_volume: Literal["verigym-deepseek-harness-v118-dind-socket"]
+    v118_volume_inspection_allowed: Literal[False]
+    v118_volume_mutation_allowed: Literal[False]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    cleanup_command_timeout_seconds: Literal[60]
+    maximum_diagnostic_output_bytes: Literal[65536]
+    diagnostic_classification_policy: Literal["allowlisted-content-free-v1"]
+    raw_docker_output_persisted: Literal[False]
+    container_identity_persisted: Literal[False]
+    fresh_bind_backed_volumes_required: Literal[True]
+    scaffold_outer_network: Literal["none"]
+    task_archive_access_allowed: Literal[False]
+    task_materialization_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    harness_controller_allowed: Literal[False]
+    docker_network_creation_allowed: Literal[False]
+    registry_access_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_started: Literal[False]
+    provider_calls: Literal[0]
+    requires_independent_result_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v118_manifest_sha256",
+        "v118_manifest_hash",
+        "v118_authorization_sha256",
+        "v118_report_sha256",
+        "v118_report_hash",
+        "v118_headroom_sha256",
+        "v118_headroom_hash",
+        "v119_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v121_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v121 diagnostic manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_v121_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v121 diagnostic manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v121_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v121 diagnostic manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -2923,6 +3029,21 @@ def load_v118_explicit_inner_inventory_scaffold_manifest(
         ) from exc
 
 
+def load_v121_bounded_dind_start_diagnostic_manifest(
+    path: Path,
+) -> DeepSeekHarnessV121BoundedDindStartDiagnosticManifest:
+    """Load the one-use v121 provider-free DinD startup diagnostic manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v121 DinD startup diagnostic manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV121BoundedDindStartDiagnosticManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v121 DinD startup diagnostic manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -3085,6 +3206,7 @@ __all__ = [
     "DeepSeekHarnessV112Data2ControlHeadroomScaffoldManifest",
     "DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest",
     "DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest",
+    "DeepSeekHarnessV121BoundedDindStartDiagnosticManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -3116,6 +3238,7 @@ __all__ = [
     "load_v112_data2_control_headroom_scaffold_manifest",
     "load_v115_explicit_nested_docker_socket_scaffold_manifest",
     "load_v118_explicit_inner_inventory_scaffold_manifest",
+    "load_v121_bounded_dind_start_diagnostic_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
