@@ -1310,6 +1310,20 @@ v146 official-matrix successor is unreachable. A fresh provider-free successor m
 identity and resources and must derive its sanitized child environment from the exact same frozen
 provider-name set enforced by the runner before it can repeat the v144 scaffold behavior.
 
+The separately authorized v146 environment-boundary scaffold is that provider-free successor. Its
+launcher compares the manifest with the exact 12-name provider set enforced by the runner, adds
+the two Docker endpoint names, and selects allowed environment entries by name before reading any
+value. It never reads, prints, persists, or hashes a blocked value. The child receives only the
+v146 opt-in and fixed boundary marker in addition to allowed entries; the runner validates the
+same set and marker before output or Docker resource creation, and the inherited boundary checks
+absence independently. Hand-maintained `env -u` lists are not an authorized substitute.
+
+V146 otherwise repeats the v144 five-task, local-archive, base-FAIL/reference-PASS, bounded-scan,
+300-second command-probe, synthetic Harness, and exact cleanup semantics in fresh bind-backed
+`/data2` resources. It has no provider surface and can publish only an atomic scaffold pending an
+independent v147 audit. The v146 official-matrix identity is retired; any provider execution moves
+to a distinct later identity after successful audit and eight green post-merge `main` checks.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

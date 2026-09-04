@@ -34,6 +34,20 @@ V69_CVA6_FALLBACK_TASK_IDS = (
 )
 V69_OPEN_TOOL_TASK_ID = "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-1816"
 V71_MATRIX_TASK_IDS = V69_PRIMARY_TASK_IDS
+ZERO_PROVIDER_CONFIGURATION_ENV_NAMES = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "DEEPSEEK_API_BASE_URL",
+    "DEEPSEEK_API_KEY",
+    "OPENAI_API_BASE",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+    "OPENAI_PROJECT_ID",
+    "VERIGYM_DEEPSEEK_API_BASE_URL",
+    "VERIGYM_DEEPSEEK_API_KEY",
+)
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -3993,6 +4007,109 @@ class DeepSeekHarnessV144CommandProbeControlScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest(
+    DeepSeekHarnessV144CommandProbeControlScaffoldManifest
+):
+    """Fresh v144-equivalent scaffold with an exact provider-free child environment."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v146_environment_boundary_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v146-environment-boundary-scaffold-v1"
+    ]
+    v144_manifest_sha256: str
+    v144_manifest_hash: str
+    v144_runner_sha256: str
+    v144_authorization_sha256: str
+    v144_source_commit: Literal["f88d81d9e969f7389092c41355824685a9e9778a"]
+    v144_post_merge_main_run_id: Literal[33910123765]
+    v144_post_merge_main_all_eight_classes_passed: Literal[True]
+    v144_start_failure_category: Literal["provider_configuration_environment"]
+    v144_output_root_created: Literal[False]
+    v144_docker_resources_created: Literal[False]
+    v144_provider_boundary_crossed: Literal[False]
+    v144_provider_calls: Literal[0]
+    v145_audit_sha256: str
+    v145_audit_commit: Literal["6e5934453fb1ed5316c95a8393a34c8f26a51018"]
+    v145_audit_merge: Literal["3cf30dccdcd1df42d0f63536b648cf06edb31693"]
+    v145_post_merge_main_run_id: Literal[33911340495]
+    v145_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal[  # type: ignore[assignment]
+        "exact-v144-behavior-with-audited-v142-schedule"
+    ]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v146-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v146-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v146/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v146/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v146-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v146-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v146-environment-boundary-scaffold-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v146/socket/docker.sock"
+    ]
+    dind_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v146-environment-boundary-scaffold-v1"
+    ]
+    scanner_policy_source: Literal[  # type: ignore[assignment]
+        "exact-v144-policy-with-fresh-identity"
+    ]
+    scanner_policy_id: Literal[  # type: ignore[assignment]
+        "deepseek-harness-v146-bounded-command-scan-v1"
+    ]
+    scanner_container_prefix: Literal[  # type: ignore[assignment]
+        "verigym-hwe-v146-command-scan-pr-"
+    ]
+    provider_environment_names_source: Literal["exact-v69-execution-boundary-set"]
+    provider_environment_names: list[str]
+    provider_environment_name_count: Literal[12]
+    provider_environment_values_read_allowed: Literal[False]
+    provider_environment_values_printed: Literal[False]
+    provider_environment_values_persisted: Literal[False]
+    provider_environment_values_hashed: Literal[False]
+    child_boundary_verified_before_resource_creation: Literal[True]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v148-official-matrix-v1"
+    ]
+    requires_independent_v145_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v147_audit: Literal[True]
+
+    @field_validator(
+        "v144_manifest_sha256",
+        "v144_manifest_hash",
+        "v144_runner_sha256",
+        "v144_authorization_sha256",
+        "v145_audit_sha256",
+    )
+    @classmethod
+    def validate_v146_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v146 environment-boundary scaffold requires lowercase SHA-256")
+        return value
+
+    @field_validator("provider_environment_names")
+    @classmethod
+    def validate_v146_provider_environment_names(cls, values: list[str]) -> list[str]:
+        if tuple(values) != ZERO_PROVIDER_CONFIGURATION_ENV_NAMES:
+            raise ValueError("v146 provider environment boundary changed")
+        return values
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4700,6 +4817,21 @@ def load_v144_command_probe_control_scaffold_manifest(
         raise ConfigurationError("v144 command-probe scaffold manifest is invalid") from exc
 
 
+def load_v146_environment_boundary_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest:
+    """Load the one-use provider-free v146 environment-boundary scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v146 environment-boundary scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v146 environment-boundary scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4875,6 +5007,7 @@ __all__ = [
     "DeepSeekHarnessV140VerifierControlScaffoldManifest",
     "DeepSeekHarnessV142CleanupControlScaffoldManifest",
     "DeepSeekHarnessV144CommandProbeControlScaffoldManifest",
+    "DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4884,6 +5017,7 @@ __all__ = [
     "V69_OPEN_TOOL_TASK_ID",
     "V69_PRIMARY_TASK_IDS",
     "V71_MATRIX_TASK_IDS",
+    "ZERO_PROVIDER_CONFIGURATION_ENV_NAMES",
     "inspect_offline_image_archive",
     "load_v69_manifest",
     "load_v71_dind_successor_manifest",
@@ -4918,6 +5052,7 @@ __all__ = [
     "load_v140_verifier_control_scaffold_manifest",
     "load_v142_cleanup_control_scaffold_manifest",
     "load_v144_command_probe_control_scaffold_manifest",
+    "load_v146_environment_boundary_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
