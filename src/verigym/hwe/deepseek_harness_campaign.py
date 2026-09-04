@@ -3214,6 +3214,199 @@ class DeepSeekHarnessV132BoundedScanScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV134TaskBinding(DeepSeekHarnessV92TaskBinding):
+    """One immutable v132-derived task/source/image binding for v134."""
+
+
+class DeepSeekHarnessV134OfficialMatrixManifest(StrictModel):
+    """One-use official five-task provider matrix authorized by the v133 audit."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v134_official_matrix_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v134-official-matrix-v1"]
+    protocol_baseline_identity: Literal["deepseek-harness-hwe-v92-official-matrix-v1"]
+    protocol_baseline_manifest_sha256: str
+    protocol_baseline_manifest_hash: str
+    protocol_baseline_runner_sha256: str
+    v132_manifest_sha256: str
+    v132_manifest_hash: str
+    v132_report_sha256: str
+    v132_report_hash: str
+    v132_contract_sha256: str
+    v132_contract_hash: str
+    v132_task_set_sha256: str
+    v132_task_set_hash: str
+    v132_inventory_sha256: str
+    v132_inventory_hash: str
+    v132_final_inventory_sha256: str
+    v132_final_inventory_hash: str
+    v132_image_transfer_set_sha256: str
+    v132_image_transfer_set_hash: str
+    v132_controller_receipt_sha256: str
+    v132_controller_receipt_hash: str
+    v132_workspace_runtime_receipt_sha256: str
+    v132_workspace_runtime_receipt_hash: str
+    v132_runtime_preflight_sha256: str
+    v132_runtime_preflight_hash: str
+    v132_harness_preflight_sha256: str
+    v132_harness_preflight_hash: str
+    v132_runtime_receipt_sha256: str
+    v132_runtime_receipt_hash: str
+    v132_cleanup_receipt_sha256: str
+    v132_cleanup_receipt_hash: str
+    v132_evidence_directory_count: Literal[1782]
+    v132_evidence_regular_file_count: Literal[10481]
+    v132_evidence_symlink_count: Literal[0]
+    v133_audit_sha256: str
+    v133_audit_commit: Literal["270fc62c2b6c9d970b435609607a2e24c13aac87"]
+    v133_audit_merge: Literal["7fe5de7dd116b01e9e74925aea5af11327924094"]
+    v133_post_merge_main_run_id: Literal[33852258490]
+    v133_post_merge_main_all_eight_classes_passed: Literal[True]
+    source_preparation_docker_control_timeout_seconds: Literal[300]
+    schedule: list[DeepSeekHarnessV134TaskBinding] = Field(min_length=5, max_length=5)
+    provider: Literal["deepseek-official"]
+    model: Literal["deepseek-v4-flash"]
+    harness_version: Literal["0.1.1-rc.2"]
+    integration_version: Literal["0.5.0"]
+    harness_revision: Literal["b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"]
+    seed: Literal[502]
+    sample_index: Literal[18]
+    max_provider_calls_per_task: Literal[64]
+    max_provider_tokens_per_task: Literal[1000000]
+    max_context_tokens: Literal[65536]
+    max_output_tokens: Literal[2048]
+    temperature: Literal[0]
+    provider_request_retries: Literal[0]
+    whole_episode_retries: Literal[0]
+    ordinary_tool_choice: Literal["auto"]
+    public_rationale_allowed: Literal[True]
+    sibling_calls_allowed: Literal[True]
+    provider_hidden_thinking: Literal["disabled"]
+    foreign_tools_rejected: Literal[True]
+    illegal_paths_rejected: Literal[True]
+    unpaired_observations_rejected: Literal[True]
+    decision_only_loss_mask: Literal[True]
+    exact_tokenizer_hash: str
+    base_model_snapshot_hash: str
+    base_model_lock_sha256: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v132-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v132-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v132/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v132/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v134-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v134-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v134-official-matrix-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v132/socket/docker.sock"
+    ]
+    predecessor_data_volume_owner: Literal["deepseek-harness-hwe-v132-bounded-scan-scaffold-v1"]
+    runtime_resource_owner: Literal["deepseek-harness-hwe-v134-official-matrix-v1"]
+    provider_outer_network: Literal["verigym-hwe-net"]
+    provider_inner_network: Literal["verigym-hwe-net"]
+    task_network: Literal["none"]
+    verifier_network: Literal["none"]
+    controller_image_tag: Literal["node:22.19.0-bookworm-slim"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    workspace_runtime_image_id: str
+    controller_image_provenance: Literal["audited_v132_offline_transfer_v1"]
+    v132_data_volume_reopen_budget: Literal[1]
+    v132_data_volume_reopen_count_before: Literal[0]
+    atomic_progress: Literal[True]
+    zero_partial_authorization: Literal[True]
+    deterministic_task_order: Literal[True]
+    stop_on_infrastructure_or_security_failure: Literal[True]
+    continue_after_ordinary_model_or_verifier_failure: Literal[True]
+    consecutive_no_progress_stop_limit: Literal[2]
+    requires_independent_v135_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "protocol_baseline_manifest_sha256",
+        "protocol_baseline_manifest_hash",
+        "protocol_baseline_runner_sha256",
+        "v132_manifest_sha256",
+        "v132_manifest_hash",
+        "v132_report_sha256",
+        "v132_report_hash",
+        "v132_contract_sha256",
+        "v132_contract_hash",
+        "v132_task_set_sha256",
+        "v132_task_set_hash",
+        "v132_inventory_sha256",
+        "v132_inventory_hash",
+        "v132_final_inventory_sha256",
+        "v132_final_inventory_hash",
+        "v132_image_transfer_set_sha256",
+        "v132_image_transfer_set_hash",
+        "v132_controller_receipt_sha256",
+        "v132_controller_receipt_hash",
+        "v132_workspace_runtime_receipt_sha256",
+        "v132_workspace_runtime_receipt_hash",
+        "v132_runtime_preflight_sha256",
+        "v132_runtime_preflight_hash",
+        "v132_harness_preflight_sha256",
+        "v132_harness_preflight_hash",
+        "v132_runtime_receipt_sha256",
+        "v132_runtime_receipt_hash",
+        "v132_cleanup_receipt_sha256",
+        "v132_cleanup_receipt_hash",
+        "v133_audit_sha256",
+        "exact_tokenizer_hash",
+        "base_model_snapshot_hash",
+        "base_model_lock_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v134_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v134 official matrix manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+        "workspace_runtime_image_id",
+    )
+    @classmethod
+    def validate_v134_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v134 official matrix manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v134_identity(self) -> Self:
+        if tuple(item.task_id for item in self.schedule) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v134 official matrix schedule changed")
+        if any(
+            item.seed != self.seed or item.sample_index != self.sample_index
+            for item in self.schedule
+        ):
+            raise ValueError("v134 task seed/sample differs from the matrix identity")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v134 official matrix manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -3835,6 +4028,17 @@ def load_v132_bounded_scan_scaffold_manifest(
         raise ConfigurationError("v132 bounded-scan scaffold manifest is invalid") from exc
 
 
+def load_v134_official_matrix_manifest(path: Path) -> DeepSeekHarnessV134OfficialMatrixManifest:
+    """Load the bounded one-use v134 official provider-matrix manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v134 official matrix manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV134OfficialMatrixManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v134 official matrix manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4003,6 +4207,8 @@ __all__ = [
     "DeepSeekHarnessV127ReadinessGatedScaffoldManifest",
     "DeepSeekHarnessV130BoundedCommandScanProbeManifest",
     "DeepSeekHarnessV132BoundedScanScaffoldManifest",
+    "DeepSeekHarnessV134OfficialMatrixManifest",
+    "DeepSeekHarnessV134TaskBinding",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4040,6 +4246,7 @@ __all__ = [
     "load_v127_readiness_gated_scaffold_manifest",
     "load_v130_bounded_command_scan_probe_manifest",
     "load_v132_bounded_scan_scaffold_manifest",
+    "load_v134_official_matrix_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
