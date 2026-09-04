@@ -42,6 +42,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV127ReadinessGatedScaffoldManifest,
     DeepSeekHarnessV130BoundedCommandScanProbeManifest,
     DeepSeekHarnessV132BoundedScanScaffoldManifest,
+    DeepSeekHarnessV136CommandRuntimeDiagnosticManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -66,6 +67,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v127_readiness_gated_scaffold_manifest,
     load_v130_bounded_command_scan_probe_manifest,
     load_v132_bounded_scan_scaffold_manifest,
+    load_v136_command_runtime_diagnostic_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -109,6 +111,9 @@ _V112_MANIFEST = _REPOSITORY_ROOT / (
 _V115_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/"
     "qwen35_hwe_deepseek_harness_v115_explicit_nested_docker_socket_scaffold_v1.json"
+)
+_V136_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v136_command_runtime_diagnostic_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -1081,6 +1086,8 @@ def test_v115_manifest_freezes_the_explicit_nested_docker_socket() -> None:
     [
         ("nested_docker_host", "tcp://127.0.0.1:2375"),
         ("docker_cli_explicit_binding_required", False),
+        ("historical_command_image_id_required", True),
+        ("historical_command_image_semantics_required", False),
         ("harness_helper_explicit_binding_required", False),
         ("inherited_docker_environment_allowed", True),
         ("remote_docker_endpoint_allowed", True),
@@ -1537,3 +1544,70 @@ def test_v132_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV132BoundedScanScaffoldManifest.model_validate(changed)
+
+
+def test_v136_manifest_freezes_the_command_runtime_transport_diagnostic() -> None:
+    manifest = load_v136_command_runtime_diagnostic_manifest(_V136_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV136CommandRuntimeDiagnosticManifest)
+    assert manifest.task_id == "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-465"
+    assert manifest.v135_audit_merge == "da971e808b8da441d01ce7f76445fe6284939cd7"
+    assert manifest.v135_post_merge_main_run_id == 33856107497
+    assert manifest.v132_command_lock_hash == (
+        "45054a863ca9c736441206fcf973fe2522071b8fda3beddb9e32158dc9a2c9fa"
+    )
+    assert manifest.v132_security_scan_id == (
+        "19da6e02194d1f22046e249b7582232be0c430d1ccd415556d92976849358f3e"
+    )
+    assert manifest.expected_inherited_environment_subreason == "image_missing"
+    assert manifest.explicit_nested_engine_expected_pass is True
+    assert manifest.docker_cli_explicit_binding_required is True
+    assert manifest.historical_command_image_id_required is False
+    assert manifest.historical_command_image_semantics_required is True
+    assert manifest.requires_independent_v137_audit is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("create_timeout_seconds", 60),
+        ("overall_timeout_seconds", 900),
+        ("startup_attempt_limit", 2),
+        ("inherited_environment_probe_count", 2),
+        ("explicit_nested_engine_probe_count", 2),
+        ("expected_inherited_environment_subreason", "invalid_image_id"),
+        ("explicit_nested_engine_expected_pass", False),
+        ("docker_cli_explicit_binding_required", False),
+        ("fresh_bind_backed_volumes_required", False),
+        ("host_command_image_expected_absent", False),
+        ("task_execution_allowed", True),
+        ("base_reference_verification_allowed", True),
+        ("harness_controller_allowed", True),
+        ("registry_access_allowed", True),
+        ("partial_archive_allowed", True),
+        ("v132_volume_inspection_allowed", True),
+        ("v132_volume_mutation_allowed", True),
+        ("provider_credentials_available", True),
+        ("provider_request_started", True),
+        ("provider_calls", 1),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v136_manifest_rejects_a_broadened_or_changed_diagnostic(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V136_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV136CommandRuntimeDiagnosticManifest.model_validate(changed)
+
+
+def test_v136_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V136_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV136CommandRuntimeDiagnosticManifest.model_validate(changed)
