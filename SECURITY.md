@@ -1334,6 +1334,23 @@ may use fresh `/data2` resources and change only cleanup identity binding so the
 manifest volume, owner, and backing replace the predecessor literal. It requires an independent
 audit before any later provider identity can be authorized.
 
+The separately authorized v148 cleanup-identity scaffold is that provider-free successor. It
+repeats the audited v146 schedule, completed local archives, official verifier controls,
+task-specific v2 command-image scans, 300-second command probes, and synthetic network-isolated
+Harness initialization in fresh v148 bind-backed `/data2` resources. It does not inspect, mount,
+mutate, remove, or otherwise reuse either frozen v146 volume.
+
+V148 replaces cleanup delegation with a locally implemented, fail-closed cleanup function. Before
+any Docker operation, that function requires the exact current manifest's v148 socket-volume name,
+owner identity, and backing path, plus the fixed cleanup policy. Its capability-minimized helper
+uses `network=none`, a read-only root, and only the current v148 socket volume. The removal command
+uses the same manifest value, and publication still requires an empty mode-0700 backing restored to
+the caller. A predecessor literal, changed owner or backing, timeout, nonzero result, oversized
+output, failed volume removal, or failed backing confirmation prevents publication. Raw output,
+raw exceptions, and nonempty output hashes remain forbidden. V148 has no provider surface and can
+produce evidence only for an independent v149 audit; only that merged audit and eight green
+post-merge `main` check classes can authorize the distinct v150 official matrix identity.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

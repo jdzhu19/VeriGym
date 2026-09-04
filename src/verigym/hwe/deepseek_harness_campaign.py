@@ -4110,6 +4110,119 @@ class DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest(
         return values
 
 
+class DeepSeekHarnessV148CleanupIdentityScaffoldManifest(
+    DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest
+):
+    """Fresh v146-equivalent scaffold with current-manifest cleanup identity binding."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v148_cleanup_identity_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v148-cleanup-identity-scaffold-v1"
+    ]
+    v146_manifest_sha256: str
+    v146_manifest_hash: str
+    v146_launcher_sha256: str
+    v146_runner_sha256: str
+    v146_authorization_sha256: str
+    v146_source_commit: Literal["6347bec37031d8855993e5e117b521476d92851a"]
+    v146_post_merge_main_run_id: Literal[33913325892]
+    v146_post_merge_main_all_eight_classes_passed: Literal[True]
+    v146_report_sha256: str
+    v146_report_hash: str
+    v146_task_materialization_sha256: str
+    v146_task_materialization_hash: str
+    v146_execution_inventory_sha256: str
+    v146_execution_inventory_hash: str
+    v146_runtime_prepare_sha256: str
+    v146_runtime_prepare_hash: str
+    v146_command_probe_diagnostic_sha256: str
+    v146_command_probe_diagnostic_hash: str
+    v146_harness_initialize_sha256: str
+    v146_harness_initialize_hash: str
+    v147_audit_sha256: str
+    v147_audit_commit: Literal["1f9e6c5535e49c03e21dae2e3aa622fa8a8db7f3"]
+    v147_audit_merge: Literal["9d6c6cc149772c9e5f2608030e5726df257fdd2e"]
+    v147_post_merge_main_run_id: Literal[33919008896]
+    v147_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v146-schedule"]  # type: ignore[assignment]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v148-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v148-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v148/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v148/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v148-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v148-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v148-cleanup-identity-scaffold-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v148/socket/docker.sock"
+    ]
+    dind_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v148-cleanup-identity-scaffold-v1"
+    ]
+    scanner_policy_source: Literal[  # type: ignore[assignment]
+        "exact-v146-policy-with-fresh-identity"
+    ]
+    scanner_policy_id: Literal[  # type: ignore[assignment]
+        "deepseek-harness-v148-bounded-command-scan-v1"
+    ]
+    scanner_container_prefix: Literal[  # type: ignore[assignment]
+        "verigym-hwe-v148-command-scan-pr-"
+    ]
+    cleanup_identity_binding_source: Literal["exact-current-manifest-v1"]
+    cleanup_predecessor_literal_allowed: Literal[False]
+    cleanup_exact_volume_required: Literal[True]
+    cleanup_exact_owner_required: Literal[True]
+    cleanup_exact_backing_required: Literal[True]
+    v146_volume_inspection_allowed: Literal[False]
+    v146_volume_mutation_allowed: Literal[False]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v150-official-matrix-v1"
+    ]
+    requires_independent_v147_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v149_audit: Literal[True]
+
+    @field_validator(
+        "v146_manifest_sha256",
+        "v146_manifest_hash",
+        "v146_launcher_sha256",
+        "v146_runner_sha256",
+        "v146_authorization_sha256",
+        "v146_report_sha256",
+        "v146_report_hash",
+        "v146_task_materialization_sha256",
+        "v146_task_materialization_hash",
+        "v146_execution_inventory_sha256",
+        "v146_execution_inventory_hash",
+        "v146_runtime_prepare_sha256",
+        "v146_runtime_prepare_hash",
+        "v146_command_probe_diagnostic_sha256",
+        "v146_command_probe_diagnostic_hash",
+        "v146_harness_initialize_sha256",
+        "v146_harness_initialize_hash",
+        "v147_audit_sha256",
+    )
+    @classmethod
+    def validate_v148_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v148 cleanup-identity scaffold requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4832,6 +4945,21 @@ def load_v146_environment_boundary_scaffold_manifest(
         raise ConfigurationError("v146 environment-boundary scaffold manifest is invalid") from exc
 
 
+def load_v148_cleanup_identity_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV148CleanupIdentityScaffoldManifest:
+    """Load the one-use provider-free v148 cleanup-identity scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v148 cleanup-identity scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV148CleanupIdentityScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v148 cleanup-identity scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -5008,6 +5136,7 @@ __all__ = [
     "DeepSeekHarnessV142CleanupControlScaffoldManifest",
     "DeepSeekHarnessV144CommandProbeControlScaffoldManifest",
     "DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest",
+    "DeepSeekHarnessV148CleanupIdentityScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -5053,6 +5182,7 @@ __all__ = [
     "load_v142_cleanup_control_scaffold_manifest",
     "load_v144_command_probe_control_scaffold_manifest",
     "load_v146_environment_boundary_scaffold_manifest",
+    "load_v148_cleanup_identity_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
