@@ -15,6 +15,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     V69_IBEX_FALLBACK_TASK_IDS,
     V69_OPEN_TOOL_TASK_ID,
     V69_PRIMARY_TASK_IDS,
+    ZERO_PROVIDER_CONFIGURATION_ENV_NAMES,
     DeepSeekHarnessMatrixAttempt,
     DeepSeekHarnessV69Manifest,
     DeepSeekHarnessV71DindSuccessorManifest,
@@ -47,6 +48,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV140VerifierControlScaffoldManifest,
     DeepSeekHarnessV142CleanupControlScaffoldManifest,
     DeepSeekHarnessV144CommandProbeControlScaffoldManifest,
+    DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -76,6 +78,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v140_verifier_control_scaffold_manifest,
     load_v142_cleanup_control_scaffold_manifest,
     load_v144_command_probe_control_scaffold_manifest,
+    load_v146_environment_boundary_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -134,6 +137,9 @@ _V142_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V144_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v144_command_probe_control_scaffold_v1.json"
+)
+_V146_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v146_environment_boundary_scaffold_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -1839,3 +1845,72 @@ def test_v144_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV144CommandProbeControlScaffoldManifest.model_validate(changed)
+
+
+def test_v146_manifest_freezes_the_environment_boundary_scaffold() -> None:
+    manifest = load_v146_environment_boundary_scaffold_manifest(_V146_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest)
+    assert manifest.v145_audit_merge == "3cf30dccdcd1df42d0f63536b648cf06edb31693"
+    assert manifest.v145_post_merge_main_run_id == 33911340495
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert tuple(manifest.provider_environment_names) == ZERO_PROVIDER_CONFIGURATION_ENV_NAMES
+    assert manifest.provider_environment_name_count == 12
+    assert manifest.provider_environment_values_read_allowed is False
+    assert manifest.provider_environment_values_printed is False
+    assert manifest.provider_environment_values_persisted is False
+    assert manifest.provider_environment_values_hashed is False
+    assert manifest.child_boundary_verified_before_resource_creation is True
+    assert manifest.command_image_probe_control_timeout_seconds == 300
+    assert manifest.v144_provider_boundary_crossed is False
+    assert manifest.v144_provider_calls == 0
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v148-official-matrix-v1"
+    assert manifest.requires_independent_v145_audit is False
+    assert manifest.requires_independent_v147_audit is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("provider_environment_name_count", 11),
+        ("provider_environment_values_read_allowed", True),
+        ("provider_environment_values_printed", True),
+        ("provider_environment_values_persisted", True),
+        ("provider_environment_values_hashed", True),
+        ("child_boundary_verified_before_resource_creation", False),
+        ("v144_provider_boundary_crossed", True),
+        ("v144_provider_calls", 1),
+        ("requires_independent_v145_audit", True),
+        ("requires_independent_v147_audit", False),
+        ("provider_credentials_available", True),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v146_manifest_rejects_a_broadened_or_changed_scaffold(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V146_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest.model_validate(changed)
+
+
+def test_v146_manifest_rejects_changed_environment_name_set() -> None:
+    changed = json.loads(_V146_MANIFEST.read_text(encoding="utf-8"))
+    changed["provider_environment_names"] = changed["provider_environment_names"][:-1]
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError, match="provider environment boundary changed"):
+        DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest.model_validate(changed)
+
+
+def test_v146_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V146_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest.model_validate(changed)
