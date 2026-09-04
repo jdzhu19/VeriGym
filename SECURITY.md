@@ -1269,6 +1269,23 @@ atomic scaffold contract. V142 has no provider surface and can produce evidence 
 audit. Only a successful v142 contract followed by the independent merged v143 audit and green
 post-merge `main` checks may authorize the distinct v144 official DeepSeek matrix identity.
 
+The sole v142 execution completed all five local archive imports, base-FAIL/reference-PASS
+qualifications, task-specific command-image builds, and v2 scans. It also fixed the v140 cleanup
+blocker: the exact owner-scoped helper and socket-volume removal both completed under their new
+300-second control bounds, the socket backing was restored empty, and no v142 container remains.
+V142 nevertheless stopped fail-closed during the first DockerRuntime command-image identity probe,
+before a runtime-preparation receipt, Harness initialization, scaffold publication, model process,
+or provider request. Its planned v144 official-matrix identity is unreachable and unauthorized.
+
+The inherited command-image probe has a hard 60-second maximum and can report a combined failure
+for an engine error, timeout, OOM kill, output truncation, or nonzero exit. V142 retained only the
+exception type, so no specific member of that set is proven. Its exact data volume and evidence
+tree are frozen and must not be reopened, inspected, mounted, mutated, retried, or promoted. A
+fresh provider-free successor may use new `/data2` resources, an allowlisted content-free probe
+diagnostic, and an explicit probe-control bound of at most 300 seconds while leaving image
+identity, probe semantics, runtime limits, and Harness behavior unchanged. It requires another
+independent audit before any later unused official DeepSeek identity can be authorized.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
