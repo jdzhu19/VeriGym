@@ -1164,6 +1164,26 @@ the provider DinD started. V134 and that retained volume are frozen. A successor
 and complete an independently audited zero-provider diagnostic before any new provider
 authorization. It may not diagnose by reopening or internally inspecting the v132 data volume.
 
+The separately authorized v136 diagnostic uses a new bind-backed VFS DinD data/socket identity
+under `/data2` and may read only the completed local PR-465 archive. It independently rebuilds and
+v2-scans the credential-free command image, transfers only the trusted workspace-runtime image
+from the host Docker image store. Because Docker creation metadata makes IDs unstable across clean
+rebuilds, it requires the new lock's task, source, toolchain, protocol, environment, tool hashes,
+security properties, and execution backends to equal the frozen v132 semantic baseline while
+assigning fresh image, scan, and lock identities. The frozen v132 Docker volume is neither reopened,
+inspected, nor mutated. Registry access, `.partial` archives, task execution, base/reference verification,
+Harness startup, provider configuration, and model calls remain forbidden.
+
+V136 runs exactly two content-free preparation probes with the same v134 runtime configuration.
+The first reproduces the inherited-environment construction and may retain only an allowlisted
+`DockerImageError.subreason`; raw exception text, details, and Docker output are not persisted or
+hashed. The second injects a `DockerCliEngine` explicitly bound to the canonical fresh nested Unix
+socket and must pass with an empty inner container/volume inventory. The diagnostic succeeds only
+when the first probe reports `image_missing`, the explicitly bound probe passes, and deterministic
+owner-checked cleanup restores and removes only v136 resources. It is one-shot, requires its
+implementation merge and eight green post-merge `main` check classes, and produces evidence for an
+independent v137 audit only; it does not authorize provider execution or collection.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

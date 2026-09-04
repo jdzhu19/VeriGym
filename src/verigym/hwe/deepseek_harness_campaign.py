@@ -3407,6 +3407,159 @@ class DeepSeekHarnessV134OfficialMatrixManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV136CommandRuntimeDiagnosticManifest(StrictModel):
+    """One-use provider-free diagnosis of the v134 Docker transport binding."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v136_command_runtime_diagnostic_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v136-command-runtime-diagnostic-v1"]
+    v130_manifest_sha256: str
+    v130_manifest_hash: str
+    v130_runner_sha256: str
+    v134_manifest_sha256: str
+    v134_manifest_hash: str
+    v134_runner_sha256: str
+    v134_report_sha256: str
+    v134_report_hash: str
+    v135_audit_sha256: str
+    v135_audit_commit: Literal["90bc028f931841a7bbdb67a53e447debc5c38ad4"]
+    v135_audit_merge: Literal["da971e808b8da441d01ce7f76445fe6284939cd7"]
+    v135_post_merge_main_run_id: Literal[33856107497]
+    v135_post_merge_main_all_eight_classes_passed: Literal[True]
+    v132_command_lock_sha256: str
+    v132_command_lock_hash: str
+    v132_security_scan_sha256: str
+    v132_security_scan_id: str
+    v132_command_image_id: str
+    task_id: Literal["hwe-bench/repo-repair-v1/lowRISC__ibex__pr-465"]
+    archive_root: Literal["/data2/jiadongzhu/Agent/hwe-bench-public-images"]
+    archive_relpath: Literal["docker-tar-archives/lowrisc_m_ibex/pr-465.tar"]
+    archive_sha256_relpath: Literal["docker-tar-archives/lowrisc_m_ibex/pr-465.tar.sha256"]
+    archive_sha256: str
+    registry_digest_relpath: Literal["digest-locks/lowrisc_m_ibex/pr-465.digest"]
+    registry_manifest_digest: str
+    image_config_digest: str
+    official_verifier_image: str
+    workspace_runtime_image_id: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v136-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v136-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v136/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v136/socket"]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v136-command-runtime-diagnostic-v1"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v136-runtime"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v136/socket/docker.sock"
+    ]
+    scanner_policy_id: Literal["deepseek-harness-v136-bounded-command-scan-v1"]
+    scanner_container_name: Literal["verigym-hwe-v136-command-scan-pr-465"]
+    create_timeout_seconds: Literal[300]
+    inspect_timeout_seconds: Literal[60]
+    start_timeout_seconds: Literal[180]
+    remove_timeout_seconds: Literal[120]
+    overall_timeout_seconds: Literal[720]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    inherited_environment_probe_count: Literal[1]
+    explicit_nested_engine_probe_count: Literal[1]
+    expected_inherited_environment_subreason: Literal["image_missing"]
+    explicit_nested_engine_expected_pass: Literal[True]
+    docker_cli_explicit_binding_required: Literal[True]
+    historical_command_image_id_required: Literal[False]
+    historical_command_image_semantics_required: Literal[True]
+    fresh_bind_backed_volumes_required: Literal[True]
+    host_command_image_expected_absent: Literal[True]
+    task_archive_access_allowed: Literal[True]
+    task_image_import_allowed: Literal[True]
+    command_image_build_allowed: Literal[True]
+    workspace_runtime_transfer_allowed: Literal[True]
+    task_execution_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    harness_controller_allowed: Literal[False]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    v132_volume_inspection_allowed: Literal[False]
+    v132_volume_mutation_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_started: Literal[False]
+    provider_calls: Literal[0]
+    requires_independent_v137_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v130_manifest_sha256",
+        "v130_manifest_hash",
+        "v130_runner_sha256",
+        "v134_manifest_sha256",
+        "v134_manifest_hash",
+        "v134_runner_sha256",
+        "v134_report_sha256",
+        "v134_report_hash",
+        "v135_audit_sha256",
+        "v132_command_lock_sha256",
+        "v132_command_lock_hash",
+        "v132_security_scan_sha256",
+        "v132_security_scan_id",
+        "archive_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v136_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v136 command-runtime diagnostic requires lowercase SHA-256")
+        return value
+
+    @field_validator(
+        "v132_command_image_id",
+        "registry_manifest_digest",
+        "image_config_digest",
+        "official_verifier_image",
+        "workspace_runtime_image_id",
+        "dind_image_id",
+        "dind_repository_digest",
+    )
+    @classmethod
+    def validate_v136_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v136 command-runtime diagnostic requires immutable digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v136_identity(self) -> Self:
+        if self.image_config_digest != self.official_verifier_image:
+            raise ValueError("v136 official verifier binding changed")
+        if self.overall_timeout_seconds != sum(
+            (
+                self.create_timeout_seconds,
+                2 * self.inspect_timeout_seconds,
+                self.start_timeout_seconds,
+                self.remove_timeout_seconds,
+            )
+        ):
+            raise ValueError("v136 bounded scanner timing changed")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v136 command-runtime diagnostic manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4039,6 +4192,21 @@ def load_v134_official_matrix_manifest(path: Path) -> DeepSeekHarnessV134Officia
         raise ConfigurationError("v134 official matrix manifest is invalid") from exc
 
 
+def load_v136_command_runtime_diagnostic_manifest(
+    path: Path,
+) -> DeepSeekHarnessV136CommandRuntimeDiagnosticManifest:
+    """Load the one-use provider-free v136 command-runtime diagnostic manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v136 command-runtime diagnostic manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV136CommandRuntimeDiagnosticManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v136 command-runtime diagnostic manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4209,6 +4377,7 @@ __all__ = [
     "DeepSeekHarnessV132BoundedScanScaffoldManifest",
     "DeepSeekHarnessV134OfficialMatrixManifest",
     "DeepSeekHarnessV134TaskBinding",
+    "DeepSeekHarnessV136CommandRuntimeDiagnosticManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4247,6 +4416,7 @@ __all__ = [
     "load_v130_bounded_command_scan_probe_manifest",
     "load_v132_bounded_scan_scaffold_manifest",
     "load_v134_official_matrix_manifest",
+    "load_v136_command_runtime_diagnostic_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
