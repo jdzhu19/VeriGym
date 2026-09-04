@@ -1069,6 +1069,21 @@ and allowlisted categories. Raw output, exceptions, container identities, enviro
 host paths are not persisted or hashed. Exact owner, role, and bind validation precedes cleanup;
 only an independent v126 audit may authorize any five-task successor.
 
+The separately authorized v127 scaffold applies the audited v125 readiness predicate to the
+frozen five-task v118 materialization path. Its fresh bind-backed data and socket volumes live
+under the exact v127 `/data2` identity; predecessor Docker volumes are never inspected or mutated.
+One outer DinD start is allowed. Every inner-Docker operation is gated by an explicit three-field
+`docker info` response matching `23.0.6`, `vfs`, and `runc`, under a 120-second monotonic deadline,
+five-second command limit, and no smaller fixed poll-count cap. JSON-formatted info is not a
+readiness signal.
+
+V127 remains provider-free. It may read only completed local archives, verifies every frozen
+source/image/task lock and base-FAIL/reference-PASS result, and keeps all command and verifier
+containers on `network=none`. Runtime preparation, full inner inventory, network control, and
+streaming attach use the explicitly bound v127 Unix socket. All five tasks and deterministic
+cleanup must pass before one atomic scaffold contract can be published. A partial contract is
+forbidden, and an independent v128 audit is required before any provider execution.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
