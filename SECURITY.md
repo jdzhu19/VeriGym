@@ -1301,6 +1301,15 @@ has no provider surface and can produce evidence only for an independent v145 au
 v144 official-matrix identity remains unusable; a later official matrix requires a distinct unused
 identity, a successful v144 contract, the merged v145 audit, and green post-merge `main` checks.
 
+The sole v144 start stopped at the outer execution boundary because the launcher removed only a
+documented subset of the complete provider-configuration environment-name set. No output root,
+Docker backing path, volume, container, archive import, task verifier, Harness process, or provider
+request was created or started, and all five tasks remain provider-unconsumed. Values were never
+printed, persisted, or hashed. V144 is nevertheless consumed by its one-shot start, and its planned
+v146 official-matrix successor is unreachable. A fresh provider-free successor must use a new
+identity and resources and must derive its sanitized child environment from the exact same frozen
+provider-name set enforced by the runner before it can repeat the v144 scaffold behavior.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
