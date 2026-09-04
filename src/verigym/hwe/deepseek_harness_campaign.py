@@ -3883,6 +3883,116 @@ class DeepSeekHarnessV142CleanupControlScaffoldManifest(
         return value
 
 
+class DeepSeekHarnessV144CommandProbeControlScaffoldManifest(StrictModel):
+    """Fresh five-task scaffold with an explicit command-image probe control bound."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal[
+        "verigym_deepseek_harness_hwe_v144_command_probe_control_scaffold_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v144-command-probe-control-scaffold-v1"]
+    v142_manifest_sha256: str
+    v142_manifest_hash: str
+    v142_runner_sha256: str
+    v142_authorization_sha256: str
+    v142_source_commit: Literal["398c3f7171e06b138942fac02ccc4f42eb2cdb43"]
+    v142_post_merge_main_run_id: Literal[33899362681]
+    v142_post_merge_main_all_eight_classes_passed: Literal[True]
+    v142_report_sha256: str
+    v142_report_hash: str
+    v142_task_materialization_sha256: str
+    v142_task_materialization_hash: str
+    v142_execution_inventory_sha256: str
+    v142_execution_inventory_hash: str
+    v142_cleanup_sha256: str
+    v142_cleanup_hash: str
+    v143_audit_sha256: str
+    v143_audit_commit: Literal["fc850a716602ab9f8b4aa46340ddf9f6b84166a6"]
+    v143_audit_merge: Literal["0f2735e1720291a60debdadd18392626589775b0"]
+    v143_post_merge_main_run_id: Literal[33907426320]
+    v143_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v142-schedule"]
+    schedule_task_ids: list[str]
+    seed: Literal[502]
+    sample_index: Literal[18]
+    dind_data_volume: Literal["verigym-deepseek-harness-v144-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v144-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v144/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v144/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v144-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v144-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v144-command-probe-control-scaffold-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v144/socket/docker.sock"
+    ]
+    dind_owner: Literal["deepseek-harness-hwe-v144-command-probe-control-scaffold-v1"]
+    scanner_policy_source: Literal["exact-audited-v142-policy-with-fresh-identity"]
+    scanner_policy_id: Literal["deepseek-harness-v144-bounded-command-scan-v1"]
+    scanner_container_prefix: Literal["verigym-hwe-v144-command-scan-pr-"]
+    command_image_probe_control_timeout_seconds: Literal[300]
+    command_image_probe_stage_metadata_required: Literal[True]
+    command_image_probe_raw_output_allowed: Literal[False]
+    command_image_probe_nonempty_output_hashing_allowed: Literal[False]
+    v142_volume_inspection_allowed: Literal[False]
+    v142_volume_mutation_allowed: Literal[False]
+    failed_data_volume_policy: Literal["freeze-exact-owned-volume"]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v146-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    requires_independent_v145_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v142_manifest_sha256",
+        "v142_manifest_hash",
+        "v142_runner_sha256",
+        "v142_authorization_sha256",
+        "v142_report_sha256",
+        "v142_report_hash",
+        "v142_task_materialization_sha256",
+        "v142_task_materialization_hash",
+        "v142_execution_inventory_sha256",
+        "v142_execution_inventory_hash",
+        "v142_cleanup_sha256",
+        "v142_cleanup_hash",
+        "v143_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v144_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v144 command-probe scaffold requires lowercase SHA-256")
+        return value
+
+    @field_validator("schedule_task_ids")
+    @classmethod
+    def validate_v144_schedule(cls, values: list[str]) -> list[str]:
+        if tuple(values) != V69_PRIMARY_TASK_IDS:
+            raise ValueError("v144 command-probe scaffold schedule changed")
+        return values
+
+    @model_validator(mode="after")
+    def validate_v144_manifest_hash(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v144 command-probe scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4575,6 +4685,21 @@ def load_v142_cleanup_control_scaffold_manifest(
         raise ConfigurationError("v142 cleanup-control scaffold manifest is invalid") from exc
 
 
+def load_v144_command_probe_control_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV144CommandProbeControlScaffoldManifest:
+    """Load the one-use provider-free v144 command-probe control scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v144 command-probe scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV144CommandProbeControlScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v144 command-probe scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4749,6 +4874,7 @@ __all__ = [
     "DeepSeekHarnessV138FreshExplicitScaffoldManifest",
     "DeepSeekHarnessV140VerifierControlScaffoldManifest",
     "DeepSeekHarnessV142CleanupControlScaffoldManifest",
+    "DeepSeekHarnessV144CommandProbeControlScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4791,6 +4917,7 @@ __all__ = [
     "load_v138_fresh_explicit_scaffold_manifest",
     "load_v140_verifier_control_scaffold_manifest",
     "load_v142_cleanup_control_scaffold_manifest",
+    "load_v144_command_probe_control_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
