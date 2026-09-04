@@ -1155,6 +1155,15 @@ planes, the exact Qwen tokenizer, decision-only masking, at most 65,536 tokens p
 truncation. V134 may list candidates pending an independent v135 audit, but cannot import them,
 start formal collection or training, claim a benchmark score, or authorize production use.
 
+The sole v134 execution stopped during its zero-provider PR-465 command-runtime preflight with the
+allowlisted exception class `DockerImageError`. The public provider marker remained absent and no
+provider episode, call, token, task modification, verifier run, or trajectory occurred, so all five
+tasks remain provider-unconsumed. The v132 data-volume reopen budget was nevertheless consumed when
+the provider DinD started. V134 and that retained volume are frozen. A successor must use fresh
+`/data2` volumes and a new identity, record only an allowlisted content-free image-error subreason,
+and complete an independently audited zero-provider diagnostic before any new provider
+authorization. It may not diagnose by reopening or internally inspecting the v132 data volume.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
