@@ -41,6 +41,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV125BoundedDindReadinessProbeManifest,
     DeepSeekHarnessV127ReadinessGatedScaffoldManifest,
     DeepSeekHarnessV130BoundedCommandScanProbeManifest,
+    DeepSeekHarnessV132BoundedScanScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -64,6 +65,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v125_bounded_dind_readiness_probe_manifest,
     load_v127_readiness_gated_scaffold_manifest,
     load_v130_bounded_command_scan_probe_manifest,
+    load_v132_bounded_scan_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -125,6 +127,9 @@ _V127_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V130_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v130_bounded_command_scan_create_probe_v1.json"
+)
+_V132_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v132_bounded_scan_scaffold_v1.json"
 )
 
 
@@ -1457,3 +1462,78 @@ def test_v130_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV130BoundedCommandScanProbeManifest.model_validate(changed)
+
+
+def test_v132_manifest_freezes_the_bounded_scan_five_task_scaffold() -> None:
+    manifest = load_v132_bounded_scan_scaffold_manifest(_V132_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV132BoundedScanScaffoldManifest)
+    assert tuple(manifest.schedule_task_ids) == V69_PRIMARY_TASK_IDS
+    assert manifest.seed == 502
+    assert manifest.sample_index == 18
+    assert manifest.v130_security_scan_id == (
+        "7e68ef3987f081e8e28af0b5d55f7e1aaeb6aa0336cff4547b62f8304e58d517"
+    )
+    assert manifest.v131_audit_merge == "5c0022521ffd513c726a4d0f8d0a6f02e94eaecf"
+    assert manifest.v131_post_merge_main_run_id == 33846866494
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v132-dind-data"
+    assert manifest.dind_socket_volume == "verigym-deepseek-harness-v132-dind-socket"
+    assert manifest.scanner_create_timeout_seconds == 300
+    assert manifest.scanner_inspect_timeout_seconds == 60
+    assert manifest.scanner_start_timeout_seconds == 180
+    assert manifest.scanner_remove_timeout_seconds == 120
+    assert manifest.scanner_overall_timeout_seconds == 720
+    assert manifest.scanner_all_five_tasks_required is True
+    assert manifest.scanner_nonempty_output_hashing_allowed is False
+    assert manifest.failed_data_volume_policy == "freeze-exact-owned-volume"
+    assert manifest.provider_successor_identity == "deepseek-harness-hwe-v134-official-matrix-v1"
+    assert manifest.predecessor_volume_inspection_allowed is False
+    assert manifest.predecessor_volume_mutation_allowed is False
+    assert manifest.requires_independent_v133_audit is True
+    assert all(
+        getattr(manifest, name) is False
+        for name in (
+            "formal_collection_allowed",
+            "formal_collection_started",
+            "collection_started",
+            "training_started",
+            "production_training_ready",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("scanner_create_timeout_seconds", 60),
+        ("scanner_inspect_timeout_seconds", 30),
+        ("scanner_start_timeout_seconds", 181),
+        ("scanner_remove_timeout_seconds", 30),
+        ("scanner_overall_timeout_seconds", 900),
+        ("scanner_all_five_tasks_required", False),
+        ("scanner_deterministic_owner_cleanup_required", False),
+        ("scanner_nonempty_output_hashing_allowed", True),
+        ("startup_attempt_limit", 2),
+        ("predecessor_volume_inspection_allowed", True),
+        ("predecessor_volume_mutation_allowed", True),
+        ("registry_access_allowed", True),
+        ("partial_archive_allowed", True),
+        ("provider_credentials_available", True),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v132_manifest_rejects_a_broadened_or_changed_scaffold(field: str, value: object) -> None:
+    changed = json.loads(_V132_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV132BoundedScanScaffoldManifest.model_validate(changed)
+
+
+def test_v132_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V132_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV132BoundedScanScaffoldManifest.model_validate(changed)

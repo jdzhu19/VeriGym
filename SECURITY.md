@@ -1109,6 +1109,30 @@ uses a networkless least-capability helper to restore only the fresh backing pat
 confirmed even after scan failure. The probe can publish evidence only, never a provider contract;
 an independent v131 audit is required before deciding any later scaffold or provider authorization.
 
+The separately authorized v132 scaffold applies the v130 bounded command-image scanner to the
+complete frozen five-task v127 schedule. It revalidates the byte-exact v127, v128, v130, and v131
+inputs and uses only fresh v132 bind-backed data and socket volumes under `/data2`. The predecessor
+Docker volumes remain forbidden to inspection or mutation. Every task is read only from its
+completed local archive; registry access and `.partial` archives are forbidden.
+
+For each of Ibex PR-465, PR-1135, PR-1780 and CVA6 PR-2017, PR-2711, the security-scan container
+has a deterministic task-specific name and v132 owner labels. Docker create, each inspect,
+diagnostic start, removal, and the overall scan are bounded at 300, 60, 180, 120, and 720 seconds.
+Receipts retain no raw Docker output or exceptions and do not hash nonempty diagnostic output.
+The command image remains credential-free, Codex-free, non-root, read-only, capability-free,
+resource-bounded, `network=none`, and limited to one writable workspace mount. Official verifier
+containers also remain `network=none`, and command-image results cannot replace official verifier
+results.
+
+V132 remains zero-provider and permits one startup attempt only after its implementation merge and
+all eight post-merge `main` checks. All five tasks must independently satisfy archive, source,
+image, command-toolchain, base-FAIL/reference-PASS, security-scan, and empty inner-inventory gates
+before one atomic scaffold contract can be published. Any partial result is non-authorizing.
+Infrastructure or cleanup ambiguity stops fail-closed and freezes the exact owned data volume for
+independent analysis; it never permits broad deletion. An independent v133 result audit and a
+separate merged v134 authorization are required before any provider request. Collection, SFT
+training, and production readiness remain closed.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
