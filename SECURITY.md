@@ -1022,6 +1022,22 @@ attempt records verifier, protocol, trajectory, infrastructure, security, SFT-ad
 and exact-64K planes independently. Candidate SFT files are published only after all
 planes pass and remain unauthorized for import until an independent result audit.
 
+The separately authorized v121 startup diagnostic is narrower than a zero-provider scaffold. It
+may inspect only the already-local immutable DinD image, create two fresh bind-backed volumes under
+its exact `/data2` identity, and make one bounded outer-DinD startup attempt with `network=none`.
+It cannot read a task archive, import or build an image, create an inner network, start Harness, or
+construct a provider client. Docker control output is capped and reduced in memory to exit state,
+byte counts, validated booleans, and one allowlisted category; raw output, output hashes, container
+identities, environment values, and host paths are not persisted in diagnostic receipts.
+
+V121 cleanup treats the main container, its networkless ownership-restoration helper, and each
+volume as independent resources. A failed `docker run --rm` for the helper is followed by explicit
+container removal, while volume removal is attempted separately and only after exact v121
+owner/role/bind options are revalidated. Cleanup success additionally requires both backing
+directories to be empty, owner-only, and returned to the invoking UID/GID. The frozen v118 volumes
+and backing data are never inspected or mutated. A cleanup ambiguity fails closed and requires an
+independent audit; v121 cannot authorize a provider contract or a five-task successor.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
