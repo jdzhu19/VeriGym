@@ -1238,6 +1238,21 @@ five-task result prevents the atomic scaffold contract. V140 has no provider sur
 produce evidence only for a v141 audit. A later official DeepSeek attempt requires a distinct v142
 authorization after that audit is merged and its post-merge `main` checks pass.
 
+The sole v140 execution completed all five base-FAIL/reference-PASS qualifications, command-image
+v2 scans, runtime-preparation probes, and the synthetic zero-provider Harness initialization. It
+then stopped before atomic contract publication because both the primary and best-effort
+socket-cleanup helpers exceeded the inherited 60-second controller timeout in created state. No
+provider request or model process started. An independently bounded late cleanup validated the two
+exact owner-labelled helpers, removed one duplicate, started the other with a 300-second wait, and
+confirmed its zero exit, auto-removal, empty restored socket backing, socket-volume removal, and
+absence of v140 containers. Only the exact v140 data volume remains frozen under `/data2`.
+
+The late cleanup does not repair or relabel the immutable failed report. V140 and its planned v142
+official-matrix successor are not executable. A provider-free successor must rematerialize into
+fresh `/data2` volumes and may widen only the socket-cleanup control wait to 300 seconds while
+retaining the qualified task, verifier, scanner, runtime, and zero-provider semantics. It requires
+another independent audit before any DeepSeek authorization.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
