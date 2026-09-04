@@ -3044,6 +3044,176 @@ class DeepSeekHarnessV130BoundedCommandScanProbeManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV132BoundedScanScaffoldManifest(StrictModel):
+    """One-use five-task scaffold with the audited bounded command-image scanner."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v132_bounded_scan_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v132-bounded-scan-scaffold-v1"]
+    v127_manifest_sha256: str
+    v127_manifest_hash: str
+    v127_runner_sha256: str
+    v127_authorization_sha256: str
+    v127_source_commit: Literal["def5d9d086203c83e39842534c999c5004dc27f1"]
+    v127_post_merge_main_run_id: Literal[33832410957]
+    v128_audit_sha256: str
+    v128_audit_merge: Literal["dafe5a4fd3a5b64690a9b352ffc93556abba7425"]
+    v128_post_merge_main_run_id: Literal[33835870104]
+    v130_manifest_sha256: str
+    v130_manifest_hash: str
+    v130_runner_sha256: str
+    v130_authorization_sha256: str
+    v130_source_commit: Literal["f0b94f4d27cccc00b49e6ffcf156f0eddfac0983"]
+    v130_post_merge_main_run_id: Literal[33844057740]
+    v130_report_sha256: str
+    v130_report_hash: str
+    v130_security_scan_sha256: str
+    v130_security_scan_id: str
+    v130_scan_diagnostic_hash: str
+    v130_command_lock_sha256: str
+    v130_command_lock_hash: str
+    v130_runtime_receipt_sha256: str
+    v130_runtime_receipt_hash: str
+    v130_cleanup_sha256: str
+    v130_cleanup_hash: str
+    v130_late_cleanup_sha256: str
+    v130_late_cleanup_hash: str
+    v130_evidence_directory_count: Literal[5]
+    v130_evidence_regular_file_count: Literal[15]
+    v130_evidence_symlink_count: Literal[0]
+    v131_audit_sha256: str
+    v131_audit_merge: Literal["5c0022521ffd513c726a4d0f8d0a6f02e94eaecf"]
+    v131_post_merge_main_run_id: Literal[33846866494]
+    v131_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v127-manifest"]
+    schedule_task_ids: list[str] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v132-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v132-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v132/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v132/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v132-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v132-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v132-bounded-scan-scaffold-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v132/socket/docker.sock"
+    ]
+    dind_owner: Literal["deepseek-harness-hwe-v132-bounded-scan-scaffold-v1"]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    readiness_probe_policy: Literal["explicit-three-field-exact-monotonic-deadline-v1"]
+    scanner_policy_source: Literal["exact-audited-v130-policy"]
+    scanner_policy_id: Literal["deepseek-harness-v132-bounded-command-scan-v1"]
+    scanner_container_prefix: Literal["verigym-hwe-v132-command-scan-pr-"]
+    scanner_create_timeout_seconds: Literal[300]
+    scanner_inspect_timeout_seconds: Literal[60]
+    scanner_start_timeout_seconds: Literal[180]
+    scanner_remove_timeout_seconds: Literal[120]
+    scanner_overall_timeout_seconds: Literal[720]
+    scanner_all_five_tasks_required: Literal[True]
+    scanner_deterministic_owner_cleanup_required: Literal[True]
+    scanner_nonempty_output_hashing_allowed: Literal[False]
+    json_info_readiness_allowed: Literal[False]
+    fixed_poll_count_cap_allowed: Literal[False]
+    docker_cli_explicit_binding_required: Literal[True]
+    harness_helper_explicit_binding_required: Literal[True]
+    inherited_docker_environment_allowed: Literal[False]
+    remote_docker_endpoint_allowed: Literal[False]
+    inner_inventory_all_containers_required: Literal[True]
+    inner_inventory_all_volumes_required: Literal[True]
+    host_sidecar_inventory_for_inner_allowed: Literal[False]
+    host_sidecar_network_control_for_inner_allowed: Literal[False]
+    streaming_attach_explicit_binding_required: Literal[True]
+    fresh_bind_backed_volumes_required: Literal[True]
+    predecessor_volume_inspection_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    failed_data_volume_policy: Literal["freeze-exact-owned-volume"]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v134-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    requires_independent_v133_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v127_manifest_sha256",
+        "v127_manifest_hash",
+        "v127_runner_sha256",
+        "v127_authorization_sha256",
+        "v128_audit_sha256",
+        "v130_manifest_sha256",
+        "v130_manifest_hash",
+        "v130_runner_sha256",
+        "v130_authorization_sha256",
+        "v130_report_sha256",
+        "v130_report_hash",
+        "v130_security_scan_sha256",
+        "v130_security_scan_id",
+        "v130_scan_diagnostic_hash",
+        "v130_command_lock_sha256",
+        "v130_command_lock_hash",
+        "v130_runtime_receipt_sha256",
+        "v130_runtime_receipt_hash",
+        "v130_cleanup_sha256",
+        "v130_cleanup_hash",
+        "v130_late_cleanup_sha256",
+        "v130_late_cleanup_hash",
+        "v131_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v132_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v132 scaffold manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_v132_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v132 scaffold manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v132_identity(self) -> Self:
+        if tuple(self.schedule_task_ids) != V71_MATRIX_TASK_IDS:
+            raise ValueError("v132 scaffold schedule changed")
+        if self.scanner_overall_timeout_seconds != sum(
+            (
+                self.scanner_create_timeout_seconds,
+                2 * self.scanner_inspect_timeout_seconds,
+                self.scanner_start_timeout_seconds,
+                self.scanner_remove_timeout_seconds,
+            )
+        ):
+            raise ValueError("v132 scanner operation and overall bounds differ")
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v132 scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -3652,6 +3822,19 @@ def load_v130_bounded_command_scan_probe_manifest(
         raise ConfigurationError("v130 command-scan probe manifest is invalid") from exc
 
 
+def load_v132_bounded_scan_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV132BoundedScanScaffoldManifest:
+    """Load the one-use v132 bounded-scanner five-task scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v132 bounded-scan scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV132BoundedScanScaffoldManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v132 bounded-scan scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -3819,6 +4002,7 @@ __all__ = [
     "DeepSeekHarnessV125BoundedDindReadinessProbeManifest",
     "DeepSeekHarnessV127ReadinessGatedScaffoldManifest",
     "DeepSeekHarnessV130BoundedCommandScanProbeManifest",
+    "DeepSeekHarnessV132BoundedScanScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -3855,6 +4039,7 @@ __all__ = [
     "load_v125_bounded_dind_readiness_probe_manifest",
     "load_v127_readiness_gated_scaffold_manifest",
     "load_v130_bounded_command_scan_probe_manifest",
+    "load_v132_bounded_scan_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
