@@ -324,13 +324,20 @@ def _new_directory(path: Path) -> Path:
     return expanded.resolve(strict=True)
 
 
-def run_zero_model_smoke(*, source: Path, output: Path) -> dict[str, Any]:
+def run_zero_model_smoke(
+    *,
+    source: Path,
+    output: Path,
+    docker_control_timeout_s: int = 60,
+) -> dict[str, Any]:
     """Verify base and reference candidates without opening an untrusted LocalRuntime."""
 
     if output.exists() or output.is_symlink():
         raise ConfigurationError("qualification smoke output already exists")
     output.mkdir(parents=True)
-    suite = HweBenchSuite().with_source(SuiteSourceConfig(source_root=source, variant=VARIANT))
+    suite = HweBenchSuite(docker_control_timeout_s=docker_control_timeout_s).with_source(
+        SuiteSourceConfig(source_root=source, variant=VARIANT)
+    )
     references = list(suite.discover())
     if len(references) != 1:
         raise ConfigurationError("qualified source did not expose exactly one task")

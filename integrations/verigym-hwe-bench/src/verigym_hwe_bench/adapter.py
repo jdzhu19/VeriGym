@@ -102,17 +102,26 @@ class HweBenchSuite(SuiteAdapter):
         license="Apache-2.0",
     )
 
-    def __init__(self, config: SuiteSourceConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: SuiteSourceConfig | None = None,
+        *,
+        docker_control_timeout_s: int = 60,
+    ) -> None:
         self._config = config
+        self._docker_control_timeout_s = docker_control_timeout_s
         self._catalog_cache: Catalog | None = None
         self._snapshot_cache: SuiteSourceSnapshot | None = None
         self._visible_temporaries: list[tempfile.TemporaryDirectory[str]] = []
-        self._verifier = DockerHweVerifier()
+        self._verifier = DockerHweVerifier(docker_control_timeout_s=docker_control_timeout_s)
 
     def with_source(self, config: SuiteSourceConfig) -> HweBenchSuite:
         if config.variant not in {None, VARIANT}:
             raise ConfigurationError(f"HWE-Bench supports only variant {VARIANT!r}")
-        return HweBenchSuite(config.model_copy(update={"variant": VARIANT}, deep=True))
+        return HweBenchSuite(
+            config.model_copy(update={"variant": VARIANT}, deep=True),
+            docker_control_timeout_s=self._docker_control_timeout_s,
+        )
 
     def discover(self, source_root: Path | None = None) -> Iterable[TaskRef]:
         adapter = (
