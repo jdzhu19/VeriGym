@@ -1038,6 +1038,22 @@ directories to be empty, owner-only, and returned to the invoking UID/GID. The f
 and backing data are never inspected or mutated. A cleanup ambiguity fails closed and requires an
 independent audit; v121 cannot authorize a provider contract or a five-task successor.
 
+The separately authorized v123 identity probe is another one-use zero-provider diagnostic. It
+uses only fresh v123 bind-backed volumes and may start one networkless DinD daemon after validating
+the immutable v121 evidence and v122 audit. It determines the inner identity from one explicit
+`docker info` formatter containing only server version, storage driver, and default runtime. The
+older `docker version` formatter is diagnostic-only and cannot make an otherwise exact explicit
+identity fail. Its stderr is mapped in memory to an allowlisted formatter, connection, API, or
+other command category and is never persisted or hashed.
+
+V123 receipts retain only bounded command metadata, selected-field presence/equality booleans,
+and content-free categories. Raw output, exceptions, container identities, host paths, and
+environment values remain prohibited. Cleanup validates the exact v123 owner, role, and bind
+options before removing anything, restores the two empty backing directories to the invoking
+UID/GID at mode `0700`, and fails closed on ambiguity. The probe cannot read tasks, create an inner
+network, run a verifier or Harness, contact a registry/provider, or authorize a five-task scaffold
+without an independent result audit.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

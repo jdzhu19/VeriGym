@@ -37,6 +37,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV115ExplicitNestedDockerSocketScaffoldManifest,
     DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest,
     DeepSeekHarnessV121BoundedDindStartDiagnosticManifest,
+    DeepSeekHarnessV123BoundedDindIdentityProbeManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -56,6 +57,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v115_explicit_nested_docker_socket_scaffold_manifest,
     load_v118_explicit_inner_inventory_scaffold_manifest,
     load_v121_bounded_dind_start_diagnostic_manifest,
+    load_v123_bounded_dind_identity_probe_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -105,6 +107,9 @@ _V118_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V121_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v121_bounded_dind_start_diagnostic_v1.json"
+)
+_V123_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v123_bounded_dind_identity_probe_v1.json"
 )
 
 
@@ -1168,3 +1173,57 @@ def test_v121_manifest_rejects_a_broadened_diagnostic(field: str, value: object)
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV121BoundedDindStartDiagnosticManifest.model_validate(changed)
+
+
+def test_v123_manifest_freezes_one_provider_free_identity_probe() -> None:
+    manifest = load_v123_bounded_dind_identity_probe_manifest(_V123_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV123BoundedDindIdentityProbeManifest)
+    assert manifest.v122_audit_commit == "34a2854afcaa64a6de8a0fbca94ffd50dbb168db"
+    assert manifest.v122_post_merge_main_run_id == 33823592366
+    assert manifest.startup_attempt_limit == 1
+    assert manifest.identity_probe_policy == ("explicit-info-fields-and-legacy-classification-v1")
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v123-dind-data"
+    assert manifest.dind_socket_volume == "verigym-deepseek-harness-v123-dind-socket"
+    assert manifest.predecessor_volume_inspection_allowed is False
+    assert manifest.predecessor_volume_mutation_allowed is False
+    assert manifest.raw_docker_output_persisted is False
+    assert manifest.raw_docker_output_hashed is False
+    assert manifest.task_archive_access_allowed is False
+    assert manifest.task_materialization_allowed is False
+    assert manifest.base_reference_verification_allowed is False
+    assert manifest.harness_controller_allowed is False
+    assert manifest.docker_network_creation_allowed is False
+    assert manifest.registry_access_allowed is False
+    assert manifest.provider_credentials_available is False
+    assert manifest.provider_request_started is False
+    assert manifest.provider_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("startup_attempt_limit", 2),
+        ("predecessor_volume_inspection_allowed", True),
+        ("predecessor_volume_mutation_allowed", True),
+        ("identity_probe_policy", "raw-output-v1"),
+        ("raw_docker_output_persisted", True),
+        ("raw_docker_output_hashed", True),
+        ("task_archive_access_allowed", True),
+        ("task_materialization_allowed", True),
+        ("harness_controller_allowed", True),
+        ("docker_network_creation_allowed", True),
+        ("registry_access_allowed", True),
+        ("provider_credentials_available", True),
+        ("provider_calls", 1),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v123_manifest_rejects_a_broadened_probe(field: str, value: object) -> None:
+    changed = json.loads(_V123_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV123BoundedDindIdentityProbeManifest.model_validate(changed)
