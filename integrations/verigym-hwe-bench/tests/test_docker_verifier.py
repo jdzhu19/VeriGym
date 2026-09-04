@@ -27,6 +27,60 @@ from verigym_hwe_bench.models import (
 )
 
 
+def _simple_verifier_request(tmp_path: Path) -> dict[str, object]:
+    base = tmp_path / "base"
+    candidate = tmp_path / "candidate"
+    base.mkdir()
+    candidate.mkdir()
+    (base / "demo.sv").write_text("module demo; endmodule\n", encoding="utf-8")
+    (candidate / "demo.sv").write_text("module demo; endmodule\n", encoding="utf-8")
+    instance = HweInstance(
+        org="lowRISC",
+        repo="ibex",
+        number=1,
+        title="fixture",
+        problem_statement="fixture",
+        base_commit="1" * 40,
+        fix_patch="diff --git a/demo.sv b/demo.sv\n",
+        tb_script="SECRET_TESTBENCH_CONTENT",
+        modified_files=["demo.sv"],
+        expected_test_ids=["demo"],
+    )
+    image_id = f"sha256:{'2' * 64}"
+    digest = f"sha256:{'3' * 64}"
+    entry = ImageLockEntry(
+        instance_id=instance.instance_id,
+        slug=instance.slug,
+        image_reference="ghcr.io/pku-liang/lowrisc_m_ibex:pr-1",
+        manifest_digest=digest,
+        image_id=image_id,
+        repository_home="/home/ibex",
+        base_commit=instance.base_commit,
+        repository_hash=hash_directory(base),
+        reference_repository_hash="4" * 64,
+        reference_candidate_hash="5" * 64,
+        reference_patch_hash="6" * 64,
+        verifier_payload_hash="7" * 64,
+        task_bundle_hash="8" * 64,
+        license_file_hash="9" * 64,
+    )
+    node = VerifierNode(
+        id="run_hidden_regression",
+        plugin="hwe_bench.simulate",
+        visibility=ToolVisibility.VERIFIER_ONLY,
+        request={"identity": "frozen"},
+        timeout_s=10,
+    )
+    return {
+        "instance": instance,
+        "entry": entry,
+        "node": node,
+        "base_repository": base,
+        "candidate_repository": candidate,
+        "artifact_root": tmp_path / "artifacts",
+    }
+
+
 def test_docker_cli_drops_incompatible_dynamic_loader_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -65,6 +119,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     airgapped: bool,
 ) -> None:
     bind_source_modes: dict[str, int] = {}
+    observed_timeouts: list[tuple[tuple[str, ...], int]] = []
     base = tmp_path / "base"
     candidate = tmp_path / "candidate"
     base.mkdir()
@@ -103,7 +158,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     )
 
     def fake_run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
-        del timeout_s
+        observed_timeouts.append((tuple(argv[:3]), timeout_s))
         if argv[:3] == ["docker", "image", "inspect"]:
             payload = {"Id": image_id, "RepoDigests": [] if airgapped else [f"name@{digest}"]}
             return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
@@ -139,7 +194,7 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     )
     previous_umask = os.umask(0o077)
     try:
-        result = DockerHweVerifier().evaluate(
+        result = DockerHweVerifier(docker_control_timeout_s=300).evaluate(
             instance=instance,
             entry=entry,
             node=node,
@@ -156,6 +211,17 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     assert result.metadata["image_environment_required"] is False
     assert result.metadata["seccomp_profile"] == "builtin"
     assert result.metadata["seccomp_unconfined"] is False
+    assert result.metadata["docker_control_stage"] == "complete"
+    assert result.metadata["docker_control_timeout_s"] == 300
+    assert result.metadata["verifier_timeout_s"] == 10
+    assert result.metadata["container_removed"] is True
+    assert (("docker", "image", "inspect"), 300) in observed_timeouts
+    assert any(
+        command[:2] == ("docker", "create") and timeout == 300
+        for command, timeout in observed_timeouts
+    )
+    assert (("docker", "start", "--attach"), 10) in observed_timeouts
+    assert (("docker", "rm", "--force"), 300) in observed_timeouts
     assert bind_source_modes == {
         "/home/verigym-candidate.patch": 0o644,
         "/home/verigym-hwe-run.sh": 0o644,
@@ -163,6 +229,77 @@ def test_verifier_parses_pass_without_persisting_hidden_output(
     }
     assert "SECRET_TESTBENCH_CONTENT" not in persisted
     assert "SECRET_RUNTIME_OUTPUT" not in persisted
+
+
+@pytest.mark.parametrize("timeout_s", [True, 0, 301, 1.5])
+def test_verifier_rejects_an_invalid_docker_control_timeout(timeout_s: object) -> None:
+    with pytest.raises(ValueError, match="integer from 1 through 300"):
+        DockerHweVerifier(docker_control_timeout_s=timeout_s)  # type: ignore[arg-type]
+
+
+def test_verifier_records_a_content_free_image_inspect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
+        assert argv[:3] == ["docker", "image", "inspect"]
+        assert timeout_s == 300
+        raise subprocess.TimeoutExpired(argv, timeout_s, b"SENSITIVE_STDOUT", b"SENSITIVE_STDERR")
+
+    monkeypatch.setattr(docker_verifier, "_run", fake_run)
+    result = DockerHweVerifier(docker_control_timeout_s=300).evaluate(
+        **_simple_verifier_request(tmp_path)  # type: ignore[arg-type]
+    )
+    persisted = (tmp_path / "artifacts/run_hidden_regression/result.json").read_text()
+
+    assert result.status == VerifierStatus.ERROR
+    assert result.error_category == ErrorCategory.TIMEOUT
+    assert result.metadata == {
+        "docker_control_stage": "image_inspect",
+        "docker_control_timeout_s": 300,
+    }
+    assert "SENSITIVE_STDOUT" not in persisted
+    assert "SENSITIVE_STDERR" not in persisted
+    assert json.loads(persisted)["stdout_sha256"] == hash_bytes(b"")
+
+
+def test_verifier_records_a_content_free_container_create_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    request = _simple_verifier_request(tmp_path)
+    entry = request["entry"]
+    assert isinstance(entry, ImageLockEntry)
+
+    def fake_run(argv: list[str], *, timeout_s: int = 60) -> subprocess.CompletedProcess[bytes]:
+        assert timeout_s == 300
+        if argv[:3] == ["docker", "image", "inspect"]:
+            payload = {
+                "Id": entry.image_id,
+                "RepoDigests": [f"name@{entry.manifest_digest}"],
+            }
+            return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
+        if argv[:2] == ["docker", "create"]:
+            return subprocess.CompletedProcess(argv, 1, b"SENSITIVE_STDOUT", b"SENSITIVE_STDERR")
+        if argv[:3] == ["docker", "rm", "--force"]:
+            return subprocess.CompletedProcess(argv, 1, b"", b"")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(docker_verifier, "_run", fake_run)
+    result = DockerHweVerifier(docker_control_timeout_s=300).evaluate(
+        **request  # type: ignore[arg-type]
+    )
+    persisted = (tmp_path / "artifacts/run_hidden_regression/result.json").read_text()
+
+    assert result.status == VerifierStatus.ERROR
+    assert result.error_category == ErrorCategory.SANDBOX_ERROR
+    assert result.metadata == {
+        "docker_control_stage": "container_create",
+        "docker_control_timeout_s": 300,
+    }
+    assert "SENSITIVE_STDOUT" not in persisted
+    assert "SENSITIVE_STDERR" not in persisted
+    assert json.loads(persisted)["stderr_sha256"] == hash_bytes(b"")
 
 
 def test_runner_uses_repository_specific_base_commit_marker(tmp_path: Path) -> None:

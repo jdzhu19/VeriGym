@@ -1221,6 +1221,23 @@ successor must use fresh `/data2` resources, record separate content-free Docker
 stages, and may widen only the cold-VFS Docker control bound while leaving official verifier
 semantics and test timeout unchanged.
 
+The separately authorized v140 verifier-control scaffold is that provider-free successor. It
+uses fresh bind-backed v140 VFS data/socket volumes under `/data2`, imports only completed local
+archives through the exact nested Unix socket, and never opens the frozen v138 volume. Docker
+image inspection, verifier cache-volume creation/removal, verifier-container creation/removal,
+and cleanup have a distinct maximum 300-second control bound. The official verifier execution
+retains its unchanged 900-second test timeout, task script, image binding, result semantics,
+resource profile, and `network=none` isolation.
+
+Every successful base and reference verifier result must record the completed control stage, both
+timeout values, network isolation, and successful container cleanup. The campaign promotes only
+allowlisted status, category, numeric, and boolean fields into a self-hashed control diagnostic;
+raw output and nonempty output hashes are excluded. Any control timeout, cleanup ambiguity,
+base infrastructure error, missing reference PASS, import failure, scan failure, or partial
+five-task result prevents the atomic scaffold contract. V140 has no provider surface and can
+produce evidence only for a v141 audit. A later official DeepSeek attempt requires a distinct v142
+authorization after that audit is merged and its post-merge `main` checks pass.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

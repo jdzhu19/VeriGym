@@ -3674,6 +3674,110 @@ class DeepSeekHarnessV138FreshExplicitScaffoldManifest(
         return value
 
 
+class DeepSeekHarnessV140VerifierControlScaffoldManifest(
+    DeepSeekHarnessV138FreshExplicitScaffoldManifest
+):
+    """Fresh five-task scaffold with a cold-VFS verifier control bound."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v140_verifier_control_scaffold_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v140-verifier-control-scaffold-v1"
+    ]
+    v138_manifest_sha256: str
+    v138_manifest_hash: str
+    v138_runner_sha256: str
+    v138_authorization_sha256: str
+    v138_source_commit: Literal["556ff84b0fef7a4d1c728e98825f55d416db92b3"]
+    v138_post_merge_main_run_id: Literal[33863712668]
+    v138_post_merge_main_all_eight_classes_passed: Literal[True]
+    v138_report_sha256: str
+    v138_report_hash: str
+    v138_import_diagnostic_sha256: str
+    v138_import_diagnostic_hash: str
+    v138_base_result_sha256: str
+    v138_reference_result_sha256: str
+    v138_smoke_report_sha256: str
+    v138_cleanup_sha256: str
+    v138_cleanup_hash: str
+    v139_audit_sha256: str
+    v139_audit_commit: Literal["a908b8f8724added9c4fa15eded520391570ba4f"]
+    v139_audit_merge: Literal["6837518e4014cd3431e3b6b40a42282c2fbbddc8"]
+    v139_post_merge_main_run_id: Literal[33866159895]
+    v139_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_source: Literal["exact-audited-v138-schedule"]  # type: ignore[assignment]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v140-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v140-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v140/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v140/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v140-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v140-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v140-verifier-control-scaffold-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v140/socket/docker.sock"
+    ]
+    dind_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v140-verifier-control-scaffold-v1"
+    ]
+    scanner_policy_source: Literal[  # type: ignore[assignment]
+        "exact-audited-v138-policy-with-fresh-identity"
+    ]
+    scanner_policy_id: Literal[  # type: ignore[assignment]
+        "deepseek-harness-v140-bounded-command-scan-v1"
+    ]
+    scanner_container_prefix: Literal[  # type: ignore[assignment]
+        "verigym-hwe-v140-command-scan-pr-"
+    ]
+    verifier_docker_control_timeout_seconds: Literal[300]
+    official_verifier_test_timeout_seconds: Literal[900]
+    verifier_control_stage_metadata_required: Literal[True]
+    verifier_control_raw_output_allowed: Literal[False]
+    v138_volume_inspection_allowed: Literal[False]
+    v138_volume_mutation_allowed: Literal[False]
+    provider_successor_identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v142-official-matrix-v1"
+    ]
+    requires_independent_v139_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v141_audit: Literal[True]
+
+    @field_validator(
+        "v138_manifest_sha256",
+        "v138_manifest_hash",
+        "v138_runner_sha256",
+        "v138_authorization_sha256",
+        "v138_report_sha256",
+        "v138_report_hash",
+        "v138_import_diagnostic_sha256",
+        "v138_import_diagnostic_hash",
+        "v138_base_result_sha256",
+        "v138_reference_result_sha256",
+        "v138_smoke_report_sha256",
+        "v138_cleanup_sha256",
+        "v138_cleanup_hash",
+        "v139_audit_sha256",
+    )
+    @classmethod
+    def validate_v140_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v140 verifier-control scaffold requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -4336,6 +4440,21 @@ def load_v138_fresh_explicit_scaffold_manifest(
         raise ConfigurationError("v138 fresh scaffold manifest is invalid") from exc
 
 
+def load_v140_verifier_control_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV140VerifierControlScaffoldManifest:
+    """Load the one-use provider-free v140 verifier-control scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v140 verifier-control scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV140VerifierControlScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v140 verifier-control scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -4508,6 +4627,7 @@ __all__ = [
     "DeepSeekHarnessV134TaskBinding",
     "DeepSeekHarnessV136CommandRuntimeDiagnosticManifest",
     "DeepSeekHarnessV138FreshExplicitScaffoldManifest",
+    "DeepSeekHarnessV140VerifierControlScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -4548,6 +4668,7 @@ __all__ = [
     "load_v134_official_matrix_manifest",
     "load_v136_command_runtime_diagnostic_manifest",
     "load_v138_fresh_explicit_scaffold_manifest",
+    "load_v140_verifier_control_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",

@@ -36,6 +36,7 @@ _CACHE_READY = "VERIGYM_HWE_CACHE_SEED_OK"
 _TESTBENCH_STARTED = "VERIGYM_HWE_TESTBENCH_STARTED"
 _SETUP_FAILURE = re.compile(r"^VERIGYM_HWE_SETUP_FAILURE:(?P<stage>[a-z_]{1,64})$")
 _MARKER = re.compile(r"^TEST:\s*(.{1,256}?)\s*\.\.\.\s*(PASS|FAIL|SKIP)\s*$")
+_MAX_DOCKER_CONTROL_TIMEOUT_SECONDS = 300
 
 _RUNNER = """#!/bin/bash
 set -Eeuo pipefail
@@ -153,20 +154,21 @@ def _write_bind_file(path: Path, content: str) -> None:
     path.chmod(0o644)
 
 
-def _remove_container(name: str) -> None:
+def _remove_container(name: str, *, timeout_s: int = 30) -> bool:
     try:
-        _run(["docker", "rm", "--force", name], timeout_s=30)
+        removed = _run(["docker", "rm", "--force", name], timeout_s=timeout_s)
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+        return False
+    return removed.returncode == 0
 
 
-def _remove_volume(name: str) -> bool:
+def _remove_volume(name: str, *, timeout_s: int = 30) -> bool:
     """Remove one verifier-owned volume after Docker releases its final mount."""
 
     attempts = 3
     for attempt in range(attempts):
         try:
-            removed = _run(["docker", "volume", "rm", name], timeout_s=30)
+            removed = _run(["docker", "volume", "rm", name], timeout_s=timeout_s)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
         if removed.returncode == 0:
@@ -225,6 +227,21 @@ def _setup_failure_stage(output: str) -> str | None:
 class DockerHweVerifier:
     """Execute a candidate without exposing Docker or hidden scripts to the agent runtime."""
 
+    def __init__(self, *, docker_control_timeout_s: int = 60) -> None:
+        if (
+            isinstance(docker_control_timeout_s, bool)
+            or not isinstance(docker_control_timeout_s, int)
+            or not 1 <= docker_control_timeout_s <= _MAX_DOCKER_CONTROL_TIMEOUT_SECONDS
+        ):
+            raise ValueError("Docker control timeout must be an integer from 1 through 300")
+        self._docker_control_timeout_s = docker_control_timeout_s
+
+    def _control_metadata(self, stage: str) -> dict[str, object]:
+        return {
+            "docker_control_stage": stage,
+            "docker_control_timeout_s": self._docker_control_timeout_s,
+        }
+
     def evaluate(
         self,
         *,
@@ -256,7 +273,7 @@ class DockerHweVerifier:
         try:
             inspection = _run(
                 ["docker", "image", "inspect", entry.image_id, "--format", "{{json .}}"],
-                timeout_s=30,
+                timeout_s=self._docker_control_timeout_s,
             )
         except FileNotFoundError:
             return self._result(
@@ -266,6 +283,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.TOOL_NOT_FOUND,
                 message="Docker client is unavailable for the selected HWE-Bench image",
+                metadata=self._control_metadata("image_inspect"),
             )
         except subprocess.TimeoutExpired:
             return self._result(
@@ -275,6 +293,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.TIMEOUT,
                 message="Docker image identity inspection timed out",
+                metadata=self._control_metadata("image_inspect"),
             )
         if inspection.returncode != 0:
             return self._result(
@@ -284,6 +303,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.TOOL_NOT_FOUND,
                 message="The digest-locked HWE-Bench image is not available locally",
+                metadata=self._control_metadata("image_inspect"),
             )
         try:
             image = json.loads(inspection.stdout)
@@ -295,6 +315,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.PARSER_ERROR,
                 message="Docker returned malformed image identity metadata",
+                metadata=self._control_metadata("image_inspect"),
             )
         if not isinstance(image, dict) or not isinstance(image.get("RepoDigests"), list):
             return self._result(
@@ -304,6 +325,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.PARSER_ERROR,
                 message="Docker image identity metadata has an unexpected shape",
+                metadata=self._control_metadata("image_inspect"),
             )
         repository_digests = image["RepoDigests"]
         if any(not isinstance(value, str) for value in repository_digests):
@@ -314,6 +336,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.PARSER_ERROR,
                 message="Docker returned malformed repository digest metadata",
+                metadata=self._control_metadata("image_inspect"),
             )
         manifest_digest_observed = bool(repository_digests)
         if image.get("Id") != entry.image_id or (
@@ -327,6 +350,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.UNSUPPORTED_VERSION,
                 message="The local HWE-Bench image differs from the frozen image lock",
+                metadata=self._control_metadata("image_inspect"),
             )
         patch = build_repository_patch(base_repository, candidate_repository)
         artifact_root.parent.mkdir(parents=True, exist_ok=True)
@@ -359,10 +383,13 @@ class DockerHweVerifier:
                             "verigym.owner=hwe-verifier",
                             cache_volume,
                         ],
-                        timeout_s=60,
+                        timeout_s=self._docker_control_timeout_s,
                     )
                 except subprocess.TimeoutExpired:
-                    _remove_volume(cache_volume)
+                    _remove_volume(
+                        cache_volume,
+                        timeout_s=self._docker_control_timeout_s,
+                    )
                     return self._result(
                         node=node,
                         artifact_dir=artifact_dir,
@@ -370,9 +397,13 @@ class DockerHweVerifier:
                         status=VerifierStatus.ERROR,
                         category=ErrorCategory.TIMEOUT,
                         message="HWE-Bench verifier cache volume creation timed out",
+                        metadata=self._control_metadata("cache_volume_create"),
                     )
                 if volume_created.returncode != 0:
-                    _remove_volume(cache_volume)
+                    _remove_volume(
+                        cache_volume,
+                        timeout_s=self._docker_control_timeout_s,
+                    )
                     return self._result(
                         node=node,
                         artifact_dir=artifact_dir,
@@ -380,8 +411,7 @@ class DockerHweVerifier:
                         status=VerifierStatus.ERROR,
                         category=ErrorCategory.SANDBOX_ERROR,
                         message="HWE-Bench verifier cache volume creation failed",
-                        stdout=volume_created.stdout,
-                        stderr=volume_created.stderr,
+                        metadata=self._control_metadata("cache_volume_create"),
                     )
                 cache_mounts = [
                     "--mount",
@@ -422,9 +452,10 @@ class DockerHweVerifier:
                 "/home/verigym-hwe-run.sh",
             ]
             cache_volume_removed = cache_volume is None
+            container_removed = False
             try:
                 try:
-                    created = _run(create, timeout_s=60)
+                    created = _run(create, timeout_s=self._docker_control_timeout_s)
                 except subprocess.TimeoutExpired:
                     return self._result(
                         node=node,
@@ -433,6 +464,7 @@ class DockerHweVerifier:
                         status=VerifierStatus.ERROR,
                         category=ErrorCategory.TIMEOUT,
                         message="HWE-Bench verifier container creation timed out",
+                        metadata=self._control_metadata("container_create"),
                     )
                 if created.returncode != 0:
                     return self._result(
@@ -442,13 +474,13 @@ class DockerHweVerifier:
                         status=VerifierStatus.ERROR,
                         category=ErrorCategory.SANDBOX_ERROR,
                         message="HWE-Bench verifier container creation failed",
-                        stdout=created.stdout,
-                        stderr=created.stderr,
+                        metadata=self._control_metadata("container_create"),
                     )
                 try:
+                    verifier_timeout_s = node.timeout_s or 900
                     executed = _run(
                         ["docker", "start", "--attach", container],
-                        timeout_s=node.timeout_s or 900,
+                        timeout_s=verifier_timeout_s,
                     )
                 except subprocess.TimeoutExpired as exc:
                     return self._result(
@@ -460,11 +492,32 @@ class DockerHweVerifier:
                         message="HWE-Bench verifier timed out",
                         stdout=exc.stdout or b"",
                         stderr=exc.stderr or b"",
+                        metadata={
+                            "docker_control_stage": "verifier_execute",
+                            "docker_control_timeout_s": self._docker_control_timeout_s,
+                            "verifier_timeout_s": verifier_timeout_s,
+                        },
                     )
             finally:
-                _remove_container(container)
+                container_removed = _remove_container(
+                    container,
+                    timeout_s=self._docker_control_timeout_s,
+                )
                 if cache_volume is not None:
-                    cache_volume_removed = _remove_volume(cache_volume)
+                    cache_volume_removed = _remove_volume(
+                        cache_volume,
+                        timeout_s=self._docker_control_timeout_s,
+                    )
+        if not container_removed:
+            return self._result(
+                node=node,
+                artifact_dir=artifact_dir,
+                started=started,
+                status=VerifierStatus.ERROR,
+                category=ErrorCategory.SANDBOX_ERROR,
+                message="HWE-Bench verifier container cleanup failed",
+                metadata=self._control_metadata("container_remove"),
+            )
         if not cache_volume_removed:
             return self._result(
                 node=node,
@@ -473,6 +526,7 @@ class DockerHweVerifier:
                 status=VerifierStatus.ERROR,
                 category=ErrorCategory.SANDBOX_ERROR,
                 message="HWE-Bench verifier cache volume cleanup failed",
+                metadata=self._control_metadata("cache_volume_remove"),
             )
         stdout = executed.stdout or b""
         stderr = executed.stderr or b""
@@ -492,7 +546,11 @@ class DockerHweVerifier:
             "dependency_inventory_hash": content_hash(dependencies),
             "ephemeral_cache_volume": bool(dependencies),
             "cache_volume_removed": cache_volume_removed,
+            "container_removed": container_removed,
+            "docker_control_stage": "complete",
+            "docker_control_timeout_s": self._docker_control_timeout_s,
             "output_persisted": False,
+            "verifier_timeout_s": node.timeout_s or 900,
         }
         if dependencies and _CACHE_READY not in combined_output:
             return self._result(

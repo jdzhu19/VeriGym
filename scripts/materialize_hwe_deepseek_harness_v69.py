@@ -322,7 +322,11 @@ def _materialize_task(
         else source_binding_runner(source, task)
     )
     smoke_root = root / "qualification" / f"pr-{task.pr_number}"
-    smoke = run_zero_model_smoke(source=source, output=smoke_root)
+    smoke = run_zero_model_smoke(
+        source=source,
+        output=smoke_root,
+        docker_control_timeout_s=docker_control_timeout_s,
+    )
     if not zero_model_infrastructure_valid(smoke) or not zero_model_fail_to_pass_eligible(smoke):
         raise ConfigurationError("v69 task did not reproduce base-FAIL/reference-PASS")
     artifacts = _inventory_toolchain(
