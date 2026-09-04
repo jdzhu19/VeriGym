@@ -2622,6 +2622,140 @@ class DeepSeekHarnessV123BoundedDindIdentityProbeManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV125BoundedDindReadinessProbeManifest(StrictModel):
+    """One-use, provider-free probe with an exact explicit DinD readiness predicate."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v125_bounded_dind_readiness_probe_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v125-bounded-dind-readiness-probe-v1"]
+    v123_manifest_sha256: str
+    v123_manifest_hash: str
+    v123_runner_sha256: str
+    v123_authorization_sha256: str
+    v123_authorization_merge: Literal["2489465550af18c994e449eecc2bdd8ae142c5e6"]
+    v123_post_merge_main_run_id: Literal[33825382724]
+    v123_report_sha256: str
+    v123_report_hash: str
+    v123_probe_sha256: str
+    v123_probe_hash: str
+    v123_cleanup_sha256: str
+    v123_cleanup_hash: str
+    v123_host_image_sha256: str
+    v123_host_image_hash: str
+    v123_headroom_sha256: str
+    v123_headroom_hash: str
+    v123_volume_setup_sha256: str
+    v123_volume_setup_hash: str
+    v123_predecessor_sha256: str
+    v123_predecessor_hash: str
+    v123_evidence_directory_count: Literal[1]
+    v123_evidence_regular_file_count: Literal[8]
+    v123_evidence_symlink_count: Literal[0]
+    v124_audit_sha256: str
+    v124_audit_commit: Literal["013154e899b4a0622dabf75f51d87a309d1b5b3b"]
+    v124_post_merge_main_run_id: Literal[33826887799]
+    v124_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v125-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v125-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v125/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v125/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v125-control"
+    ]
+    diagnostic_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v125-scratch"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v125-bounded-dind-readiness-probe-v1"
+    ]
+    predecessor_volume_inspection_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    cleanup_command_timeout_seconds: Literal[60]
+    maximum_diagnostic_output_bytes: Literal[65536]
+    readiness_probe_policy: Literal["explicit-three-field-exact-monotonic-deadline-v1"]
+    json_info_readiness_allowed: Literal[False]
+    fixed_poll_count_cap_allowed: Literal[False]
+    explicit_readiness_requires_empty_stderr: Literal[True]
+    explicit_readiness_requires_three_values: Literal[True]
+    explicit_readiness_requires_exact_identity: Literal[True]
+    raw_docker_output_persisted: Literal[False]
+    raw_docker_output_hashed: Literal[False]
+    raw_exception_persisted: Literal[False]
+    container_identity_persisted: Literal[False]
+    host_paths_persisted_in_diagnostics: Literal[False]
+    fresh_bind_backed_volumes_required: Literal[True]
+    scaffold_outer_network: Literal["none"]
+    task_archive_access_allowed: Literal[False]
+    task_materialization_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    harness_controller_allowed: Literal[False]
+    docker_network_creation_allowed: Literal[False]
+    registry_access_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_started: Literal[False]
+    provider_calls: Literal[0]
+    requires_independent_result_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v123_manifest_sha256",
+        "v123_manifest_hash",
+        "v123_runner_sha256",
+        "v123_authorization_sha256",
+        "v123_report_sha256",
+        "v123_report_hash",
+        "v123_probe_sha256",
+        "v123_probe_hash",
+        "v123_cleanup_sha256",
+        "v123_cleanup_hash",
+        "v123_host_image_sha256",
+        "v123_host_image_hash",
+        "v123_headroom_sha256",
+        "v123_headroom_hash",
+        "v123_volume_setup_sha256",
+        "v123_volume_setup_hash",
+        "v123_predecessor_sha256",
+        "v123_predecessor_hash",
+        "v124_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v125_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v125 readiness-probe manifest requires lowercase SHA-256")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_v125_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v125 readiness-probe manifest requires immutable image digests")
+        return value
+
+    @model_validator(mode="after")
+    def validate_v125_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v125 readiness-probe manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -3185,6 +3319,21 @@ def load_v123_bounded_dind_identity_probe_manifest(
         raise ConfigurationError("v123 DinD identity-probe manifest is invalid") from exc
 
 
+def load_v125_bounded_dind_readiness_probe_manifest(
+    path: Path,
+) -> DeepSeekHarnessV125BoundedDindReadinessProbeManifest:
+    """Load the one-use v125 provider-free DinD readiness-probe manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v125 DinD readiness-probe manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV125BoundedDindReadinessProbeManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v125 DinD readiness-probe manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -3349,6 +3498,7 @@ __all__ = [
     "DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest",
     "DeepSeekHarnessV121BoundedDindStartDiagnosticManifest",
     "DeepSeekHarnessV123BoundedDindIdentityProbeManifest",
+    "DeepSeekHarnessV125BoundedDindReadinessProbeManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -3382,6 +3532,7 @@ __all__ = [
     "load_v118_explicit_inner_inventory_scaffold_manifest",
     "load_v121_bounded_dind_start_diagnostic_manifest",
     "load_v123_bounded_dind_identity_probe_manifest",
+    "load_v125_bounded_dind_readiness_probe_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",

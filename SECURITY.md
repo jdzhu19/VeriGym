@@ -1054,6 +1054,21 @@ UID/GID at mode `0700`, and fails closed on ambiguity. The probe cannot read tas
 network, run a verifier or Harness, contact a registry/provider, or authorize a five-task scaffold
 without an independent result audit.
 
+The separately authorized v125 readiness probe consumes the audited v123 false-positive result and
+uses only fresh v125 bind-backed volumes. Its sole inner readiness command formats server version,
+storage driver, and default runtime explicitly. Exit zero is insufficient: readiness requires no
+timeout or truncation, empty stderr, exactly three parsed values, and exact `23.0.6`, `vfs`, and
+`runc` matches. Incomplete or connection-failure responses remain transient until a monotonic
+120-second deadline with no smaller fixed poll-count cap. A clean complete response with different
+values fails immediately as an identity mismatch.
+
+V125 remains a one-start, zero-provider diagnostic with `network=none`. It may not read a task or
+archive, materialize an image, start a verifier, Harness controller, or model, create a Docker
+network, or access a registry. Receipts retain only bounded counts, equality booleans, timing state,
+and allowlisted categories. Raw output, exceptions, container identities, environment values, and
+host paths are not persisted or hashed. Exact owner, role, and bind validation precedes cleanup;
+only an independent v126 audit may authorize any five-task successor.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

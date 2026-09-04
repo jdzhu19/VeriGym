@@ -38,6 +38,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV118ExplicitInnerInventoryScaffoldManifest,
     DeepSeekHarnessV121BoundedDindStartDiagnosticManifest,
     DeepSeekHarnessV123BoundedDindIdentityProbeManifest,
+    DeepSeekHarnessV125BoundedDindReadinessProbeManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -58,6 +59,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v118_explicit_inner_inventory_scaffold_manifest,
     load_v121_bounded_dind_start_diagnostic_manifest,
     load_v123_bounded_dind_identity_probe_manifest,
+    load_v125_bounded_dind_readiness_probe_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -110,6 +112,9 @@ _V121_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V123_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v123_bounded_dind_identity_probe_v1.json"
+)
+_V125_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v125_bounded_dind_readiness_probe_v1.json"
 )
 
 
@@ -1227,3 +1232,70 @@ def test_v123_manifest_rejects_a_broadened_probe(field: str, value: object) -> N
     )
     with pytest.raises(ValueError):
         DeepSeekHarnessV123BoundedDindIdentityProbeManifest.model_validate(changed)
+
+
+def test_v125_manifest_freezes_one_exact_provider_free_readiness_probe() -> None:
+    manifest = load_v125_bounded_dind_readiness_probe_manifest(_V125_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV125BoundedDindReadinessProbeManifest)
+    assert manifest.v124_audit_commit == "013154e899b4a0622dabf75f51d87a309d1b5b3b"
+    assert manifest.v124_post_merge_main_run_id == 33826887799
+    assert manifest.startup_attempt_limit == 1
+    assert manifest.readiness_timeout_seconds == 120
+    assert manifest.readiness_command_timeout_seconds == 5
+    assert manifest.readiness_poll_interval_seconds == 1
+    assert manifest.readiness_probe_policy == ("explicit-three-field-exact-monotonic-deadline-v1")
+    assert manifest.json_info_readiness_allowed is False
+    assert manifest.fixed_poll_count_cap_allowed is False
+    assert manifest.explicit_readiness_requires_empty_stderr is True
+    assert manifest.explicit_readiness_requires_three_values is True
+    assert manifest.explicit_readiness_requires_exact_identity is True
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v125-dind-data"
+    assert manifest.dind_socket_volume == "verigym-deepseek-harness-v125-dind-socket"
+    assert manifest.predecessor_volume_inspection_allowed is False
+    assert manifest.predecessor_volume_mutation_allowed is False
+    assert manifest.raw_docker_output_persisted is False
+    assert manifest.raw_docker_output_hashed is False
+    assert manifest.task_archive_access_allowed is False
+    assert manifest.task_materialization_allowed is False
+    assert manifest.harness_controller_allowed is False
+    assert manifest.docker_network_creation_allowed is False
+    assert manifest.registry_access_allowed is False
+    assert manifest.provider_credentials_available is False
+    assert manifest.provider_request_started is False
+    assert manifest.provider_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("startup_attempt_limit", 2),
+        ("readiness_timeout_seconds", 6),
+        ("readiness_command_timeout_seconds", 30),
+        ("json_info_readiness_allowed", True),
+        ("fixed_poll_count_cap_allowed", True),
+        ("explicit_readiness_requires_empty_stderr", False),
+        ("explicit_readiness_requires_three_values", False),
+        ("explicit_readiness_requires_exact_identity", False),
+        ("predecessor_volume_inspection_allowed", True),
+        ("predecessor_volume_mutation_allowed", True),
+        ("raw_docker_output_persisted", True),
+        ("raw_docker_output_hashed", True),
+        ("task_archive_access_allowed", True),
+        ("task_materialization_allowed", True),
+        ("harness_controller_allowed", True),
+        ("docker_network_creation_allowed", True),
+        ("registry_access_allowed", True),
+        ("provider_credentials_available", True),
+        ("provider_calls", 1),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v125_manifest_rejects_a_broadened_probe(field: str, value: object) -> None:
+    changed = json.loads(_V125_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV125BoundedDindReadinessProbeManifest.model_validate(changed)
