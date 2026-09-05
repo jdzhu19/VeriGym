@@ -305,3 +305,29 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V174_OPEN_TOOLCHAIN_REPAIR=1 \
 A successful result remains pending an independent v175 audit. The PR-1816 DeepSeek research
 canary moves to v176 or later and remains unauthorized. Formal collection, SFT, training,
 candidate mixing, and production readiness remain false.
+
+V174 subsequently passed the corrected preflight but its generic offline Icarus builder command
+returned nonzero before DinD, task-image import, source preparation, either PR-1816 route, or any
+model/provider boundary. The quiet frozen helper did not retain enough output to assign a unique
+cause. V175 sealed its five-file result with zero task and provider consumption; do not retry
+v174.
+
+V176 is the fresh zero-provider successor. It binds the complete v174 result and v175 audit, uses
+new `/data2` output, scratch, DinD backing, volume, builder, final-image, and scan identities, and
+changes the generic builder Dockerfile only by removing its external frontend directive. The
+builder still runs with `--network none --pull=false`; success therefore requires the complete
+frozen closure to be local. Its controller retains no raw logs and emits only a one-MiB-bounded,
+credential-scanned category, byte counts, and safe output hashes.
+
+Run v176 exactly once from clean merged `main` after all eight post-merge workflow classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V176_OPEN_TOOLCHAIN_REPAIR=1 \
+  python scripts/launch_hwe_deepseek_harness_v176_open_toolchain_repair.py \
+  --post-merge-main-run-id <successful-v176-main-run-id>
+```
+
+Both PR-1816 routes must still independently reproduce base-FAIL/reference-PASS before the atomic
+qualification contract is published. A successful result requires a v177 audit. The DeepSeek
+research canary is v178 or later and remains unauthorized here; collection, candidate/SFT mixing,
+training, and production readiness remain false.
