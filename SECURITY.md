@@ -1401,6 +1401,22 @@ Harness, model, registry, or provider surface. A complete atomic scaffold contra
 non-authorizing until an independent v153 audit is merged and eight post-merge `main` check classes
 pass.
 
+The separately authorized v154 matrix is the one-use replacement for the frozen v150 execution.
+It preserves the exact v150 task order, seed/sample, provider protocol, command images, official
+verifiers, exact-tokenizer admission, consumption, stopping, and network controls. It additionally
+binds the complete v150 failure and cleanup-recovery evidence, the v151 audit, all eleven v152
+scaffold evidence files, the v153 audit, and their green post-merge `main` gates. Neither v150 nor
+v152 may be rerun or relabelled.
+
+Before any Docker access, v154 persists an absolute host-root headroom receipt requiring at least
+4 GiB and 100,000 available inodes. A rejected gate cannot invoke even Docker cleanup and stops
+with zero provider calls and zero v148 data-volume reopens. After a passed gate, v154 may reopen
+the exact retained v148 data volume once while creating a fresh v154-owned socket volume and fresh
+socket, control, runtime, output, and receipt identities under `/data2`. The outer DinD sidecar and
+inner provider controller alone may use `verigym-hwe-net`; agent command images and official
+verifiers remain `network=none`. The v154 result stays pending an independent v155 audit and cannot
+start formal collection, candidate import, SFT, GPU work, held-out access, or production training.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
