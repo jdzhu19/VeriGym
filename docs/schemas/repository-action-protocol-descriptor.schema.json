@@ -79,7 +79,8 @@
     "state_machine_id": {
       "enum": [
         "repository_action_state_machine_v1",
-        "repository_action_state_machine_v2"
+        "repository_action_state_machine_v2",
+        "repository_action_state_machine_v3"
       ],
       "title": "State Machine Id",
       "type": "string"
