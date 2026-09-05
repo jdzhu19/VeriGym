@@ -1720,6 +1720,14 @@ state. Its manifest therefore requires at least 9 GiB free on `/` and at least 5
 `/data2`, with both exact thresholds and observations sealed in the headroom receipt. Falling below
 either threshold fails before any image transfer or DinD creation.
 
+The sole v184 invocation completed with fail-closed category `unknown_missing_executable`: two
+syntactic markers were present, but neither command identity belonged to its fixed allowlist. V185
+freezes the raw-output-free result and does not infer a dependency from probe booleans or build
+source. No repair, HWE qualification, or model canary is authorized. A later v186 may only refine
+fixed diagnostic context and closed-dictionary matching under the same task-free, zero-provider,
+networkless, bounded-output, secret-scan, and cleanup controls. It may not retain an arbitrary
+token or token hash.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
