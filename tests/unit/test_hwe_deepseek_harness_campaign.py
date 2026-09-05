@@ -52,6 +52,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV148CleanupIdentityScaffoldManifest,
     DeepSeekHarnessV150OfficialMatrixManifest,
     DeepSeekHarnessV152HostHeadroomScaffoldManifest,
+    DeepSeekHarnessV154OfficialMatrixManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -85,6 +86,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v148_cleanup_identity_scaffold_manifest,
     load_v150_official_matrix_manifest,
     load_v152_host_headroom_scaffold_manifest,
+    load_v154_official_matrix_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -155,6 +157,9 @@ _V150_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V152_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v152_host_headroom_scaffold_v1.json"
+)
+_V154_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v154_official_matrix_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -2101,3 +2106,63 @@ def test_v152_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV152HostHeadroomScaffoldManifest.model_validate(changed)
+
+
+def test_v154_manifest_freezes_the_audited_replacement_matrix() -> None:
+    manifest = load_v154_official_matrix_manifest(_V154_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV154OfficialMatrixManifest)
+    assert manifest.v153_audit_merge == "2ee9d12bd101d81cd0c2d534865d92676b3b2a72"
+    assert manifest.v153_post_merge_main_run_id == 33955466475
+    assert tuple(item.task_id for item in manifest.schedule) == V69_PRIMARY_TASK_IDS
+    assert manifest.seed == 502
+    assert manifest.sample_index == 18
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v148-dind-data"
+    assert manifest.dind_socket_volume == "verigym-deepseek-harness-v154-dind-socket"
+    assert manifest.host_runtime_state_root == "/"
+    assert manifest.minimum_host_root_free_bytes == 4 * 1024**3
+    assert manifest.minimum_host_root_free_inodes == 100_000
+    assert manifest.host_headroom_policy == "absolute-statvfs-before-first-docker-access-v1"
+    assert manifest.v148_data_volume_reopen_budget == 1
+    assert manifest.v148_data_volume_reopen_count_before == 0
+    assert manifest.requires_independent_v151_audit is False
+    assert manifest.requires_independent_v155_audit is True
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("minimum_host_root_free_bytes", 1024),
+        ("minimum_host_root_free_inodes", 1),
+        ("host_headroom_policy", "percentage"),
+        ("dind_socket_volume", "verigym-deepseek-harness-v148-dind-socket"),
+        ("v148_data_volume_reopen_budget", 2),
+        ("v148_data_volume_reopen_count_before", 1),
+        ("requires_independent_v151_audit", True),
+        ("requires_independent_v155_audit", False),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v154_manifest_rejects_a_broadened_or_changed_matrix(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V154_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV154OfficialMatrixManifest.model_validate(changed)
+
+
+def test_v154_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V154_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV154OfficialMatrixManifest.model_validate(changed)
