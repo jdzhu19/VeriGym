@@ -386,3 +386,17 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V180_DIND_MOUNT_REPAIR=1 \
 A successful result remains pending independent v181 audit. The separately versioned v182
 research-only canary remains unauthorized; formal collection, SFT mixing, training, and production
 readiness remain false.
+
+V180 started its corrected outer DinD and passed the exact local-builder archive and runtime probe,
+then the offline final command-image build returned nonzero. Its inherited quiet helper retained no
+raw output, so v181 freezes category `offline_final_image_build_nonzero` without asserting a
+compiler-level cause. The normal exception path removed the DinD container and volumes, but a
+second `PermissionError` on the root-owned backing prevented a terminal report. A separately
+bounded, exact-path, networkless cleanup removed only the v180 backing and scratch while preserving
+the seven-file result tree and immutable input archives.
+
+Do not retry or resume v180. PR-1816 remains task- and provider-unconsumed: the HWE image was never
+imported, no source or verifier was run, and no model/provider boundary was reached. After v181 is
+merged and its post-merge checks pass, v182 may be defined only as a task-free zero-provider build
+diagnostic with bounded, credential-scanned output and root-owned-backing cleanup. It is not the
+research canary and does not authorize collection, SFT, training, or production use.
