@@ -5059,6 +5059,181 @@ class DeepSeekHarnessV160ContractRepairManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV162TaskBinding(DeepSeekHarnessV154TaskBinding):
+    """One immutable v158-qualified task/source/image binding used by v162."""
+
+
+class DeepSeekHarnessV162OfficialMatrixManifest(DeepSeekHarnessV154OfficialMatrixManifest):
+    """One-use official matrix authorized by the audited v160 repaired contract."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v162_official_matrix_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v162-official-matrix-v1"]  # type: ignore[assignment]
+    schedule: list[DeepSeekHarnessV162TaskBinding] = Field(  # type: ignore[assignment]
+        min_length=5, max_length=5
+    )
+    v158_manifest_sha256: str
+    v158_manifest_hash: str
+    v158_runner_sha256: str
+    v158_launcher_sha256: str
+    v158_authorization_sha256: str
+    v158_source_commit: Literal["c2e24fdfa7a3a8ea4e48e7a2e2a429071713afcc"]
+    v158_post_merge_main_run_id: Literal[33961573936]
+    v158_report_sha256: str
+    v158_report_hash: str
+    v158_task_set_sha256: str
+    v158_task_set_hash: str
+    v158_inventory_sha256: str
+    v158_inventory_hash: str
+    v158_runtime_preflight_sha256: str
+    v158_runtime_preflight_hash: str
+    v158_harness_preflight_sha256: str
+    v158_harness_preflight_hash: str
+    v158_command_probe_sha256: str
+    v158_command_probe_hash: str
+    v158_cleanup_sha256: str
+    v158_cleanup_hash: str
+    v158_evidence_tree_hash: str
+    v158_evidence_directory_count: Literal[1786]
+    v158_evidence_regular_file_count: Literal[10492]
+    v158_evidence_symlink_count: Literal[0]
+    v158_controller_receipt_sha256: str
+    v158_controller_receipt_hash: str
+    v158_workspace_runtime_receipt_sha256: str
+    v158_workspace_runtime_receipt_hash: str
+    v159_audit_sha256: str
+    v159_audit_commit: Literal["921704abc8567ac6657e1917f958fef0c7209ff1"]
+    v159_audit_merge: Literal["78fc7e785866072ca3db5d9e277910e2d52c4925"]
+    v159_post_merge_main_run_id: Literal[33963391618]
+    v159_post_merge_main_all_eight_classes_passed: Literal[True]
+    v160_manifest_sha256: str
+    v160_manifest_hash: str
+    v160_runner_sha256: str
+    v160_launcher_sha256: str
+    v160_authorization_sha256: str
+    v160_source_commit: Literal["2c297e73adabc497beb1d09d43e7000ef24d94d2"]
+    v160_post_merge_main_run_id: Literal[33964907719]
+    v160_report_sha256: str
+    v160_report_hash: str
+    v160_contract_sha256: str
+    v160_contract_hash: str
+    v160_repair_sha256: str
+    v160_repair_hash: str
+    v160_predecessor_validation_sha256: str
+    v160_predecessor_validation_hash: str
+    v160_harness_preflight_sha256: str
+    v160_harness_preflight_hash: str
+    v160_volume_metadata_sha256: str
+    v160_volume_metadata_hash: str
+    v160_evidence_tree_hash: str
+    v160_evidence_directory_count: Literal[1]
+    v160_evidence_regular_file_count: Literal[7]
+    v160_evidence_symlink_count: Literal[0]
+    v161_audit_sha256: str
+    v161_audit_commit: Literal["0bbf5d448fcf843afb9143c87e0380c856c425a4"]
+    v161_audit_merge: Literal["779a0964bf62ec7b816c70d1cf83f13c7aa1c5ae"]
+    v161_post_merge_main_run_id: Literal[33965500946]
+    v161_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v158-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v162-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v158/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v162/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v162-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v162-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v162-official-matrix-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v162/socket/docker.sock"
+    ]
+    predecessor_data_volume_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"
+    ]
+    runtime_resource_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v162-official-matrix-v1"
+    ]
+    controller_image_provenance: Literal[  # type: ignore[assignment]
+        "audited_v158_offline_transfer_v1"
+    ]
+    runtime_template_transport_policy: Literal[
+        "fresh-docker-cli-engine-per-configure-explicit-canonical-unix-socket-v1"
+    ]
+    controller_settings_transport_policy: Literal[
+        "explicit-canonical-unix-socket-fingerprint-and-launch-v1"
+    ]
+    actual_service_runtime_path_qualified: Literal[True]
+    harness_agent_endpoint_forwarding_required: Literal[True]
+    v158_data_volume_reopen_budget: Literal[1]
+    v158_data_volume_reopen_count_before: Literal[0]
+    requires_independent_v155_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v163_audit: Literal[True]
+
+    @field_validator(
+        "v158_manifest_sha256",
+        "v158_manifest_hash",
+        "v158_runner_sha256",
+        "v158_launcher_sha256",
+        "v158_authorization_sha256",
+        "v158_report_sha256",
+        "v158_report_hash",
+        "v158_task_set_sha256",
+        "v158_task_set_hash",
+        "v158_inventory_sha256",
+        "v158_inventory_hash",
+        "v158_runtime_preflight_sha256",
+        "v158_runtime_preflight_hash",
+        "v158_harness_preflight_sha256",
+        "v158_harness_preflight_hash",
+        "v158_command_probe_sha256",
+        "v158_command_probe_hash",
+        "v158_cleanup_sha256",
+        "v158_cleanup_hash",
+        "v158_evidence_tree_hash",
+        "v158_controller_receipt_sha256",
+        "v158_controller_receipt_hash",
+        "v158_workspace_runtime_receipt_sha256",
+        "v158_workspace_runtime_receipt_hash",
+        "v159_audit_sha256",
+        "v160_manifest_sha256",
+        "v160_manifest_hash",
+        "v160_runner_sha256",
+        "v160_launcher_sha256",
+        "v160_authorization_sha256",
+        "v160_report_sha256",
+        "v160_report_hash",
+        "v160_contract_sha256",
+        "v160_contract_hash",
+        "v160_repair_sha256",
+        "v160_repair_hash",
+        "v160_predecessor_validation_sha256",
+        "v160_predecessor_validation_hash",
+        "v160_harness_preflight_sha256",
+        "v160_harness_preflight_hash",
+        "v160_volume_metadata_sha256",
+        "v160_volume_metadata_hash",
+        "v160_evidence_tree_hash",
+        "v161_audit_sha256",
+    )
+    @classmethod
+    def validate_v162_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v162 official matrix requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -5874,6 +6049,17 @@ def load_v160_contract_repair_manifest(path: Path) -> DeepSeekHarnessV160Contrac
         raise ConfigurationError("v160 contract repair manifest is invalid") from exc
 
 
+def load_v162_official_matrix_manifest(path: Path) -> DeepSeekHarnessV162OfficialMatrixManifest:
+    """Load the one-use v162 official provider-matrix manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v162 official matrix manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV162OfficialMatrixManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v162 official matrix manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -6059,6 +6245,8 @@ __all__ = [
     "DeepSeekHarnessV156CommandRuntimeDiagnosticManifest",
     "DeepSeekHarnessV158ExplicitEndpointScaffoldManifest",
     "DeepSeekHarnessV160ContractRepairManifest",
+    "DeepSeekHarnessV162OfficialMatrixManifest",
+    "DeepSeekHarnessV162TaskBinding",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -6111,6 +6299,7 @@ __all__ = [
     "load_v156_command_runtime_diagnostic_manifest",
     "load_v158_explicit_endpoint_scaffold_manifest",
     "load_v160_contract_repair_manifest",
+    "load_v162_official_matrix_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
