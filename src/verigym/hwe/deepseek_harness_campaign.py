@@ -5697,6 +5697,150 @@ class DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest(
         return value
 
 
+class DeepSeekHarnessV170TaskBinding(DeepSeekHarnessV166TaskBinding):
+    """One immutable v158-qualified task/source/image binding reused by v170."""
+
+
+class DeepSeekHarnessV170OfficialMatrixManifest(DeepSeekHarnessV166OfficialMatrixManifest):
+    """Fresh official matrix gated by the audited v168 real-config diagnosis."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v170_official_matrix_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v170-official-matrix-v1"]  # type: ignore[assignment]
+    schedule: list[DeepSeekHarnessV170TaskBinding] = Field(  # type: ignore[assignment]
+        min_length=5, max_length=5
+    )
+    v166_manifest_sha256: str
+    v166_manifest_hash: str
+    v166_runner_sha256: str
+    v166_launcher_sha256: str
+    v166_authorization_sha256: str
+    v166_implementation_commit: Literal["1e13a63b00675a24848cb63ede4c5c9c15f60ce0"]
+    v166_authorization_merge: Literal["bae749df3945ca4eb9b1a41d6916afee54ae733b"]
+    v166_post_merge_main_run_id: Literal[33972331536]
+    v166_post_merge_main_all_eight_classes_passed: Literal[True]
+    v166_report_sha256: str
+    v166_report_hash: str
+    v166_attempt_sha256: str
+    v166_attempt_hash: str
+    v166_cleanup_sha256: str
+    v166_cleanup_hash: str
+    v166_evidence_tree_hash: str
+    v166_evidence_directory_count: Literal[9]
+    v166_evidence_regular_file_count: Literal[7]
+    v166_evidence_symlink_count: Literal[0]
+    v167_audit_sha256: str
+    v167_audit_commit: Literal["41bc81a7014a3ad7f245b5ece19d0fd8d763143c"]
+    v167_audit_merge: Literal["88edac0ac081aedc40f9b845a2f6f7efefd0f295"]
+    v167_post_merge_main_run_id: Literal[33973532777]
+    v167_post_merge_main_all_eight_classes_passed: Literal[True]
+    v168_manifest_sha256: str
+    v168_manifest_hash: str
+    v168_runner_sha256: str
+    v168_launcher_sha256: str
+    v168_authorization_sha256: str
+    v168_implementation_commit: Literal["ebcb55c180e4ba0ac838be1d78ef6fe27e74b0c3"]
+    v168_authorization_merge: Literal["282e7f627f29b3967f75c75d311c97ab350bddaa"]
+    v168_post_merge_main_run_id: Literal[33974998196]
+    v168_post_merge_main_all_eight_classes_passed: Literal[True]
+    v168_report_sha256: str
+    v168_report_hash: str
+    v168_predecessor_sha256: str
+    v168_predecessor_hash: str
+    v168_headroom_sha256: str
+    v168_headroom_hash: str
+    v168_runtime_sha256: str
+    v168_runtime_hash: str
+    v168_network_sha256: str
+    v168_network_hash: str
+    v168_direct_probe_sha256: str
+    v168_direct_probe_hash: str
+    v168_harness_initialize_sha256: str
+    v168_harness_initialize_hash: str
+    v168_cleanup_sha256: str
+    v168_cleanup_hash: str
+    v168_evidence_tree_hash: str
+    v168_evidence_directory_count: Literal[1]
+    v168_evidence_regular_file_count: Literal[9]
+    v168_evidence_symlink_count: Literal[0]
+    v169_audit_sha256: str
+    v169_audit_commit: Literal["e1b5f139074f5ef5c7ce66717fca80626cb30ef3"]
+    v169_audit_merge: Literal["c292325bad58d184537cc91a1673486df63eff95"]
+    v169_post_merge_main_run_id: Literal[33975720801]
+    v169_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v170-dind-socket"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v170/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v170-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v170-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v170-official-matrix-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v170/socket/docker.sock"
+    ]
+    runtime_resource_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v170-official-matrix-v1"
+    ]
+    v158_data_volume_reopen_budget: Literal[5]  # type: ignore[assignment]
+    v158_data_volume_reopen_count_before: Literal[4]  # type: ignore[assignment]
+    requires_independent_v167_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v169_audit: Literal[False]
+    requires_independent_v171_audit: Literal[True]
+
+    @field_validator(
+        "v166_manifest_sha256",
+        "v166_manifest_hash",
+        "v166_runner_sha256",
+        "v166_launcher_sha256",
+        "v166_authorization_sha256",
+        "v166_report_sha256",
+        "v166_report_hash",
+        "v166_attempt_sha256",
+        "v166_attempt_hash",
+        "v166_cleanup_sha256",
+        "v166_cleanup_hash",
+        "v166_evidence_tree_hash",
+        "v167_audit_sha256",
+        "v168_manifest_sha256",
+        "v168_manifest_hash",
+        "v168_runner_sha256",
+        "v168_launcher_sha256",
+        "v168_authorization_sha256",
+        "v168_report_sha256",
+        "v168_report_hash",
+        "v168_predecessor_sha256",
+        "v168_predecessor_hash",
+        "v168_headroom_sha256",
+        "v168_headroom_hash",
+        "v168_runtime_sha256",
+        "v168_runtime_hash",
+        "v168_network_sha256",
+        "v168_network_hash",
+        "v168_direct_probe_sha256",
+        "v168_direct_probe_hash",
+        "v168_harness_initialize_sha256",
+        "v168_harness_initialize_hash",
+        "v168_cleanup_sha256",
+        "v168_cleanup_hash",
+        "v168_evidence_tree_hash",
+        "v169_audit_sha256",
+    )
+    @classmethod
+    def validate_v170_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v170 official matrix requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -6564,6 +6708,17 @@ def load_v168_real_config_initialize_diagnostic_manifest(
         raise ConfigurationError("v168 real-config diagnostic manifest is invalid") from exc
 
 
+def load_v170_official_matrix_manifest(path: Path) -> DeepSeekHarnessV170OfficialMatrixManifest:
+    """Load the fresh, one-use v170 official provider-matrix manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v170 official matrix manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV170OfficialMatrixManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v170 official matrix manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -6755,6 +6910,8 @@ __all__ = [
     "DeepSeekHarnessV166OfficialMatrixManifest",
     "DeepSeekHarnessV166TaskBinding",
     "DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest",
+    "DeepSeekHarnessV170OfficialMatrixManifest",
+    "DeepSeekHarnessV170TaskBinding",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -6812,6 +6969,7 @@ __all__ = [
     "load_v164_controller_initialize_diagnostic_manifest",
     "load_v166_official_matrix_manifest",
     "load_v168_real_config_initialize_diagnostic_manifest",
+    "load_v170_official_matrix_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
