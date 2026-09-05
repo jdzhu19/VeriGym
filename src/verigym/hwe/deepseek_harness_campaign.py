@@ -4439,6 +4439,134 @@ class DeepSeekHarnessV150OfficialMatrixManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV152HostHeadroomScaffoldManifest(StrictModel):
+    """One-use, zero-provider check of host headroom and the bounded DinD lifecycle."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v152_host_headroom_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v152-host-headroom-scaffold-v1"]
+    v150_manifest_sha256: str
+    v150_manifest_hash: str
+    v150_runner_sha256: str
+    v150_launcher_sha256: str
+    v150_authorization_sha256: str
+    v150_report_sha256: str
+    v150_report_hash: str
+    v150_attempt_sha256: str
+    v150_attempt_hash: str
+    v150_cleanup_recovery_sha256: str
+    v150_cleanup_recovery_hash: str
+    v151_audit_sha256: str
+    v151_audit_commit: Literal["da163b89ee6ffa7ce2e2326c00bc1c40e1d75686"]
+    v151_audit_merge: Literal["3ab451d645b9f0cdaa1f3d37de6be07d99ad0bba"]
+    v151_post_merge_main_run_id: Literal[33943269412]
+    v151_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v152-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v152-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v152/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v152/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v152-control"
+    ]
+    diagnostic_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v152-scratch"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v152-host-headroom-scaffold-v1"
+    ]
+    host_runtime_state_root: Literal["/"]
+    minimum_host_root_free_bytes: Literal[4294967296]
+    minimum_host_root_free_inodes: Literal[100000]
+    host_headroom_policy: Literal["absolute-statvfs-before-and-after-v1"]
+    startup_attempt_limit: Literal[1]
+    startup_command_timeout_seconds: Literal[60]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_poll_interval_seconds: Literal[1]
+    inventory_command_timeout_seconds: Literal[10]
+    cleanup_command_timeout_seconds: Literal[120]
+    maximum_diagnostic_output_bytes: Literal[65536]
+    readiness_probe_policy: Literal["explicit-three-field-exact-monotonic-deadline-v1"]
+    inventory_policy: Literal["empty-mutable-inner-inventory-v1"]
+    cleanup_policy: Literal["owned-fresh-resources-and-empty-restored-backings-v2"]
+    provider_environment_names: list[str] = Field(min_length=12, max_length=12)
+    provider_environment_name_count: Literal[12]
+    provider_environment_values_read_allowed: Literal[False]
+    provider_environment_values_printed: Literal[False]
+    provider_environment_values_persisted: Literal[False]
+    provider_environment_values_hashed: Literal[False]
+    frozen_v148_data_volume: Literal["verigym-deepseek-harness-v148-dind-data"]
+    frozen_v148_socket_volume: Literal["verigym-deepseek-harness-v148-dind-socket"]
+    v148_volume_inspection_allowed: Literal[False]
+    v148_volume_mount_allowed: Literal[False]
+    v148_volume_mutation_allowed: Literal[False]
+    fresh_bind_backed_volumes_required: Literal[True]
+    scaffold_outer_network: Literal["none"]
+    docker_network_creation_allowed: Literal[False]
+    task_archive_access_allowed: Literal[False]
+    task_materialization_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    harness_controller_allowed: Literal[False]
+    registry_access_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_started: Literal[False]
+    provider_calls: Literal[0]
+    requires_independent_v153_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v150_manifest_sha256",
+        "v150_manifest_hash",
+        "v150_runner_sha256",
+        "v150_launcher_sha256",
+        "v150_authorization_sha256",
+        "v150_report_sha256",
+        "v150_report_hash",
+        "v150_attempt_sha256",
+        "v150_attempt_hash",
+        "v150_cleanup_recovery_sha256",
+        "v150_cleanup_recovery_hash",
+        "v151_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v152_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v152 host-headroom scaffold requires lowercase SHA-256")
+        return value
+
+    @field_validator("dind_image_id", "dind_repository_digest")
+    @classmethod
+    def validate_v152_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v152 host-headroom scaffold requires immutable image digests")
+        return value
+
+    @field_validator("provider_environment_names")
+    @classmethod
+    def validate_v152_provider_environment_names(cls, values: list[str]) -> list[str]:
+        if tuple(values) != ZERO_PROVIDER_CONFIGURATION_ENV_NAMES:
+            raise ValueError("v152 provider environment boundary changed")
+        return values
+
+    @model_validator(mode="after")
+    def validate_v152_identity(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v152 host-headroom scaffold manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -5187,6 +5315,21 @@ def load_v150_official_matrix_manifest(path: Path) -> DeepSeekHarnessV150Officia
         raise ConfigurationError("v150 official matrix manifest is invalid") from exc
 
 
+def load_v152_host_headroom_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV152HostHeadroomScaffoldManifest:
+    """Load the one-use, zero-provider v152 host-headroom scaffold manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v152 host-headroom scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV152HostHeadroomScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v152 host-headroom scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -5366,6 +5509,7 @@ __all__ = [
     "DeepSeekHarnessV148CleanupIdentityScaffoldManifest",
     "DeepSeekHarnessV150OfficialMatrixManifest",
     "DeepSeekHarnessV150TaskBinding",
+    "DeepSeekHarnessV152HostHeadroomScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -5413,6 +5557,7 @@ __all__ = [
     "load_v146_environment_boundary_scaffold_manifest",
     "load_v148_cleanup_identity_scaffold_manifest",
     "load_v150_official_matrix_manifest",
+    "load_v152_host_headroom_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
