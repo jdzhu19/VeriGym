@@ -270,6 +270,67 @@ def test_offline_controller_settings_bind_the_audited_source_receipt(
     assert settings.harness_identity()["controller_image_source_receipt_hash"] == "2" * 64
 
 
+def test_settings_bind_and_verify_an_explicit_controller_docker_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+    (source / "python/sdk/src").mkdir(parents=True)
+    runtime = source / "packages/examples/jsonrpc-demo/src/bin.ts"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("export {};\n", encoding="utf-8")
+    (source / "package.json").write_text('{"version":"0.1.1-rc.2"}\n', encoding="utf-8")
+    socket_path = tmp_path / "docker.sock"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(socket_path))
+    monkeypatch.setattr(harness_config, "_verify_source_checkout", lambda _root: None)
+    monkeypatch.setattr(harness_config, "_tracked_tree_hash", lambda _root: "1" * 64)
+    verified: list[str | None] = []
+    monkeypatch.setattr(
+        harness_config,
+        "_verify_controller_image",
+        lambda _image, *, allow_offline_load=False, docker_host=None: verified.append(docker_host),
+    )
+    try:
+        settings = harness_config.resolve_settings(
+            {
+                "collection_profile_id": "hwe_standard_v2",
+                "harness_source_root": source,
+                "controller_docker_host": f"unix://{socket_path}",
+            },
+            task_wall_time_s=300,
+        )
+    finally:
+        listener.close()
+
+    assert settings.docker_host == f"unix://{socket_path}"
+    assert verified == [f"unix://{socket_path}"]
+
+
+def test_settings_reject_an_unsafe_controller_docker_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+    (source / "python/sdk/src").mkdir(parents=True)
+    runtime = source / "packages/examples/jsonrpc-demo/src/bin.ts"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("export {};\n", encoding="utf-8")
+    (source / "package.json").write_text('{"version":"0.1.1-rc.2"}\n', encoding="utf-8")
+    monkeypatch.setattr(harness_config, "_verify_source_checkout", lambda _root: None)
+    monkeypatch.setattr(harness_config, "_tracked_tree_hash", lambda _root: "1" * 64)
+    with pytest.raises(ValueError, match="absolute local Unix socket"):
+        harness_config.resolve_settings(
+            {
+                "collection_profile_id": "hwe_standard_v2",
+                "harness_source_root": source,
+                "controller_docker_host": "tcp://127.0.0.1:2375",
+            },
+            task_wall_time_s=300,
+            verify_controller=False,
+        )
+
+
 def test_v154_runtime_config_selects_repository_specific_labels() -> None:
     ibex = runner._runtime_config(_lock(repository="ibex"))  # noqa: SLF001
     cva6 = runner._runtime_config(_lock(repository="cva6"))  # noqa: SLF001

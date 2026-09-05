@@ -17,6 +17,7 @@ from verigym.hwe.deepseek_harness import (
     DEEPSEEK_HARNESS_REVISION,
 )
 from verigym.hwe.profiles import HWE_COLLECTION_PROFILE_V2_ID
+from verigym.runtimes.docker.engine import validate_local_docker_host
 
 DEEPSEEK_HARNESS_SOURCE_ROOT = Path(
     "/data2/jiadongzhu/Agent/datasets/deepseek-harness/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
@@ -51,6 +52,7 @@ class DeepSeekHarnessSettings:
     configuration_fingerprint: str
     process_timeout_s: float
     max_output_bytes: int
+    docker_host: str | None
 
     def harness_identity(self) -> dict[str, Any]:
         identity = {
@@ -123,8 +125,17 @@ def resolve_settings(
             raise ValueError("offline controller requires a frozen source receipt hash")
     elif source_receipt_hash is not None:
         raise ValueError("controller source receipt is valid only for an offline load")
+    raw_docker_host = options.get("controller_docker_host")
+    if raw_docker_host is not None and not isinstance(raw_docker_host, str):
+        raise ValueError("DeepSeek Harness controller Docker endpoint must be a string")
+    docker_host = (
+        validate_local_docker_host(raw_docker_host) if raw_docker_host is not None else None
+    )
     if verify_controller:
-        _verify_controller_image(controller_image_id, allow_offline_load=offline_controller)
+        verify_options: dict[str, Any] = {"allow_offline_load": offline_controller}
+        if docker_host is not None:
+            verify_options["docker_host"] = docker_host
+        _verify_controller_image(controller_image_id, **verify_options)
     process_timeout_s = float(options.get("max_process_time_s", task_wall_time_s))
     if process_timeout_s <= 0 or process_timeout_s > min(task_wall_time_s, 3600):
         raise ValueError("DeepSeek Harness process timeout exceeds the task budget")
@@ -154,6 +165,10 @@ def resolve_settings(
         "controller_network": CONTROLLER_NETWORK,
         "credential_environment_name": API_KEY_ENV,
         "base_url_environment_name": BASE_URL_ENV,
+        "controller_docker_transport": (
+            "explicit_canonical_local_unix_socket_v1" if docker_host is not None else "default_v1"
+        ),
+        "controller_docker_host": docker_host,
     }
     if offline_controller:
         identity.update(
@@ -182,6 +197,7 @@ def resolve_settings(
         configuration_fingerprint=content_hash(identity),
         process_timeout_s=process_timeout_s,
         max_output_bytes=max_output_bytes,
+        docker_host=docker_host,
     )
 
 
@@ -223,7 +239,20 @@ def _git(root: Path, *arguments: str) -> bytes:
     return completed.stdout
 
 
-def _verify_controller_image(image_id: str, *, allow_offline_load: bool = False) -> None:
+def _verify_controller_image(
+    image_id: str,
+    *,
+    allow_offline_load: bool = False,
+    docker_host: str | None = None,
+) -> None:
+    environment = None
+    if docker_host is not None:
+        environment = {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "DOCKER_HOST": validate_local_docker_host(docker_host),
+        }
     completed = subprocess.run(
         ["docker", "image", "inspect", image_id, "--format", "{{json .}}"],
         stdin=subprocess.DEVNULL,
@@ -231,6 +260,7 @@ def _verify_controller_image(image_id: str, *, allow_offline_load: bool = False)
         stderr=subprocess.DEVNULL,
         check=False,
         text=True,
+        env=environment,
     )
     if completed.returncode != 0:
         raise ValueError("DeepSeek Harness controller image is unavailable")

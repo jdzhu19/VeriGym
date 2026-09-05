@@ -231,6 +231,7 @@ class DeepSeekHarnessHweAgentAdapter(AgentAdapter):
                     session_root=session_root,
                     broker_root=broker.socket_path.parent,
                     max_format_repairs=self.format_repair_budget,
+                    docker_host=settings.docker_host,
                 )
             except DeepSeekHarnessProcessError as exc:
                 process_error = exc
