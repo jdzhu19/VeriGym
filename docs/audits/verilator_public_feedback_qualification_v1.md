@@ -122,5 +122,7 @@ episode must not be retried or rewritten.
 The committed workflow publishes only the open RTL image as
 `ghcr.io/jdzhu19/verigym-rtl-verilator:5.052-iverilog12-r1`, refuses to replace an existing release
 tag, attaches SBOM and provenance attestations, pulls the digest back, and repeats the
-network-none security smoke. The immutable registry digest is recorded in a follow-up revision
-after the first successful publication.
+network-none security smoke. Publication run `33980342720` completed successfully for source
+commit `c7d5f1694bd07fa9edf3bb0c9c2241a529fa22f3`. The immutable OCI index digest is
+`sha256:4b33e502e12c8cfb5df752ca822b1bf0287337b61db9029d74988885280600ca`; its `linux/amd64` image
+manifest is `sha256:47ce9b5ad74e907e9140681e6386f9e8462b6a038beaaded0ea93377a8f2e271`.
