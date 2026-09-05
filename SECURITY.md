@@ -1705,6 +1705,16 @@ the result and permits only a later task-free, zero-provider allowlist-based dis
 the same isolation and cleanup controls. A dependency repair, HWE qualification, model canary,
 collection, SFT mixing, training, and production use remain unauthorized.
 
+V184 is that one-use disambiguation. It derives every build input and limit from the immutable
+v182 manifest, verifies the complete v182 result and v183 authorization, and uses fresh `/data2`
+DinD, output, scratch, volume, and image identities. Before rerunning the exact networkless build,
+it probes a manifest-fixed command list in the dependency builder using a mount-free, read-only,
+non-root, cap-drop-ALL container. Build output remains bounded and is scanned for active secrets
+before parsing. Only one allowlisted command enum may be retained; unknown or multiple identities
+produce fixed fail-closed categories, with no raw line, arbitrary token, path, argv, or environment
+value retained. V184 still loads no HWE task or image and authorizes no repair, verifier, model, or
+provider use. An independent v185 audit is mandatory before any dependency change.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
