@@ -254,3 +254,31 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V79_DIND_ZERO_PROVIDER=1 \
 Any failure remains pre-provider and publishes no partial contract. A complete v79 result still
 sets `provider_execution_authorized=false` until an independent v80 audit is merged and its own
 post-merge `main` checks pass.
+
+## PR-1816 open-toolchain comparison
+
+The v171 audit froze v170 with a clear provider marker and zero calls. The separate v172 campaign
+does not retry that official matrix. It performs a zero-provider comparison for the PR-1816 task
+reserved by v69, using only completed local archives and a fresh DinD data root bind-backed under
+`/data2/jiadongzhu/docker/deepseek-harness-hwe-v172/`.
+
+The agent-side image contains the pinned VeriGym open stack (Verilator 5.008, Icarus 12, Yosys
+0.67, and ripgrep 15.2.0) and contains no HWE task-image tools, provider credential, or Codex
+installation. Its public test result is diagnostic only. The same base and official reference are
+then verified separately by the digest-locked PR-1816 HWE image. Both routes must reproduce
+base-FAIL/reference-PASS, remain `network=none`, and bind different receipt hashes before a
+qualification contract can exist.
+
+Run v172 once only from its clean merged `main` commit after all eight post-merge workflow classes
+pass. The launcher removes provider and ambient Docker endpoint names without reading or emitting
+their values:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V172_OPEN_TOOLCHAIN=1 \
+  python scripts/launch_hwe_deepseek_harness_v172_open_toolchain.py \
+  --post-merge-main-run-id <successful-v172-main-run-id>
+```
+
+A successful result remains pending the independent v173 audit. The one-call PR-1816 research
+canary (seed/sample 503/19) is not authorized here. Formal collection, SFT, training, candidate
+mixing, and production readiness remain false.
