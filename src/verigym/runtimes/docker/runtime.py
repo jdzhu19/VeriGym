@@ -103,12 +103,16 @@ class DockerRuntime(Runtime):
         config: DockerRuntimeConfig | None = None,
         *,
         engine: DockerEngine | None = None,
+        docker_host: str | None = None,
         expected_image_id: str | None = None,
         replay_image: RuntimeImageIdentity | None = None,
     ) -> None:
+        if engine is not None and docker_host is not None:
+            raise ConfigurationError("DockerRuntime accepts either engine or docker_host, not both")
         self._config = config
         self._engine = engine
         self._engine_was_injected = engine is not None
+        self._docker_host = docker_host
         self._expected_image_id = expected_image_id
         self._replay_image = replay_image
         self._agent_image: RuntimeImageIdentity | None = None
@@ -146,14 +150,14 @@ class DockerRuntime(Runtime):
 
     def _get_engine(self) -> DockerEngine:
         if self._engine is None:
-            self._engine = DockerCliEngine()
+            self._engine = DockerCliEngine(docker_host=self._docker_host)
         return self._engine
 
     def configure(self, config: DockerRuntimeConfig | None) -> Runtime:
         if config is None:
             raise ConfigurationError("DockerRuntime requires --docker-image")
         engine = self._engine if self._engine_was_injected else None
-        return DockerRuntime(config, engine=engine)
+        return DockerRuntime(config, engine=engine, docker_host=self._docker_host)
 
     def configure_for_replay(self, descriptor: RuntimeDescriptor) -> Runtime:
         if descriptor.name != "docker" or descriptor.image is None:
@@ -183,6 +187,7 @@ class DockerRuntime(Runtime):
         return DockerRuntime(
             config,
             engine=engine,
+            docker_host=self._docker_host,
             expected_image_id=descriptor.image.resolved_image_id,
             replay_image=descriptor.image,
         )

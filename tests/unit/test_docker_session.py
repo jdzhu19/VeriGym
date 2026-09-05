@@ -798,6 +798,33 @@ def test_runtime_descriptor_round_trip_and_exact_image_replay(tmp_path: Path) ->
     assert len(replay_engine.create_arguments) == 1
 
 
+def test_runtime_template_creates_fresh_engines_for_an_explicit_docker_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[tuple[object, str | None]] = []
+
+    class ExplicitEngine:
+        def __init__(self, *, docker_host: str | None = None) -> None:
+            created.append((self, docker_host))
+
+    monkeypatch.setattr(
+        "verigym.runtimes.docker.runtime.DockerCliEngine",
+        ExplicitEngine,
+    )
+    docker_host = "unix:///data2/jiadongzhu/docker/campaign/socket/docker.sock"
+    template = DockerRuntime(docker_host=docker_host)
+    first = template.configure(DockerRuntimeConfig(image=IMAGE_ID, pull_policy="never"))
+    second = template.configure(DockerRuntimeConfig(image=IMAGE_ID, pull_policy="never"))
+
+    assert first._get_engine() is not second._get_engine()  # noqa: SLF001
+    assert [item[1] for item in created] == [docker_host, docker_host]
+
+
+def test_runtime_rejects_an_engine_and_docker_host_together() -> None:
+    with pytest.raises(ConfigurationError, match="either engine or docker_host"):
+        DockerRuntime(engine=RecordingDockerEngine(), docker_host="unix:///unused/docker.sock")
+
+
 def test_candidate_resource_failure_metadata_reaches_iverilog_tools() -> None:
     from verigym.schemas.common import ErrorCategory
     from verigym.schemas.tool import CompletedCommand

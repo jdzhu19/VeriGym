@@ -1434,6 +1434,22 @@ execution, Harness/provider startup, collection, and training remain forbidden. 
 all fresh resources and requires an independent v157 audit plus eight green post-merge `main`
 checks before any new provider identity can be considered.
 
+The v156 comparison proved that the local images and command image are valid when the runtime is
+explicitly bound to the fresh nested Unix socket; the unbound path instead queried the host daemon
+and reported `image_missing`. The independent v157 audit and its eight green post-merge `main`
+checks authorize only the provider-free v158 transport qualification.
+
+V158 adds an optional explicit local Unix-socket binding to the Docker runtime template. The
+template creates a fresh CLI engine for every configured task runtime, so closing one task cannot
+close the next task's transport. The DeepSeek Harness settings validate the same canonical,
+non-symlink Unix socket, include the binding in the configuration fingerprint, use it for controller
+image inspection, and pass it explicitly to the agent's controller helper. TCP endpoints, ambient
+Docker contexts, and simultaneous injected-engine/endpoint configuration fail closed. V158 must
+re-import and qualify all five completed local task archives into a new `/data2` DinD data volume;
+it cannot inspect or mutate retained predecessor volumes and cannot access a registry or provider.
+Even a complete v158 scaffold is non-authorizing until an independent v159 audit is merged and all
+eight post-merge `main` check classes pass.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

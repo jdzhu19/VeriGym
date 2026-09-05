@@ -4818,6 +4818,125 @@ class DeepSeekHarnessV156CommandRuntimeDiagnosticManifest(
         return value
 
 
+class DeepSeekHarnessV158ExplicitEndpointScaffoldManifest(StrictModel):
+    """Fresh five-task qualification of explicit nested-Docker transport ownership."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v158_explicit_endpoint_scaffold_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"]
+    v148_manifest_sha256: str
+    v148_manifest_hash: str
+    v148_runner_sha256: str
+    v148_launcher_sha256: str
+    v148_authorization_sha256: str
+    v156_manifest_sha256: str
+    v156_manifest_hash: str
+    v156_runner_sha256: str
+    v156_launcher_sha256: str
+    v156_authorization_sha256: str
+    v156_report_sha256: str
+    v156_report_hash: str
+    v156_diagnosis: Literal["docker_cli_missing_explicit_nested_endpoint_binding"]
+    v157_audit_sha256: str
+    v157_audit_commit: Literal["70062453706313ca4a3398c67bc036c8eac755ca"]
+    v157_audit_merge: Literal["97cd9e2cd967f18627af209a1939e9fdbee2a346"]
+    v157_post_merge_main_run_id: Literal[33959974205]
+    v157_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_task_ids: list[str] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    dind_data_volume: Literal["verigym-deepseek-harness-v158-dind-data"]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v158-dind-socket"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v158/data"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v158/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v158-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v158-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v158/socket/docker.sock"
+    ]
+    dind_owner: Literal["deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"]
+    scanner_policy_id: Literal["deepseek-harness-v158-bounded-command-scan-v1"]
+    scanner_container_prefix: Literal["verigym-hwe-v158-command-scan-pr-"]
+    runtime_template_transport_policy: Literal[
+        "fresh-docker-cli-engine-per-configure-explicit-canonical-unix-socket-v1"
+    ]
+    controller_settings_transport_policy: Literal[
+        "explicit-canonical-unix-socket-fingerprint-and-launch-v1"
+    ]
+    actual_service_runtime_path_qualified: Literal[True]
+    harness_agent_endpoint_forwarding_required: Literal[True]
+    fresh_data_volume_required: Literal[True]
+    predecessor_volume_inspection_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    provider_environment_names: list[str]
+    provider_environment_name_count: Literal[12]
+    provider_environment_values_read_allowed: Literal[False]
+    child_boundary_verified_before_resource_creation: Literal[True]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v160-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    requires_independent_v159_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v148_manifest_sha256",
+        "v148_manifest_hash",
+        "v148_runner_sha256",
+        "v148_launcher_sha256",
+        "v148_authorization_sha256",
+        "v156_manifest_sha256",
+        "v156_manifest_hash",
+        "v156_runner_sha256",
+        "v156_launcher_sha256",
+        "v156_authorization_sha256",
+        "v156_report_sha256",
+        "v156_report_hash",
+        "v157_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v158_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v158 explicit-endpoint scaffold requires lowercase SHA-256")
+        return value
+
+    @field_validator("schedule_task_ids")
+    @classmethod
+    def validate_v158_schedule(cls, values: list[str]) -> list[str]:
+        if tuple(values) != V69_PRIMARY_TASK_IDS:
+            raise ValueError("v158 explicit-endpoint schedule changed")
+        return values
+
+    @field_validator("provider_environment_names")
+    @classmethod
+    def validate_v158_provider_environment_names(cls, values: list[str]) -> list[str]:
+        if tuple(values) != ZERO_PROVIDER_CONFIGURATION_ENV_NAMES:
+            raise ValueError("v158 provider environment boundary changed")
+        return values
+
+    @model_validator(mode="after")
+    def validate_v158_manifest_hash(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v158 explicit-endpoint manifest hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -5607,6 +5726,21 @@ def load_v156_command_runtime_diagnostic_manifest(
         raise ConfigurationError("v156 command-runtime diagnostic manifest is invalid") from exc
 
 
+def load_v158_explicit_endpoint_scaffold_manifest(
+    path: Path,
+) -> DeepSeekHarnessV158ExplicitEndpointScaffoldManifest:
+    """Load the fresh, one-use, zero-provider v158 transport qualification."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v158 explicit-endpoint scaffold manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV158ExplicitEndpointScaffoldManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v158 explicit-endpoint scaffold manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -5790,6 +5924,7 @@ __all__ = [
     "DeepSeekHarnessV154OfficialMatrixManifest",
     "DeepSeekHarnessV154TaskBinding",
     "DeepSeekHarnessV156CommandRuntimeDiagnosticManifest",
+    "DeepSeekHarnessV158ExplicitEndpointScaffoldManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -5840,6 +5975,7 @@ __all__ = [
     "load_v152_host_headroom_scaffold_manifest",
     "load_v154_official_matrix_manifest",
     "load_v156_command_runtime_diagnostic_manifest",
+    "load_v158_explicit_endpoint_scaffold_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
