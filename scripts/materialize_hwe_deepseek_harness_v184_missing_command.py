@@ -175,11 +175,7 @@ def _execute(
     diagnostic: dict[str, Any] | None = None
     stop_reason: str | None = None
     try:
-        headroom = _reissue(
-            v182._headroom_receipt(),  # noqa: SLF001
-            format_id="verigym_deepseek_harness_hwe_v184_headroom_v1",
-            hash_field="receipt_hash",
-        )
+        headroom = _headroom_receipt(successor)
         atomic_dump_json(root / "headroom.json", headroom)
         atomic_dump_json(root / "local-builder-archive.json", archive_receipt)
         progress["status"] = "local_transfer_prepare"
@@ -827,6 +823,35 @@ def _reissue(receipt: dict[str, Any], *, format_id: str, hash_field: str) -> dic
     base.pop(hash_field, None)
     base.update({"format_id": format_id, "identity": IDENTITY})
     return {**base, hash_field: content_hash(base)}
+
+
+def _headroom_receipt(
+    successor: OpenToolchainV184MissingCommandManifest,
+) -> dict[str, Any]:
+    control_root = shutil.disk_usage("/")
+    data2 = shutil.disk_usage("/data2")
+    control_root_stat = os.statvfs("/")
+    data2_stat = os.statvfs("/data2")
+    passed = (
+        control_root.free >= successor.control_root_min_available_bytes
+        and data2.free >= successor.data2_min_available_bytes
+    )
+    base = {
+        "schema_version": "1.0",
+        "format_id": "verigym_deepseek_harness_hwe_v184_headroom_v1",
+        "identity": IDENTITY,
+        "control_root_available_bytes": control_root.free,
+        "control_root_min_available_bytes": successor.control_root_min_available_bytes,
+        "data2_available_bytes": data2.free,
+        "data2_min_available_bytes": successor.data2_min_available_bytes,
+        "control_root_available_inodes": control_root_stat.f_bavail,
+        "data2_available_inodes": data2_stat.f_bavail,
+        "all_bulk_storage_on_data2": True,
+        "capacity_satisfied": passed,
+    }
+    if not passed:
+        raise ConfigurationError("v184 absolute headroom gate failed")
+    return {**base, "receipt_hash": content_hash(base)}
 
 
 def _require_execution_boundary(

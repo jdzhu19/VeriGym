@@ -152,6 +152,8 @@ class OpenToolchainV184MissingCommandManifest(StrictModel):
     command_probe_output_max_bytes: Literal[4096]
     cleanup_timeout_seconds: Literal[120]
     cleanup_output_max_bytes: Literal[1048576]
+    control_root_min_available_bytes: Literal[9663676416]
+    data2_min_available_bytes: Literal[53687091200]
     build_network: Literal["none"]
     command_probe_network: Literal["none"]
     outer_dind_network: Literal["none"]

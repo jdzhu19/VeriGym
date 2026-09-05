@@ -441,6 +441,11 @@ allowlisted basename plus counts; it retains no matching line, unknown token, pa
 or environment value. Unknown and multiple matches fail closed. A result that names a builder
 prerequisite remains only diagnostic evidence and does not authorize installing it.
 
+Because the output, transfer archives, DinD data, and socket backing are all exact `/data2` paths,
+v184 binds separate capacity gates: 9 GiB for the controller-only root filesystem and 50 GiB for
+`/data2`. Both observed values and both thresholds are sealed; failure happens before transfer or
+daemon creation.
+
 Run v184 exactly once from clean merged `main` after all eight post-merge classes pass:
 
 ```bash
