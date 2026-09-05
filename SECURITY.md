@@ -1590,6 +1590,22 @@ pass. It retains only its `/data2` DinD data volume with a one-reopen budget for
 canary. V172 itself remains zero-provider, requires a v173 result audit, and does not authorize the
 v174 canary, trajectory collection, SFT, GPU work, or production readiness.
 
+The sole v172 invocation stopped before output or Docker mutation because the frozen bare DinD
+digest was compared directly with Docker's complete `repository@digest` representation. V173
+sealed that infrastructure-invalid attempt with zero task and provider consumption. V174 is the
+fresh, one-use repair identity; it binds the owner-only v172 stop evidence and v173 audit, keeps
+every task, source, image, open-tool, isolation, dual-route, scan, and cleanup lock, and uses only
+new paths, volumes, and tags under `/data2`. Its final Dockerfile differs only in changing the
+retired internal `v172-builder` stage tag to the fresh, hash-bound `v174-builder` tag.
+
+Before creating output, v174 parses exactly one canonical Docker `repository@sha256-digest` value
+and separately requires repository `docker`, the frozen digest component, image ID, and
+`linux/amd64` platform. Wrong or bare digests, missing delimiters, wrong repositories, and
+duplicates fail closed. Both the open diagnostic and official authoritative PR-1816 routes must
+again reproduce base-FAIL/reference-PASS before atomic contract publication. V174 remains
+zero-provider and pending an independent v175 audit; the v176 canary, collection, SFT, training,
+and production readiness remain unauthorized.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
