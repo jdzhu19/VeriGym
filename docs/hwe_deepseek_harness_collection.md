@@ -331,3 +331,32 @@ Both PR-1816 routes must still independently reproduce base-FAIL/reference-PASS 
 qualification contract is published. A successful result requires a v177 audit. The DeepSeek
 research canary is v178 or later and remains unauthorized here; collection, candidate/SFT mixing,
 training, and production readiness remain false.
+
+V176 then stopped at its generic network-none builder with the bounded category
+`offline_cache_miss`. V177 froze the six-file result: no DinD, HWE image import, task, verifier,
+model, or provider boundary was reached, and PR-1816 remains unconsumed. Do not retry v176.
+
+V178 binds a completed Docker archive under `/data2` instead of rerunning the generic builder. The
+archive is a Debian base plus the Verilator build dependencies recovered from a completed
+dependency-only stage; it contains no OpenSTA, CUDD, HWE, or Codex executable. The manifest locks
+its archive and sidecar hashes, exact image ID, parent, two ordered rootfs layers, member inventory,
+canonical history, 189-package inventory, and six required build-tool hashes and versions. The
+runner validates the archive before creating campaign state, loads it only into the isolated
+`/data2`-backed DinD daemon, and verifies it with a non-root, read-only, mount-free,
+resource-bounded, `network=none` probe. The final Verilator/ripgrep build and both PR-1816 routes
+remain offline; there is no host builder dependency, download, registry access, VPN/proxy change,
+or HWE-tool inheritance.
+
+Run v178 exactly once from clean merged `main` after all eight post-merge workflow classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V178_LOCAL_BUILDER=1 \
+  python scripts/launch_hwe_deepseek_harness_v178_local_builder.py \
+  --post-merge-main-run-id <successful-v178-main-run-id>
+```
+
+The qualification contract is atomic and requires both the agent-only open route and the official
+authoritative verifier route to reproduce base-FAIL/reference-PASS, plus the builder binding,
+image scan, and cleanup gates. A successful result remains pending v179. The research-only
+DeepSeek canary is v180 or later and is not authorized by v178; collection, SFT mixing, training,
+and production readiness remain false.
