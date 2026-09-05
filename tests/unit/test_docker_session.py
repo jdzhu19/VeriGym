@@ -256,6 +256,7 @@ class RecordingDockerEngine:
                         "Icarus Verilog version 12.0 (stable) (v12_0)\n"
                         f"{marker}:vvp\n"
                         "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                        f"{marker}:verilator\nunavailable\n"
                         f"{marker}:launcher_sha256\n"
                         f"{LAUNCHER_SHA256}  ../usr/local/bin/verigym-public-test\n"
                     )
@@ -267,6 +268,7 @@ class RecordingDockerEngine:
                     "Icarus Verilog version 12.0 (stable) (v12_0)\n"
                     f"{marker}:vvp\n"
                     "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                    f"{marker}:verilator\nunavailable\n"
                 )
             state.update({"Status": "exited", "ExitCode": 0})
         elif command and command[0] in self.missing_commands:

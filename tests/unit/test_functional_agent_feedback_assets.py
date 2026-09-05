@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from verigym.core.agent_feedback_assets import (
     compile_feedback_contract,
     compile_smoke_feedback_contract,
@@ -54,3 +56,41 @@ def test_functional_contract_is_distinct_and_materializes_only_public_assets() -
     )
     assert "public-smoke" not in visible
     assert "hidden" not in visible
+
+
+def test_verilator_compile_contract_is_fixed_and_distinct_from_icarus() -> None:
+    icarus = compile_feedback_contract(
+        source_paths=["rtl/TopModule.sv"], top_module="TopModule", language="2012"
+    )
+    verilator = compile_feedback_contract(
+        source_paths=["rtl/TopModule.sv"],
+        top_module="TopModule",
+        language="2012",
+        backend="verilator",
+    )
+    commands = verilator["tests"]
+    assert isinstance(commands, list)
+    assert commands[0]["commands"][0]["argv"] == [
+        "verilator",
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "-Wno-BLKANDNBLK",
+        "--bbox-unsup",
+        "--language",
+        "1800-2012",
+        "--top-module",
+        "TopModule",
+        "{repository}/rtl/TopModule.sv",
+    ]
+    assert verilator != icarus
+
+
+def test_compile_contract_rejects_an_unknown_backend() -> None:
+    with pytest.raises(ValueError, match="unsupported open-tool backend"):
+        compile_feedback_contract(
+            source_paths=["rtl/TopModule.sv"],
+            top_module="TopModule",
+            language="2012",
+            backend="unknown",  # type: ignore[arg-type]
+        )

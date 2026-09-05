@@ -64,6 +64,8 @@ from verigym.suites.verilog_eval.toolchain import detect_icarus
 ADAPTER_VERSION = "0.1.0"
 SUITE_VERSION = "v2-spec-to-rtl-compat-1"
 AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-v1"
+VERILATOR_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-verilator-v1"
+VERILATOR_AGENT_EVAL_ADAPTER_VERSION = "0.11.0"
 VCS_MCP_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
 VCS_MCP_AGENT_EVAL_ADAPTER_VERSION = "0.9.0"
 VCS_MCP_PUBLIC_AGENT_EVAL_SUITE_VERSION = "v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1"
@@ -226,6 +228,7 @@ class VerilogEvalSuite(SuiteAdapter):
                     source_paths=["rtl/TopModule.sv"],
                     top_module="TopModule",
                     language="2012",
+                    backend=("verilator" if self._is_verilator_agent_eval() else "iverilog"),
                 )
             )
             materialized = materialize_agent_eval_workspace(
@@ -381,6 +384,7 @@ class VerilogEvalSuite(SuiteAdapter):
         if runtime_image is not None:
             compiler_version = runtime_image.iverilog_version
             runner_version = runtime_image.vvp_version
+            verilator_version = runtime_image.verilator_version
             try:
                 compatibility = (
                     IcarusCompatibility(runtime_image.compatibility_status)
@@ -394,6 +398,12 @@ class VerilogEvalSuite(SuiteAdapter):
             runner = tools.get("verilog_eval.v2.regression").health_check()
             compiler_version = compiler.version
             runner_version = runner.version
+            verilator = (
+                tools.get("verilator.compile").health_check()
+                if self._is_verilator_agent_eval()
+                else None
+            )
+            verilator_version = verilator.version if verilator is not None else None
             compiler_info = detect_icarus("iverilog")
             runner_info = detect_icarus("vvp")
             statuses = {compiler_info.compatibility, runner_info.compatibility}
@@ -403,10 +413,16 @@ class VerilogEvalSuite(SuiteAdapter):
                 compatibility = IcarusCompatibility.REFERENCE_COMPATIBLE
             else:
                 compatibility = IcarusCompatibility.UNVERIFIED
+        if self._is_verilator_agent_eval() and verilator_version is None:
+            raise ConfigurationError(
+                "VerilogEval Verilator public feedback requires an available Verilator"
+            )
         return ToolchainProfile(
             id=(
                 "verilog-eval-v2-agent-eval-public-icarus12-vcs-mcp-v1"
                 if self._is_vcs_mcp_agent_eval()
+                else "verilog-eval-v2-agent-eval-verilator-lint-icarus12-v1"
+                if self._is_verilator_agent_eval()
                 else "verilog-eval-v2-agent-eval-icarus12"
                 if self._is_agent_eval()
                 else "verilog-eval-v2-icarus"
@@ -416,11 +432,27 @@ class VerilogEvalSuite(SuiteAdapter):
                 "VerilogEval AgentEval public Icarus 12 compile profile; hidden VCS identity is "
                 "bound separately by the required verifier profile."
                 if self._is_vcs_mcp_agent_eval()
+                else (
+                    "VerilogEval repeatable public Verilator compile/lint feedback with the "
+                    "independent hidden Icarus 12 functional verifier."
+                )
+                if self._is_verilator_agent_eval()
                 else "VerilogEval V2 Icarus profile; upstream reference is Icarus v12."
             ),
             tools=[
                 ToolRequirement(name="iverilog", version=compiler_version),
                 ToolRequirement(name="vvp", version=runner_version),
+                *(
+                    [
+                        ToolRequirement(
+                            name="verilator",
+                            version=verilator_version,
+                            capabilities=["compile", "lint"],
+                        )
+                    ]
+                    if self._is_verilator_agent_eval()
+                    else []
+                ),
             ],
             runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
             container_image=(
@@ -431,7 +463,12 @@ class VerilogEvalSuite(SuiteAdapter):
             ),
             deterministic=True,
             reproducibility_scope="public",
-            compatibility_status=compatibility.value,
+            compatibility_status=(
+                "reference_compatible_verilator_lint"
+                if self._is_verilator_agent_eval()
+                and compatibility == IcarusCompatibility.REFERENCE_COMPATIBLE
+                else compatibility.value
+            ),
         )
 
     def _adapter_for_optional_root(self, source_root: Path | None) -> VerilogEvalSuite:
@@ -478,6 +515,7 @@ class VerilogEvalSuite(SuiteAdapter):
         variant = snapshot.variant
         agent_eval = variant in {
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
@@ -498,6 +536,7 @@ class VerilogEvalSuite(SuiteAdapter):
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
         }
         codex_patch_compatible = variant in {
+            VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2.value,
@@ -520,6 +559,9 @@ class VerilogEvalSuite(SuiteAdapter):
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
             VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
         }
+        verilator_agent_eval = (
+            variant == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1.value
+        )
         task_id = f"verilog-eval/{variant}/{problem.native_id}"
         candidate_path = "repository/rtl/TopModule.sv" if agent_eval else "rtl/TopModule.sv"
         public_smoke = self._public_smoke(problem.native_id) if functional_agent_eval else None
@@ -535,6 +577,7 @@ class VerilogEvalSuite(SuiteAdapter):
                 source_paths=["rtl/TopModule.sv"],
                 top_module="TopModule",
                 language="2012",
+                backend="verilator" if verilator_agent_eval else "iverilog",
             )
         )
         suite_version = (
@@ -556,6 +599,8 @@ class VerilogEvalSuite(SuiteAdapter):
             if functional_v2
             else FUNCTIONAL_AGENT_EVAL_SUITE_VERSION
             if functional_agent_eval
+            else VERILATOR_AGENT_EVAL_SUITE_VERSION
+            if verilator_agent_eval
             else AGENT_EVAL_SUITE_VERSION
             if agent_eval
             else SUITE_VERSION
@@ -744,6 +789,8 @@ class VerilogEvalSuite(SuiteAdapter):
                     if functional_v2
                     else FUNCTIONAL_AGENT_EVAL_ADAPTER_VERSION
                     if functional_agent_eval
+                    else VERILATOR_AGENT_EVAL_ADAPTER_VERSION
+                    if verilator_agent_eval
                     else ADAPTER_VERSION
                 ),
                 "synthetic_fixture": snapshot.synthetic_fixture,
@@ -764,9 +811,24 @@ class VerilogEvalSuite(SuiteAdapter):
                     if functional_agent_eval
                     else "compile_only_vcs_mcp_v1"
                     if vcs_mcp_public
+                    else "compile_only_verilator_lint_v1"
+                    if verilator_agent_eval
                     else "compile_only_v1"
                     if agent_eval
                     else None
+                ),
+                **(
+                    {
+                        "public_feedback_partition": (
+                            "verilog_eval_v2_public_verilator_compile_lint_v1"
+                        ),
+                        "public_feedback_backend": "verilator",
+                        "diagnostic_only": True,
+                        "benchmark_score_claimed": False,
+                        "verification_requires_final_submission": True,
+                    }
+                    if verilator_agent_eval
+                    else {}
                 ),
                 **(
                     {
@@ -817,6 +879,7 @@ class VerilogEvalSuite(SuiteAdapter):
             and self._config.variant
             in {
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1.value,
+                VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1.value,
@@ -827,6 +890,13 @@ class VerilogEvalSuite(SuiteAdapter):
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6.value,
                 VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7.value,
             }
+        )
+
+    def _is_verilator_agent_eval(self) -> bool:
+        return bool(
+            self._config is not None
+            and self._config.variant
+            == VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1.value
         )
 
     def _is_vcs_mcp_agent_eval(self) -> bool:

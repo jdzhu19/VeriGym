@@ -2588,6 +2588,18 @@
           "title": "Resolved Image Id",
           "type": "string"
         },
+        "verilator_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verilator Version"
+        },
         "vvp_version": {
           "anyOf": [
             {

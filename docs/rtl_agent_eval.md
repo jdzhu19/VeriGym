@@ -9,13 +9,16 @@ contract before any model lookup.
 
 - RTLLM: `counter_12_agent_eval_v1` and `up_down_counter_agent_eval_v1`.
 - RTLLM full corpus: `v2-agent-eval-all-v1` provides L1 candidate-only compile feedback for all
-  50 frozen tasks; `v2-agent-eval-functional-l2-batch1-v1` adds PPA-disabled L2 functional
+  50 frozen tasks; `v2-agent-eval-verilator-public-v1` is the separately identified L1 variant
+  that replaces only iterative public compilation with Verilator lint while keeping the hidden
+  Icarus verifier; `v2-agent-eval-functional-l2-batch1-v1` adds PPA-disabled L2 functional
   feedback for three evidence-selected tasks; `v2-agent-eval-functional-all-v1` provides a
   separately frozen, PPA-disabled L2 projection for all 50; and
   `v2-agent-eval-functional-harder-v1` remains the separately qualified L2/L3 four-task diagnostic
   partition. `v2-agent-eval-functional-ppa3-v1` is a distinct three-task L2/L3/L4 projection with
   separately qualified OpenSTA and DC partitions.
-- VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`.
+- VerilogEval V2: `v2-spec-to-rtl-agent-eval-v1`, plus the compile-only public-backend alternative
+  `v2-spec-to-rtl-agent-eval-verilator-v1`.
 - RTL-Repo: `official-parquet-v1-agent-eval-v1`; the compatible, separately identified
   source-priority projection is `official-parquet-v1-agent-eval-v2`; the independently frozen
   immediate-physical-line projection is `official-parquet-v1-agent-eval-v3`.
@@ -75,8 +78,10 @@ hidden rejection, with zero retries and zero PPA evaluations.
 
 ## Feedback boundaries
 
-Public `compile` invokes only Icarus syntax/elaboration over candidate files. It contains no hidden
-golden RTL or testbench. RTLLM alone may enable candidate-only Yosys/OpenSTA ATP v2 feedback:
+Public `compile` defaults to Icarus syntax/elaboration over candidate files. The explicitly named
+Verilator variants instead run a fixed `--lint-only` parser/elaborator command. Neither contract
+contains hidden golden RTL or a testbench, and a Verilator pass is not a functional verdict.
+RTLLM alone may enable candidate-only Yosys/OpenSTA ATP v2 feedback:
 
 ```bash
 verigym run ... \

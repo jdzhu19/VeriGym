@@ -22,11 +22,12 @@ from verigym.runtimes.docker.security import (
 from verigym.schemas.runtime import DockerRuntimeConfig
 
 
-def test_controlled_baseline_path_includes_opensta_after_existing_rtl_tools() -> None:
-    assert BASELINE_ENVIRONMENT["PATH"].split(":")[:3] == [
+def test_controlled_baseline_path_includes_opensta_and_verilator_after_rtl_tools() -> None:
+    assert BASELINE_ENVIRONMENT["PATH"].split(":")[:4] == [
         "/opt/yosys/bin",
         "/opt/iverilog/bin",
         "/opt/opensta/bin",
+        "/opt/verilator/bin",
     ]
 
 

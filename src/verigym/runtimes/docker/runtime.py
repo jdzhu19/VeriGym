@@ -39,6 +39,7 @@ from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResul
 from verigym.suites.verilog_eval.toolchain import classify_icarus_version
 
 _VERSION_LINE = re.compile(r"^Icarus Verilog (?:runtime )?version\b", re.IGNORECASE)
+_VERILATOR_VERSION_LINE = re.compile(r"^Verilator\s+[0-9]", re.IGNORECASE)
 _PROBE_MARKER_PREFIX = "__VERIGYM_IMAGE_PROBE_V1__"
 _VERIFIER_IMAGE_PROBE_SCRIPT = (
     "set -eu\n"
@@ -50,6 +51,9 @@ _VERIFIER_IMAGE_PROBE_SCRIPT = (
     "iverilog -V 2>&1\n"
     f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:vvp'\n"
     "vvp -V 2>&1\n"
+    f"printf '%s\\n' '{_PROBE_MARKER_PREFIX}:verilator'\n"
+    "if command -v verilator >/dev/null 2>&1; then verilator --version 2>&1; "
+    "else printf '%s\\n' unavailable; fi\n"
 )
 _AGENT_IMAGE_PROBE_SCRIPT = (
     "set -eu\n"
@@ -66,6 +70,9 @@ _AGENT_IMAGE_PROBE_SCRIPT = (
     "  iverilog -V 2>&1\n"
     f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:vvp'\n"
     "  vvp -V 2>&1\n"
+    f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:verilator'\n"
+    "  if command -v verilator >/dev/null 2>&1; then verilator --version 2>&1; "
+    "else printf '%s\\n' unavailable; fi\n"
     f"  printf '%s\\n' '{_PROBE_MARKER_PREFIX}:launcher_sha256'\n"
     '  sha256sum "$4"\n'
     "fi\n"
@@ -337,6 +344,7 @@ class DockerRuntime(Runtime):
                 "observed_gid": stored.observed_gid,
                 "iverilog_version": stored.iverilog_version,
                 "vvp_version": stored.vvp_version,
+                "verilator_version": stored.verilator_version,
                 "compatibility_status": stored.compatibility_status,
             }
         )
@@ -359,6 +367,7 @@ class DockerRuntime(Runtime):
                         "observed_gid": None,
                         "iverilog_version": None,
                         "vvp_version": None,
+                        "verilator_version": None,
                         "compatibility_status": None,
                     }
                 ),
@@ -369,6 +378,7 @@ class DockerRuntime(Runtime):
                             "observed_gid": None,
                             "iverilog_version": None,
                             "vvp_version": None,
+                            "verilator_version": None,
                             "compatibility_status": None,
                         }
                     )
@@ -389,6 +399,7 @@ class DockerRuntime(Runtime):
                             "observed_gid": None,
                             "iverilog_version": None,
                             "vvp_version": None,
+                            "verilator_version": None,
                             "compatibility_status": None,
                         }
                     )
@@ -528,7 +539,7 @@ class DockerRuntime(Runtime):
                 )
                 sections = _parse_image_probe_sections(
                     probe.stdout,
-                    expected=("uid", "gid", "iverilog", "vvp"),
+                    expected=("uid", "gid", "iverilog", "vvp", "verilator"),
                 )
                 try:
                     uid = int(sections["uid"])
@@ -545,6 +556,7 @@ class DockerRuntime(Runtime):
                     )
                 iverilog_version = _extract_version(sections["iverilog"])
                 vvp_version = _extract_version(sections["vvp"])
+                verilator_version = _extract_verilator_version(sections["verilator"])
                 if iverilog_version is None or vvp_version is None:
                     raise DockerImageError(
                         "Docker image did not report valid Icarus tool versions",
@@ -557,6 +569,7 @@ class DockerRuntime(Runtime):
                         "observed_gid": gid,
                         "iverilog_version": iverilog_version,
                         "vvp_version": vvp_version,
+                        "verilator_version": verilator_version,
                         "compatibility_status": compatibility,
                     }
                 )
@@ -622,7 +635,11 @@ class DockerRuntime(Runtime):
                     "gid",
                     "version",
                     "binary_sha256",
-                    *(("iverilog", "vvp", "launcher_sha256") if repository_agent else ()),
+                    *(
+                        ("iverilog", "vvp", "verilator", "launcher_sha256")
+                        if repository_agent
+                        else ()
+                    ),
                 )
                 sections = _parse_image_probe_sections(
                     probe.stdout,
@@ -663,11 +680,17 @@ class DockerRuntime(Runtime):
                     _extract_version(sections["iverilog"]) if repository_agent else None
                 )
                 vvp_output = _extract_version(sections["vvp"]) if repository_agent else None
+                verilator_output = (
+                    _extract_verilator_version(sections["verilator"]) if repository_agent else None
+                )
                 if repository_agent:
                     expected_launcher_hash = external.required_image_labels.get(
                         "org.verigym.public_test_launcher.sha256"
                     )
                     observed_launcher_hash = sections["launcher_sha256"].partition(" ")[0].strip()
+                    expected_verilator_version = external.required_image_labels.get(
+                        "org.verigym.verilator.version"
+                    )
                     if (
                         expected_launcher_hash is None
                         or observed_launcher_hash != expected_launcher_hash
@@ -675,6 +698,15 @@ class DockerRuntime(Runtime):
                         or "version 12." not in iverilog_output
                         or vvp_output is None
                         or "version 12." not in vvp_output
+                        or (
+                            expected_verilator_version is not None
+                            and (
+                                verilator_output is None
+                                or not verilator_output.startswith(
+                                    f"Verilator {expected_verilator_version}"
+                                )
+                            )
+                        )
                     ):
                         raise DockerImageError(
                             "Docker repository-agent tool identity is invalid",
@@ -686,8 +718,19 @@ class DockerRuntime(Runtime):
                         "observed_gid": gid,
                         "iverilog_version": iverilog_output,
                         "vvp_version": vvp_output,
+                        "verilator_version": verilator_output,
                         "compatibility_status": (
                             "codex_cli_0.144.6_iverilog12_repository_agent"
+                            if repository_agent and version_output == "codex-cli 0.144.6"
+                            else (
+                                version_output.replace("-", "_").replace(" ", "_")
+                                + "_iverilog12"
+                                + (
+                                    "_verilator_repository_agent"
+                                    if verilator_output is not None
+                                    else "_repository_agent"
+                                )
+                            )
                             if repository_agent
                             else version_output
                         ),
@@ -964,6 +1007,17 @@ class DockerRuntime(Runtime):
 def _extract_version(output: str) -> str | None:
     return next(
         (line.strip() for line in output.splitlines() if _VERSION_LINE.search(line.strip())),
+        None,
+    )
+
+
+def _extract_verilator_version(output: str) -> str | None:
+    return next(
+        (
+            line.strip()
+            for line in output.splitlines()
+            if _VERILATOR_VERSION_LINE.search(line.strip())
+        ),
         None,
     )
 

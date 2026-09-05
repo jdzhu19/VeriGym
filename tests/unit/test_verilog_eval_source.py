@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -221,6 +222,55 @@ def test_agent_eval_variant_materializes_public_compile_without_hidden_assets() 
     )
     assert "module RefModule" not in visible_text
     assert "module tb" not in visible_text
+
+
+def test_verilator_agent_eval_variant_is_compile_only_and_hidden_isolated() -> None:
+    variant = "v2-spec-to-rtl-agent-eval-verilator-v1"
+    suite = adapter(variant=variant)
+    reference = list(suite.discover())[0]
+    task = suite.load_task(reference)
+    assets = suite.resolve_assets(task)
+
+    assert task.id == f"verilog-eval/{variant}/Prob900_fixture_and"
+    assert task.suite_version == variant
+    assert task.metadata["public_feedback_semantics"] == "compile_only_verilator_lint_v1"
+    assert task.metadata["public_feedback_partition"] == (
+        "verilog_eval_v2_public_verilator_compile_lint_v1"
+    )
+    assert task.metadata["public_feedback_backend"] == "verilator"
+    assert task.metadata["diagnostic_only"] is True
+    assert task.metadata["benchmark_score_claimed"] is False
+    assert task.scoring.ppa_enabled is False
+    assert [node.plugin for node in task.verifier.nodes] == [
+        "verilog_eval.v2.compile",
+        "verilog_eval.v2.regression",
+    ]
+    assert assets.read_only_mounts
+    contract = json.loads(
+        (Path(assets.read_only_mounts[0].source_dir) / "test-contract.json").read_text()
+    )
+    command = contract["tests"][0]["commands"][0]["argv"]
+    assert command[:3] == ["verilator", "--lint-only", "--timing"]
+    assert command[3:6] == ["-Wno-fatal", "-Wno-BLKANDNBLK", "--bbox-unsup"]
+    assert "verifier" not in json.dumps(contract)
+
+    runtime = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            image=SimpleNamespace(
+                iverilog_version="Icarus Verilog version 12.0",
+                vvp_version="Icarus Verilog runtime version 12.0",
+                verilator_version="Verilator 5.052 2026-08-30 rev v5.052",
+                compatibility_status="canonical_or_reference_compatible",
+                requested_reference="qualified-image",
+                resolved_image_id="sha256:" + "1" * 64,
+            ),
+            name="docker",
+        )
+    )
+    profile = suite.toolchain_profile(runtime, SimpleNamespace())
+    assert profile is not None
+    assert profile.id == "verilog-eval-v2-agent-eval-verilator-lint-icarus12-v1"
+    assert [tool.name for tool in profile.tools] == ["iverilog", "vvp", "verilator"]
 
 
 def test_vcs_mcp_agent_eval_variant_is_isolated_and_keeps_old_task_identities() -> None:

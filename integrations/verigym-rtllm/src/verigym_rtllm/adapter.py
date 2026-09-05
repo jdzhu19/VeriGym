@@ -103,6 +103,9 @@ PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256 = (
 ALL_AGENT_EVAL_VARIANT = "v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-all-v1"
 ALL_AGENT_EVAL_ADAPTER_VERSION = "0.7.0"
+VERILATOR_AGENT_EVAL_VARIANT = "v2-agent-eval-verilator-public-v1"
+VERILATOR_AGENT_EVAL_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-verilator-public-v1"
+VERILATOR_AGENT_EVAL_ADAPTER_VERSION = "0.15.0"
 L2_BATCH1_VARIANT = "v2-agent-eval-functional-l2-batch1-v1"
 L2_BATCH1_SUITE_VERSION = "rtllm-41b2689-v2-agent-eval-functional-l2-batch1-v1"
 L2_BATCH1_ADAPTER_VERSION = "0.8.0"
@@ -367,6 +370,7 @@ _SUPPORTED_VARIANTS = frozenset(
         "up_down_counter",
         _UP_DOWN_ICARUS_TRAINING_VARIANT,
         ALL_AGENT_EVAL_VARIANT,
+        VERILATOR_AGENT_EVAL_VARIANT,
         HARDER_VARIANT,
         PPA_DIAGNOSTIC3_VARIANT,
         *_FUNCTIONAL_BATCH_SPECS,
@@ -376,16 +380,21 @@ _SUPPORTED_VARIANTS = frozenset(
 )
 _MULTI_TASK_VARIANTS = {
     ALL_AGENT_EVAL_VARIANT: ALL_TASK_NAMES,
+    VERILATOR_AGENT_EVAL_VARIANT: ALL_TASK_NAMES,
     HARDER_VARIANT: HARDER_TASK_NAMES,
     PPA_DIAGNOSTIC3_VARIANT: PPA_DIAGNOSTIC3_TASK_NAMES,
     **{variant: spec.task_names for variant, spec in _FUNCTIONAL_BATCH_SPECS.items()},
 }
+_COMPILE_ONLY_MULTI_TASK_VARIANTS = frozenset(
+    {ALL_AGENT_EVAL_VARIANT, VERILATOR_AGENT_EVAL_VARIANT}
+)
 _FUNCTIONAL_MULTI_TASK_VARIANTS = frozenset(
     {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT, *_FUNCTIONAL_BATCH_SPECS}
 )
 _NO_PPA_AGENT_EVAL_VARIANTS = frozenset(
     {
         ALL_AGENT_EVAL_VARIANT,
+        VERILATOR_AGENT_EVAL_VARIANT,
         *(variant for variant in _FUNCTIONAL_BATCH_SPECS if variant != PPA47_VARIANT),
     }
 )
@@ -498,7 +507,8 @@ class RTLLMSuite(SuiteAdapter):
         verifier_manifest = self._effective_manifest(manifest)
         variant = self._variant()
         harder = variant in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}
-        all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
+        compile_only_agent_eval = variant in _COMPILE_ONLY_MULTI_TASK_VARIANTS
+        verilator_agent_eval = variant == VERILATOR_AGENT_EVAL_VARIANT
         multi_task_variant = variant in _MULTI_TASK_VARIANTS
         icarus_training = variant == _UP_DOWN_ICARUS_TRAINING_VARIANT
         agent_eval = (
@@ -518,7 +528,7 @@ class RTLLMSuite(SuiteAdapter):
             "utf-8"
         )
         derived_note = (
-            self._derived_projection_note(manifest, compile_only=all_agent_eval)
+            self._derived_projection_note(manifest, compile_only=compile_only_agent_eval)
             if multi_task_variant
             else ""
         )
@@ -542,6 +552,7 @@ class RTLLMSuite(SuiteAdapter):
                 source_paths=[f"rtl/{manifest.name}.v"],
                 top_module=manifest.candidate_top,
                 language="2012" if multi_task_variant else "2005",
+                backend="verilator" if verilator_agent_eval else "iverilog",
             )
             if agent_eval
             else None
@@ -655,6 +666,7 @@ class RTLLMSuite(SuiteAdapter):
         if task.source.content_hash != snapshot.dataset_content_hash:
             raise ConfigurationError("RTLLM task identity differs from the source snapshot")
         variant = self._variant()
+        verilator_agent_eval = variant == VERILATOR_AGENT_EVAL_VARIANT
         agent_eval = (
             variant in _MULTI_TASK_VARIANTS
             or variant in _AGENT_EVAL_VARIANTS | _FUNCTIONAL_AGENT_EVAL_VARIANTS
@@ -677,6 +689,7 @@ class RTLLMSuite(SuiteAdapter):
                     source_paths=[f"rtl/{manifest.name}.v"],
                     top_module=manifest.candidate_top,
                     language="2012" if variant in _MULTI_TASK_VARIANTS else "2005",
+                    backend="verilator" if verilator_agent_eval else "iverilog",
                 )
             )
             materialized = materialize_agent_eval_workspace(
@@ -685,7 +698,7 @@ class RTLLMSuite(SuiteAdapter):
                     "README.md": self._repository_readme(manifest),
                     f"rtl/{manifest.name}.v": (
                         self._candidate_stub(manifest)
-                        if variant == ALL_AGENT_EVAL_VARIANT
+                        if variant in _COMPILE_ONLY_MULTI_TASK_VARIANTS
                         else (base_workspace / "rtl" / f"{manifest.name}.v").read_text(
                             encoding="utf-8"
                         )
@@ -846,7 +859,7 @@ class RTLLMSuite(SuiteAdapter):
                 else ("stuck-zero", "reset-error", "protocol-latency-error", "functional-error")
                 if self._variant() in _FUNCTIONAL_MULTI_TASK_VARIANTS
                 else ()
-                if self._variant() == ALL_AGENT_EVAL_VARIANT
+                if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS
                 else ("stuck-zero",)
             )
             for category in categories:
@@ -866,7 +879,7 @@ class RTLLMSuite(SuiteAdapter):
                         expected_resolved=False,
                     )
                 )
-            if self._variant() == ALL_AGENT_EVAL_VARIANT:
+            if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS:
                 cases.append(
                     ConformanceCase(
                         name=f"{manifest.name}-missing-module",
@@ -885,7 +898,7 @@ class RTLLMSuite(SuiteAdapter):
         manifest = self._manifest_for_task(task)
         reference = self.reference_solution(task)
         assert reference is not None
-        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+        if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS:
             return [
                 ConformanceCase(
                     name=f"{manifest.name}-public-reference",
@@ -948,17 +961,23 @@ class RTLLMSuite(SuiteAdapter):
         )
         if self._variant() == _UP_DOWN_ICARUS_TRAINING_VARIANT or agent_eval:
             image = runtime.descriptor.image
+            verilator_agent_eval = self._variant() == VERILATOR_AGENT_EVAL_VARIANT
             if image is None:
                 compiler = tools.get("iverilog.compile").health_check()
                 runner = tools.get("iverilog.run").health_check()
+                verilator = (
+                    tools.get("verilator.compile").health_check() if verilator_agent_eval else None
+                )
                 compiler_version = compiler.version
                 runner_version = runner.version
+                verilator_version = verilator.version if verilator is not None else None
                 compatibility = (
                     "available" if compiler.healthy and runner.healthy else "unavailable"
                 )
             else:
                 compiler_version = image.iverilog_version
                 runner_version = image.vvp_version
+                verilator_version = image.verilator_version
                 compatibility = image.compatibility_status or "unverified_tool_version"
             if agent_eval and not all(
                 _is_icarus12_version(version) for version in (compiler_version, runner_version)
@@ -966,8 +985,16 @@ class RTLLMSuite(SuiteAdapter):
                 raise ConfigurationError(
                     "RTLLM AgentEval requires qualified Icarus and vvp major version 12"
                 )
+            if verilator_agent_eval and verilator_version is None:
+                raise ConfigurationError(
+                    "RTLLM Verilator public feedback requires an available Verilator"
+                )
             if agent_eval:
-                compatibility = "reference_compatible"
+                compatibility = (
+                    "reference_compatible_verilator_lint"
+                    if verilator_agent_eval
+                    else "reference_compatible"
+                )
             return ToolchainProfile(
                 id=(
                     "rtllm-icarus12-agent-eval-ppa3-v1"
@@ -976,6 +1003,8 @@ class RTLLMSuite(SuiteAdapter):
                     if self._variant() == HARDER_VARIANT
                     else "rtllm-icarus12-agent-eval-l2-batch1-v1"
                     if self._variant() == L2_BATCH1_VARIANT
+                    else "rtllm-verilator-public-icarus12-agent-eval-v1"
+                    if self._variant() == VERILATOR_AGENT_EVAL_VARIANT
                     else "rtllm-icarus12-agent-eval-all-v1"
                     if self._variant() == ALL_AGENT_EVAL_VARIANT
                     else "rtllm-icarus12-agent-eval-v1"
@@ -984,13 +1013,27 @@ class RTLLMSuite(SuiteAdapter):
                 ),
                 version="1.0.0",
                 description=(
-                    "Pinned Icarus functional verifier for an RTLLM AgentEval partition."
+                    "Repeatable public Verilator compile/lint feedback with the independent "
+                    "hidden Icarus 12 functional verifier."
+                    if verilator_agent_eval
+                    else "Pinned Icarus functional verifier for an RTLLM AgentEval partition."
                     if agent_eval
                     else "Pinned Icarus training verifier; not a VCS benchmark result."
                 ),
                 tools=[
                     ToolRequirement(name="iverilog", version=compiler_version),
                     ToolRequirement(name="vvp", version=runner_version),
+                    *(
+                        [
+                            ToolRequirement(
+                                name="verilator",
+                                version=verilator_version,
+                                capabilities=["compile", "lint"],
+                            )
+                        ]
+                        if verilator_agent_eval
+                        else []
+                    ),
                 ],
                 runtime=RuntimeRequirement(runtime=runtime.descriptor.name),
                 container_image=image.requested_reference if image is not None else None,
@@ -1096,6 +1139,8 @@ class RTLLMSuite(SuiteAdapter):
 
     def _suite_version(self, manifest: RTLLMTaskManifest) -> str:
         variant = self._variant()
+        if variant == VERILATOR_AGENT_EVAL_VARIANT:
+            return VERILATOR_AGENT_EVAL_SUITE_VERSION
         if variant == ALL_AGENT_EVAL_VARIANT:
             return ALL_AGENT_EVAL_SUITE_VERSION
         if variant == HARDER_VARIANT:
@@ -1115,7 +1160,7 @@ class RTLLMSuite(SuiteAdapter):
         return UP_DOWN_SUITE_VERSION if manifest.name == "up_down_counter" else SUITE_VERSION
 
     def _workspace_asset_name(self, manifest: RTLLMTaskManifest) -> str:
-        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+        if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS:
             return "workspace_all"
         if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return "workspace_harder"
@@ -1126,7 +1171,7 @@ class RTLLMSuite(SuiteAdapter):
         return "workspace_up_down" if manifest.name == "up_down_counter" else "workspace"
 
     def _base_workspace(self, manifest: RTLLMTaskManifest) -> Path:
-        if self._variant() == ALL_AGENT_EVAL_VARIANT:
+        if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS:
             return self._all_workspace_root
         if self._variant() in {HARDER_VARIANT, PPA_DIAGNOSTIC3_VARIANT}:
             return self._harder_workspace_root
@@ -1149,7 +1194,7 @@ class RTLLMSuite(SuiteAdapter):
         )
         return f"# {manifest.name}\n\nImplement the task in `rtl/{manifest.name}.v`.{extra}\n" + (
             "The public test is a candidate-only compile check; it does not test behavior.\n"
-            if self._variant() == ALL_AGENT_EVAL_VARIANT
+            if self._variant() in _COMPILE_ONLY_MULTI_TASK_VARIANTS
             else "Use the public test tool for candidate-only feedback before finishing.\n"
         )
 
@@ -1815,10 +1860,14 @@ class RTLLMSuite(SuiteAdapter):
     ) -> dict[str, Any]:
         identity_manifest = self._effective_manifest(manifest)
         all_agent_eval = variant == ALL_AGENT_EVAL_VARIANT
+        verilator_agent_eval = variant == VERILATOR_AGENT_EVAL_VARIANT
+        compile_only_agent_eval = variant in _COMPILE_ONLY_MULTI_TASK_VARIANTS
         batch = _FUNCTIONAL_BATCH_SPECS.get(variant)
         adapter_version = (
             ALL_AGENT_EVAL_ADAPTER_VERSION
             if all_agent_eval
+            else VERILATOR_AGENT_EVAL_ADAPTER_VERSION
+            if verilator_agent_eval
             else PPA_DIAGNOSTIC3_ADAPTER_VERSION
             if variant == PPA_DIAGNOSTIC3_VARIANT
             else batch.adapter_version
@@ -1834,6 +1883,8 @@ class RTLLMSuite(SuiteAdapter):
         evaluation_profile = (
             "icarus12-agent-eval-all-v1"
             if all_agent_eval
+            else "verilator-public-icarus12-hidden-agent-eval-v1"
+            if verilator_agent_eval
             else "icarus12-functional-opensta-dc-ppa3-v1"
             if variant == PPA_DIAGNOSTIC3_VARIANT
             else batch.evaluation_profile
@@ -1879,6 +1930,8 @@ class RTLLMSuite(SuiteAdapter):
                     "public_feedback_semantics": (
                         "candidate_only_compile_l1_v1"
                         if all_agent_eval
+                        else "candidate_only_compile_verilator_lint_l1_v1"
+                        if verilator_agent_eval
                         else "compile_functional_smoke_and_candidate_only_ppa_feedback_ppa3_v1"
                         if variant == PPA_DIAGNOSTIC3_VARIANT
                         else batch.public_feedback_semantics
@@ -1893,8 +1946,15 @@ class RTLLMSuite(SuiteAdapter):
                     ),
                 }
             )
-            if all_agent_eval:
+            if compile_only_agent_eval:
                 metadata["gym_qualification_level"] = "L1_compile_only"
+            if verilator_agent_eval:
+                metadata.update(
+                    {
+                        "public_feedback_partition": "rtllm_public_verilator_compile_lint_v1",
+                        "public_feedback_backend": "verilator",
+                    }
+                )
             elif variant in {PPA_DIAGNOSTIC3_VARIANT, PPA47_VARIANT}:
                 metadata["gym_qualification_level"] = "L4_correctness_gated_final_ppa"
                 metadata["gym_qualification_levels"] = [
@@ -2164,6 +2224,9 @@ __all__ = [
     "ALL_AGENT_EVAL_ADAPTER_VERSION",
     "ALL_AGENT_EVAL_SUITE_VERSION",
     "ALL_AGENT_EVAL_VARIANT",
+    "VERILATOR_AGENT_EVAL_ADAPTER_VERSION",
+    "VERILATOR_AGENT_EVAL_SUITE_VERSION",
+    "VERILATOR_AGENT_EVAL_VARIANT",
     "HARDER_ADAPTER_VERSION",
     "HARDER_SUITE_VERSION",
     "HARDER_VARIANT",

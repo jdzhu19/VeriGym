@@ -18,6 +18,8 @@ verigym suites validate --suite rtllm --source /path/to/RTLLM \
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-all-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-verilator-public-v1
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-harder-v1
 verigym suites validate --suite rtllm --source /path/to/RTLLM \
   --variant v2-agent-eval-functional-l2-batch1-v1
@@ -66,6 +68,12 @@ not expose functional smoke or PPA feedback and records `gym_qualification_level
 `diagnostic_only=true`, and `benchmark_score_claimed=false`. The original hidden functional
 verifier inputs, with any declared hash-bound compatibility projection, are staged only after typed
 `finish`.
+
+`v2-agent-eval-verilator-public-v1` is a distinct 50-task L1 projection. Its repeatable public
+action uses Verilator compile/lint instead of Icarus, while the one final hidden functional verdict
+still uses isolated Icarus 12. PPA and functional public smoke remain disabled. The tool image,
+observed Verilator version, fixed public command, and contract hash are recorded independently; a
+lint pass is never presented as proof of functional correctness.
 
 All prompt, reference, testbench, auxiliary-file, DUT/top, parser, and projection identities are
 frozen in the metadata catalog. Verifier-only projections are exact and hash-bound. Most normalize
@@ -173,6 +181,8 @@ The supported functional-version matrix is intentionally partitioned:
   major version 12;
 - `v2-agent-eval-all-v1` requires the same Icarus 12 identity and provides compile-only L1 Gym
   feedback for all 50 frozen tasks;
+- `v2-agent-eval-verilator-public-v1` additionally requires Verilator and replaces only the public
+  compile/lint action; final functionality remains on Icarus 12 and PPA stays disabled;
 - `v2-agent-eval-functional-l2-batch1-v1` requires Icarus 12, provides public L2 functional
   feedback for three tasks, and explicitly disables PPA;
 - `v2-agent-eval-functional-l2-batch2-v1` requires Icarus 12, provides public L2 functional

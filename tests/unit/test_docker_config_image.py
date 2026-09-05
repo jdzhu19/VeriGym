@@ -245,6 +245,16 @@ def test_docker_runtime_is_discoverable_without_a_python_docker_dependency() -> 
     assert registries.runtimes.get("docker").descriptor.isolation_level == "docker_standard"
 
 
+def test_optional_verilator_image_version_is_parsed_without_accepting_noise() -> None:
+    assert (
+        docker_runtime_module._extract_verilator_version(  # noqa: SLF001
+            "Verilator 5.052 2026-09-05 rev v5.052"
+        )
+        == "Verilator 5.052 2026-09-05 rev v5.052"
+    )
+    assert docker_runtime_module._extract_verilator_version("unavailable") is None  # noqa: SLF001
+
+
 def test_exact_immutable_image_observations_are_cached_only_in_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -7,6 +7,7 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.schemas.runtime import SessionReadOnlyMount
@@ -25,11 +26,14 @@ def compile_feedback_contract(
     source_paths: list[str],
     top_module: str,
     language: str,
+    backend: Literal["iverilog", "verilator"] = "iverilog",
 ) -> dict[str, object]:
-    """Build one deterministic syntax/elaboration-only Icarus contract."""
+    """Build one deterministic syntax/elaboration-only open-tool contract."""
 
     if language not in {"2005", "2012"}:
         raise ValueError("agent compile feedback supports Verilog 2005 or SystemVerilog 2012")
+    if backend not in {"iverilog", "verilator"}:
+        raise ValueError("agent compile feedback uses an unsupported open-tool backend")
     normalized = [_safe_repository_path(path) for path in source_paths]
     if not normalized:
         raise ValueError("agent compile feedback requires at least one source")
@@ -41,6 +45,31 @@ def compile_feedback_contract(
     asset_path = "assets/NOTICE"
     asset_files = {asset_path: hash_bytes(notice)}
     public_assets_hash = _public_asset_hash({asset_path: notice})
+    command = (
+        [
+            "verilator",
+            "--lint-only",
+            "--timing",
+            "-Wno-fatal",
+            "-Wno-BLKANDNBLK",
+            "--bbox-unsup",
+            "--language",
+            "1800-2012" if language == "2012" else "1364-2005",
+            "--top-module",
+            top_module,
+            *(f"{{repository}}/{path}" for path in normalized),
+        ]
+        if backend == "verilator"
+        else [
+            "iverilog",
+            f"-g{language}",
+            "-s",
+            top_module,
+            "-o",
+            "{build}/compile-only",
+            *(f"{{repository}}/{path}" for path in normalized),
+        ]
+    )
     return {
         "schema_version": "1.0",
         "protocol": "verigym_public_test_v1",
@@ -53,18 +82,14 @@ def compile_feedback_contract(
         "tests": [
             {
                 "id": "compile",
-                "title": "Public Icarus syntax and elaboration check",
+                "title": (
+                    "Public Verilator compile and lint check"
+                    if backend == "verilator"
+                    else "Public Icarus syntax and elaboration check"
+                ),
                 "commands": [
                     {
-                        "argv": [
-                            "iverilog",
-                            f"-g{language}",
-                            "-s",
-                            top_module,
-                            "-o",
-                            "{build}/compile-only",
-                            *(f"{{repository}}/{path}" for path in normalized),
-                        ],
+                        "argv": command,
                         "cwd": "repository",
                         "timeout_s": 30,
                         "expected_exit_code": 0,

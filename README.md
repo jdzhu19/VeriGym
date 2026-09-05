@@ -236,6 +236,19 @@ docker build \
   docker/iverilog12
 ```
 
+The optional public Verilator backend has its own non-root, source-complete image and does not
+replace the Icarus tag:
+
+```bash
+docker build \
+  -f docker/verilator5052-iverilog12/Dockerfile \
+  -t verigym/rtl-verilator:5.052-iverilog12-r1 \
+  docker/verilator5052-iverilog12
+```
+
+Its VerilogEval and RTLLM variants use Verilator only for repeatable candidate-only compile/lint
+feedback. Hidden functional verification remains isolated and PPA is not enabled by this choice.
+
 Run the same toy AgentEval vertical slice under fail-closed Docker isolation:
 
 ```bash

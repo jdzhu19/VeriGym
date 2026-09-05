@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from verigym.plugin_api import ConfigurationError, SuiteSourceConfig, content_hash
@@ -28,6 +30,7 @@ from verigym_rtllm.adapter import (
     PPA_DIAGNOSTIC3_PUBLIC_SMOKE_SHA256,
     PPA_DIAGNOSTIC3_TASK_IDENTITIES_SHA256,
     PPA_DIAGNOSTIC3_VARIANT,
+    VERILATOR_AGENT_EVAL_VARIANT,
     _is_icarus12_version,
 )
 from verigym_rtllm.known_bad import known_bad_source
@@ -100,6 +103,38 @@ def test_full_corpus_l1_variant_is_explicit(tmp_path: Path) -> None:
         SuiteSourceConfig(source_root=tmp_path, variant=ALL_AGENT_EVAL_VARIANT)
     )
     assert configured.validate_source().valid is False
+
+
+def test_full_corpus_verilator_variant_is_explicit(tmp_path: Path) -> None:
+    configured = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=VERILATOR_AGENT_EVAL_VARIANT)
+    )
+    assert configured.validate_source().valid is False
+
+
+def test_verilator_variant_toolchain_binds_public_lint_and_hidden_icarus(tmp_path: Path) -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(source_root=tmp_path, variant=VERILATOR_AGENT_EVAL_VARIANT)
+    )
+    runtime = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            name="docker",
+            image=SimpleNamespace(
+                iverilog_version="Icarus Verilog version 12.0",
+                vvp_version="Icarus Verilog runtime version 12.0",
+                verilator_version="Verilator 5.052 2026-09-05 rev v5.052",
+                compatibility_status="canonical_or_reference_compatible",
+                requested_reference="qualified-image",
+                resolved_image_id="sha256:" + "2" * 64,
+            ),
+        )
+    )
+
+    profile = suite.toolchain_profile(runtime, SimpleNamespace())
+    assert profile is not None
+    assert profile.id == "rtllm-verilator-public-icarus12-agent-eval-v1"
+    assert [tool.name for tool in profile.tools] == ["iverilog", "vvp", "verilator"]
+    assert profile.compatibility_status == "reference_compatible_verilator_lint"
 
 
 def test_l2_batch1_variant_is_explicit(tmp_path: Path) -> None:
@@ -593,6 +628,42 @@ def test_full_corpus_l1_discovery_loading_and_public_isolation() -> None:
         assert reference is not None
         reference_source = reference.files[f"repository/rtl/{manifest.name}.v"]
         assert f"module {manifest.candidate_top}" in reference_source
+
+
+@pytest.mark.external_benchmark
+@pytest.mark.skipif(
+    not os.environ.get("VERIGYM_RTLLM_SOURCE"),
+    reason="set VERIGYM_RTLLM_SOURCE to qualify the full-corpus Verilator projection",
+)
+def test_full_corpus_verilator_discovery_contract_and_hidden_isolation() -> None:
+    suite = RTLLMSuite().with_source(
+        SuiteSourceConfig(
+            source_root=Path(os.environ["VERIGYM_RTLLM_SOURCE"]),
+            variant=VERILATOR_AGENT_EVAL_VARIANT,
+        )
+    )
+
+    refs = list(suite.discover())
+    assert len(refs) == FROZEN_TASK_COUNT
+    for ref in refs:
+        task = suite.load_task(ref)
+        manifest = TASK_MANIFESTS[ref.native_id]
+        assert task.id == f"rtllm/{VERILATOR_AGENT_EVAL_VARIANT}/{manifest.name}"
+        assert task.metadata["gym_qualification_level"] == "L1_compile_only"
+        assert task.metadata["public_feedback_backend"] == "verilator"
+        assert task.metadata["agent_eval"]["ppa_supported"] is False
+        assert task.scoring.correctness_required_nodes == ["functional_hidden"]
+        assert task.verifier.nodes[0].plugin == "iverilog.simulate"
+
+        assets = suite.resolve_assets(task)
+        assert assets.read_only_mounts
+        contract = json.loads(
+            (Path(assets.read_only_mounts[0].source_dir) / "test-contract.json").read_text()
+        )
+        command = contract["tests"][0]["commands"][0]["argv"]
+        assert command[0] == "verilator"
+        assert command[1:3] == ["--lint-only", "--timing"]
+        assert "verifier" not in json.dumps(contract)
 
 
 @pytest.mark.external_benchmark

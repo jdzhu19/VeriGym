@@ -14,13 +14,44 @@ from pathlib import Path
 from verigym.core.errors import PathPolicyError
 from verigym.core.hashing import hash_directory
 from verigym.core.workspace import copy_tree_safely, normalize_relative_path
-from verigym.public_test_launcher import PublicTestError, execute_public_test
+from verigym.public_test_launcher import (
+    PublicTestError as PublicTestErrorV1,
+)
+from verigym.public_test_launcher import (
+    execute_public_test as execute_public_test_v1,
+)
+from verigym.public_test_launcher_v2 import (
+    PublicTestError as PublicTestErrorV2,
+)
+from verigym.public_test_launcher_v2 import (
+    execute_public_test as execute_public_test_v2,
+)
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
 from verigym.schemas.common import RuntimeDescriptor
 from verigym.schemas.external_agent import ExternalReadOnlyMountIdentity
 from verigym.schemas.runtime import SessionSpec, WorkspaceDiff
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult
+
+
+def _public_test_contract_uses_verilator(public_root: Path) -> bool:
+    """Select the v2 launcher without changing frozen v1 local-test behavior."""
+
+    try:
+        payload = json.loads((public_root / "test-contract.json").read_text(encoding="utf-8"))
+        tests = payload.get("tests", []) if isinstance(payload, dict) else []
+        return any(
+            isinstance(command, dict)
+            and isinstance(command.get("argv"), list)
+            and command["argv"]
+            and command["argv"][0] == "verilator"
+            for test in tests
+            if isinstance(test, dict)
+            for command in test.get("commands", [])
+            if isinstance(test.get("commands"), list)
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
 
 
 class LocalRuntimeSession(RuntimeSession):
@@ -167,6 +198,11 @@ class LocalRuntimeSession(RuntimeSession):
             raise PathPolicyError("repository public-test assets are not mounted")
         started = time.monotonic()
         try:
+            execute_public_test = (
+                execute_public_test_v2
+                if _public_test_contract_uses_verilator(public_root)
+                else execute_public_test_v1
+            )
             exit_code, payload, limit = execute_public_test(
                 test_id,
                 public_root=public_root,
@@ -190,7 +226,7 @@ class LocalRuntimeSession(RuntimeSession):
                     "public_assets_read_only": False,
                 },
             )
-        except PublicTestError as exc:
+        except (PublicTestErrorV1, PublicTestErrorV2) as exc:
             return CompletedCommand(
                 argv=["verigym-public-test", "run", test_id],
                 cwd=".",

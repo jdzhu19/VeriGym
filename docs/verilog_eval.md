@@ -47,6 +47,11 @@ candidate-only Icarus compile check. Its hidden golden/testbench mismatch regres
 PPA is always disabled, and its results are not included in native ChatEval pass@k. See
 [RTL AgentEval v1](rtl_agent_eval.md).
 
+`v2-spec-to-rtl-agent-eval-verilator-v1` keeps that same multi-turn and final hidden-Icarus
+boundary but uses a fixed candidate-only Verilator 5.052 compile/lint contract during iteration.
+It is a distinct diagnostic identity, not a stronger score: lint reports useful parser,
+elaboration, width, and structural diagnostics but does not execute the functional testbench.
+
 Because every V2 task uses the same prompt/reference/testbench triplet and `TopModule` contract,
 this compile-only L1 projection discovers the full validated corpus without per-task adapter
 branches. Functional AgentEval variants remain a separately qualified subset with frozen,
