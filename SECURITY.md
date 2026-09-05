@@ -1351,6 +1351,39 @@ raw exceptions, and nonempty output hashes remain forbidden. V148 has no provide
 produce evidence only for an independent v149 audit; only that merged audit and eight green
 post-merge `main` check classes can authorize the distinct v150 official matrix identity.
 
+The separately authorized v150 matrix is the sole provider-bearing successor to the audited v148
+scaffold. It may reopen the exact retained v148 data volume once and must create a v150-owned
+socket volume over the already restored v148 socket backing. The launcher removes the complete
+12-name provider configuration set and both Docker endpoint variables before copying back only the
+two names required by the DeepSeek Harness process. It reads no blocked alias value, and the runner
+requires that exact child boundary before output creation or Docker access. Concrete provider and
+proxy values are never printed, persisted, or hashed.
+
+V150 binds both the v92 wire-protocol baseline and the v134 official-matrix implementation
+baseline, then uses only the fresh task/source/image locks published by v148. Its zero-provider
+preflight repeats every task-specific command-runtime preparation with a 300-second image probe,
+uses the v148 120-second monotonic DinD readiness policy, and requires the complete 12-image nested
+inventory before the first provider request. Only the outer DinD sidecar and inner Harness
+controller use the named `verigym-hwe-net` bridges. Task and official verifier containers retain
+`network=none`, separate workspaces, non-root execution, read-only roots, capability removal,
+bounded resources, and exact agent-toolchain/verifier-image roles. Host `LocalRuntime`, registry
+access, partial archives, and task substitution remain forbidden.
+
+Tasks execute strictly as Ibex PR-465, PR-1135, PR-1780, then CVA6 PR-2017 and PR-2711 under the
+single-use provider-marker policy. A pre-marker infrastructure or security failure stops without
+task consumption; the same failure after a valid or conservatively unreadable marker consumes the
+current task and stops. Ordinary model or verifier rejection consumes the task and continues, but
+two consecutive no-progress, no-effective-modification, or trajectory-structure outcomes stop the
+remainder. Every admitted decision uses the exact Qwen tokenizer, is strictly shorter than 65,536
+tokens, applies no truncation, and supervises only the complete assistant decision.
+
+All output is pending an independent v151 audit. Passing official-route trajectories may only be
+listed as candidate SFT inputs; failed or verifier-rejected trajectories remain audit context.
+V150 cannot import candidates, begin formal collection or SFT, use a GPU, claim a benchmark score,
+or authorize production training. Its 300-second cleanup helper accepts only empty output and
+must remove the exact v150-owned socket volume while restoring the fixed backing to empty mode
+`0700`; the v148 data volume remains frozen after the single reopen.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
