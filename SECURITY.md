@@ -1485,6 +1485,21 @@ temporary and never printed, persisted, or hashed. Its output remains candidate-
 an independent v163 audit; formal collection, SFT, GPU work, benchmark-score claims, and production
 training remain closed.
 
+The independent v163 audit froze the v162 pre-provider Harness initialization failure and permits
+only a separately authorized v164 controller diagnostic. V164 may reopen the retained v158 data
+volume once under a fresh socket, control, runtime, output, and receipt identity, but it cannot run
+a task, invoke an official verifier, access a registry, or issue a provider request. The launcher
+removes the full provider and Docker-endpoint environment-name set before reading any blocked
+value. The child uses a random synthetic key and a loopback-only URL solely while initializing the
+exact audited controller. A private first-request marker is a hard failure, and all private
+controller state is scanned for those synthetic values and removed before publication. The result
+retains only a fixed structured category, bounded counts, hashes of non-secret receipts, and
+content-free Docker control facts; raw helper exceptions, stderr, and synthetic values are neither
+persisted nor hashed. A direct container probe first checks the explicit nested endpoint, immutable
+image, exact mounts, non-root and read-only execution, resource limits, capabilities, namespaces,
+network, and absence of provider environment names. V164 is one-use, pending an independent v165
+audit, and cannot authorize a replacement provider matrix or any collection or training state.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

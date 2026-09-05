@@ -22,6 +22,23 @@ from .config import API_KEY_ENV, BASE_URL_ENV, DeepSeekHarnessSettings
 class DeepSeekHarnessProcessError(RuntimeError):
     """The helper/controller boundary failed before a valid Harness result."""
 
+    def __init__(self, message: str, *, category: str = "process_failure") -> None:
+        super().__init__(message)
+        self.category = category
+
+
+_HELPER_ERROR_CATEGORIES = {
+    "FileNotFoundError": "helper_file_not_found",
+    "JsonRpcError": "helper_json_rpc_error",
+    "OSError": "helper_os_error",
+    "PermissionError": "helper_permission_error",
+    "RuntimeError": "helper_runtime_error",
+    "SdkProtocolError": "helper_sdk_protocol_error",
+    "TimeoutError": "helper_timeout_error",
+    "TransportClosedError": "helper_transport_closed",
+    "ValueError": "helper_value_error",
+}
+
 
 @dataclass(frozen=True)
 class DeepSeekHarnessProcessResult:
@@ -103,7 +120,10 @@ def run_harness_helper(
         try:
             environment["DOCKER_HOST"] = validate_local_docker_host(docker_host)
         except ValueError as exc:
-            raise DeepSeekHarnessProcessError("DeepSeek Harness Docker endpoint is unsafe") from exc
+            raise DeepSeekHarnessProcessError(
+                "DeepSeek Harness Docker endpoint is unsafe",
+                category="docker_endpoint_unsafe",
+            ) from exc
     helper = Path(__file__).with_name("helper.py").resolve(strict=True)
     started = time.monotonic()
     process = subprocess.Popen(
@@ -151,22 +171,34 @@ def run_harness_helper(
     stdout = b"".join(stdout_parts)
     stderr = b"".join(stderr_parts)
     if timed_out:
-        raise DeepSeekHarnessProcessError("DeepSeek Harness helper timed out")
+        raise DeepSeekHarnessProcessError(
+            "DeepSeek Harness helper timed out", category="helper_timeout"
+        )
     if overflow.is_set():
-        raise DeepSeekHarnessProcessError("DeepSeek Harness helper exceeded its output bound")
+        raise DeepSeekHarnessProcessError(
+            "DeepSeek Harness helper exceeded its output bound",
+            category="helper_output_oversized",
+        )
     try:
         value = json.loads(stdout)
     except Exception as exc:
         raise DeepSeekHarnessProcessError(
-            "DeepSeek Harness helper returned malformed JSON"
+            "DeepSeek Harness helper returned malformed JSON",
+            category="helper_malformed_json",
         ) from exc
     if not isinstance(value, dict) or value.get("ok") is not True or exit_code != 0:
         error_type = value.get("error_type") if isinstance(value, dict) else None
         label = error_type if isinstance(error_type, str) else "unknown_error"
-        raise DeepSeekHarnessProcessError(f"DeepSeek Harness helper failed closed: {label}")
+        raise DeepSeekHarnessProcessError(
+            f"DeepSeek Harness helper failed closed: {label}",
+            category=_HELPER_ERROR_CATEGORIES.get(label, "helper_unclassified_error"),
+        )
     events = value.get("events")
     if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
-        raise DeepSeekHarnessProcessError("DeepSeek Harness helper events are malformed")
+        raise DeepSeekHarnessProcessError(
+            "DeepSeek Harness helper events are malformed",
+            category="helper_events_malformed",
+        )
     observed_session = value.get("session_id", session_id)
     finish_reason = value.get("finish_reason")
     final_response = value.get("final_response", "")
@@ -182,10 +214,16 @@ def run_harness_helper(
         or run_interval_count < 0
         or run_interval_count != (0 if mode == "initialize" else 1 + len(format_repairs))
     ):
-        raise DeepSeekHarnessProcessError("DeepSeek Harness helper result identity changed")
+        raise DeepSeekHarnessProcessError(
+            "DeepSeek Harness helper result identity changed",
+            category="helper_result_identity_changed",
+        )
     provider_started = provider_request_started(session_root)
     if provider_started is not (mode == "run"):
-        raise DeepSeekHarnessProcessError("DeepSeek Harness provider marker state changed")
+        raise DeepSeekHarnessProcessError(
+            "DeepSeek Harness provider marker state changed",
+            category="provider_marker_state_changed",
+        )
     return DeepSeekHarnessProcessResult(
         events=tuple(dict(event) for event in events),
         session_id=session_id,

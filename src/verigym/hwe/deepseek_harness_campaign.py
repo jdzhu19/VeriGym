@@ -48,6 +48,27 @@ ZERO_PROVIDER_CONFIGURATION_ENV_NAMES = (
     "VERIGYM_DEEPSEEK_API_BASE_URL",
     "VERIGYM_DEEPSEEK_API_KEY",
 )
+V164_CONTROLLER_DIAGNOSTIC_CATEGORIES = (
+    "passed",
+    "direct_container_probe_failed",
+    "docker_endpoint_unsafe",
+    "helper_events_malformed",
+    "helper_file_not_found",
+    "helper_json_rpc_error",
+    "helper_malformed_json",
+    "helper_os_error",
+    "helper_output_oversized",
+    "helper_permission_error",
+    "helper_result_identity_changed",
+    "helper_runtime_error",
+    "helper_sdk_protocol_error",
+    "helper_timeout",
+    "helper_timeout_error",
+    "helper_transport_closed",
+    "helper_unclassified_error",
+    "helper_value_error",
+    "provider_marker_state_changed",
+)
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -5234,6 +5255,176 @@ class DeepSeekHarnessV162OfficialMatrixManifest(DeepSeekHarnessV154OfficialMatri
         return value
 
 
+class DeepSeekHarnessV164ControllerInitializeDiagnosticManifest(StrictModel):
+    """One-use synthetic diagnosis of the v162 Harness initialization failure."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal[
+        "verigym_deepseek_harness_hwe_v164_controller_initialize_diagnostic_manifest_v1"
+    ]
+    identity: Literal["deepseek-harness-hwe-v164-controller-initialize-diagnostic-v1"]
+    v162_manifest_sha256: str
+    v162_manifest_hash: str
+    v162_runner_sha256: str
+    v162_launcher_sha256: str
+    v162_authorization_sha256: str
+    v162_implementation_commit: Literal["63c47f27bb430fd639bfe7a14fe16a756fd2d389"]
+    v162_authorization_merge: Literal["22bef6516b83048ccd71f7b1b65a0b4ff291f7ef"]
+    v162_post_merge_main_run_id: Literal[33967203488]
+    v162_post_merge_main_all_eight_classes_passed: Literal[True]
+    v162_report_sha256: str
+    v162_report_hash: str
+    v162_attempt_sha256: str
+    v162_attempt_hash: str
+    v162_cleanup_sha256: str
+    v162_cleanup_hash: str
+    v162_evidence_tree_hash: str
+    v162_evidence_directory_count: Literal[9]
+    v162_evidence_regular_file_count: Literal[7]
+    v162_evidence_symlink_count: Literal[0]
+    v163_audit_sha256: str
+    v163_audit_commit: Literal["9ddfea81e62c816fecd574f3f2e373aea8068377"]
+    v163_audit_merge: Literal["f1e6c5421750f70df5b39a7ce5445d8fed2b04ca"]
+    v163_post_merge_main_run_id: Literal[33968340363]
+    v163_post_merge_main_all_eight_classes_passed: Literal[True]
+    process_module_sha256: str
+    helper_module_sha256: str
+    dind_image_id: str
+    dind_repository_digest: str
+    dind_server_version: Literal["23.0.6"]
+    dind_storage_driver: Literal["vfs"]
+    dind_default_runtime: Literal["runc"]
+    dind_data_volume: Literal["verigym-deepseek-harness-v158-dind-data"]
+    dind_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v158/data"]
+    predecessor_data_volume_owner: Literal[
+        "deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"
+    ]
+    dind_socket_volume: Literal["verigym-deepseek-harness-v164-dind-socket"]
+    dind_socket_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v164/socket"]
+    control_headroom_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v164-control"
+    ]
+    runtime_scratch_root: Literal[
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v164-runtime"
+    ]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v164-controller-initialize-diagnostic-v1"
+    ]
+    nested_docker_host: Literal[
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v164/socket/docker.sock"
+    ]
+    runtime_resource_owner: Literal["deepseek-harness-hwe-v164-controller-initialize-diagnostic-v1"]
+    provider_outer_network: Literal["verigym-hwe-net"]
+    provider_inner_network: Literal["verigym-hwe-net"]
+    task_network: Literal["none"]
+    verifier_network: Literal["none"]
+    controller_image_tag: Literal["node:22.19.0-bookworm-slim"]
+    controller_image_id: str
+    controller_image_repository_digest: str
+    controller_image_source_receipt_hash: str
+    host_runtime_state_root: Literal["/"]
+    minimum_host_root_free_bytes: Literal[4294967296]
+    minimum_host_root_free_inodes: Literal[100000]
+    host_headroom_policy: Literal["absolute-statvfs-before-first-docker-access-v1"]
+    readiness_timeout_seconds: Literal[120]
+    readiness_command_timeout_seconds: Literal[5]
+    readiness_probe_policy: Literal["explicit-three-field-exact-monotonic-deadline-v1"]
+    socket_cleanup_control_timeout_seconds: Literal[300]
+    v158_data_volume_reopen_budget: Literal[2]
+    v158_data_volume_reopen_count_before: Literal[1]
+    provider_environment_boundary: Literal["zero-provider-synthetic-child-v1"]
+    provider_environment_names: list[str] = Field(min_length=12, max_length=12)
+    provider_environment_name_count: Literal[12]
+    synthetic_provider_values_only: Literal[True]
+    synthetic_provider_values_persisted: Literal[False]
+    synthetic_provider_values_hashed: Literal[False]
+    provider_credentials_available: Literal[False]
+    provider_request_allowed: Literal[False]
+    provider_call_count: Literal[0]
+    task_execution_allowed: Literal[False]
+    base_reference_verification_allowed: Literal[False]
+    official_verifier_execution_allowed: Literal[False]
+    harness_initialize_allowed: Literal[True]
+    direct_container_probe_required: Literal[True]
+    harness_initialize_probe_required: Literal[True]
+    structured_error_category_required: Literal[True]
+    raw_exception_persistence_allowed: Literal[False]
+    raw_stderr_persistence_allowed: Literal[False]
+    diagnostic_categories: list[str] = Field(min_length=19, max_length=19)
+    direct_container_probe_timeout_seconds: Literal[60]
+    harness_initialize_timeout_seconds: Literal[300]
+    maximum_diagnostic_output_bytes: Literal[65536]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    requires_independent_v163_audit: Literal[False]
+    requires_independent_v165_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v162_manifest_sha256",
+        "v162_manifest_hash",
+        "v162_runner_sha256",
+        "v162_launcher_sha256",
+        "v162_authorization_sha256",
+        "v162_report_sha256",
+        "v162_report_hash",
+        "v162_attempt_sha256",
+        "v162_attempt_hash",
+        "v162_cleanup_sha256",
+        "v162_cleanup_hash",
+        "v162_evidence_tree_hash",
+        "v163_audit_sha256",
+        "process_module_sha256",
+        "helper_module_sha256",
+        "controller_image_source_receipt_hash",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v164_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v164 controller diagnostic requires lowercase SHA-256")
+        return value
+
+    @field_validator(
+        "dind_image_id",
+        "dind_repository_digest",
+        "controller_image_id",
+        "controller_image_repository_digest",
+    )
+    @classmethod
+    def validate_v164_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v164 controller diagnostic requires immutable image digests")
+        return value
+
+    @field_validator("provider_environment_names")
+    @classmethod
+    def validate_v164_provider_environment_names(cls, values: list[str]) -> list[str]:
+        if tuple(values) != ZERO_PROVIDER_CONFIGURATION_ENV_NAMES:
+            raise ValueError("v164 zero-provider environment boundary changed")
+        return values
+
+    @field_validator("diagnostic_categories")
+    @classmethod
+    def validate_v164_diagnostic_categories(cls, values: list[str]) -> list[str]:
+        if tuple(values) != V164_CONTROLLER_DIAGNOSTIC_CATEGORIES:
+            raise ValueError("v164 structured diagnostic categories changed")
+        return values
+
+    @model_validator(mode="after")
+    def validate_v164_manifest_hash(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v164 controller diagnostic manifest content hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -6060,6 +6251,21 @@ def load_v162_official_matrix_manifest(path: Path) -> DeepSeekHarnessV162Officia
         raise ConfigurationError("v162 official matrix manifest is invalid") from exc
 
 
+def load_v164_controller_initialize_diagnostic_manifest(
+    path: Path,
+) -> DeepSeekHarnessV164ControllerInitializeDiagnosticManifest:
+    """Load the one-use synthetic v164 Harness initialization diagnostic."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v164 controller diagnostic manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV164ControllerInitializeDiagnosticManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v164 controller diagnostic manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -6247,6 +6453,7 @@ __all__ = [
     "DeepSeekHarnessV160ContractRepairManifest",
     "DeepSeekHarnessV162OfficialMatrixManifest",
     "DeepSeekHarnessV162TaskBinding",
+    "DeepSeekHarnessV164ControllerInitializeDiagnosticManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -6256,6 +6463,7 @@ __all__ = [
     "V69_OPEN_TOOL_TASK_ID",
     "V69_PRIMARY_TASK_IDS",
     "V71_MATRIX_TASK_IDS",
+    "V164_CONTROLLER_DIAGNOSTIC_CATEGORIES",
     "ZERO_PROVIDER_CONFIGURATION_ENV_NAMES",
     "inspect_offline_image_archive",
     "load_v69_manifest",
@@ -6300,6 +6508,7 @@ __all__ = [
     "load_v158_explicit_endpoint_scaffold_manifest",
     "load_v160_contract_repair_manifest",
     "load_v162_official_matrix_manifest",
+    "load_v164_controller_initialize_diagnostic_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
