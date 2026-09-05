@@ -1384,6 +1384,23 @@ or authorize production training. Its 300-second cleanup helper accepts only emp
 must remove the exact v150-owned socket volume while restoring the fixed backing to empty mode
 `0700`; the v148 data volume remains frozen after the single reopen.
 
+The sole v150 execution stopped before its DinD daemon or provider boundary because the host
+containerd shim had insufficient space on `/`. V150 is frozen. The separately authorized v152
+host-headroom scaffold is the provider-free prerequisite imposed by the v151 audit. Before Docker
+access it requires at least 4 GiB and 100,000 available inodes on the host root filesystem. It uses
+only fresh v152 bind-backed data and socket volumes under `/data2`, starts the exact local
+`docker:23.0.6-dind` image once with outer `network=none`, and applies the audited explicit
+three-field, 120-second readiness predicate.
+
+V152 then requires empty inner container, image, volume, and custom-network inventories. Cleanup
+may remove only exact v152-owned resources; its bounded, networkless helper must emit no output,
+both volumes must be absent, both backings must be restored empty at mode `0700` to the caller, and
+the same host-root headroom gate must pass afterward. It does not inspect, mount, mutate, or reopen
+the retained v148 data volume or its socket identity, and it has no task, archive, verifier,
+Harness, model, registry, or provider surface. A complete atomic scaffold contract remains
+non-authorizing until an independent v153 audit is merged and eight post-merge `main` check classes
+pass.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

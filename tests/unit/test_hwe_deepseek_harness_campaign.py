@@ -51,6 +51,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV146EnvironmentBoundaryScaffoldManifest,
     DeepSeekHarnessV148CleanupIdentityScaffoldManifest,
     DeepSeekHarnessV150OfficialMatrixManifest,
+    DeepSeekHarnessV152HostHeadroomScaffoldManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -83,6 +84,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v146_environment_boundary_scaffold_manifest,
     load_v148_cleanup_identity_scaffold_manifest,
     load_v150_official_matrix_manifest,
+    load_v152_host_headroom_scaffold_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -150,6 +152,9 @@ _V148_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V150_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v150_official_matrix_v1.json"
+)
+_V152_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v152_host_headroom_scaffold_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -2035,3 +2040,64 @@ def test_v150_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV150OfficialMatrixManifest.model_validate(changed)
+
+
+def test_v152_manifest_freezes_host_headroom_and_zero_provider_lifecycle() -> None:
+    manifest = load_v152_host_headroom_scaffold_manifest(_V152_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV152HostHeadroomScaffoldManifest)
+    assert manifest.v151_audit_merge == "3ab451d645b9f0cdaa1f3d37de6be07d99ad0bba"
+    assert manifest.v151_post_merge_main_run_id == 33943269412
+    assert manifest.host_runtime_state_root == "/"
+    assert manifest.minimum_host_root_free_bytes == 4 * 1024**3
+    assert manifest.minimum_host_root_free_inodes == 100_000
+    assert manifest.startup_attempt_limit == 1
+    assert manifest.readiness_timeout_seconds == 120
+    assert manifest.inventory_policy == "empty-mutable-inner-inventory-v1"
+    assert tuple(manifest.provider_environment_names) == ZERO_PROVIDER_CONFIGURATION_ENV_NAMES
+    assert manifest.v148_volume_inspection_allowed is False
+    assert manifest.v148_volume_mount_allowed is False
+    assert manifest.v148_volume_mutation_allowed is False
+    assert manifest.provider_credentials_available is False
+    assert manifest.provider_calls == 0
+    assert manifest.requires_independent_v153_audit is True
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("minimum_host_root_free_bytes", 1024),
+        ("minimum_host_root_free_inodes", 1),
+        ("startup_attempt_limit", 2),
+        ("scaffold_outer_network", "bridge"),
+        ("v148_volume_inspection_allowed", True),
+        ("v148_volume_mount_allowed", True),
+        ("provider_credentials_available", True),
+        ("provider_calls", 1),
+        ("requires_independent_v153_audit", False),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v152_manifest_rejects_a_broadened_or_changed_scaffold(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V152_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV152HostHeadroomScaffoldManifest.model_validate(changed)
+
+
+def test_v152_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V152_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV152HostHeadroomScaffoldManifest.model_validate(changed)
