@@ -282,3 +282,26 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V172_OPEN_TOOLCHAIN=1 \
 A successful result remains pending the independent v173 audit. The one-call PR-1816 research
 canary (seed/sample 503/19) is not authorized here. Formal collection, SFT, training, candidate
 mixing, and production readiness remain false.
+
+V172 stopped in its read-only preflight because Docker returned the expected DinD lock as
+`docker@sha256:...` while the runner tested direct membership of the bare `sha256:...` component.
+V173 sealed the attempt with no output, Docker mutation, task execution, verifier run, model, or
+provider consumption. Do not retry v172.
+
+V174 is the fresh zero-provider qualification repair. It binds the v172 stop receipt and v173
+audit, preserves the frozen PR-1816 and open-toolchain inputs, and uses new output, scratch,
+`/data2`-backed DinD, volume, and tag identities. Its repaired preflight accepts only one exact
+`docker@sha256:...` value and separately verifies the frozen image ID and `linux/amd64` platform.
+The hash-bound v174 final Dockerfile changes only its internal builder stage reference from the
+retired `v172-builder` tag to the fresh `v174-builder` tag.
+Run it exactly once from clean merged `main` after all eight post-merge workflow classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V174_OPEN_TOOLCHAIN_REPAIR=1 \
+  python scripts/launch_hwe_deepseek_harness_v174_open_toolchain_repair.py \
+  --post-merge-main-run-id <successful-v174-main-run-id>
+```
+
+A successful result remains pending an independent v175 audit. The PR-1816 DeepSeek research
+canary moves to v176 or later and remains unauthorized. Formal collection, SFT, training,
+candidate mixing, and production readiness remain false.
