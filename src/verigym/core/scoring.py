@@ -25,6 +25,34 @@ from verigym.schemas.score import (
 from verigym.schemas.synthesis import SynthesisMetrics
 from verigym.schemas.task import VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile
+from verigym.tools.yosys.opensta import FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS
+from verigym.tools.yosys.opensta import opensta_power_activity_identity
+
+
+def _expected_power_activity_identity(profile: ResolvedToolchainProfile) -> str | None:
+    mode = profile.metadata.get("power_activity_mode")
+    if not isinstance(mode, str):
+        return None
+    if profile.flow_template_id not in OPENSTA_FLOW_TEMPLATE_IDS:
+        return mode
+    activity = profile.metadata.get("power_activity")
+    duty = profile.metadata.get("power_duty")
+    if (
+        not isinstance(activity, (int, float))
+        or isinstance(activity, bool)
+        or not isinstance(duty, (int, float))
+        or isinstance(duty, bool)
+    ):
+        return None
+    try:
+        return opensta_power_activity_identity(
+            mode=mode,
+            activity=float(activity),
+            duty=float(duty),
+        )
+    except ValueError:
+        return None
 
 
 def build_scorecard(
@@ -42,6 +70,7 @@ def build_scorecard(
     isolation_level: str,
     episode_failure: EpisodeFailure | None = None,
     resolved_profile: ResolvedToolchainProfile | None = None,
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None,
     candidate_synthesis: SynthesisMetrics | None = None,
     reference_synthesis: SynthesisMetrics | None = None,
     external_accounting: ExternalAgentAccounting | None = None,
@@ -65,6 +94,7 @@ def build_scorecard(
                 "hwe_bench.simulate",
                 "iverilog.run",
                 "synopsys.vcs.simulate",
+                "synopsys.vcs.mcp",
                 "verilog_eval.v2.regression",
             }
         ),
@@ -156,7 +186,7 @@ def build_scorecard(
                     if metrics.clock_period is None:
                         reasons.append(f"{role}_clock_period_missing")
         if power_scope:
-            expected_activity_mode = resolved_profile.metadata.get("power_activity_mode")
+            expected_activity_mode = _expected_power_activity_identity(resolved_profile)
             for role, metrics in (
                 ("candidate", candidate_synthesis),
                 ("reference", reference_synthesis),
@@ -364,6 +394,16 @@ def build_scorecard(
             toolchain_profile_ids=[ref.id for ref in profile_refs],
             resolved_toolchain_profile_hashes=(
                 [resolved_profile.resolved_profile_hash] if resolved_profile is not None else []
+            ),
+            verifier_profile_ids=(
+                [resolved_verifier_profile.profile_id]
+                if resolved_verifier_profile is not None
+                else []
+            ),
+            resolved_verifier_profile_hashes=(
+                [resolved_verifier_profile.resolved_profile_hash]
+                if resolved_verifier_profile is not None
+                else []
             ),
             deterministic=True,
             isolation_level=isolation_level,

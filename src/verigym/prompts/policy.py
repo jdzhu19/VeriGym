@@ -44,20 +44,100 @@ def resolve_prompt_policy(
     spec = agent.prompt_policy_spec
     if spec is None:
         return None
+    agent_feedback = task.metadata.get("agent_feedback_contract")
+    is_agent_eval = isinstance(agent_feedback, dict)
+    agent_eval_prompt_v8 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v8"
+    )
+    agent_eval_prompt_v7 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v7"
+    )
+    agent_eval_prompt_v6 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v6"
+    )
+    agent_eval_prompt_v5 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v5"
+    )
+    agent_eval_prompt_v4 = is_agent_eval and (
+        spec.prompt_contract_id == "repository_action_v2_prompt_v4"
+    )
+    prompt_contract_id = (
+        "repository_action_v2_prompt_v8"
+        if agent_eval_prompt_v8
+        else "repository_action_v2_prompt_v7"
+        if agent_eval_prompt_v7
+        else "repository_action_v2_prompt_v6"
+        if agent_eval_prompt_v6
+        else "repository_action_v2_prompt_v5"
+        if agent_eval_prompt_v5
+        else "repository_action_v2_prompt_v4"
+        if agent_eval_prompt_v4
+        else "repository_action_v2_prompt_v3"
+        if is_agent_eval
+        else spec.prompt_contract_id
+    )
+    prompt_contract_version = (
+        "8.0.0"
+        if agent_eval_prompt_v8
+        else "7.0.0"
+        if agent_eval_prompt_v7
+        else "6.0.0"
+        if agent_eval_prompt_v6
+        else "5.0.0"
+        if agent_eval_prompt_v5
+        else "4.0.0"
+        if agent_eval_prompt_v4
+        else "3.0.0"
+        if is_agent_eval
+        else spec.prompt_contract_version
+    )
+    task_context_policy = (
+        "revision_bound_functional_agent_feedback_v2"
+        if agent_eval_prompt_v8
+        else "revision_bound_functional_agent_feedback_v1"
+        if agent_eval_prompt_v7
+        else "revision_bound_agent_feedback_v1"
+        if is_agent_eval
+        else spec.task_context_policy
+    )
+    base_instruction_policy = (
+        "generated_repository_action_registry_v8"
+        if agent_eval_prompt_v8
+        else "generated_repository_action_registry_v7"
+        if agent_eval_prompt_v7
+        else "generated_repository_action_registry_v6"
+        if agent_eval_prompt_v6
+        else "generated_repository_action_registry_v5"
+        if agent_eval_prompt_v5
+        else "generated_repository_action_registry_v4"
+        if agent_eval_prompt_v4
+        else "generated_repository_action_registry_v3"
+        if is_agent_eval
+        else spec.base_instruction_policy
+    )
+    content_visibility_policy = (
+        "visible_assets_and_public_functional_feedback_v2"
+        if agent_eval_prompt_v8
+        else "visible_assets_and_public_functional_feedback_v1"
+        if agent_eval_prompt_v7
+        else "visible_assets_and_revision_bound_feedback_v1"
+        if is_agent_eval
+        else spec.content_visibility_policy
+    )
     contract = agent_options.get("prompt_contract_id")
-    if contract is not None and contract != spec.prompt_contract_id:
+    if contract is not None and contract != prompt_contract_id:
         raise ValueError("agent prompt contract differs from its plugin declaration")
     base_payload: dict[str, Any] = {
         "resolver_id": "agent_execution_prompt_policy_v1",
-        "prompt_contract_id": spec.prompt_contract_id,
-        "prompt_contract_version": spec.prompt_contract_version,
+        "prompt_contract_id": prompt_contract_id,
+        "prompt_contract_version": prompt_contract_version,
         "interaction_mode": interaction_mode,
-        "task_context_policy": spec.task_context_policy,
+        "task_context_policy": task_context_policy,
         "task_context_hash": content_hash(
             safe_task_context_identity(task, interaction_mode=interaction_mode)
         ),
-        "base_instruction_policy": spec.base_instruction_policy,
-        "content_visibility_policy": spec.content_visibility_policy,
+        "base_instruction_policy": base_instruction_policy,
+        "content_visibility_policy": content_visibility_policy,
         "max_prompt_bytes": spec.max_prompt_bytes,
         "max_task_context_bytes": spec.max_task_context_bytes,
         "agent_descriptor_hash": content_hash(agent.descriptor),
@@ -70,12 +150,12 @@ def resolve_prompt_policy(
     if declared_contract_hash is not None and declared_contract_hash != content_hash(
         _prompt_contract_payload(
             resolver_id="agent_execution_prompt_policy_v1",
-            prompt_contract_id=spec.prompt_contract_id,
-            prompt_contract_version=spec.prompt_contract_version,
+            prompt_contract_id=prompt_contract_id,
+            prompt_contract_version=prompt_contract_version,
             interaction_mode=interaction_mode,
-            task_context_policy=spec.task_context_policy,
-            base_instruction_policy=spec.base_instruction_policy,
-            content_visibility_policy=spec.content_visibility_policy,
+            task_context_policy=task_context_policy,
+            base_instruction_policy=base_instruction_policy,
+            content_visibility_policy=content_visibility_policy,
             max_prompt_bytes=spec.max_prompt_bytes,
             max_task_context_bytes=spec.max_task_context_bytes,
             agent_descriptor_hash=base_payload["agent_descriptor_hash"],
@@ -89,14 +169,14 @@ def resolve_prompt_policy(
         "memory_pack_hash": memory_hash,
     }
     return PromptPolicyDescriptor(
-        id=spec.prompt_contract_id,
-        version=spec.prompt_contract_version,
+        id=prompt_contract_id,
+        version=prompt_contract_version,
         interaction_mode=interaction_mode,
         resolver_id="agent_execution_prompt_policy_v1",
-        task_context_policy=spec.task_context_policy,
+        task_context_policy=task_context_policy,
         task_context_hash=base_payload["task_context_hash"],
-        base_instruction_policy=spec.base_instruction_policy,
-        content_visibility_policy=spec.content_visibility_policy,
+        base_instruction_policy=base_instruction_policy,
+        content_visibility_policy=content_visibility_policy,
         max_prompt_bytes=spec.max_prompt_bytes,
         max_task_context_bytes=spec.max_task_context_bytes,
         agent_descriptor_hash=base_payload["agent_descriptor_hash"],
@@ -162,13 +242,10 @@ def safe_task_context_identity(
 ) -> dict[str, Any]:
     """Return bounded public task identity without hidden/reference metadata."""
 
-    repository = task.metadata.get("repository_repair")
-    public_test_ids: list[str] = []
-    if isinstance(repository, dict):
-        raw_ids = repository.get("public_test_ids")
-        if isinstance(raw_ids, list) and all(isinstance(value, str) for value in raw_ids):
-            public_test_ids = sorted(raw_ids)
-    return {
+    from verigym.core.agent_feedback import public_feedback_test_ids
+
+    public_test_ids = public_feedback_test_ids(task)
+    identity = {
         "schema_version": "1.0",
         "task_id": task.id,
         "title_hash": content_hash(task.title),
@@ -185,6 +262,12 @@ def safe_task_context_identity(
         "max_changed_files": task.workspace.max_changed_files,
         "max_patch_lines": task.workspace.max_patch_lines,
     }
+    feedback = task.metadata.get("agent_feedback_contract")
+    if isinstance(feedback, dict):
+        fingerprint = feedback.get("configuration_fingerprint")
+        if isinstance(fingerprint, str):
+            identity["agent_feedback_contract_fingerprint"] = fingerprint
+    return identity
 
 
 def validate_prompt_policy_binding(

@@ -1,6 +1,6 @@
 # VeriGym Codex CLI Integration
 
-This package provides two ordinary evaluation plugins plus an opt-in training-only teacher:
+This package provides three ordinary evaluation plugins plus an opt-in training-only teacher:
 
 - `codex-cli-readonly-agent` runs one `codex exec` process in a fresh empty directory under the
   CLI read-only sandbox. A typed fail-closed event policy permits only harness planning and
@@ -12,6 +12,19 @@ This package provides two ordinary evaluation plugins plus an opt-in training-on
   The CLI may edit visible task files; VeriGym then applies its ordinary workspace-policy check,
   candidate freeze, and hidden verifier. External CLI actions never increment VeriGym-native
   tool-call counters.
+- `codex-cli-agenteval-agent` is the scoring-only RTL AgentEval adapter. It freezes Codex CLI
+  0.147.0, GPT-5.4, `xhigh`, and agent version
+  `codex-cli-agenteval-gpt54-xhigh-v10`. One ephemeral, read-only
+  `codex exec --json` process receives only the six `repository_action.v2` MCP tools through the
+  Unix-socket broker. Shell, Web, skills, plugins, apps, rules, and user configuration are
+  disabled. Its prompt and broker observations expose the task/process wall-time, rounded elapsed
+  and remaining time, and the static limits of 40 tool calls, 20 patch calls, and three
+  consecutive rejections. The prompt reserves the final 60 seconds for final patching,
+  compile/PPA, diff inspection, and typed `finish`. Codex CLI's post-finish assistant message is
+  optional; completion still requires the broker-owned `finish`, a terminal machine event, exact
+  broker/event tool-sequence accounting, and a successful process. The MCP server omits tools from
+  Codex's deferred surface so the six broker tools are exposed directly; bounded server labels are
+  advisory, while canonical tool names and the broker's accepted-finish index are authoritative.
 - `codex-cli-mcp-teacher` is available only to captured training campaigns. It fixes GPT-5.4 with
   `xhigh` reasoning, disables shell and web search, and exposes only the required VeriGym MCP
   repository tools.
@@ -31,7 +44,7 @@ python -m pip install dist/verigym-0.1.0-*.whl \
 verigym plugins list
 ```
 
-The package registers two `verigym.agents` entry points. Configuration accepts only bounded,
+The package registers four `verigym.agents` entry points. Configuration accepts only bounded,
 typed, secret-free options. Supply an explicit model ID; no CLI or provider default is inferred.
 
 Both tracks own reasoning effort explicitly. The strict `reasoning_effort` option is `xhigh`;
@@ -77,6 +90,24 @@ capabilities.json  invocation.json  raw_stdout.jsonl  raw_stderr.log
 parsed_events.jsonl  identity.json  accounting.json  summary.json
 event_policy.json (read-only track)
 ```
+
+The scoring-only AgentEval track instead stores only sanitized capability, invocation, identity,
+usage/accounting, broker counters, content-free event statistics, and summary documents. It does
+not store raw stdout/stderr, parsed event text, prompts, responses, or a training transcript.
+Recoverable patch failures use fixed format/header/body/context/count/range/empty/rename
+categories. Terminal path failures expose only the allowlisted tool name and a bounded path
+category; request arguments, paths, and raw exceptions are never returned or persisted.
+
+After every returned Codex process, the adapter tolerantly parses the event stream before applying
+broker/process failure precedence. It emits exactly one external-agent identity: a complete
+terminal event may provide the observed model and usage, while an incomplete stream records only
+the requested model with `usage_complete: false`. It never estimates tokens. Prompt, tool-policy,
+capability, and agent-version fingerprints are bound into the safe invocation and identity
+evidence. Recoverable broker responses include a bounded state summary and next allowed actions;
+malformed unified diffs remain recoverable, including malformed hunk headers and bodies. Empty
+visible files produce a valid zero-line observation. Path, symlink, hardlink, hidden-asset, and
+workspace-boundary violations remain terminal policy failures. Terminal broker evidence stores
+only an allowlisted failure subtype, never the underlying diagnostic or path.
 
 Reasoning is discarded, secrets and runtime roots are redacted, output is bounded, and the
 ordinary run integrity manifest binds every file. `verigym replay <run-dir> --verify` uses frozen

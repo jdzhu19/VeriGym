@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from verigym.plugin_api import (
     PLUGIN_API_VERSION,
     SCHEMA_VERSION,
@@ -45,7 +45,12 @@ from verigym.plugin_api import (
     hash_bytes,
 )
 
-from .common import redact, resolve_executable, safe_executable
+from .agent_worker_protocol import (
+    AgentWorkerIsolationContract,
+    AgentWorkerReceipt,
+    agent_worker_contract_identity_payload,
+)
+from .common import redact, resolve_executable, safe_executable, temporary_environment
 from .dc import (
     AREA_TIMING_FLOW_TEMPLATE_HASH,
     AREA_TIMING_FLOW_TEMPLATE_ID,
@@ -53,6 +58,8 @@ from .dc import (
     FLOW_TEMPLATE_ID,
     LEGACY_FLOW_TEMPLATE_HASH,
     LEGACY_FLOW_TEMPLATE_ID,
+    MULTICLOCK_FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID,
     VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     VECTORLESS_POWER_FLOW_TEMPLATE_ID,
     _read_session_file,
@@ -64,6 +71,7 @@ from .mcp_server import (
     SERVICE_PROTOCOL,
     SYNTHESIZE_TOOL,
 )
+from .worker_release import COMMERCIAL_WORKER_RELEASE_PROTOCOL
 
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _MCP_SERVER_NAME = "verigym-synopsys-verifier"
@@ -82,6 +90,25 @@ _TEMPLATE_HASHES = {
     AREA_TIMING_FLOW_TEMPLATE_ID: AREA_TIMING_FLOW_TEMPLATE_HASH,
     VECTORLESS_POWER_FLOW_TEMPLATE_ID: VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID: MULTICLOCK_FLOW_TEMPLATE_HASH,
+}
+_MCP_TOOL_ERROR_SUBCATEGORIES = {
+    "agent feedback requires a configured disposable worker": "agent_worker_configuration",
+    "agent worker executable identity changed before execution": "agent_worker_identity",
+    "agent worker timed out": "agent_worker_timeout",
+    "agent worker could not be started": "agent_worker_start",
+    "agent worker exited unsuccessfully": "agent_worker_execution",
+    "agent worker response exceeds the service bound": "agent_worker_response",
+    "agent worker returned malformed JSON": "agent_worker_response",
+    "agent worker returned a non-object response": "agent_worker_response",
+    "agent worker envelope failed schema validation": "agent_worker_response",
+    "agent worker receipt differs from the dispatched request": "agent_worker_identity",
+    "agent worker reported an infrastructure failure": "agent_worker_infrastructure",
+    "agent worker infrastructure failure: scheduler": "agent_worker_scheduler",
+    "agent worker infrastructure failure: worker": "agent_worker_execution",
+    "agent worker infrastructure failure: response": "agent_worker_response",
+    "agent worker returned an invalid synthesis protocol": "agent_worker_response",
+    "agent worker returned forbidden report or diagnostic content": "agent_worker_response",
 }
 
 
@@ -104,7 +131,14 @@ class McpDesignCompilerRequest(StrictModel):
     timing_unit: str
     power_unit: str | None = None
     power_activity_mode: str | None = None
-    run_label: Literal["candidate", "reference"]
+    run_label: Literal["candidate", "reference", "agent_feedback"]
+    transport_execution_boundary: Literal["runtime_session", "host_verifier_control_plane"] = (
+        "runtime_session"
+    )
+    agent_worker_contract_hash: str | None = None
+    agent_worker_code_identity_hash: str | None = None
+    agent_worker_isolation_profile_hash: str | None = None
+    expected_release_hash: str | None = None
     timeout_s: int = Field(default=900, ge=1, le=7200)
 
     @field_validator("sources")
@@ -152,6 +186,31 @@ class McpDesignCompilerRequest(StrictModel):
             raise ValueError("MCP synthesis identities must be lowercase SHA-256 values")
         return value
 
+    @field_validator(
+        "agent_worker_contract_hash",
+        "agent_worker_code_identity_hash",
+        "agent_worker_isolation_profile_hash",
+        "expected_release_hash",
+    )
+    @classmethod
+    def validate_optional_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("MCP worker identity must be a lowercase SHA-256 value")
+        return value
+
+    @model_validator(mode="after")
+    def validate_worker_label(self) -> McpDesignCompilerRequest:
+        worker_fields = (
+            self.agent_worker_contract_hash,
+            self.agent_worker_code_identity_hash,
+            self.agent_worker_isolation_profile_hash,
+        )
+        if self.run_label == "agent_feedback" and any(value is None for value in worker_fields):
+            raise ValueError("agent feedback run label lacks its worker identities")
+        if self.run_label != "agent_feedback" and any(value is not None for value in worker_fields):
+            raise ValueError("agent feedback run label differs from its worker contract")
+        return self
+
 
 class McpProfileSummary(StrictModel):
     profile_id: str
@@ -166,6 +225,7 @@ class McpProfileSummary(StrictModel):
     power_unit: str | None
     accepted_dc_version: str | None
     reproducibility_scope: str
+    agent_feedback_worker_enabled: bool = False
 
 
 class McpResolvedProfileSummary(StrictModel):
@@ -187,10 +247,46 @@ class McpResolvedProfileSummary(StrictModel):
     flow_settings: dict[str, Any]
 
 
+class McpAgentWorkerSummary(StrictModel):
+    contract_hash: str
+    launcher_sha256: str
+    contract: AgentWorkerIsolationContract
+    release_protocol: Literal["commercial_worker_release.v1"] | None = None
+    release_hash: str | None = None
+
+    @field_validator("contract_hash", "launcher_sha256")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("MCP worker summary requires lowercase SHA-256 identities")
+        return value
+
+    @field_validator("release_hash")
+    @classmethod
+    def validate_release_hash(cls, value: str | None) -> str | None:
+        if value is not None and _SHA256.fullmatch(value) is None:
+            raise ValueError("MCP worker release identity must be lowercase SHA-256")
+        return value
+
+    @model_validator(mode="after")
+    def validate_release_pair(self) -> McpAgentWorkerSummary:
+        if (self.release_protocol is None) != (self.release_hash is None):
+            raise ValueError("MCP worker release protocol and hash must be paired")
+        if self.release_protocol not in {None, COMMERCIAL_WORKER_RELEASE_PROTOCOL}:
+            raise ValueError("MCP worker release protocol is unsupported")
+        if (
+            self.contract.release_hash is not None
+            and self.release_hash != self.contract.release_hash
+        ):
+            raise ValueError("MCP worker contract and release identities differ")
+        return self
+
+
 class McpResolveResponse(StrictModel):
     protocol: Literal["verigym.synopsys.dc.mcp.v1"]
     profile: McpProfileSummary
     resolved_profile: McpResolvedProfileSummary
+    agent_feedback_worker: McpAgentWorkerSummary | None = None
 
 
 class McpExportedArtifact(SynthesisArtifactRef):
@@ -215,10 +311,19 @@ class McpSynthesisResponse(StrictModel):
     resolved_profile: McpResolvedProfileSummary
     tool_result: ToolResult
     artifacts: list[McpExportedArtifact]
+    agent_feedback_execution: AgentWorkerReceipt | None = None
 
 
 class McpProtocolError(ValueError):
     """One caller-safe remote transport or response-contract error."""
+
+
+class McpToolRejection(McpProtocolError):
+    """One remote tool rejection reduced to an allowlisted safe subcategory."""
+
+    def __init__(self, safe_subcategory: str) -> None:
+        self.safe_subcategory = safe_subcategory
+        super().__init__(f"MCP service rejected the verifier request: {safe_subcategory}")
 
 
 def _descriptor() -> ToolDescriptor:
@@ -243,15 +348,39 @@ def _descriptor() -> ToolDescriptor:
 
 def _runtime_identity(runtime: Runtime) -> ResolvedRuntimeIdentity:
     descriptor = runtime.descriptor
+    image = descriptor.image
+    resources = descriptor.resources
+    resource_contract = (
+        {
+            "memory_bytes": resources.memory_bytes,
+            "memory_swap_bytes": resources.memory_swap_bytes,
+            "swap_enforced": resources.swap_enforced,
+            "cpus": resources.cpus,
+            "pids_limit": resources.pids_limit,
+            "tmpfs_bytes": resources.tmpfs_bytes,
+            "stop_timeout_s": resources.stop_timeout_s,
+            "max_command_time_s": resources.max_command_time_s,
+            "max_artifact_file_bytes": resources.max_artifact_file_bytes,
+            "max_artifact_bytes": resources.max_artifact_bytes,
+        }
+        if resources is not None
+        else None
+    )
     return ResolvedRuntimeIdentity(
         runtime_slug=descriptor.name,
         isolation_level=descriptor.isolation_level,
         deterministic=descriptor.deterministic,
-        os=platform.system().lower(),
-        architecture=platform.machine(),
+        os=image.os if image is not None else platform.system().lower(),
+        architecture=image.architecture if image is not None else platform.machine(),
+        requested_image_reference=(image.requested_reference if image is not None else None),
+        resolved_image_id=image.resolved_image_id if image is not None else None,
         configuration_fingerprint=descriptor.configuration_fingerprint,
         network_policy=(descriptor.security.network_mode if descriptor.security else None),
-        resource_controls=descriptor.resources is not None,
+        resource_controls=resources is not None,
+        security_hash=(content_hash(descriptor.security) if descriptor.security else None),
+        resource_contract_hash=(
+            content_hash(resource_contract) if resource_contract is not None else None
+        ),
     )
 
 
@@ -345,6 +474,7 @@ def _run_stdio(
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
+        **temporary_environment(),
         **_transport_environment(environment_names),
     }
     exit_code: int | None = None
@@ -451,7 +581,14 @@ def _parse_tool_response(
     if not isinstance(result, dict):
         raise McpProtocolError("MCP tool call returned no result object")
     if result.get("isError") is True:
-        raise McpProtocolError("MCP service rejected the verifier request")
+        structured = result.get("structuredContent")
+        error = structured.get("error") if isinstance(structured, dict) else None
+        subcategory = (
+            _MCP_TOOL_ERROR_SUBCATEGORIES.get(error, "mcp_service_rejected")
+            if isinstance(error, str)
+            else "mcp_service_rejected"
+        )
+        raise McpToolRejection(subcategory)
     structured = result.get("structuredContent")
     if not isinstance(structured, dict) or structured.get("protocol") != SERVICE_PROTOCOL:
         raise McpProtocolError("MCP tool call returned an invalid structured result")
@@ -528,14 +665,34 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         power_flow = profile.flow.template_id in {
             VECTORLESS_POWER_FLOW_TEMPLATE_ID,
             FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
         }
         expected_scope = "synthesis_area_timing_power" if power_flow else "synthesis_area_timing"
         if profile.metrics.scope != expected_scope:
             errors.append(f"remote DC flow requires metric scope {expected_scope!r}")
-        if profile.runtime.runtime != "local" or (
-            profile.runtime.allowed_runtimes and profile.runtime.allowed_runtimes != ["local"]
-        ):
-            errors.append("the MCP client backend requires the trusted local control-plane runtime")
+        allowed_runtimes = profile.runtime.allowed_runtimes or [profile.runtime.runtime]
+        if sorted(allowed_runtimes) not in (["docker"], ["local"]):
+            errors.append("the MCP client backend requires exactly local or Docker runtime")
+        if allowed_runtimes == ["docker"]:
+            if (
+                profile.runtime.minimum_isolation_level != "docker_standard"
+                or not profile.runtime.immutable_image_required
+                or profile.runtime.network_policy != "none"
+                or not profile.runtime.resource_controls_required
+            ):
+                errors.append("Docker MCP profiles require all docker_standard controls")
+            prepared_image_id = profile.metadata.get("prepared_image_id")
+            if (
+                not isinstance(prepared_image_id, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", prepared_image_id) is None
+            ):
+                errors.append("Docker MCP profiles require a prepared immutable image ID")
+            if profile.metadata.get("mcp_transport_execution_boundary") != (
+                "host_verifier_control_plane"
+            ):
+                errors.append("Docker MCP transport must use the host verifier control plane")
+        if profile.container_image != profile.runtime.requested_image:
+            errors.append("MCP container image and requested runtime image differ")
         if profile.reproducibility_scope == "public":
             errors.append("remote licensed-tool profiles cannot claim public reproducibility")
         tools = [item for item in profile.tools if item.name == _MCP_TOOL_NAME]
@@ -578,6 +735,58 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             errors.append("profile MCP service protocol is unsupported")
         if profile.metadata.get("mcp_server_version") != SERVER_VERSION:
             errors.append("profile MCP server version is unsupported")
+        worker_fields = {
+            "agent_feedback_worker_contract_hash": profile.metadata.get(
+                "agent_feedback_worker_contract_hash"
+            ),
+            "agent_feedback_worker_protocol": profile.metadata.get(
+                "agent_feedback_worker_protocol"
+            ),
+            "agent_feedback_worker_isolation_kind": profile.metadata.get(
+                "agent_feedback_worker_isolation_kind"
+            ),
+        }
+        release_hash = profile.metadata.get(
+            "agent_feedback_worker_release_hash",
+            profile.metadata.get("commercial_worker_release_hash"),
+        )
+        release_protocol = profile.metadata.get(
+            "agent_feedback_worker_release_protocol",
+            profile.metadata.get("commercial_worker_release_protocol"),
+        )
+        if any(value is not None for value in worker_fields.values()):
+            if not all(value is not None for value in worker_fields.values()):
+                errors.append("agent feedback worker metadata must be declared as one contract")
+            if (
+                not isinstance(worker_fields["agent_feedback_worker_contract_hash"], str)
+                or _SHA256.fullmatch(str(worker_fields["agent_feedback_worker_contract_hash"]))
+                is None
+            ):
+                errors.append("agent feedback worker contract hash is invalid")
+            if (
+                worker_fields["agent_feedback_worker_protocol"]
+                != "verigym.synopsys.dc.agent_worker.v1"
+            ):
+                errors.append("agent feedback worker protocol is unsupported")
+            if worker_fields["agent_feedback_worker_isolation_kind"] not in {
+                "lsf_job",
+                "container",
+                "vm",
+            }:
+                errors.append("agent feedback worker isolation kind is unsupported")
+            if (release_hash is None) != (release_protocol is None):
+                errors.append("commercial worker release metadata must be declared as one identity")
+            if release_hash is not None and (
+                not isinstance(release_hash, str) or _SHA256.fullmatch(release_hash) is None
+            ):
+                errors.append("commercial worker release hash is invalid")
+            if (
+                release_protocol is not None
+                and release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+            ):
+                errors.append("commercial worker release protocol is unsupported")
+        elif release_hash is not None or release_protocol is not None:
+            errors.append("commercial worker release requires an agent feedback worker contract")
         if not set(profile.environment_allowlist).issubset(_TRANSPORT_ENVIRONMENT):
             errors.append("profile contains unsupported MCP transport environment names")
         libraries = [
@@ -616,7 +825,10 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             errors.append("delay and worst-negative-slack units must match")
         if power_flow and not profile.metrics.power.enabled:
             errors.append("remote power flow requires an enabled power metric")
-        if profile.flow.template_id == FLOW_TEMPLATE_ID:
+        if profile.flow.template_id in {
+            FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
+        }:
             if profile.metadata.get("power_activity_mode") != "global_clock_relative":
                 errors.append("remote DC v4 profile requires explicit clock-relative activity")
             for name in ("power_activity", "power_static_probability", "power_base_clock"):
@@ -643,8 +855,24 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         assert profile.flow is not None
         assert profile.metrics is not None
         assert profile.reference is not None
-        if runtime.descriptor.name != "local":
-            raise ConfigurationError("the MCP client backend requires the local runtime")
+        descriptor = runtime.descriptor
+        allowed_runtimes = profile.runtime.allowed_runtimes or [profile.runtime.runtime]
+        if descriptor.name not in allowed_runtimes:
+            raise ConfigurationError("the MCP client backend runtime differs from the profile")
+        if descriptor.name == "docker":
+            image = descriptor.image
+            if (
+                image is None
+                or image.resolved_image_id != profile.metadata.get("prepared_image_id")
+                or image.requested_reference != profile.runtime.requested_image
+                or descriptor.isolation_level != "docker_standard"
+                or descriptor.security is None
+                or descriptor.security.network_mode != "none"
+                or descriptor.resources is None
+            ):
+                raise ConfigurationError(
+                    "Docker MCP runtime differs from the prepared immutable control contract"
+                )
         if source_paths != profile.flow.default_sources or top_module != profile.flow.top_module:
             raise ConfigurationError("task sources/top differ from the remote DC profile")
         if reference_candidate_hash is None or _SHA256.fullmatch(reference_candidate_hash) is None:
@@ -666,6 +894,15 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             raw_expected = expected.metadata.get("mcp_server_resolved_profile_hash")
             if isinstance(raw_expected, str):
                 expected_server_hash = raw_expected
+        expected_release_hash = None
+        for key in (
+            "agent_feedback_worker_release_hash",
+            "commercial_worker_release_hash",
+        ):
+            raw_release = profile.metadata.get(key)
+            if isinstance(raw_release, str):
+                expected_release_hash = raw_release
+                break
         arguments: dict[str, Any] = {
             "profile_id": server_profile_id,
             "declared_profile_hash": server_declared_hash,
@@ -673,6 +910,8 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         }
         if expected_server_hash is not None:
             arguments["expected_resolved_profile_hash"] = expected_server_hash
+        if expected_release_hash is not None:
+            arguments["expected_release_hash"] = expected_release_hash
         completed = _run_stdio(
             executable,
             _mcp_messages(RESOLVE_PROFILE_TOOL, arguments),
@@ -687,11 +926,13 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 )
             )
             self._validate_remote_identity(profile, response.profile, response.resolved_profile)
+            self._validate_agent_worker_identity(profile, response.agent_feedback_worker)
         except ValidationError as exc:
             raise ConfigurationError("MCP resolve response failed schema validation") from exc
         except (McpProtocolError, ValueError) as exc:
             raise ConfigurationError(redact(str(exc))) from exc
         remote = response.resolved_profile
+        worker = response.agent_feedback_worker
         if remote.reference_candidate_hash != reference_candidate_hash:
             raise ConfigurationError(
                 "MCP server reference-candidate identity differs from the requested profile"
@@ -764,6 +1005,26 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 "power_activity": profile.metadata.get("power_activity"),
                 "power_static_probability": profile.metadata.get("power_static_probability"),
                 "power_base_clock": profile.metadata.get("power_base_clock"),
+                **(
+                    {
+                        "agent_feedback_worker_contract_hash": worker.contract_hash,
+                        "agent_feedback_worker_contract": worker.contract.model_dump(mode="json"),
+                        "agent_feedback_worker_isolation_kind": worker.contract.isolation_kind,
+                        **(
+                            {
+                                "agent_feedback_worker_release_protocol": worker.release_protocol,
+                                "agent_feedback_worker_release_hash": worker.release_hash,
+                                "commercial_worker_release_protocol": worker.release_protocol,
+                                "commercial_worker_release_hash": worker.release_hash,
+                            }
+                            if worker.release_hash is not None
+                            else {}
+                        ),
+                    }
+                    if worker is not None
+                    and profile.metadata.get("agent_feedback_worker_contract_hash") is not None
+                    else {}
+                ),
             },
         )
         resolved = unresolved.model_copy(
@@ -845,6 +1106,47 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         if resolved.flow_settings != expected_flow_settings:
             raise McpProtocolError("MCP server flow settings differ from the client profile")
 
+    def _validate_agent_worker_identity(
+        self,
+        profile: ToolchainProfile,
+        worker: McpAgentWorkerSummary | None,
+    ) -> None:
+        expected_hash = profile.metadata.get("agent_feedback_worker_contract_hash")
+        if expected_hash is None:
+            return
+        if worker is None:
+            raise McpProtocolError("MCP server omitted the required agent feedback worker")
+        computed = content_hash(
+            {
+                "launcher_sha256": worker.launcher_sha256,
+                "isolation_contract": agent_worker_contract_identity_payload(worker.contract),
+            }
+        )
+        if computed != worker.contract_hash or worker.contract_hash != expected_hash:
+            raise McpProtocolError("MCP agent feedback worker contract differs from the profile")
+        if worker.contract.protocol != profile.metadata.get(
+            "agent_feedback_worker_protocol"
+        ) or worker.contract.isolation_kind != profile.metadata.get(
+            "agent_feedback_worker_isolation_kind"
+        ):
+            raise McpProtocolError("MCP agent feedback worker isolation differs from the profile")
+        expected_release_hash = profile.metadata.get(
+            "agent_feedback_worker_release_hash",
+            profile.metadata.get("commercial_worker_release_hash"),
+        )
+        expected_release_protocol = profile.metadata.get(
+            "agent_feedback_worker_release_protocol",
+            profile.metadata.get("commercial_worker_release_protocol"),
+        )
+        if expected_release_hash is not None:
+            if (
+                worker.release_protocol != expected_release_protocol
+                or worker.release_hash != expected_release_hash
+                or worker.contract.release_protocol != expected_release_protocol
+                or worker.contract.release_hash != expected_release_hash
+            ):
+                raise McpProtocolError("MCP commercial worker release differs from the profile")
+
     def build_synthesis_request(
         self,
         profile: ToolchainProfile,
@@ -852,8 +1154,12 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         *,
         run_label: str,
     ) -> dict[str, Any]:
-        if run_label not in {"candidate", "reference"}:
-            raise ValueError("synthesis run label must be candidate or reference")
+        if run_label not in {"candidate", "reference", "agent_feedback"}:
+            raise ValueError("synthesis run label must be candidate, reference, or agent_feedback")
+        if run_label == "agent_feedback" and not resolved.metadata.get(
+            "agent_feedback_worker_contract_hash"
+        ):
+            raise ValueError("resolved MCP profile has no disposable agent feedback worker")
         transport = next(
             item for item in resolved.tool_identities if item.logical_name == _MCP_TOOL_NAME
         )
@@ -887,8 +1193,55 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             power_unit=resolved.power_unit,
             power_activity_mode=cast(str | None, resolved.metadata.get("power_activity_mode")),
             run_label=run_label,  # type: ignore[arg-type]
+            transport_execution_boundary=(
+                "host_verifier_control_plane"
+                if resolved.runtime_identity.runtime_slug == "docker"
+                else "runtime_session"
+            ),
+            agent_worker_contract_hash=(
+                cast(
+                    str | None,
+                    resolved.metadata.get("agent_feedback_worker_contract_hash"),
+                )
+                if run_label == "agent_feedback"
+                else None
+            ),
+            agent_worker_code_identity_hash=(
+                cast(
+                    str,
+                    resolved.metadata["agent_feedback_worker_contract"]["code_identity_hash"],
+                )
+                if run_label == "agent_feedback"
+                else None
+            ),
+            agent_worker_isolation_profile_hash=(
+                cast(
+                    str,
+                    resolved.metadata["agent_feedback_worker_contract"]["isolation_profile_hash"],
+                )
+                if run_label == "agent_feedback"
+                else None
+            ),
+            expected_release_hash=(
+                cast(
+                    str | None,
+                    resolved.metadata.get(
+                        "agent_feedback_worker_release_hash",
+                        resolved.metadata.get("commercial_worker_release_hash"),
+                    ),
+                )
+                if run_label == "agent_feedback"
+                else None
+            ),
         )
         return request.model_dump(mode="json")
+
+    def build_agent_feedback_request(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+    ) -> dict[str, Any]:
+        return self.build_synthesis_request(profile, resolved, run_label="agent_feedback")
 
     def stage_profile_assets(
         self,
@@ -933,12 +1286,20 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             "top": request.top,
             "sources": sources,
             "run_label": request.run_label,
-            "artifact_content_policy": "reports",
+            "artifact_content_policy": (
+                "none" if request.run_label == "agent_feedback" else "reports"
+            ),
         }
+        if request.expected_release_hash is not None:
+            arguments["expected_release_hash"] = request.expected_release_hash
         return CommandSpec(
             argv=[executable],
             cwd=".",
-            env=_transport_environment(request.transport_environment),
+            env=(
+                _transport_environment(request.transport_environment)
+                if request.transport_execution_boundary == "runtime_session"
+                else {}
+            ),
             timeout_s=request.timeout_s,
             stdin=_mcp_messages(SYNTHESIZE_TOOL, arguments),
         )
@@ -989,6 +1350,14 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
                 ErrorCategory.PARSER_ERROR,
                 "MCP synthesis response failed schema validation",
             )
+        except McpToolRejection as exc:
+            return self._failure(
+                request,
+                completed,
+                ErrorCategory.PARSER_ERROR,
+                str(exc),
+                failure_category=exc.safe_subcategory,
+            )
         except (McpProtocolError, ValueError, OSError) as exc:
             return self._failure(
                 request,
@@ -1013,6 +1382,10 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         metadata = dict(response.tool_result.metadata)
         metadata["synthesis"] = metrics.model_dump(mode="json")
         metadata["mcp_server_resolved_profile_hash"] = request.server_resolved_profile_hash
+        if response.agent_feedback_execution is not None:
+            metadata["agent_feedback_execution"] = response.agent_feedback_execution.model_dump(
+                mode="json"
+            )
         return ToolResult(
             tool=self.descriptor.name,
             success=response.tool_result.success,
@@ -1048,13 +1421,38 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         ):
             raise McpProtocolError("MCP synthesis response identity differs from the request")
         metrics = SynthesisMetrics.model_validate(response.tool_result.metadata.get("synthesis"))
+        expected_role = "candidate" if request.run_label == "agent_feedback" else request.run_label
         if (
-            metrics.role != request.run_label
+            metrics.role != expected_role
             or metrics.top != request.top
             or metrics.resolved_profile_hash != request.server_resolved_profile_hash
             or metrics.generated_script_hash != request.generated_script_hash
         ):
             raise McpProtocolError("MCP synthesis metrics identity differs from the request")
+        if request.run_label == "agent_feedback":
+            receipt = response.agent_feedback_execution
+            if (
+                receipt is None
+                or receipt.contract_hash != request.agent_worker_contract_hash
+                or receipt.code_identity_hash != request.agent_worker_code_identity_hash
+                or receipt.isolation_profile_hash != request.agent_worker_isolation_profile_hash
+                or receipt.release_hash != request.expected_release_hash
+                or (
+                    request.expected_release_hash is not None
+                    and receipt.release_protocol != COMMERCIAL_WORKER_RELEASE_PROTOCOL
+                )
+                or not receipt.scheduler_dispatched
+                or not receipt.worker_started
+                or not receipt.worker_completed
+                or not receipt.cleanup_complete
+                or response.artifacts
+                or response.tool_result.artifacts
+                or response.tool_result.diagnostics
+                or metrics.artifacts
+            ):
+                raise McpProtocolError("MCP agent feedback worker receipt is incomplete")
+        elif response.agent_feedback_execution is not None:
+            raise McpProtocolError("final synthesis unexpectedly returned an agent worker receipt")
         if metrics.mapped_area_raw is not None and (
             metrics.mapped_area_unit != request.area_unit
             or metrics.mapped_area_source_hash != request.library_sha256
@@ -1093,7 +1491,7 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             response.tool_result.metadata.get("synthesis")
         )
         refs = {item.path: item for item in server_metrics.artifacts}
-        if request.run_label == "reference":
+        if request.run_label in {"reference", "agent_feedback"}:
             return list(refs.values())
         imported: list[SynthesisArtifactRef] = []
         total = 0
@@ -1128,12 +1526,14 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
         completed: CompletedCommand,
         category: ErrorCategory,
         message: str,
+        *,
+        failure_category: str | None = None,
     ) -> ToolResult:
         sanitized = redact(message)
         metrics = SynthesisMetrics(
             status="error",
             synthesis_ok=False,
-            role=request.run_label,
+            role="candidate" if request.run_label == "agent_feedback" else request.run_label,
             top=request.top,
             tool_identity={
                 "mcp_server_resolved_profile_hash": request.server_resolved_profile_hash,
@@ -1141,7 +1541,7 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
             },
             resolved_profile_hash=request.client_resolved_profile_hash,
             generated_script_hash=request.generated_script_hash,
-            failure_category=category.value,
+            failure_category=failure_category or category.value,
             failure_message=sanitized,
         )
         return ToolResult(
@@ -1161,6 +1561,20 @@ class McpDesignCompilerSynthesisTool(SynthesisBackendPlugin):
     def execute(self, raw_request: dict[str, Any], context: ToolContext) -> ToolResult:
         started = time.monotonic()
         try:
+            request = self.validate_request(raw_request)
+            if request.transport_execution_boundary == "host_verifier_control_plane":
+                command = self.build_command(request, context)
+                if command.requires_shell or command.stdin is None:
+                    raise ValueError("MCP control-plane transport command is malformed")
+                if context.dispatch_callback is not None:
+                    context.dispatch_callback()
+                completed = _run_stdio(
+                    command.argv[0],
+                    command.stdin,
+                    environment_names=request.transport_environment,
+                    timeout_s=command.timeout_s,
+                )
+                return self.parse_result(request, completed, context)
             return super().execute(raw_request, context)
         except Exception as exc:
             message = redact(str(exc))

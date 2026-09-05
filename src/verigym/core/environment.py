@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 
 from verigym.core.artifact_policy import bound_value
@@ -16,6 +17,7 @@ from verigym.core.repository_observation import (
 )
 from verigym.core.trace import TraceWriter
 from verigym.core.workspace import WorkspacePolicy
+from verigym.protocols.repository_action import repository_action_state_failure
 from verigym.registry.base import PluginRegistry
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.agent import (
@@ -27,10 +29,11 @@ from verigym.schemas.agent import (
     Observation,
     ToolCallAction,
 )
+from verigym.schemas.agent_feedback import AgentFeedbackContract
 from verigym.schemas.common import ErrorCategory, InteractionMode, ToolVisibility
 from verigym.schemas.runtime import SessionSpec
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
-from verigym.schemas.tool import ToolResult
+from verigym.schemas.tool import CompletedCommand, ToolResult
 from verigym.tools.base import ToolContext, ToolPlugin
 
 
@@ -47,6 +50,7 @@ class VeriGymEnv:
         mode: InteractionMode = InteractionMode.AGENT,
         observation_policy: RepositoryObservationPolicy | None = None,
         audit_callback: RawObservationCallback | None = None,
+        public_test_executor: Callable[[str, RuntimeSession], CompletedCommand] | None = None,
     ) -> None:
         self.task = task
         self.assets = assets
@@ -55,12 +59,22 @@ class VeriGymEnv:
         self.mode = mode
         self.observation_policy = observation_policy
         self.audit_callback = audit_callback
+        self.public_test_executor = public_test_executor
         self.state = EpisodeState.CREATED
         self.termination_reason: TerminationReason | None = None
         self.session: RuntimeSession | None = None
         self.tracker: BudgetTracker | None = None
         self.trace: TraceWriter | None = None
         self.run_id: str | None = None
+        raw_feedback = task.metadata.get("agent_feedback_contract")
+        self.agent_feedback_contract = (
+            AgentFeedbackContract.model_validate(raw_feedback)
+            if isinstance(raw_feedback, dict)
+            else None
+        )
+        self._agent_eval_patch_applied = False
+        self._agent_eval_compile_passed = False
+        self._agent_eval_diff_observed = False
         self.policy = WorkspacePolicy(
             editable_globs=tuple(task.workspace.editable_globs),
             readonly_globs=tuple(task.workspace.readonly_globs),
@@ -116,6 +130,9 @@ class VeriGymEnv:
         self.trace.emit("agent_action", action_payload)
 
         if isinstance(action, FinalSubmissionAction):
+            state_error = self._agent_eval_state_failure("finish")
+            if state_error is not None:
+                return self._reject_agent_eval_transition(state_error)
             if action.files is not None:
                 submission_error = self._materialize_final_submission(action.files)
                 if submission_error is not None:
@@ -166,6 +183,22 @@ class VeriGymEnv:
             self.termination_reason = TerminationReason.POLICY_VIOLATION
             observation = self._observation(message="unsupported action type")
             return observation, 0.0, True, False, self._info()
+
+        state_action = {
+            "repository.public_test": "run_public_test",
+            "file.diff": "inspect_diff",
+        }.get(tool_name, "apply_patch" if tool_name == "file.apply_patch" else tool_name)
+        state_error = self._agent_eval_state_failure(
+            state_action,
+            public_test_id=(
+                arguments.get("test_id")
+                if tool_name == "repository.public_test"
+                and isinstance(arguments.get("test_id"), str)
+                else None
+            ),
+        )
+        if state_error is not None:
+            return self._reject_agent_eval_transition(state_error)
 
         if self.mode == InteractionMode.CHAT:
             result = ToolResult(
@@ -233,15 +266,89 @@ class VeriGymEnv:
             else []
         )
         if tool_name == "file.apply_patch" and result.success:
+            if self.agent_feedback_contract is not None:
+                self._agent_eval_patch_applied = True
+                self._agent_eval_compile_passed = False
+                self._agent_eval_diff_observed = False
             self.trace.emit(
                 "patch_applied",
                 {"paths": changed_files},
                 parent_event_id=result_event.event_id,
             )
+        elif tool_name == "repository.public_test" and self.agent_feedback_contract is not None:
+            if arguments.get("test_id") == self.agent_feedback_contract.compile_test_id:
+                self._agent_eval_compile_passed = result.success
+        elif (
+            tool_name == "file.diff" and result.success and self.agent_feedback_contract is not None
+        ):
+            self._agent_eval_diff_observed = True
         if changed_files:
             self.trace.emit("file_changed", {"paths": changed_files, "tool": tool_name})
         self._emit_budget()
         observation = self._observation(previous_tool_result=result)
+        self.trace.emit("observation_emitted", observation.model_dump(mode="json"))
+        return observation, 0.0, False, False, self._info()
+
+    def _agent_eval_state_failure(
+        self,
+        action: str,
+        *,
+        public_test_id: str | None = None,
+    ) -> str | None:
+        contract = self.agent_feedback_contract
+        if contract is None or action not in {
+            "apply_patch",
+            "run_public_test",
+            "inspect_diff",
+            "finish",
+        }:
+            return None
+        return repository_action_state_failure(
+            action,
+            state_machine_id=contract.state_machine_id,
+            public_test_required=contract.compile_required_for_finish,
+            patch_applied=self._agent_eval_patch_applied,
+            public_observed=self._agent_eval_compile_passed,
+            diff_observed=self._agent_eval_diff_observed,
+            finished=False,
+            public_test_id=public_test_id,
+            compile_test_id=contract.compile_test_id,
+            compile_passed=self._agent_eval_compile_passed,
+            compile_required_for_finish=contract.compile_required_for_finish,
+        )
+
+    def record_delegated_agent_feedback_action(
+        self,
+        action: str,
+        success: bool,
+        public_test_id: str | None = None,
+    ) -> None:
+        """Mirror actions already validated by the external repository broker."""
+
+        contract = self.agent_feedback_contract
+        if contract is None:
+            return
+        if action == "apply_patch" and success:
+            self._agent_eval_patch_applied = True
+            self._agent_eval_compile_passed = False
+            self._agent_eval_diff_observed = False
+        elif action == "run_public_test" and public_test_id == contract.compile_test_id:
+            self._agent_eval_compile_passed = success
+        elif action == "inspect_diff" and success:
+            self._agent_eval_diff_observed = True
+
+    def _reject_agent_eval_transition(
+        self,
+        category: str,
+    ) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
+        assert self.tracker is not None and self.trace is not None
+        message = f"AgentEval state transition rejected: {category}"
+        self.trace.emit(
+            "agent_action_rejected",
+            {"category": category, "message": message},
+        )
+        observation = self._observation(message=message)
+        self._emit_budget()
         self.trace.emit("observation_emitted", observation.model_dump(mode="json"))
         return observation, 0.0, False, False, self._info()
 
@@ -285,6 +392,7 @@ class VeriGymEnv:
                 max_output_bytes=self.task.budget.max_output_bytes_per_tool,
                 observation_policy=self.observation_policy,
                 audit_callback=self.audit_callback,
+                public_test_executor=self.public_test_executor,
             ),
         )
 

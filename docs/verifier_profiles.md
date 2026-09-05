@@ -1,0 +1,157 @@
+# Model-invisible backend profiles
+
+Verifier profiles normally replace one verifier-only DAG node with a hash-bound backend before
+any model lookup. The same strict profile schema may bind a separately declared public-test
+interface, but only when the task explicitly requires it. `synopsys.vcs.mcp` keeps VCS, its
+license setup, hidden testbench, and raw reports on a fixed local or SSH-connected verifier
+worker. `synopsys.vcs.public-compile.mcp` is a distinct compile-only VerilogEval interface with no
+hidden inputs.
+
+This is separate from a synthesis `--toolchain-profile`. A run may select both: the verifier
+profile controls hidden functional verification, while the toolchain profile controls final PPA.
+
+## Run with a fixed verifier worker
+
+Create one private server profile per task and start the service with only approved profiles:
+
+```bash
+verigym-synopsys-prepare-vcs-profile \
+  --id rtllm-counter-vcs-v1 \
+  --task-id rtllm/counter_12 \
+  --source rtl/counter_12.v \
+  --testbench /private/RTLLM/Control/Counter/counter_12/testbench.v \
+  --top counter_12_tb \
+  --pass-marker '===========Your Design Passed===========' \
+  --fail-marker '===========Failed===========' \
+  --vcs /opt/synopsys/vcs/bin/vcs \
+  --output-profile /private/profiles/rtllm-counter-vcs-server.yaml
+
+verigym-synopsys-vcs-mcp-server \
+  --profile /private/profiles/rtllm-counter-vcs-server.yaml \
+  --work-root /private/verigym-vcs-work
+```
+
+Tasks may declare additional verifier-only inputs with repeatable
+`--auxiliary-file MOUNT_PATH=SOURCE_PATH`. The server profile publishes only each normalized mount
+path and SHA-256; the source path remains private. The client revalidates those identities on
+resolve and simulate, while the server stages the files only beside the hidden testbench in the
+private VCS workspace. Auxiliary bytes and paths must never enter a candidate workspace, model
+trace, public smoke, or result artifact.
+
+The client transport must be one executable regular file that accepts no arguments and connects
+stdin/stdout to that exact service command. Export a sanitized client profile after recording the
+server-declared and public-contract hashes returned by the service:
+
+```bash
+verigym-synopsys-export-vcs-mcp-profile \
+  --id rtllm-counter-vcs-client-v1 \
+  --server-profile-id rtllm-counter-vcs-v1 \
+  --server-declared-profile-hash "$SERVER_DECLARED_SHA256" \
+  --server-contract-hash "$SERVER_CONTRACT_SHA256" \
+  --task-id rtllm/counter_12 \
+  --transport-executable /usr/local/bin/verigym-vcs-mcp-transport \
+  --output-profile /private/profiles/rtllm-counter-vcs-client.yaml
+```
+
+Use both the ID and document on a run:
+
+```bash
+verigym run --suite rtllm --task counter_12 --suite-source /datasets/RTLLM \
+  --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
+  --verifier-profile rtllm-counter-vcs-client-v1 \
+  --verifier-profile-file /private/profiles/rtllm-counter-vcs-client.yaml \
+  --output runs/
+```
+
+`--runtime local` runs only the fixed transport in the trusted control plane. For a Docker-backed
+agent, this is the one permitted runtime mismatch: a verifier-only backend advertising
+`remote_mcp` may use a local verifier profile while candidate bytes are read from the separate
+Docker verifier staging tree. The hash-bound wrapper still executes on the trusted controller;
+there is no container network exception or executable lookup inside the agent image. This does
+not make VCS or commercial assets visible to a model. Replay re-resolves the transport, server,
+profile, contract, hidden auxiliary identities, and exact VCS version before re-executing the
+frozen candidate.
+
+## Freeze it in an experiment
+
+Experiment YAML uses equivalent fields at the top level:
+
+```yaml
+schema_version: "1.0"
+name: rtllm-counter-vcs-mcp
+suite:
+  id: rtllm
+  source: /datasets/RTLLM
+  variant: counter_12
+  tasks:
+    include: [counter_12]
+runs:
+  mode: chat
+  seeds: [0]
+  samples_per_task: 1
+  pass_k: [1]
+verifier_profile: rtllm-counter-vcs-client-v1
+verifier_profile_file: /private/profiles/rtllm-counter-vcs-client.yaml
+systems:
+  - id: candidate
+    agent: {id: single-turn}
+    model: {id: YOUR_MODEL}
+runtime: {id: local}
+output: {root: experiments/rtllm-counter-vcs-mcp}
+```
+
+Planning probes the transport and exact server/tool identity. Each plan item freezes the declared
+and resolved profile objects; child runs must resolve the same identities before model-process
+authorization.
+
+VerilogEval's commercial functional partition uses one such profile per eligible task. The
+site-only bulk preparation and qualification commands are documented in the
+[`verigym-synopsys` README](../integrations/verigym-synopsys/README.md). Its qualification evidence
+is recorded in the [VCS/MCP v1 audit](audits/verilog_eval_vcs_mcp_qualification_v1.md).
+
+## Version and benchmark boundaries
+
+| Partition | Functional verifier | Compatibility rule |
+| --- | --- | --- |
+| RTLLM single-turn commercial | VCS through `synopsys.vcs.mcp` | Exact VCS version and task-bound server contract |
+| RTLLM AgentEval v1 | Icarus and vvp 12 | Both resolved major versions must be 12 |
+| VerilogEval V2 base and existing AgentEval variants | Icarus and vvp | Major 12 is upstream-reference-compatible; major 13 is incompatible |
+| VerilogEval AgentEval VCS/MCP v1 | VCS through required `synopsys.vcs.mcp` | Separate functional partition; exact VCS and task/server contract, no upstream-tool claim |
+| VerilogEval AgentEval public VCS/MCP v1 | Public compile through `synopsys.vcs.public-compile.mcp`; final hidden through `synopsys.vcs.mcp` | Two separately resolved profiles and partitions; compile-only public result, no upstream-tool claim |
+| RTL-Repo official completion, including AgentEval | Native Exact Match/Edit Similarity | No Icarus or VCS requirement |
+
+Icarus 13 may remain installed side by side for development, but it must not be selected for a
+reference-compatible RTLLM AgentEval or VerilogEval V2 result. Record `iverilog -V`, `vvp -V`, and
+the immutable Docker image identity for published runs.
+
+## Security and failure behavior
+
+The VCS MCP service exposes only list, resolve, and simulate. Simulation accepts a task/profile
+identity and bounded candidate RTL for the exact ordered source list. Top, testbench mount,
+auxiliary mounts, pass/fail markers, timeout, hidden asset hashes, and VCS executable are
+server-owned. The API has no arbitrary command, shell, flags, environment, testbench or auxiliary
+bytes, report, or artifact-return field.
+
+The client rejects transport-hash, protocol, server-version, profile, contract, task, VCS-version,
+candidate, hidden-testbench, auxiliary-file, and replay-identity mismatches. Successful and candidate-failure
+responses contain no stdout, stderr, diagnostics, artifacts, VCS log, hidden RTL, license value, or
+server path. License absence remains `license_unavailable`; transport failure is infrastructure,
+not a candidate rejection.
+
+Direct `synopsys.vcs.simulate` and `synopsys.dc.synth` remain trusted verifier backends for legacy
+or server-internal use. New commercial RTLLM campaigns should use `synopsys.vcs.mcp` for
+functional verification and `synopsys.dc.mcp` for final PPA. The VerilogEval
+`v2-spec-to-rtl-agent-eval-vcs-mcp-v1` variant also requires `synopsys.vcs.mcp`, but deliberately
+has no DC/PPA path.
+
+The separate `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` variant additionally requires a
+`--public-test-profile` targeting `synopsys.vcs.public-compile.mcp`. The agent still invokes only
+`repository.public_test` with test ID `compile`; core routes it through the resolved controller
+profile and returns a bounded public observation. That server has no testbench/reference fields or
+simulation operation, and the final hidden `--verifier-profile` is still mandatory. Declared and
+resolved public profile identities are stored in the manifest, plan, and replay artifacts.
+
+Phase-two DC/MCP feedback is enabled only by a separately resolved disposable-worker contract.
+It remains behind `run_public_test("ppa")`; neither the DC MCP tools nor VCS MCP are added to the
+six-action agent tool registry. A verifier-only/final-PPA DC profile without the worker contract
+continues to fail pre-model if iterative commercial feedback is requested.

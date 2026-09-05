@@ -61,6 +61,14 @@ _FLOW_TEMPLATE_SOURCE = (
     "verigym-synopsys:dc-area-timing-power-explicit-template:v4:non-clock-primary-inputs"
 )
 FLOW_TEMPLATE_HASH = hashlib.sha256(_FLOW_TEMPLATE_SOURCE.encode()).hexdigest()
+MULTICLOCK_FLOW_TEMPLATE_ID = "synopsys-dc-area-timing-power-multiclock-explicit-v5"
+_MULTICLOCK_FLOW_TEMPLATE_SOURCE = (
+    "verigym-synopsys:dc-area-timing-power-multiclock-explicit-template:v5:"
+    "maximum-arrival-and-worst-slack-across-clock-groups"
+)
+MULTICLOCK_FLOW_TEMPLATE_HASH = hashlib.sha256(
+    _MULTICLOCK_FLOW_TEMPLATE_SOURCE.encode()
+).hexdigest()
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_TOTAL_BYTES = 32 * 1024 * 1024
 _MAX_PROFILE_ASSET_BYTES = 128 * 1024 * 1024
@@ -89,6 +97,7 @@ _TEMPLATE_HASHES = {
     AREA_TIMING_FLOW_TEMPLATE_ID: AREA_TIMING_FLOW_TEMPLATE_HASH,
     VECTORLESS_POWER_FLOW_TEMPLATE_ID: VECTORLESS_POWER_FLOW_TEMPLATE_HASH,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID: MULTICLOCK_FLOW_TEMPLATE_HASH,
 }
 _POWER_UNIT_SCALE_WATTS = {
     "W": 1.0,
@@ -191,6 +200,7 @@ class DesignCompilerRequest(StrictModel):
         "synopsys-dc-area-timing-v2",
         "synopsys-dc-area-timing-power-v3",
         "synopsys-dc-area-timing-power-explicit-v4",
+        "synopsys-dc-area-timing-power-multiclock-explicit-v5",
     ] = "synopsys-dc-area-timing-power-explicit-v4"
     resolved_profile_hash: str
     tool_identity: dict[str, Any] = Field(default_factory=dict)
@@ -237,7 +247,7 @@ class DesignCompilerRequest(StrictModel):
             raise ValueError("Design Compiler area and timing units must be explicit")
         if not math.isfinite(self.clock_period):
             raise ValueError("clock period must be finite")
-        if self.flow_template_id == FLOW_TEMPLATE_ID:
+        if self.flow_template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}:
             if self.power_unit not in _POWER_UNIT_SCALE_WATTS:
                 raise ValueError("the Design Compiler power flow requires a supported power unit")
             if self.power_activity_mode != "global_clock_relative":
@@ -313,8 +323,13 @@ def _script(
         "write -format verilog -hierarchy -output out/netlist.v\n" if emit_netlist else ""
     )
     has_cell_count = template_id != LEGACY_FLOW_TEMPLATE_ID
-    has_power = template_id in {VECTORLESS_POWER_FLOW_TEMPLATE_ID, FLOW_TEMPLATE_ID}
-    explicit_power = template_id == FLOW_TEMPLATE_ID
+    has_power = template_id in {
+        VECTORLESS_POWER_FLOW_TEMPLATE_ID,
+        FLOW_TEMPLATE_ID,
+        MULTICLOCK_FLOW_TEMPLATE_ID,
+    }
+    explicit_power = template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}
+    multiclock_explicit = template_id == MULTICLOCK_FLOW_TEMPLATE_ID
     if has_power and power_unit not in _POWER_UNIT_SCALE_WATTS:
         raise ValueError("the Design Compiler power flow requires a supported power unit")
     if explicit_power and (
@@ -354,7 +369,9 @@ def _script(
         "set vg_num_cells [sizeof_collection $vg_mapped_cells]\n" if has_cell_count else ""
     )
     metric_sentinel = (
-        "VERIGYM_DC_METRICS_V4"
+        "VERIGYM_DC_METRICS_V5"
+        if multiclock_explicit
+        else "VERIGYM_DC_METRICS_V4"
         if explicit_power
         else "VERIGYM_DC_METRICS_V3"
         if has_power
@@ -402,6 +419,24 @@ def _script(
     clock_collection = (
         "set vg_clocks $vg_power_clock\n" if explicit_power else "set vg_clocks [get_clocks *]\n"
     )
+    path_count_check = (
+        'if {[sizeof_collection $vg_paths] < 1} { error "no maximum timing path" }\n'
+        if multiclock_explicit
+        else 'if {[sizeof_collection $vg_paths] != 1} { error "no maximum timing path" }\n'
+    )
+    timing_metrics = (
+        "set vg_arrival -1.0e30\n"
+        "set vg_slack 1.0e30\n"
+        "foreach_in_collection vg_path $vg_paths {\n"
+        "  set vg_path_arrival [get_attribute $vg_path arrival]\n"
+        "  set vg_path_slack [get_attribute $vg_path slack]\n"
+        "  if {$vg_path_arrival > $vg_arrival} { set vg_arrival $vg_path_arrival }\n"
+        "  if {$vg_path_slack < $vg_slack} { set vg_slack $vg_path_slack }\n"
+        "}\n"
+        if multiclock_explicit
+        else "set vg_arrival [get_attribute $vg_paths arrival]\n"
+        "set vg_slack [get_attribute $vg_paths slack]\n"
+    )
     return (
         "set_app_var sh_continue_on_error false\n"
         "file mkdir out\n"
@@ -419,7 +454,7 @@ def _script(
         f"{activity_annotation}"
         "compile_ultra\n"
         "set vg_paths [get_timing_paths -delay_type max -max_paths 1]\n"
-        'if {[sizeof_collection $vg_paths] != 1} { error "no maximum timing path" }\n'
+        f"{path_count_check}"
         f"{clock_collection}"
         'if {[sizeof_collection $vg_clocks] < 1} { error "no clock was defined by SDC" }\n'
         f"{cell_collection}"
@@ -428,8 +463,7 @@ def _script(
         "  set vg_cell_area [get_attribute $vg_cell area]\n"
         "  if {$vg_cell_area ne {}} { set vg_area [expr {$vg_area + $vg_cell_area}] }\n"
         "}\n"
-        "set vg_arrival [get_attribute $vg_paths arrival]\n"
-        "set vg_slack [get_attribute $vg_paths slack]\n"
+        f"{timing_metrics}"
         "set vg_wns [expr {$vg_slack < 0.0 ? $vg_slack : 0.0}]\n"
         "set vg_period [get_attribute [index_collection $vg_clocks 0] period]\n"
         f"{cell_metric}"
@@ -538,8 +572,12 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
         power_flow = profile.flow.template_id in {
             VECTORLESS_POWER_FLOW_TEMPLATE_ID,
             FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
         }
-        explicit_power = profile.flow.template_id == FLOW_TEMPLATE_ID
+        explicit_power = profile.flow.template_id in {
+            FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
+        }
         expected_scope = "synthesis_area_timing_power" if power_flow else "synthesis_area_timing"
         if profile.metrics.scope != expected_scope:
             errors.append(
@@ -646,8 +684,12 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
         power_flow = profile.flow.template_id in {
             VECTORLESS_POWER_FLOW_TEMPLATE_ID,
             FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
         }
-        explicit_power = profile.flow.template_id == FLOW_TEMPLATE_ID
+        explicit_power = profile.flow.template_id in {
+            FLOW_TEMPLATE_ID,
+            MULTICLOCK_FLOW_TEMPLATE_ID,
+        }
         if runtime.descriptor.name != "local":
             raise ConfigurationError("Design Compiler profiles require the local runtime")
         if source_paths != profile.flow.default_sources or top_module != profile.flow.top_module:
@@ -825,17 +867,17 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             ),
             power_activity=(
                 float(resolved.metadata["power_activity"])
-                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                if resolved.flow_template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}
                 else None
             ),
             power_static_probability=(
                 float(resolved.metadata["power_static_probability"])
-                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                if resolved.flow_template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}
                 else None
             ),
             power_base_clock=(
                 str(resolved.metadata["power_base_clock"])
-                if resolved.flow_template_id == FLOW_TEMPLATE_ID
+                if resolved.flow_template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}
                 else None
             ),
             clock_period=float(resolved.metadata["clock_period"]),
@@ -1005,12 +1047,16 @@ class DesignCompilerSynthesisTool(SynthesisBackendPlugin):
             if request.flow_template_id in {
                 VECTORLESS_POWER_FLOW_TEMPLATE_ID,
                 FLOW_TEMPLATE_ID,
+                MULTICLOCK_FLOW_TEMPLATE_ID,
             }:
                 if parsed["power_unit"] != request.power_unit:
                     raise ValueError("Design Compiler power unit differs from the profile")
                 if parsed["power_activity_mode"] != request.power_activity_mode:
                     raise ValueError("Design Compiler power activity mode differs from the profile")
-                if request.flow_template_id == FLOW_TEMPLATE_ID:
+                if request.flow_template_id in {
+                    FLOW_TEMPLATE_ID,
+                    MULTICLOCK_FLOW_TEMPLATE_ID,
+                }:
                     for key, expected_value in (
                         ("power_activity", request.power_activity),
                         ("power_static_probability", request.power_static_probability),
@@ -1205,7 +1251,9 @@ def _parse_metrics(payload: bytes, *, template_id: str) -> dict[str, str]:
     except UnicodeDecodeError as exc:
         raise ValueError("Design Compiler metrics are not ASCII") from exc
     expected_sentinel = (
-        "VERIGYM_DC_METRICS_V4"
+        "VERIGYM_DC_METRICS_V5"
+        if template_id == MULTICLOCK_FLOW_TEMPLATE_ID
+        else "VERIGYM_DC_METRICS_V4"
         if template_id == FLOW_TEMPLATE_ID
         else "VERIGYM_DC_METRICS_V3"
         if template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID
@@ -1217,7 +1265,7 @@ def _parse_metrics(payload: bytes, *, template_id: str) -> dict[str, str]:
         raise ValueError("Design Compiler metrics sentinel is missing")
     expected_keys = (
         _METRIC_KEYS_V4
-        if template_id == FLOW_TEMPLATE_ID
+        if template_id in {FLOW_TEMPLATE_ID, MULTICLOCK_FLOW_TEMPLATE_ID}
         else _METRIC_KEYS_V3
         if template_id == VECTORLESS_POWER_FLOW_TEMPLATE_ID
         else _METRIC_KEYS_V2
@@ -1303,6 +1351,8 @@ __all__ = [
     "FLOW_TEMPLATE_ID",
     "LEGACY_FLOW_TEMPLATE_HASH",
     "LEGACY_FLOW_TEMPLATE_ID",
+    "MULTICLOCK_FLOW_TEMPLATE_HASH",
+    "MULTICLOCK_FLOW_TEMPLATE_ID",
     "VECTORLESS_POWER_FLOW_TEMPLATE_HASH",
     "VECTORLESS_POWER_FLOW_TEMPLATE_ID",
 ]

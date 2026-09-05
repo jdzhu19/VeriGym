@@ -13,6 +13,16 @@ dependencies = ["verigym==0.1.0"]
 
 [project.entry-points."verigym.agents"]
 codex-cli-agent = "verigym_codex_cli:CodexCliAgentAdapter"
+codex-cli-agenteval-agent = "verigym_codex_cli:CodexCliAgentEvalAdapter"
+codex-cli-functional-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalAgentEvalAdapter"
+codex-cli-functional-v2-high-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV2HighAgentEvalAdapter"
+codex-cli-functional-v2-low-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV2LowAgentEvalAdapter"
+codex-cli-functional-v2-medium-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV2MediumAgentEvalAdapter"
+codex-cli-functional-v2-mini-medium-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV2MiniMediumAgentEvalAdapter"
+codex-cli-functional-v3-high-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV3HighAgentEvalAdapter"
+codex-cli-functional-v3-low-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV3LowAgentEvalAdapter"
+codex-cli-functional-v3-medium-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV3MediumAgentEvalAdapter"
+codex-cli-functional-v3-mini-medium-agenteval-agent = "verigym_codex_cli:CodexCliFunctionalV3MiniMediumAgentEvalAdapter"
 codex-cli-hwe-agent = "verigym_codex_cli:CodexCliHweAgentAdapter"
 codex-cli-readonly-agent = "verigym_codex_cli:CodexCliReadonlyAgentAdapter"
 codex-cli-mcp-teacher = "verigym_codex_cli:CodexCliMcpTeacherAdapter"

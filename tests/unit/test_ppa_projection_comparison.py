@@ -331,6 +331,89 @@ def test_area_timing_power_projection_reports_reference_ratio() -> None:
     assert ppa.power_unit == "uW"
 
 
+def test_opensta_power_projection_compares_the_complete_activity_identity() -> None:
+    suite = ToyRtlSuite()
+    task = suite.load_task(next(iter(suite.discover())))
+    unresolved = _resolved_power().model_copy(
+        update={
+            "resolved_profile_hash": "",
+            "flow_template_id": "verigym-yosys-opensta-atp-v2",
+            "metadata": {
+                "clock_period": 10.0,
+                "power_activity_mode": "global_clock_relative",
+                "power_activity": 0.1,
+                "power_duty": 0.5,
+            },
+        }
+    )
+    resolved = unresolved.model_copy(
+        update={"resolved_profile_hash": content_hash(unresolved.identity_payload())}
+    )
+    results = [
+        VerifierResult(
+            node_id="compile_hidden",
+            plugin="iverilog.compile",
+            status=VerifierStatus.PASSED,
+        ),
+        VerifierResult(
+            node_id="run_hidden",
+            plugin="iverilog.run",
+            status=VerifierStatus.PASSED,
+        ),
+    ]
+    activity_identity = "opensta_global_clock_relative:activity=0.1:duty=0.5"
+    candidate = _power_metrics(
+        "candidate", 80.0, 4.0, -0.5, 8.0, resolved.resolved_profile_hash
+    ).model_copy(update={"power_activity_mode": activity_identity})
+    reference = _power_metrics(
+        "reference", 100.0, 5.0, -1.0, 10.0, resolved.resolved_profile_hash
+    ).model_copy(update={"power_activity_mode": activity_identity})
+
+    card = build_scorecard(
+        run_id="opensta-power-run",
+        task=task,
+        results=results,
+        diff=WorkspaceDiff(),
+        tracker=BudgetTracker(task.budget),
+        termination_reason=TerminationReason.FINAL_SUBMISSION,
+        task_hash=content_hash(task),
+        candidate_hash="6" * 64,
+        run_config_hash="7" * 64,
+        profile_refs=[ToolchainProfileRef(id="profile", version="1.0.0", content_hash="8" * 64)],
+        isolation_level="docker_standard",
+        resolved_profile=resolved,
+        candidate_synthesis=candidate,
+        reference_synthesis=reference,
+    )
+
+    ppa = card.quality.ppa
+    assert ppa is not None and ppa.eligible
+    assert ppa.power == 8.0
+    assert ppa.reference_power == 10.0
+
+    mismatched = build_scorecard(
+        run_id="opensta-power-mismatch",
+        task=task,
+        results=results,
+        diff=WorkspaceDiff(),
+        tracker=BudgetTracker(task.budget),
+        termination_reason=TerminationReason.FINAL_SUBMISSION,
+        task_hash=content_hash(task),
+        candidate_hash="6" * 64,
+        run_config_hash="7" * 64,
+        profile_refs=[ToolchainProfileRef(id="profile", version="1.0.0", content_hash="8" * 64)],
+        isolation_level="docker_standard",
+        resolved_profile=resolved,
+        candidate_synthesis=candidate.model_copy(
+            update={"power_activity_mode": "opensta_global_clock_relative:activity=0.2:duty=0.5"}
+        ),
+        reference_synthesis=reference,
+    )
+    mismatch_ppa = mismatched.quality.ppa
+    assert mismatch_ppa is not None and not mismatch_ppa.eligible
+    assert mismatch_ppa.ineligible_reasons == ["candidate_power_activity_mismatch"]
+
+
 @pytest.mark.parametrize("area", [0.0, -1.0, math.nan, math.inf, -math.inf])
 def test_synthesis_and_ranked_schemas_reject_invalid_area(area: float) -> None:
     with pytest.raises(ValidationError, match="finite and positive"):

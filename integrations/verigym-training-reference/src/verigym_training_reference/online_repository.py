@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
+from verigym.core.agent_feedback import public_feedback_test_ids
 from verigym.core.episode import TerminationReason
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
@@ -89,6 +90,8 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
         self._last_action_name: str | None = None
         self._patch_applied = False
         self._public_observed = False
+        self._compile_passed = False
+        self._last_public_test_id: str | None = None
         self._diff_observed = False
         self._pending_protocol_error: str | None = None
         self._session_deadline: float | None = None
@@ -138,12 +141,28 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
             envelope, arguments = validate_canonical_action(value, task=context.task)
             failure = repository_action_state_failure(
                 envelope.action,
-                state_machine_id=_STATE_MACHINE_ID,
+                state_machine_id=self._state_machine_id(context),
                 public_test_required=task_requires_public_test(context.task),
                 patch_applied=self._patch_applied,
                 public_observed=self._public_observed,
                 diff_observed=self._diff_observed,
                 finished=False,
+                public_test_id=(
+                    envelope.arguments.get("test_id")
+                    if envelope.action == "run_public_test"
+                    else None
+                ),
+                compile_test_id=(
+                    context.agent_feedback_contract.compile_test_id
+                    if context.agent_feedback_contract is not None
+                    else None
+                ),
+                compile_passed=self._compile_passed,
+                compile_required_for_finish=(
+                    context.agent_feedback_contract.compile_required_for_finish
+                    if context.agent_feedback_contract is not None
+                    else False
+                ),
             )
             if failure is not None:
                 raise RepositoryActionProtocolViolation(
@@ -175,18 +194,22 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
 
     def _publish_initial(self, observation: Observation) -> None:
         context = self._require_context()
-        repository = context.task.metadata.get("repository_repair")
-        public_ids = repository.get("public_test_ids") if isinstance(repository, dict) else []
+        public_ids = public_feedback_test_ids(context.task)
+        extra: dict[str, Any] = {
+            "prompt_contract": prompt_contract(self._state_machine_id(context)),
+            "public_test_ids": public_ids,
+            "public_test_required": task_requires_public_test(context.task),
+            "max_completion_calls": self._maximum_completion_calls(context),
+        }
+        if context.agent_feedback_contract is not None:
+            extra["agent_feedback_contract"] = context.agent_feedback_contract.model_dump(
+                mode="json"
+            )
         payload = self._response_base(
             turn=None,
             terminal=False,
             observation=observation,
-            extra={
-                "prompt_contract": prompt_contract(_STATE_MACHINE_ID),
-                "public_test_ids": public_ids if isinstance(public_ids, list) else [],
-                "public_test_required": task_requires_public_test(context.task),
-                "max_completion_calls": self._maximum_completion_calls(context),
-            },
+            extra=extra,
         )
         atomic_json(
             self._response_root / "initial.json",
@@ -260,6 +283,7 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
         }
 
     def _capture_result(self, observation: Observation) -> None:
+        context = self._require_context()
         result = observation.previous_tool_result
         action = self._last_action
         if result is None or action is None:
@@ -285,19 +309,43 @@ class OnlineRepositoryBrokerAgent(AgentAdapter):
             )
         if isinstance(action, ApplyPatchAction) and result.success:
             self._patch_applied = True
+            if context.agent_feedback_contract is not None:
+                self._public_observed = False
+                self._compile_passed = False
+                self._last_public_test_id = None
+                self._diff_observed = False
         elif isinstance(action, ToolCallAction) and action.tool == "repository.public_test":
             self._public_observed = True
+            test_id = action.arguments.get("test_id")
+            self._last_public_test_id = test_id if isinstance(test_id, str) else None
+            if (
+                context.agent_feedback_contract is not None
+                and test_id == context.agent_feedback_contract.compile_test_id
+            ):
+                self._compile_passed = result.success
         elif isinstance(action, ToolCallAction) and action.tool == "file.diff":
             self._diff_observed = True
 
     def _state(self) -> str:
         if self._diff_observed:
             return "diff_observed"
+        context = self._require_context()
+        feedback = getattr(context, "agent_feedback_contract", None)
+        if feedback is not None and self._last_public_test_id == feedback.ppa_test_id:
+            return "ppa_observed"
+        if feedback is not None and self._last_public_test_id == feedback.compile_test_id:
+            return "compile_observed"
         if self._public_observed:
             return "public_test_observed"
         if self._patch_applied:
             return "candidate_modified"
         return "awaiting_action"
+
+    @staticmethod
+    def _state_machine_id(context: AgentContext) -> RepositoryActionStateMachine:
+        if context.agent_feedback_contract is not None:
+            return context.agent_feedback_contract.state_machine_id
+        return _STATE_MACHINE_ID
 
     def _wait_for_action(self, turn: int) -> dict[str, Any]:
         context = self._require_context()

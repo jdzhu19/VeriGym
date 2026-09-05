@@ -102,6 +102,22 @@ def test_read_views_preserve_line_numbers_and_mark_omissions() -> None:
         )
 
 
+@pytest.mark.parametrize("concise", [None, True])
+def test_empty_read_view_is_a_valid_bounded_observation(concise: bool | None) -> None:
+    rendered, metadata = bounded_read_view(
+        "",
+        "repository/completion.txt",
+        concise=concise,
+        policy=BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+    )
+
+    assert rendered == ""
+    assert metadata["view_mode"] == ("concise" if concise else "full")
+    assert metadata["line_count"] == 0
+    assert metadata["line_range"] == [0, 0]
+    assert metadata["omitted_line_ranges"] == []
+
+
 def test_compact_result_separates_bounded_observation_from_raw_audit(tmp_path) -> None:
     raw_text = "x" * (16 * 1024 + 100)
     result = ToolResult(

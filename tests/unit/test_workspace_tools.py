@@ -16,6 +16,7 @@ from verigym.schemas.tool import CommandSpec
 from verigym.tools.base import ToolContext
 from verigym.tools.file_tools import (
     FileApplyPatchTool,
+    FileCodexPatchTool,
     FileListTool,
     FileReadTool,
     FileSearchTool,
@@ -90,6 +91,24 @@ def test_bounded_read_range_error_stays_an_invalid_request(local_session, policy
     assert "start_line is outside the file" in result.message
 
 
+@pytest.mark.parametrize("concise", [None, True])
+def test_bounded_empty_file_read_succeeds(local_session, policy, concise) -> None:
+    local_session.write_file("rtl/empty.v", b"")
+    result = FileReadTool().execute(
+        {"path": "rtl/empty.v", "concise": concise},
+        ToolContext(
+            session=local_session,
+            workspace_policy=policy,
+            observation_policy=BOUNDED_REPOSITORY_OBSERVATION_POLICY,
+        ),
+    )
+
+    assert result.success is True
+    assert result.stdout == ""
+    assert result.metadata["line_count"] == 0
+    assert result.metadata["line_range"] == [0, 0]
+
+
 def test_apply_patch_enforces_context_and_edit_glob(local_session, policy) -> None:
     context = ToolContext(session=local_session, workspace_policy=policy)
     patch = "--- a/rtl/counter.v\n+++ b/rtl/counter.v\n@@ -1 +1 @@\n-old\n+new\n"
@@ -99,6 +118,35 @@ def test_apply_patch_enforces_context_and_edit_glob(local_session, policy) -> No
     outside = "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-read only\n+oops\n"
     result = FileApplyPatchTool().execute({"patch": outside}, context)
     assert not result.success
+    assert local_session.read_file("README.md") == b"read only\n"
+
+
+def test_codex_patch_compatibility_preserves_workspace_policy(local_session, policy) -> None:
+    context = ToolContext(session=local_session, workspace_policy=policy)
+    patch = """*** Begin Patch
+*** Update File: rtl/counter.v
+@@
+-old
++new
+*** End Patch"""
+
+    strict = FileApplyPatchTool().execute({"patch": patch}, context)
+    assert not strict.success
+    assert local_session.read_file("rtl/counter.v") == b"old\n"
+
+    compatible = FileCodexPatchTool().execute({"patch": patch}, context)
+    assert compatible.success
+    assert local_session.read_file("rtl/counter.v") == b"new\n"
+
+    outside = """*** Begin Patch
+*** Update File: README.md
+@@
+-read only
++changed
+*** End Patch"""
+    denied = FileCodexPatchTool().execute({"patch": outside}, context)
+    assert not denied.success
+    assert denied.category == ErrorCategory.PERMISSION_DENIED
     assert local_session.read_file("README.md") == b"read only\n"
 
 
@@ -123,6 +171,17 @@ def test_symlink_escape_is_rejected(tmp_path, local_session, policy) -> None:
         ToolContext(session=local_session, workspace_policy=policy),
     )
     assert not searched.success
+
+
+def test_listing_a_workspace_file_is_recoverable_invalid_request(local_session, policy) -> None:
+    result = FileListTool().execute(
+        {"path": "rtl/counter.v"},
+        ToolContext(session=local_session, workspace_policy=policy),
+    )
+
+    assert not result.success
+    assert result.category == ErrorCategory.INVALID_REQUEST
+    assert result.message == "path is not a directory"
 
 
 def test_safe_copy_refuses_source_symlinks(tmp_path) -> None:

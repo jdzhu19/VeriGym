@@ -5,6 +5,12 @@ A `ToolchainProfile` is the contract that gives a synthesis number meaning. The 
 `toy_area_unit`. Its values are profile-relative teaching metrics, not silicon estimates or
 signoff results.
 
+A verifier backend profile is orthogonal to this contract. For example,
+`--verifier-profile ...synopsys.vcs.mcp...` may select hidden functional verification while
+`--toolchain-profile ...synopsys.dc.mcp...` selects final PPA. VCS is not a synthesis/PPA backend,
+and changing the verifier transport cannot make open and DC numbers comparable. Both resolved
+identities are retained, but only the complete resolved toolchain profile defines a PPA partition.
+
 Optional backends can implement `synthesis_area_timing` or `synthesis_area_timing_power`. VeriGym
 supports a site-specific Yosys/OpenSTA synthesis profile and a site-specific Synopsys DC profile.
 Both report area, maximum-path delay, worst-negative slack, and estimated power under exact
@@ -12,6 +18,23 @@ library, SDC, activity, script, runtime, and tool identities. Neither profile re
 design, frequency, TNS, or signoff quality.
 
 ## Synthesis metrics are not ranked PPA
+
+RTLLM AgentEval may expose candidate-only Yosys/OpenSTA ATP v2 metrics during iteration. Those
+observations are separately quota-bound and cached by candidate/profile hash; they contain no
+reference or ratio and are never promoted into the final score. Final PPA reruns candidate and
+reference after hidden correctness passes. A DC/MCP profile may expose the same candidate-only
+metric projection only when its resolved identity includes the phase-two disposable-worker
+contract and cleanup semantics. The final scorer does not reuse iterative results. See
+[RTL AgentEval v1](rtl_agent_eval.md).
+
+Open feedback keeps the historical v1 cache-miss ledger. Isolated commercial feedback uses the v2
+dispatch ledger: one PPA repository action is distinct from one real synthesis execution, a cache
+hit consumes no execution, a dispatched crash/timeout does, and a pre-dispatch failure does not.
+Both retain the default execution budget of three and hard maximum of eight.
+
+Open Yosys/OpenSTA and commercial DC results remain independently partitioned even if they use the
+same task, nominal library family, clock period, or functional verifier. There is no cross-profile
+ranking or silent fallback between them.
 
 `SynthesisMetrics` records what Yosys produced: structural counts, cell histogram, optional mapped
 area, diagnostics, tool/profile identity, script hash, and artifact references. These raw metrics
@@ -117,8 +140,14 @@ The built-in `open-yosys-toy-area-v1` profile remains area-only. The versioned
    as unannotated and is not treated as a failed power run.
 
 The original `verigym-yosys-opensta-atp-v1` contract remains available only for exact replay of
-already frozen results. New profiles use v2; adding diagnostics did not silently relabel the v1
-script or alter its generated-script hash.
+already frozen results. General new profiles use v2; adding diagnostics did not silently relabel
+the v1 script or alter its generated-script hash. The separately identified
+`verigym-yosys-opensta-atp-v3` compatibility template retains the v2 reports and metrics but asks
+Yosys for a structural Verilog netlist with `-noexpr -nodec -simple-lhs`. Use it for heterogeneous
+catalogs where OpenSTA cannot parse every valid Yosys expression form. The v4 template additionally
+maps Yosys positive- and negative-enable latch primitives to the corresponding frozen Liberty
+cells; RTLLM PPA47 uses v4 because its `fsm` reference infers a latch. Earlier profiles and results
+remain unchanged and are not comparable across a changed profile identity.
 
 `scripts/prepare_nangate45_ppa_profile.py` hashes the complete external NanGate45 PDK tree and
 emits a local profile without copying PDK bytes into the repository. Local execution is for trusted

@@ -5,6 +5,7 @@ from __future__ import annotations
 import platform
 import re
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -24,6 +25,7 @@ from verigym.schemas.tool import CommandSpec, CompletedCommand
 from verigym.tools.base import SynthesisBackendPlugin
 from verigym.tools.yosys.identity import (
     extract_abc_version,
+    extract_opensta_version,
     extract_yosys_git_hash,
     extract_yosys_version,
     resolve_local_tool_identities,
@@ -34,9 +36,16 @@ from verigym.tools.yosys.schemas import YosysSynthesisRequest
 from verigym.tools.yosys.script_builder import FLOW_TEMPLATE_ID, generated_script_hash
 
 _SOURCE_IDENTITY = re.compile(
-    r"^(Yosys|ABC) vendored source identity:\s*([0-9a-f]{40})$",
+    r"^(Yosys|ABC|OpenSTA) vendored source identity:\s*([0-9a-f]{40})$",
     re.MULTILINE,
 )
+_OPENSTA_SHA256_IDENTITY = re.compile(
+    r"^OpenSTA executable SHA-256:\s*([0-9a-f]{64})$",
+    re.MULTILINE,
+)
+_DOCKER_IDENTITY_TIMEOUT_S = 120
+_DOCKER_TOOL_IDENTITY_CACHE_LOCK = threading.Lock()
+_DOCKER_TOOL_IDENTITY_CACHE: dict[tuple[str, str | None], tuple[ResolvedToolIdentity, ...]] = {}
 
 
 def _runtime_identity(runtime: Runtime) -> ResolvedRuntimeIdentity:
@@ -136,8 +145,15 @@ def _validate_runtime(profile: ToolchainProfile, runtime: Runtime, *, replay: bo
 
 def _require_command(command: str, completed: CompletedCommand) -> str:
     if completed.error or completed.timed_out or completed.oom_killed:
+        reason = completed.failure_reason or (
+            "timed_out"
+            if completed.timed_out
+            else "out_of_memory"
+            if completed.oom_killed
+            else "control_plane_error"
+        )
         raise MissingDependencyError(
-            f"profile tool identity command failed before model invocation: {command}"
+            f"profile tool identity command failed before model invocation: {command} ({reason})"
         )
     if completed.output_truncated or completed.exit_code != 0:
         raise MissingDependencyError(
@@ -146,10 +162,21 @@ def _require_command(command: str, completed: CompletedCommand) -> str:
     return (completed.stdout + "\n" + completed.stderr).strip()
 
 
-def _resolve_docker_tools(runtime: Runtime) -> list[ResolvedToolIdentity]:
+def resolve_docker_tool_identities(
+    runtime: Runtime,
+    *,
+    opensta_executable: str | None = None,
+) -> list[ResolvedToolIdentity]:
+    """Resolve tool identities inside an immutable Docker image."""
+
     descriptor = runtime.descriptor
     if descriptor.image is None:
         raise ConfigurationError("Docker profile resolution has no immutable image identity")
+    cache_key = (descriptor.image.resolved_image_id, opensta_executable)
+    with _DOCKER_TOOL_IDENTITY_CACHE_LOCK:
+        cached = _DOCKER_TOOL_IDENTITY_CACHE.get(cache_key)
+    if cached is not None:
+        return [identity.model_copy(deep=True) for identity in cached]
     with tempfile.TemporaryDirectory(prefix="verigym-profile-probe-") as temporary:
         session = runtime.create_session(
             SessionSpec(
@@ -159,15 +186,30 @@ def _resolve_docker_tools(runtime: Runtime) -> list[ResolvedToolIdentity]:
             )
         )
         try:
-            yosys_result = session.execute(CommandSpec(argv=["yosys", "-V"], timeout_s=15))
+            yosys_result = session.execute(
+                CommandSpec(argv=["yosys", "-V"], timeout_s=_DOCKER_IDENTITY_TIMEOUT_S)
+            )
             abc_result = session.execute(
-                CommandSpec(argv=["yosys-abc", "-c", "version; quit"], timeout_s=15)
+                CommandSpec(
+                    argv=["yosys-abc", "-c", "version; quit"],
+                    timeout_s=_DOCKER_IDENTITY_TIMEOUT_S,
+                )
             )
             sources_result = session.execute(
                 CommandSpec(
                     argv=["verigym-toolchain-identity"],
-                    timeout_s=15,
+                    timeout_s=_DOCKER_IDENTITY_TIMEOUT_S,
                 )
+            )
+            opensta_result = (
+                session.execute(
+                    CommandSpec(
+                        argv=[opensta_executable, "-version"],
+                        timeout_s=_DOCKER_IDENTITY_TIMEOUT_S,
+                    )
+                )
+                if opensta_executable is not None
+                else None
             )
         finally:
             session.close()
@@ -191,7 +233,7 @@ def _resolve_docker_tools(runtime: Runtime) -> list[ResolvedToolIdentity]:
     abc_git_hash = source_identities.get("abc")
     if abc_git_hash is None:
         raise MissingDependencyError("inside-image ABC source identity is unavailable")
-    return [
+    identities = [
         ResolvedToolIdentity(
             logical_name="yosys",
             executable="yosys",
@@ -211,6 +253,35 @@ def _resolve_docker_tools(runtime: Runtime) -> list[ResolvedToolIdentity]:
             identity_kind="immutable_image_observation",
         ),
     ]
+    if opensta_executable is not None:
+        assert opensta_result is not None
+        opensta_output = _require_command(f"{opensta_executable} -version", opensta_result)
+        opensta_version = extract_opensta_version(opensta_output)
+        if opensta_version is None:
+            raise MissingDependencyError("OpenSTA returned an unsupported version identity")
+        hash_match = _OPENSTA_SHA256_IDENTITY.search(source_output)
+        if hash_match is None:
+            raise MissingDependencyError("inside-image OpenSTA executable hash is unavailable")
+        opensta_git_hash = source_identities.get("opensta")
+        if opensta_git_hash is None:
+            raise MissingDependencyError("inside-image OpenSTA source identity is unavailable")
+        identities.append(
+            ResolvedToolIdentity(
+                logical_name="opensta",
+                executable=opensta_executable,
+                version=opensta_version,
+                version_output=opensta_output,
+                git_hash=opensta_git_hash,
+                executable_sha256=hash_match.group(1),
+                capabilities=["static_timing", "power_estimation", "wire_load_model"],
+                identity_kind="immutable_image_observation",
+            )
+        )
+    frozen = tuple(identity.model_copy(deep=True) for identity in identities)
+    with _DOCKER_TOOL_IDENTITY_CACHE_LOCK:
+        _DOCKER_TOOL_IDENTITY_CACHE.setdefault(cache_key, frozen)
+        cached = _DOCKER_TOOL_IDENTITY_CACHE[cache_key]
+    return [identity.model_copy(deep=True) for identity in cached]
 
 
 def _validate_tools(profile: ToolchainProfile, identities: list[ResolvedToolIdentity]) -> None:
@@ -349,7 +420,10 @@ def resolve_yosys_toolchain_profile(
                 else resolve_local_tool_identities()
             )
     elif runtime_identity.runtime_slug == "docker":
-        tool_identities = _resolve_docker_tools(runtime)
+        tool_identities = resolve_docker_tool_identities(
+            runtime,
+            opensta_executable=opensta_executable,
+        )
     else:
         tool_identities = (
             resolve_local_tool_identities(opensta_executable=opensta_executable)
@@ -368,6 +442,12 @@ def resolve_yosys_toolchain_profile(
         identity for identity in tool_identities if identity.logical_name == "yosys"
     )
     if opensta_flow:
+        if runtime_identity.runtime_slug == "docker" and (
+            profile.metadata.get("prepared_image_id") != runtime_identity.resolved_image_id
+        ):
+            raise ConfigurationError(
+                "OpenSTA profile prepared image differs from the selected immutable image"
+            )
         constraint = next(asset for asset in assets if asset.media_type == "application/x-sdc")
         opensta_identity = next(
             identity for identity in tool_identities if identity.logical_name == "opensta"
@@ -489,29 +569,58 @@ def resolve_toolchain_profile(
     reference_candidate_hash: str | None,
     expected: ResolvedToolchainProfile | None = None,
     backend: SynthesisBackendPlugin | None = None,
+    synthesis_source_projection_hash: str | None = None,
 ) -> ResolvedToolchainProfile:
     """Resolve through an installed backend, defaulting to the built-in Yosys flow."""
 
+    backend_expected = _profile_without_source_projection(expected)
+
     if backend is not None:
-        return backend.resolve_profile(
+        resolved = backend.resolve_profile(
             profile,
             runtime,
             source_paths=source_paths,
             top_module=top_module,
             reference_candidate_hash=reference_candidate_hash,
-            expected=expected,
+            expected=backend_expected,
         )
-    if profile.flow is not None and profile.flow.backend_plugin != "yosys.synth":
+    else:
+        if profile.flow is not None and profile.flow.backend_plugin != "yosys.synth":
+            raise ConfigurationError(
+                f"profile backend {profile.flow.backend_plugin!r} was not supplied for resolution"
+            )
+        resolved = resolve_yosys_toolchain_profile(
+            profile,
+            runtime,
+            source_paths=source_paths,
+            top_module=top_module,
+            reference_candidate_hash=reference_candidate_hash,
+            expected=backend_expected,
+        )
+    if synthesis_source_projection_hash is not None:
+        resolved = resolved.model_copy(
+            update={"synthesis_source_projection_hash": synthesis_source_projection_hash}
+        )
+        resolved = resolved.model_copy(
+            update={"resolved_profile_hash": content_hash(resolved.identity_payload())}
+        )
+    if expected is not None and resolved.resolved_profile_hash != expected.resolved_profile_hash:
         raise ConfigurationError(
-            f"profile backend {profile.flow.backend_plugin!r} was not supplied for resolution"
+            "resolved toolchain profile differs from the exact stored replay profile"
         )
-    return resolve_yosys_toolchain_profile(
-        profile,
-        runtime,
-        source_paths=source_paths,
-        top_module=top_module,
-        reference_candidate_hash=reference_candidate_hash,
-        expected=expected,
+    return resolved
+
+
+def _profile_without_source_projection(
+    expected: ResolvedToolchainProfile | None,
+) -> ResolvedToolchainProfile | None:
+    if expected is None or expected.synthesis_source_projection_hash is None:
+        return expected
+    unbound = expected.model_copy(
+        update={"synthesis_source_projection_hash": None, "resolved_profile_hash": ""}
+    )
+    return unbound.model_copy(
+        update={"resolved_profile_hash": content_hash(unbound.identity_payload())}
     )
 
 
@@ -596,6 +705,7 @@ def synthesis_request_from_profile(
 
 
 __all__ = [
+    "resolve_docker_tool_identities",
     "resolve_toolchain_profile",
     "resolve_yosys_toolchain_profile",
     "synthesis_request_from_profile",

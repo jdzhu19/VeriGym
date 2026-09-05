@@ -496,7 +496,7 @@ class DockerRuntime(Runtime):
             raise RuntimeError("Docker image identity is unavailable")
         if self._run_id is None:
             raise RuntimeError("Docker run identity is unavailable")
-        health_timeout_s = min(60, max(10, self._require_config().max_command_time_s))
+        health_timeout_s = min(120, max(10, self._require_config().max_command_time_s))
         probe_config = self._require_config().model_copy(
             update={"max_command_time_s": health_timeout_s}
         )
