@@ -1524,6 +1524,28 @@ independent v167 audit. Formal collection, candidate import, SFT, GPU work, benc
 claims, production training, registry access, partial archives, and task substitution remain
 closed.
 
+The sole v166 execution stopped during the first zero-provider Harness initialization with marker
+`not_started`, zero episodes, calls, or tokens, no task consumption, and confirmed cleanup. V166
+and its third cumulative reopen of the retained v158 data volume are frozen. The independent v167
+audit permits only a separately authorized v168 initialization diagnostic; it does not authorize
+a provider retry.
+
+V168 supplies the same two real provider configuration values used by v166 only to the pinned
+Harness `initialize` path. Its launcher removes every other provider alias and both ambient Docker
+endpoint names before creating the child. The task prompt is empty, the runner contains no task or
+verifier surface, and a first-request marker is a hard failure. Private controller artifacts and
+all published evidence are compared with both values in memory, then private state is removed;
+values, raw exceptions, stderr, and helper output are never persisted or hashed. Only a closed
+structured helper category may be retained.
+
+V168 may reopen the retained v158 data volume once, bringing its cumulative count from three to
+four, and uses fresh v168 socket, control, runtime, output, and receipt identities under `/data2`.
+The direct probe remains credential-free and checks the exact controller image, nested endpoint,
+mounts, network, privilege, namespace, and resource controls. Only the outer DinD and diagnostic
+controller may use `verigym-hwe-net`; no benchmark or verifier container is created. V168 is
+one-use, pending an independent v169 audit, and cannot authorize a provider execution, collection,
+training, benchmark claim, or production state.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

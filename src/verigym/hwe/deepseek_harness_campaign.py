@@ -5569,6 +5569,134 @@ class DeepSeekHarnessV166OfficialMatrixManifest(DeepSeekHarnessV162OfficialMatri
         return value
 
 
+class DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest(
+    DeepSeekHarnessV164ControllerInitializeDiagnosticManifest
+):
+    """One-use, zero-request diagnosis using the real v166 provider configuration."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v168_real_config_initialize_diagnostic_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v168-real-config-initialize-diagnostic-v1"
+    ]
+    v164_manifest_sha256: str
+    v164_manifest_hash: str
+    v164_runner_sha256: str
+    v164_launcher_sha256: str
+    v164_authorization_sha256: str
+    v164_implementation_commit: Literal["872e3eba5c36fd5f52a13753025b384d4be90255"]
+    v164_authorization_merge: Literal["b94d50ad3e4bef9f49df70f8af1cab0c2a1c3095"]
+    v164_post_merge_main_run_id: Literal[33970415999]
+    v164_post_merge_main_all_eight_classes_passed: Literal[True]
+    v164_report_sha256: str
+    v164_report_hash: str
+    v164_harness_initialize_sha256: str
+    v164_harness_initialize_hash: str
+    v164_evidence_tree_hash: str
+    v164_evidence_directory_count: Literal[1]
+    v164_evidence_regular_file_count: Literal[9]
+    v164_evidence_symlink_count: Literal[0]
+    v165_audit_sha256: str
+    v165_audit_commit: Literal["238178400e7d3c8126cc899d9bb8f1c325f88a6e"]
+    v165_audit_merge: Literal["8dfee24e6fb90c7fb21e9a58902d638ce4d52095"]
+    v165_post_merge_main_run_id: Literal[33971109229]
+    v165_post_merge_main_all_eight_classes_passed: Literal[True]
+    v166_manifest_sha256: str
+    v166_manifest_hash: str
+    v166_runner_sha256: str
+    v166_launcher_sha256: str
+    v166_authorization_sha256: str
+    v166_implementation_commit: Literal["1e13a63b00675a24848cb63ede4c5c9c15f60ce0"]
+    v166_authorization_merge: Literal["bae749df3945ca4eb9b1a41d6916afee54ae733b"]
+    v166_post_merge_main_run_id: Literal[33972331536]
+    v166_post_merge_main_all_eight_classes_passed: Literal[True]
+    v166_report_sha256: str
+    v166_report_hash: str
+    v166_attempt_sha256: str
+    v166_attempt_hash: str
+    v166_cleanup_sha256: str
+    v166_cleanup_hash: str
+    v166_evidence_tree_hash: str
+    v166_evidence_directory_count: Literal[9]
+    v166_evidence_regular_file_count: Literal[7]
+    v166_evidence_symlink_count: Literal[0]
+    v167_audit_sha256: str
+    v167_audit_commit: Literal["41bc81a7014a3ad7f245b5ece19d0fd8d763143c"]
+    v167_audit_merge: Literal["88edac0ac081aedc40f9b845a2f6f7efefd0f295"]
+    v167_post_merge_main_run_id: Literal[33973532777]
+    v167_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v168-dind-socket"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v168/socket"
+    ]
+    control_headroom_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v168-control"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v168-runtime"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v168-real-config-initialize-diagnostic-v1"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v168/socket/docker.sock"
+    ]
+    runtime_resource_owner: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v168-real-config-initialize-diagnostic-v1"
+    ]
+    v158_data_volume_reopen_budget: Literal[4]  # type: ignore[assignment]
+    v158_data_volume_reopen_count_before: Literal[3]  # type: ignore[assignment]
+    provider_environment_boundary: Literal[  # type: ignore[assignment]
+        "real-config-initialize-only-child-v1"
+    ]
+    synthetic_provider_values_only: Literal[False]  # type: ignore[assignment]
+    provider_credentials_available: Literal[True]  # type: ignore[assignment]
+    real_provider_configuration_required: Literal[True]
+    real_provider_environment_value_count: Literal[2]
+    real_provider_values_printed: Literal[False]
+    real_provider_values_persisted: Literal[False]
+    real_provider_values_hashed: Literal[False]
+    requires_independent_v165_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v167_audit: Literal[False]
+    requires_independent_v169_audit: Literal[True]
+
+    @field_validator(
+        "v164_manifest_sha256",
+        "v164_manifest_hash",
+        "v164_runner_sha256",
+        "v164_launcher_sha256",
+        "v164_authorization_sha256",
+        "v164_report_sha256",
+        "v164_report_hash",
+        "v164_harness_initialize_sha256",
+        "v164_harness_initialize_hash",
+        "v164_evidence_tree_hash",
+        "v165_audit_sha256",
+        "v166_manifest_sha256",
+        "v166_manifest_hash",
+        "v166_runner_sha256",
+        "v166_launcher_sha256",
+        "v166_authorization_sha256",
+        "v166_report_sha256",
+        "v166_report_hash",
+        "v166_attempt_sha256",
+        "v166_attempt_hash",
+        "v166_cleanup_sha256",
+        "v166_cleanup_hash",
+        "v166_evidence_tree_hash",
+        "v167_audit_sha256",
+    )
+    @classmethod
+    def validate_v168_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v168 real-config diagnostic requires lowercase SHA-256")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -6421,6 +6549,21 @@ def load_v166_official_matrix_manifest(path: Path) -> DeepSeekHarnessV166Officia
         raise ConfigurationError("v166 official matrix manifest is invalid") from exc
 
 
+def load_v168_real_config_initialize_diagnostic_manifest(
+    path: Path,
+) -> DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest:
+    """Load the one-use, real-config, zero-request v168 initialization diagnostic."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v168 real-config diagnostic manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v168 real-config diagnostic manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -6611,6 +6754,7 @@ __all__ = [
     "DeepSeekHarnessV164ControllerInitializeDiagnosticManifest",
     "DeepSeekHarnessV166OfficialMatrixManifest",
     "DeepSeekHarnessV166TaskBinding",
+    "DeepSeekHarnessV168RealConfigInitializeDiagnosticManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -6667,6 +6811,7 @@ __all__ = [
     "load_v162_official_matrix_manifest",
     "load_v164_controller_initialize_diagnostic_manifest",
     "load_v166_official_matrix_manifest",
+    "load_v168_real_config_initialize_diagnostic_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
