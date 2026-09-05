@@ -56,7 +56,9 @@ RUN git init /src/iverilog \
     && sh autoconf.sh \
     && ./configure --prefix=/opt/iverilog \
     && make -j2 \
-    && make install
+    && make install \
+    && git archive --format=tar.gz --prefix="iverilog-${IVERILOG_COMMIT}/" \
+        --output=/tmp/iverilog-source.tar.gz HEAD
 
 FROM debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS opensta-builder
 
@@ -115,7 +117,14 @@ RUN apt-get update \
     && printf 'verigym:x:10001:10001:VeriGym runtime:/home/verigym:/usr/sbin/nologin\n' \
         >> /etc/passwd \
     && printf 'verigym:x:10001:\n' >> /etc/group \
-    && mkdir -p /home/verigym /workspace /usr/share/verigym \
+    && mkdir -p \
+        /home/verigym \
+        /workspace \
+        /usr/share/licenses/cudd \
+        /usr/share/licenses/iverilog \
+        /usr/share/licenses/opensta \
+        /usr/share/licenses/yosys \
+        /usr/share/verigym/sources \
     && chown -R 10001:10001 /home/verigym /workspace \
     && printf '%s\n' \
         'Yosys release asset: v0.67' \
@@ -126,6 +135,9 @@ RUN apt-get update \
         'OpenSTA vendored source identity: be771a0116985d57effb4120668ae98e8a7b0f79' \
         > /usr/share/verigym/source-identities.txt \
     && printf '%s\n' \
+        'The corresponding source archives for the statically built tools are bundled here.' \
+        > /usr/share/verigym/sources/README \
+    && printf '%s\n' \
         '#!/bin/sh' \
         'exec cat /usr/share/verigym/source-identities.txt' \
         > /usr/local/bin/verigym-toolchain-identity \
@@ -134,6 +146,14 @@ RUN apt-get update \
 COPY --from=yosys-builder /opt/yosys /opt/yosys
 COPY --from=iverilog-builder /opt/iverilog /opt/iverilog
 COPY --from=opensta-builder /opt/opensta /opt/opensta
+COPY --from=yosys-builder /src/yosys/COPYING /usr/share/licenses/yosys/COPYING
+COPY --from=iverilog-builder /src/iverilog/COPYING /usr/share/licenses/iverilog/COPYING
+COPY --from=opensta-builder /src/cudd/LICENSE /usr/share/licenses/cudd/LICENSE
+COPY --from=opensta-builder /src/opensta/LICENSE /usr/share/licenses/opensta/LICENSE
+COPY --from=yosys-builder /tmp/yosys.tar.gz /usr/share/verigym/sources/yosys-v0.67.tar.gz
+COPY --from=iverilog-builder /tmp/iverilog-source.tar.gz /usr/share/verigym/sources/iverilog-source.tar.gz
+COPY --from=opensta-builder /tmp/cudd.tar.gz /usr/share/verigym/sources/cudd-3.0.0.tar.gz
+COPY --from=opensta-builder /tmp/opensta.tar.gz /usr/share/verigym/sources/opensta.tar.gz
 
 RUN printf 'OpenSTA executable SHA-256: %s\n' \
         "$(sha256sum /opt/opensta/bin/sta | cut --delimiter=' ' --fields=1)" \
