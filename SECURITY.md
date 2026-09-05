@@ -1470,6 +1470,21 @@ until an independent v161 audit is merged and all eight post-merge `main` check 
 that later gate may authorize the distinct v162 provider identity to reopen the frozen data volume
 once.
 
+The independent v161 audit and all eight post-merge `main` checks passed. V162 is the sole one-use
+provider successor. It revalidates the complete v158 and v160 evidence trees, then may reopen only
+the retained v158 data volume once with a fresh v162 socket, control, runtime, output, and receipt
+identity under `/data2`. It does not pull, import, rebuild, substitute, or use partial task images.
+The real runtime registry creates a fresh Docker CLI engine explicitly bound to the v162 nested
+Unix socket per configured task, and the Harness settings fingerprint and forward that same
+endpoint to the controller helper. Agent command and official-verifier sessions remain
+`network=none`; only the outer DinD and inner controller use `verigym-hwe-net`.
+
+V162 preserves the strict five-task order, provider budgets, marker-based consumption, bounded
+continuation, six-plane admission, and exact untruncated 64K decision checks. Provider values are
+temporary and never printed, persisted, or hashed. Its output remains candidate-only and pending
+an independent v163 audit; formal collection, SFT, GPU work, benchmark-score claims, and production
+training remain closed.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
