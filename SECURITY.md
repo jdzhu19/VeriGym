@@ -1689,6 +1689,15 @@ removed only the v180 backing; v180 scratch was also removed, and all result evi
 unchanged. V181 freezes the incomplete seven-file result and permits only a later task-free,
 zero-provider bounded build diagnostic with cleanup that independently handles root-owned backing.
 
+V182 is limited to that diagnostic. It binds the exact v180 Dockerfile and completed local
+open-tool inputs, uses a fresh `/data2` DinD daemon with no network or host socket, and never loads
+an HWE image, task metadata, source tree, verifier, model, or provider client. Build output is
+time/size bounded and scanned in memory for active credential/proxy values and secret-like markers;
+only a fixed category, byte counts, and safe hashes may be retained. Its cleanup helper is
+inspected before start and receives only the exact backing-parent bind plus the minimum ownership
+capabilities. A terminal report is mandatory even for cleanup failure. V182 cannot authorize a
+qualification, research canary, collection, SFT mixing, training, or production use.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

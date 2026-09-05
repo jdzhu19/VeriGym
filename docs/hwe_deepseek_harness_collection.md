@@ -400,3 +400,23 @@ imported, no source or verifier was run, and no model/provider boundary was reac
 merged and its post-merge checks pass, v182 may be defined only as a task-free zero-provider build
 diagnostic with bounded, credential-scanned output and root-owned-backing cleanup. It is not the
 research canary and does not authorize collection, SFT, training, or production use.
+
+V182 is that one-use diagnostic. It imports only the accepted open-tool image and completed local
+dependency builder into a fresh `/data2`-backed, networkless DinD daemon. It uses the exact v180
+Dockerfile with `--network none --pull=false`, captures at most 16 MiB for at most 3,600 seconds,
+and persists only a fixed category, byte counts, and safe hashes after an in-memory credential
+scan. Its inspected, least-capability cleanup helper owns only the exact v182 backing parent, and
+the controller seals a terminal report even when cleanup fails.
+
+Run v182 exactly once from clean merged `main` after all eight post-merge classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V182_BOUNDED_OPEN_BUILD=1 \
+  python scripts/launch_hwe_deepseek_harness_v182_bounded_open_build.py \
+  --post-merge-main-run-id <successful-v182-main-run-id>
+```
+
+V182 does not inspect/import an HWE image, load task metadata, prepare source, run a verifier, start
+a model, or call a provider. Its result requires a v183 audit before any qualification repair can
+be authorized. PR-1816 and the research canary remain unconsumed; collection and training remain
+closed.
