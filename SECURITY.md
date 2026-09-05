@@ -1680,6 +1680,15 @@ closed. All frozen builder, HWE, source, tool, network, scan, route-separation, 
 remain unchanged. V180 is zero-provider and requires an independent v181 audit before a separately
 versioned v182 research-only canary can be considered.
 
+The sole v180 invocation proved the mount repair and complete local-builder archive route, then its
+offline final-image build returned nonzero. The inherited quiet helper retained no build output,
+so v181 does not infer a low-level cause. Failure cleanup removed the container and volumes but
+could not traverse the root-owned DinD backing, which prevented a terminal report from being
+written. A separate exact-path, networkless, read-only-root, least-capability cleanup container
+removed only the v180 backing; v180 scratch was also removed, and all result evidence was left
+unchanged. V181 freezes the incomplete seven-file result and permits only a later task-free,
+zero-provider bounded build diagnostic with cleanup that independently handles root-owned backing.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
