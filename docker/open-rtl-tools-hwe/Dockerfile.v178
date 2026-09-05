@@ -1,0 +1,81 @@
+# These two inputs are loaded from completed, locally verified images before the build. The
+# qualification runner resolves both tags back to their expected immutable IDs and builds with
+# --network=none and --pull=false.
+FROM verigym/open-rtl-tools:iverilog12-yosys067 AS accepted-open-tools
+FROM verigym/open-rtl-tools:v178-builder AS verilator-builder
+
+ARG VERILATOR_ARCHIVE_SHA256
+ARG VERILATOR_COMMIT
+
+COPY --from=accepted-open-tools /usr/bin/python3.13 /usr/bin/python3.13
+COPY --from=accepted-open-tools /usr/lib/python3.13 /usr/lib/python3.13
+COPY --from=accepted-open-tools /usr/lib/x86_64-linux-gnu/libexpat.so.1 /usr/lib/x86_64-linux-gnu/libexpat.so.1
+COPY --from=accepted-open-tools /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
+COPY verilator-v5.008.tar.gz /inputs/verilator-v5.008.tar.gz
+
+RUN ln -s python3.13 /usr/bin/python3 \
+    && printf '%s  %s\n' "${VERILATOR_ARCHIVE_SHA256}" /inputs/verilator-v5.008.tar.gz \
+        | sha256sum --check --strict - \
+    && mkdir -p /src/verilator \
+    && tar --extract --gzip --strip-components=1 \
+        --file /inputs/verilator-v5.008.tar.gz --directory /src/verilator \
+    && test "${VERILATOR_COMMIT}" = "21093fd1bd36fed8943f67868ddc8f75f41e4488" \
+    && cd /src/verilator \
+    && autoconf \
+    && ./configure --prefix=/tools/verilator \
+    && make -j2 verilator_exe \
+    && make installbin installdata install-msg \
+    && /tools/verilator/bin/verilator --version \
+    && rm -rf /inputs /src
+
+FROM verilator-builder AS runtime
+
+ARG HOST_UID
+ARG HOST_GID
+ARG RIPGREP_ARCHIVE_SHA256
+ARG RIPGREP_BINARY_SHA256
+
+COPY --from=accepted-open-tools /opt/yosys /opt/yosys
+COPY --from=accepted-open-tools /opt/iverilog /opt/iverilog
+COPY ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz /inputs/ripgrep.tar.gz
+
+RUN printf '%s  %s\n' "${RIPGREP_ARCHIVE_SHA256}" /inputs/ripgrep.tar.gz \
+        | sha256sum --check --strict - \
+    && mkdir -p /inputs/rg \
+    && tar --extract --gzip --strip-components=1 \
+        --file /inputs/ripgrep.tar.gz --directory /inputs/rg \
+    && printf '%s  %s\n' "${RIPGREP_BINARY_SHA256}" /inputs/rg/rg \
+        | sha256sum --check --strict - \
+    && install -m 0555 /inputs/rg/rg /usr/local/bin/rg \
+    && printf 'verigym:x:%s:%s:VeriGym open HWE runtime:/home/verigym:/usr/sbin/nologin\n' \
+        "${HOST_UID}" "${HOST_GID}" >> /etc/passwd \
+    && printf 'verigym:x:%s:\n' "${HOST_GID}" >> /etc/group \
+    && mkdir -p /home/verigym /workspace/repository /usr/share/verigym \
+    && chown -R "${HOST_UID}:${HOST_GID}" /home/verigym /workspace \
+    && printf '%s\n' \
+        'agent_toolchain_id=verigym-open-rtl-tools-v1' \
+        'verilator_release=v5.008' \
+        'verilator_commit=21093fd1bd36fed8943f67868ddc8f75f41e4488' \
+        'iverilog_release=v12_0' \
+        'iverilog_commit=4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf' \
+        'yosys_release=v0.67' \
+        'yosys_commit=2d1509d1bcb8df0723f6790057e3b1d21c876683' \
+        'ripgrep_release=15.2.0' \
+        > /usr/share/verigym/open-hwe-toolchain-identity.txt \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        'exec cat /usr/share/verigym/open-hwe-toolchain-identity.txt' \
+        > /usr/local/bin/verigym-open-toolchain-identity \
+    && chmod 0555 /usr/local/bin/verigym-open-toolchain-identity \
+    && rm -rf /inputs /root/.cache /root/.gitconfig /var/lib/apt/lists/*
+
+ENV PATH=/tools/verilator/bin:/opt/yosys/bin:/opt/iverilog/bin:/usr/local/bin:/usr/bin:/bin
+
+LABEL org.verigym.agent-toolchain-id="verigym-open-rtl-tools-v1" \
+      org.verigym.role="agent-only-non-authoritative" \
+      org.verigym.official-verifier-included="false"
+
+USER ${HOST_UID}:${HOST_GID}
+WORKDIR /workspace/repository
+
+CMD ["tail", "-f", "/dev/null"]

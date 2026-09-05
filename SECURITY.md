@@ -1630,6 +1630,39 @@ route to independently reproduce base-FAIL/reference-PASS, followed by scan, rol
 complete cleanup. V176 remains pending an independent v177 audit; any research canary moves to
 v178 or later. Collection, SFT mixing, training, GPU work, and production readiness remain false.
 
+The sole v176 invocation classified its bounded failure as `offline_cache_miss`; no builder tag,
+DinD daemon, task image, source tree, verifier, model process, or provider request was created.
+V177 froze that six-file result and authorized only a separately reviewed successor that binds a
+complete immutable local builder closure. PR-1816 remains task- and provider-unconsumed.
+
+V178 is that one-use, zero-provider successor. It does not repeat the failed generic builder
+command and does not download any input. It binds a completed Docker archive stored under
+`/data2` containing a Debian base and the build dependencies needed for Verilator 5.008. The
+archive came from an unfinished OpenSTA builder stage, but it contains only the dependency-install
+layer: no OpenSTA, CUDD, HWE, or Codex executable was built into it. The manifest locks the archive
+and sidecar SHA-256 and size, member inventory, Docker config/image ID, creation and parent
+identities, two ordered rootfs diff IDs, and canonical history. It also locks an exact 189-package
+inventory, six required build-tool hashes, and their versions. A partial archive, unsafe member,
+metadata drift, history mismatch, package or binary mismatch, or HWE task-image ancestry fails
+closed.
+
+The host provenance tag is not a runtime dependency. V178 validates the archive before creating an
+output directory, transfers only the accepted open-tool runtime from the host, and loads both
+archives into a fresh `/data2`-backed DinD daemon whose outer network is `none`. It creates the
+campaign builder tag only inside that daemon and probes it as the invoking non-root UID/GID with
+`network=none`, a read-only root, no mounts, cap-drop `ALL`, no-new-privileges, private IPC, and
+bounded CPU, memory, PIDs, time, and output. The final image build remains
+`--network none --pull=false` and consumes only the completed local Verilator and ripgrep archives.
+No registry, proxy, VPN change, default-bridge repair, host EDA fallback, HWE-tool copy, provider
+client, provider credential, Codex, or `LocalRuntime` is allowed.
+
+The open agent-only route and digest-locked official HWE route must independently reproduce
+PR-1816 base-FAIL/reference-PASS, retain distinct receipt roles, pass the v2 image scan, and clean
+all transient resources before one atomic qualification contract can be published. V178 is
+pending an independent v179 audit; a possible research-only canary moves to v180 or later.
+Collection, SFT mixing, training, GPU work, benchmark-score claims, and production readiness
+remain false.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
