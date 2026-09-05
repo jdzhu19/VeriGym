@@ -432,3 +432,23 @@ task-free, zero-provider disambiguation. It may report an exact missing command 
 manifest-bound allowlist, must fail closed on unknown/multiple matches, and must preserve all v182
 output, secret-scan, terminal-report, and cleanup controls. It is not a qualification or canary;
 PR-1816, collection, SFT, training, and production use remain closed.
+
+V184 binds the frozen v182 result and v183 audit, then reuses the exact v182 archives, images,
+Dockerfile, build limits, network policy, and cleanup policy under fresh one-use resource names. A
+separate builder probe records only booleans for the fixed command allowlist and runs without
+network, mounts, root privileges, or a writable root. The bounded build parser can retain one exact
+allowlisted basename plus counts; it retains no matching line, unknown token, path, command argv,
+or environment value. Unknown and multiple matches fail closed. A result that names a builder
+prerequisite remains only diagnostic evidence and does not authorize installing it.
+
+Run v184 exactly once from clean merged `main` after all eight post-merge classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V184_MISSING_COMMAND=1 \
+  python scripts/launch_hwe_deepseek_harness_v184_missing_command.py \
+  --post-merge-main-run-id <successful-v184-main-run-id>
+```
+
+V184 is task-free and zero-provider. It cannot import an HWE image, prepare PR-1816, run either
+verifier route, create a model process, call DeepSeek, publish a qualification contract, or begin
+collection/training. Only a separately merged v185 audit may authorize a new repair identity.
