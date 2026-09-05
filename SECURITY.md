@@ -1546,6 +1546,28 @@ controller may use `verigym-hwe-net`; no benchmark or verifier container is crea
 one-use, pending an independent v169 audit, and cannot authorize a provider execution, collection,
 training, benchmark claim, or production state.
 
+The sole v168 execution passed the exact Harness initialization payload with the real two-name
+provider configuration while the first-request marker remained clear. It made zero provider calls,
+ran no task or verifier, and persisted no provider value. The independent v169 audit freezes that
+result: it rules out a stable failure caused merely by supplying the real configuration, but does
+not assign a unique cause to the earlier v166 `RuntimeError`.
+
+V170 is the fresh, one-use replacement official matrix authorized only after the v169 audit merge
+and its eight green post-merge `main` check classes. It revalidates the v166 zero-consumption stop,
+the complete v168 diagnostic evidence, both intervening audits, and the original v158 task,
+source, image, command-toolchain, and official-verifier locks. V170 may reopen the retained v158
+data volume once, bringing its cumulative count from four to five, and uses fresh v170 socket,
+control, runtime, output, episode, and receipt identities under `/data2`.
+
+The five-task order, DeepSeek v4 Flash identity, seed/sample 502/18, call and token limits,
+marker-based consumption, bounded continuation, six-plane admission, exact Qwen tokenizer, and
+strictly untruncated 64K decision checks remain unchanged. Agent command and official-verifier
+containers use `network=none`; only the outer DinD and inner Harness controller may use
+`verigym-hwe-net`. Provider values exist only in the exact two-name child boundary and are never
+printed, persisted, or hashed. V170 is candidate-only and pending an independent v171 audit;
+formal collection, candidate import, SFT, GPU work, benchmark-score claims, production training,
+registry access, partial archives, and task substitution remain closed.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
