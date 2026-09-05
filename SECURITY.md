@@ -1450,6 +1450,26 @@ it cannot inspect or mutate retained predecessor volumes and cannot access a reg
 Even a complete v158 scaffold is non-authorizing until an independent v159 audit is merged and all
 eight post-merge `main` check classes pass.
 
+The sole v158 execution completed all five offline task qualifications and both explicit-endpoint
+preflights, but its final contract publication failed closed because the sealed Harness receipt
+recorded separate `values_persisted=false` and `values_hashed=false` facts without the legacy
+aggregate field required by the inherited v97 contract builder. V158 is frozen and must not be
+rerun. Its independent v159 audit and eight green post-merge `main` check classes authorize only
+the provider-free v160 contract repair.
+
+V160 revalidates the complete immutable v158 evidence tree and every bound implementation and
+receipt hash. It may query only the retained v158 Docker data volume's metadata and usage state;
+it cannot mount, inspect, mutate, remove, or reopen that volume. The missing legacy aggregate is
+derived only when both sealed split facts are false and the synthetic-value scan is empty, then
+the original v158 pure contract-builder chain is rerun in memory against schedule-ordered copies
+of the persisted inventories. No predecessor file is changed. Publication is atomic and occurs
+only if the reconstructed contract is complete, the provider-free child boundary is exact, and
+all five formal collection and training flags remain false. V160 has no registry, task execution,
+Harness process, model, credential, collection, or training surface. Its output is non-authorizing
+until an independent v161 audit is merged and all eight post-merge `main` check classes pass; only
+that later gate may authorize the distinct v162 provider identity to reopen the frozen data volume
+once.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

@@ -4937,6 +4937,128 @@ class DeepSeekHarnessV158ExplicitEndpointScaffoldManifest(StrictModel):
         return self
 
 
+class DeepSeekHarnessV160ContractRepairManifest(StrictModel):
+    """Zero-provider repair of the fully qualified but unpublished v158 contract."""
+
+    schema_version: str = SCHEMA_VERSION
+    format_id: Literal["verigym_deepseek_harness_hwe_v160_contract_repair_manifest_v1"]
+    identity: Literal["deepseek-harness-hwe-v160-contract-repair-v1"]
+    v158_manifest_sha256: str
+    v158_manifest_hash: str
+    v158_runner_sha256: str
+    v158_launcher_sha256: str
+    v158_authorization_sha256: str
+    v158_source_commit: Literal["c2e24fdfa7a3a8ea4e48e7a2e2a429071713afcc"]
+    v158_post_merge_main_run_id: Literal[33961573936]
+    v158_report_sha256: str
+    v158_report_hash: str
+    v158_task_set_sha256: str
+    v158_task_set_hash: str
+    v158_inventory_sha256: str
+    v158_inventory_hash: str
+    v158_runtime_preflight_sha256: str
+    v158_runtime_preflight_hash: str
+    v158_harness_preflight_sha256: str
+    v158_harness_preflight_hash: str
+    v158_command_probe_sha256: str
+    v158_command_probe_hash: str
+    v158_cleanup_sha256: str
+    v158_cleanup_hash: str
+    v158_evidence_tree_hash: str
+    v158_evidence_directory_count: Literal[1786]
+    v158_evidence_regular_file_count: Literal[10492]
+    v158_evidence_symlink_count: Literal[0]
+    v158_data_volume: Literal["verigym-deepseek-harness-v158-dind-data"]
+    v158_data_backing: Literal["/data2/jiadongzhu/docker/deepseek-harness-hwe-v158/data"]
+    v158_data_volume_owner: Literal["deepseek-harness-hwe-v158-explicit-endpoint-scaffold-v1"]
+    v159_audit_sha256: str
+    v159_audit_commit: Literal["921704abc8567ac6657e1917f958fef0c7209ff1"]
+    v159_audit_merge: Literal["78fc7e785866072ca3db5d9e277910e2d52c4925"]
+    v159_post_merge_main_run_id: Literal[33963391618]
+    v159_post_merge_main_all_eight_classes_passed: Literal[True]
+    schedule_task_ids: list[str] = Field(min_length=5, max_length=5)
+    seed: Literal[502]
+    sample_index: Literal[18]
+    output_root: Literal[
+        "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v160-contract-repair-v1"
+    ]
+    compatibility_field: Literal["provider_values_persisted_or_hashed"]
+    compatibility_value: Literal[False]
+    compatibility_derivation: Literal[
+        "sealed-split-provider-value-persistence-and-hashing-facts-v1"
+    ]
+    predecessor_volume_metadata_inspection_allowed: Literal[True]
+    predecessor_volume_content_mount_allowed: Literal[False]
+    predecessor_volume_mutation_allowed: Literal[False]
+    provider_successor_identity: Literal["deepseek-harness-hwe-v162-official-matrix-v1"]
+    provider_successor_reopen_budget: Literal[1]
+    provider_environment_names: list[str]
+    provider_environment_name_count: Literal[12]
+    provider_environment_values_read_allowed: Literal[False]
+    child_boundary_verified_before_output_creation: Literal[True]
+    registry_access_allowed: Literal[False]
+    partial_archive_allowed: Literal[False]
+    provider_credentials_available: Literal[False]
+    requires_independent_v161_audit: Literal[True]
+    formal_collection_allowed: Literal[False]
+    formal_collection_started: Literal[False]
+    collection_started: Literal[False]
+    training_started: Literal[False]
+    production_training_ready: Literal[False]
+    manifest_hash: str
+
+    @field_validator(
+        "v158_manifest_sha256",
+        "v158_manifest_hash",
+        "v158_runner_sha256",
+        "v158_launcher_sha256",
+        "v158_authorization_sha256",
+        "v158_report_sha256",
+        "v158_report_hash",
+        "v158_task_set_sha256",
+        "v158_task_set_hash",
+        "v158_inventory_sha256",
+        "v158_inventory_hash",
+        "v158_runtime_preflight_sha256",
+        "v158_runtime_preflight_hash",
+        "v158_harness_preflight_sha256",
+        "v158_harness_preflight_hash",
+        "v158_command_probe_sha256",
+        "v158_command_probe_hash",
+        "v158_cleanup_sha256",
+        "v158_cleanup_hash",
+        "v158_evidence_tree_hash",
+        "v159_audit_sha256",
+        "manifest_hash",
+    )
+    @classmethod
+    def validate_v160_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v160 contract repair requires lowercase SHA-256")
+        return value
+
+    @field_validator("schedule_task_ids")
+    @classmethod
+    def validate_v160_schedule(cls, values: list[str]) -> list[str]:
+        if tuple(values) != V69_PRIMARY_TASK_IDS:
+            raise ValueError("v160 contract repair schedule changed")
+        return values
+
+    @field_validator("provider_environment_names")
+    @classmethod
+    def validate_v160_provider_environment_names(cls, values: list[str]) -> list[str]:
+        if tuple(values) != ZERO_PROVIDER_CONFIGURATION_ENV_NAMES:
+            raise ValueError("v160 provider environment boundary changed")
+        return values
+
+    @model_validator(mode="after")
+    def validate_v160_manifest_hash(self) -> Self:
+        identity = self.model_dump(mode="json", exclude={"manifest_hash"})
+        if content_hash(identity) != self.manifest_hash:
+            raise ValueError("v160 contract repair manifest hash changed")
+        return self
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -5741,6 +5863,17 @@ def load_v158_explicit_endpoint_scaffold_manifest(
         raise ConfigurationError("v158 explicit-endpoint scaffold manifest is invalid") from exc
 
 
+def load_v160_contract_repair_manifest(path: Path) -> DeepSeekHarnessV160ContractRepairManifest:
+    """Load the one-use zero-provider v160 scaffold-contract repair manifest."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v160 contract repair manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV160ContractRepairManifest.model_validate_json(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v160 contract repair manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -5925,6 +6058,7 @@ __all__ = [
     "DeepSeekHarnessV154TaskBinding",
     "DeepSeekHarnessV156CommandRuntimeDiagnosticManifest",
     "DeepSeekHarnessV158ExplicitEndpointScaffoldManifest",
+    "DeepSeekHarnessV160ContractRepairManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -5976,6 +6110,7 @@ __all__ = [
     "load_v154_official_matrix_manifest",
     "load_v156_command_runtime_diagnostic_manifest",
     "load_v158_explicit_endpoint_scaffold_manifest",
+    "load_v160_contract_repair_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
