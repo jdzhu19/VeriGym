@@ -145,6 +145,8 @@
   "command_probe_output_max_bytes": 4096,
   "cleanup_timeout_seconds": 120,
   "cleanup_output_max_bytes": 1048576,
+  "control_root_min_available_bytes": 9663676416,
+  "data2_min_available_bytes": 53687091200,
   "build_network": "none",
   "command_probe_network": "none",
   "outer_dind_network": "none",
@@ -172,5 +174,5 @@
   "training_started": false,
   "production_training_ready": false,
   "requires_independent_v185_audit": true,
-  "manifest_hash": "c5cb3a4df8f0ab3650e362d06d271c24776ebc159d94b4b84d4e9a4c56d94778"
+  "manifest_hash": "a26611f68f7531d1704bc7144112c5bd445ac050316f66fd63720f00f6dade10"
 }

@@ -36,6 +36,8 @@ def test_v184_manifest_is_task_free_and_keeps_all_lifecycle_gates_closed() -> No
     assert manifest.collection_started is False
     assert manifest.training_started is False
     assert manifest.production_training_ready is False
+    assert manifest.control_root_min_available_bytes == 9 * 1024**3
+    assert manifest.data2_min_available_bytes == 50 * 1024**3
     assert set(manifest.builder_prerequisite_commands).isdisjoint(manifest.generated_commands)
     assert set(manifest.dockerfile_injected_commands).isdisjoint(
         manifest.builder_prerequisite_commands

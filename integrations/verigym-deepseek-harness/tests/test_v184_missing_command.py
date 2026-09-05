@@ -262,7 +262,7 @@ def test_v184_execute_always_writes_terminal_report_after_controller_failure(
     root.mkdir(mode=0o700)
     scratch.mkdir(mode=0o700)
 
-    monkeypatch.setattr(v182, "_headroom_receipt", lambda: {"receipt_hash": "1" * 64})
+    monkeypatch.setattr(runner, "_headroom_receipt", lambda manifest: {"receipt_hash": "1" * 64})
 
     def fail_transfer(*args: object, **kwargs: object) -> object:
         raise ConfigurationError("controlled")
@@ -360,3 +360,37 @@ def test_v184_runtime_patch_restores_historical_module() -> None:
         assert v182.OUTPUT_ROOT == runner.OUTPUT_ROOT
         assert v182.OWNER == runner.OWNER
     assert (v182.IDENTITY, v182.OUTPUT_ROOT, v182.OWNER) == before
+
+
+def test_v184_headroom_uses_manifest_bound_split_filesystem_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = _successor()
+    usage = SimpleNamespace(total=100, used=1, free=manifest.control_root_min_available_bytes)
+    data2_usage = SimpleNamespace(total=100, used=1, free=manifest.data2_min_available_bytes)
+    monkeypatch.setattr(
+        runner.shutil,
+        "disk_usage",
+        lambda path: usage if path == "/" else data2_usage,
+    )
+    monkeypatch.setattr(runner.os, "statvfs", lambda path: SimpleNamespace(f_bavail=100))
+
+    receipt = runner._headroom_receipt(manifest)  # noqa: SLF001
+
+    assert receipt["capacity_satisfied"] is True
+    assert receipt["all_bulk_storage_on_data2"] is True
+    assert receipt["control_root_min_available_bytes"] == 9 * 1024**3
+
+
+def test_v184_headroom_fails_below_either_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _successor()
+    usage = SimpleNamespace(
+        total=100,
+        used=1,
+        free=manifest.control_root_min_available_bytes - 1,
+    )
+    monkeypatch.setattr(runner.shutil, "disk_usage", lambda path: usage)
+    monkeypatch.setattr(runner.os, "statvfs", lambda path: SimpleNamespace(f_bavail=100))
+
+    with pytest.raises(ConfigurationError, match="headroom"):
+        runner._headroom_receipt(manifest)  # noqa: SLF001

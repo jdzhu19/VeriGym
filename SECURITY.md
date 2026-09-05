@@ -1715,6 +1715,11 @@ produce fixed fail-closed categories, with no raw line, arbitrary token, path, a
 value retained. V184 still loads no HWE task or image and authorizes no repair, verifier, model, or
 provider use. An independent v185 audit is mandatory before any dependency change.
 
+All bulk v184 state is bound to `/data2`; the control filesystem stores only controller process
+state. Its manifest therefore requires at least 9 GiB free on `/` and at least 50 GiB free on
+`/data2`, with both exact thresholds and observations sealed in the headroom receipt. Falling below
+either threshold fails before any image transfer or DinD creation.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
