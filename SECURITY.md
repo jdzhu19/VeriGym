@@ -1568,6 +1568,28 @@ printed, persisted, or hashed. V170 is candidate-only and pending an independent
 formal collection, candidate import, SFT, GPU work, benchmark-score claims, production training,
 registry access, partial archives, and task substitution remain closed.
 
+The sole v170 execution stopped before its first provider request while initializing the fresh
+Harness runtime. The marker remained `not_started`; no episode, call, token, candidate, trajectory,
+or verifier result was produced, and no task was consumed. The independent v171 audit freezes that
+failure and permits the separately versioned v172 zero-provider open-toolchain qualification only.
+
+V172 reserves PR-1816 and builds a non-authoritative agent command image from VeriGym-owned open
+tool inputs only: Verilator 5.008, Icarus 12, Yosys 0.67, and ripgrep 15.2.0. Its completed source
+archives, commits, parent image, builder stage, Dockerfiles, and binaries are hash-bound. Neither
+the builder nor the final image inherits or copies EDA tools from an HWE task image. All transfers
+and builds occur through a fresh `/data2`-backed DinD daemon with `network=none`; registry access,
+partial archives, provider clients, provider credentials, Codex, and `LocalRuntime` are forbidden.
+
+The same public PR-1816 test must independently produce base-FAIL/reference-PASS in the open image
+and the digest-locked official HWE verifier. The open result is permanently labeled
+`agent_only_non_authoritative`; the official result alone is `benchmark_authoritative`, and their
+receipt hashes must differ. Runtime probes use a read-only root, mapped non-root user, cap-drop
+`ALL`, no-new-privileges, resource bounds, and at most one workspace bind. V172 publishes its
+qualification contract only after both routes, the image scan, inner cleanup, and outer cleanup
+pass. It retains only its `/data2` DinD data volume with a one-reopen budget for a possible later
+canary. V172 itself remains zero-provider, requires a v173 result audit, and does not authorize the
+v174 canary, trajectory collection, SFT, GPU work, or production readiness.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
