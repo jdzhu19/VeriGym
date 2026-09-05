@@ -1606,6 +1606,30 @@ again reproduce base-FAIL/reference-PASS before atomic contract publication. V17
 zero-provider and pending an independent v175 audit; the v176 canary, collection, SFT, training,
 and production readiness remain unauthorized.
 
+The sole v174 invocation passed its immutable archive, patch, image, platform, capacity, and
+repository-digest preflights, then stopped when the generic host-side Icarus builder command
+returned nonzero. Its deliberately quiet predecessor helper retained no output, so no unique
+low-level cause is asserted. V175 froze the owner-only five-file result with no DinD start, HWE
+image load, source preparation, task or verifier attempt, model process, provider call, or
+qualification contract. PR-1816 remains unconsumed.
+
+V176 is a separately versioned, one-use, zero-provider qualification repair. It binds the exact
+v174 result tree and v175 audit merge, uses fresh paths, volumes, tags, and scan identities under
+`/data2`, and replaces the builder input only with a hash-bound Dockerfile obtained by deleting the
+external `# syntax` frontend directive. The build remains `--network none --pull=false` and must
+use the already-local base and cached source/build closure; it cannot pull, download, use a partial
+archive, or fall back to host EDA tools.
+
+The v176 builder controller captures at most 1 MiB across stdout and stderr, kills the complete
+client process group on timeout or overflow, and never persists raw output, command arguments, or
+environment names or values. Before hashing safe output it compares the capture with active
+credential/proxy values and secret-like markers. A match fails closed and persists only a fixed
+category and empty-stream hash sentinels. Other failures retain only byte counts, SHA-256 values,
+and a fixed diagnostic category. Success still requires the open diagnostic and official HWE
+route to independently reproduce base-FAIL/reference-PASS, followed by scan, role binding, and
+complete cleanup. V176 remains pending an independent v177 audit; any research canary moves to
+v178 or later. Collection, SFT mixing, training, GPU work, and production readiness remain false.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
