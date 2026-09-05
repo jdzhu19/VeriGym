@@ -367,3 +367,22 @@ rejects that syntax before container creation. V179 freezes the six-file, zero-p
 fully-cleaned stop and authorizes only a fresh v180 qualification successor that omits the invalid
 field while retaining the default writable bind behavior. Do not retry v178. V180 still authorizes
 no model, provider, collection, SFT, training, or production operation.
+
+V180 changes only the two writable output and scratch bind arguments: it omits their rejected bare
+`rw` field and verifies that Docker materializes both as writable. The host-sentinel bind retains
+its accepted `readonly` field, and both named DinD volumes retain `:rw`. The runner rejects any
+extra mount, source/name/destination drift, wrong effective read/write mode, host Docker socket,
+provider/proxy environment, changed network, or changed daemon identity. All v178 archive, image,
+task, open-tool, official-verifier, scan, dual-route, and cleanup locks are inherited unchanged.
+
+Run v180 exactly once from clean merged `main` after all eight post-merge workflow classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V180_DIND_MOUNT_REPAIR=1 \
+  python scripts/launch_hwe_deepseek_harness_v180_dind_mount_repair.py \
+  --post-merge-main-run-id <successful-v180-main-run-id>
+```
+
+A successful result remains pending independent v181 audit. The separately versioned v182
+research-only canary remains unauthorized; formal collection, SFT mixing, training, and production
+readiness remain false.
