@@ -457,3 +457,16 @@ VERIGYM_RUN_DEEPSEEK_HARNESS_V184_MISSING_COMMAND=1 \
 V184 is task-free and zero-provider. It cannot import an HWE image, prepare PR-1816, run either
 verifier route, create a model process, call DeepSeek, publish a qualification contract, or begin
 collection/training. Only a separately merged v185 audit may authorize a new repair identity.
+
+The sole v184 invocation completed within its time/output bounds and cleaned every owned resource,
+but both `: not found` matches were outside its fixed 35-command allowlist. Its frozen category is
+`unknown_missing_executable`, with `missing_command=null`; no raw line or unknown token was
+retained. The builder probe's unavailable-command booleans are not sufficient to identify the
+failure, so v185 authorizes no dependency repair, PR-1816 qualification, or DeepSeek canary.
+
+After v185 is merged and a new post-merge `main` run passes all eight classes, v186 may be defined
+only as one task-free, zero-provider diagnostic-context refinement over the exact v184 build. It
+may classify manifest-fixed shell/build contexts and at most one member of a closed command
+dictionary, without retaining arbitrary tokens or hashes, raw lines, paths, argv, environment
+data, or raw output. It cannot change dependencies or the Dockerfile. Collection, SFT mixing,
+training, and production readiness remain closed.
