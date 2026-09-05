@@ -420,3 +420,15 @@ V182 does not inspect/import an HWE image, load task metadata, prepare source, r
 a model, or call a provider. Its result requires a v183 audit before any qualification repair can
 be authorized. PR-1816 and the research canary remain unconsumed; collection and training remain
 closed.
+
+The sole v182 invocation completed its bounded measurement and cleanup. The final build returned
+1 with fixed category `missing_executable`; capture was within its 16-MiB and 3,600-second bounds,
+the sensitive-value scan passed, and no raw output was retained. All task/model/provider counters
+remained zero, and the inspected helper removed both volumes, all owned containers, backing, and
+scratch. V183 freezes this result and does not infer the missing program from the category alone.
+
+After v183 is merged and a new `main` run passes all eight classes, v184 may be defined only as a
+task-free, zero-provider disambiguation. It may report an exact missing command solely from a
+manifest-bound allowlist, must fail closed on unknown/multiple matches, and must preserve all v182
+output, secret-scan, terminal-report, and cleanup controls. It is not a qualification or canary;
+PR-1816, collection, SFT, training, and production use remain closed.

@@ -1698,6 +1698,13 @@ inspected before start and receives only the exact backing-parent bind plus the 
 capabilities. A terminal report is mandatory even for cleanup failure. V182 cannot authorize a
 qualification, research canary, collection, SFT mixing, training, or production use.
 
+The sole v182 run returned fixed category `missing_executable` with bounded, non-sensitive output
+and complete cleanup. The category proves only that an allowlisted classifier pattern matched; it
+does not reveal or establish the missing program, and no raw output is recoverable. V183 freezes
+the result and permits only a later task-free, zero-provider allowlist-based disambiguation with
+the same isolation and cleanup controls. A dependency repair, HWE qualification, model canary,
+collection, SFT mixing, training, and production use remain unauthorized.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
