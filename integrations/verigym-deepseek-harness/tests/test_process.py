@@ -16,21 +16,24 @@ from verigym_deepseek_harness.process import (
 
 
 class _CompletedHelper:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        stdout: bytes = b'{"ok":true,"events":[],"format_repairs":[],"run_interval_count":0}\n',
+        returncode: int = 0,
+    ) -> None:
         self.stdin = io.BytesIO()
-        self.stdout = io.BytesIO(
-            b'{"ok":true,"events":[],"format_repairs":[],"run_interval_count":0}\n'
-        )
+        self.stdout = io.BytesIO(stdout)
         self.stderr = io.BytesIO()
         self.pid = os.getpid()
-        self.returncode = 0
+        self.returncode = returncode
 
     def poll(self) -> int:
-        return 0
+        return self.returncode
 
     def wait(self, timeout: int | None = None) -> int:
         del timeout
-        return 0
+        return self.returncode
 
 
 def _settings(tmp_path: Path) -> Any:
@@ -131,7 +134,7 @@ def test_helper_rejects_an_unsafe_explicit_docker_endpoint(
     monkeypatch.setenv(API_KEY_ENV, "synthetic-key")
     monkeypatch.setenv(BASE_URL_ENV, "http://127.0.0.1:9/v1")
 
-    with pytest.raises(DeepSeekHarnessProcessError, match="Docker endpoint is unsafe"):
+    with pytest.raises(DeepSeekHarnessProcessError, match="Docker endpoint is unsafe") as raised:
         run_harness_helper(
             _settings(tmp_path),
             mode="initialize",
@@ -142,3 +145,41 @@ def test_helper_rejects_an_unsafe_explicit_docker_endpoint(
             broker_root=tmp_path,
             docker_host="tcp://127.0.0.1:2375",
         )
+
+    assert raised.value.category == "docker_endpoint_unsafe"
+
+
+@pytest.mark.parametrize(
+    ("error_type", "category"),
+    [
+        ("TransportClosedError", "helper_transport_closed"),
+        ("JsonRpcError", "helper_json_rpc_error"),
+        ("UnexpectedSensitiveName", "helper_unclassified_error"),
+    ],
+)
+def test_helper_failure_exposes_only_a_bounded_category(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: str,
+    category: str,
+) -> None:
+    payload = ('{"ok":false,"error_type":"' + error_type + '"}\n').encode()
+    monkeypatch.setattr(
+        "verigym_deepseek_harness.process.subprocess.Popen",
+        lambda *_args, **_kwargs: _CompletedHelper(stdout=payload, returncode=1),
+    )
+    monkeypatch.setenv(API_KEY_ENV, "synthetic-key")
+    monkeypatch.setenv(BASE_URL_ENV, "http://127.0.0.1:9/v1")
+
+    with pytest.raises(DeepSeekHarnessProcessError) as raised:
+        run_harness_helper(
+            _settings(tmp_path),
+            mode="initialize",
+            prompt="",
+            system_prompt="offline initialization",
+            session_id="category-regression",
+            session_root=tmp_path,
+            broker_root=tmp_path,
+        )
+
+    assert raised.value.category == category

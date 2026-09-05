@@ -15,6 +15,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     V69_IBEX_FALLBACK_TASK_IDS,
     V69_OPEN_TOOL_TASK_ID,
     V69_PRIMARY_TASK_IDS,
+    V164_CONTROLLER_DIAGNOSTIC_CATEGORIES,
     ZERO_PROVIDER_CONFIGURATION_ENV_NAMES,
     DeepSeekHarnessMatrixAttempt,
     DeepSeekHarnessV69Manifest,
@@ -54,6 +55,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV152HostHeadroomScaffoldManifest,
     DeepSeekHarnessV154OfficialMatrixManifest,
     DeepSeekHarnessV156CommandRuntimeDiagnosticManifest,
+    DeepSeekHarnessV164ControllerInitializeDiagnosticManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -89,6 +91,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v152_host_headroom_scaffold_manifest,
     load_v154_official_matrix_manifest,
     load_v156_command_runtime_diagnostic_manifest,
+    load_v164_controller_initialize_diagnostic_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -165,6 +168,9 @@ _V154_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V156_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v156_command_runtime_diagnostic_v1.json"
+)
+_V164_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v164_controller_initialize_diagnostic_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -2233,3 +2239,69 @@ def test_v156_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV156CommandRuntimeDiagnosticManifest.model_validate(changed)
+
+
+def test_v164_manifest_freezes_the_synthetic_controller_diagnostic() -> None:
+    manifest = load_v164_controller_initialize_diagnostic_manifest(_V164_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV164ControllerInitializeDiagnosticManifest)
+    assert manifest.v162_authorization_merge == "22bef6516b83048ccd71f7b1b65a0b4ff291f7ef"
+    assert manifest.v162_post_merge_main_run_id == 33967203488
+    assert manifest.v163_audit_merge == "f1e6c5421750f70df5b39a7ce5445d8fed2b04ca"
+    assert manifest.v163_post_merge_main_run_id == 33968340363
+    assert manifest.v158_data_volume_reopen_budget == 2
+    assert manifest.v158_data_volume_reopen_count_before == 1
+    assert manifest.provider_environment_boundary == "zero-provider-synthetic-child-v1"
+    assert tuple(manifest.provider_environment_names) == ZERO_PROVIDER_CONFIGURATION_ENV_NAMES
+    assert tuple(manifest.diagnostic_categories) == V164_CONTROLLER_DIAGNOSTIC_CATEGORIES
+    assert manifest.task_execution_allowed is False
+    assert manifest.base_reference_verification_allowed is False
+    assert manifest.official_verifier_execution_allowed is False
+    assert manifest.provider_credentials_available is False
+    assert manifest.provider_request_allowed is False
+    assert manifest.provider_call_count == 0
+    assert manifest.requires_independent_v165_audit is True
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("v158_data_volume_reopen_budget", 3),
+        ("v158_data_volume_reopen_count_before", 0),
+        ("provider_environment_boundary", "ambient"),
+        ("synthetic_provider_values_only", False),
+        ("provider_credentials_available", True),
+        ("provider_request_allowed", True),
+        ("provider_call_count", 1),
+        ("task_execution_allowed", True),
+        ("base_reference_verification_allowed", True),
+        ("official_verifier_execution_allowed", True),
+        ("registry_access_allowed", True),
+        ("partial_archive_allowed", True),
+        ("requires_independent_v165_audit", False),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v164_manifest_rejects_a_broadened_or_changed_diagnostic(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V164_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV164ControllerInitializeDiagnosticManifest.model_validate(changed)
+
+
+def test_v164_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V164_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV164ControllerInitializeDiagnosticManifest.model_validate(changed)
