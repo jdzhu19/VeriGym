@@ -360,3 +360,10 @@ authoritative verifier route to reproduce base-FAIL/reference-PASS, plus the bui
 image scan, and cleanup gates. A successful result remains pending v179. The research-only
 DeepSeek canary is v180 or later and is not authorized by v178; collection, SFT mixing, training,
 and production readiness remain false.
+
+V178 passed its archive, image, patch, and capacity gates but stopped before outer DinD creation.
+The inherited v172 Docker command appended a bare `rw` field to `--mount`; the installed CLI
+rejects that syntax before container creation. V179 freezes the six-file, zero-provider,
+fully-cleaned stop and authorizes only a fresh v180 qualification successor that omits the invalid
+field while retaining the default writable bind behavior. Do not retry v178. V180 still authorizes
+no model, provider, collection, SFT, training, or production operation.

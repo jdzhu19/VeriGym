@@ -1663,6 +1663,14 @@ pending an independent v179 audit; a possible research-only canary moves to v180
 Collection, SFT mixing, training, GPU work, benchmark-score claims, and production readiness
 remain false.
 
+The sole v178 invocation passed all immutable archive, image, patch, and capacity gates, then
+stopped before outer DinD creation because the inherited v172 `--mount` form used a trailing bare
+`rw` field rejected by the installed Docker CLI. It loaded no HWE or builder image into DinD,
+prepared no task source, ran no verifier or model, made zero provider calls, published no contract,
+and cleaned all transient resources. V179 freezes that six-file result. It authorizes only a fresh
+v180 zero-provider successor that omits the invalid field while preserving Docker's default
+writable bind semantics; all other locks and collection/training closures remain unchanged.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
