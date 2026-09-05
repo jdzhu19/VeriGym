@@ -1500,6 +1500,30 @@ image, exact mounts, non-root and read-only execution, resource limits, capabili
 network, and absence of provider environment names. V164 is one-use, pending an independent v165
 audit, and cannot authorize a replacement provider matrix or any collection or training state.
 
+The sole v164 execution passed both the direct controller probe and the real Harness initialize
+path without a provider request, task, verifier, trajectory, or admitted data. The independent
+v165 audit therefore classifies the v162 initialize failure as transient rather than a reproduced
+endpoint, image, mount, permission, or configuration defect. That diagnosis does not relabel or
+rerun v162 and does not itself authorize provider execution.
+
+V166 is the separately versioned, one-use replacement provider matrix authorized only after the
+v165 audit merge and its eight green post-merge `main` check classes. It binds the immutable v162
+zero-consumption failure, v163 audit, complete v164 diagnostic tree, v165 audit, and the original
+v158 task/source/image locks. The retained v158 data volume has a cumulative reopen count of two
+before v166 and may be reopened exactly once more; v166 uses fresh socket, control, runtime,
+output, and receipt paths under `/data2` and revalidates the complete predecessor trees before
+Docker access.
+
+The five-task order, DeepSeek v4 Flash identity, seed/sample 502/18, call and token limits,
+marker-based consumption, bounded continuation, six-plane admission, exact Qwen tokenizer, and
+strictly untruncated 64K decision checks are unchanged. Agent command and official-verifier
+containers remain `network=none`; only the outer DinD and inner Harness controller may use the
+named `verigym-hwe-net` bridges. Provider values exist only in the exact two-name child boundary
+and are never printed, persisted, or hashed. V166 results remain candidate-only and pending an
+independent v167 audit. Formal collection, candidate import, SFT, GPU work, benchmark-score
+claims, production training, registry access, partial archives, and task substitution remain
+closed.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
