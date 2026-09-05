@@ -53,6 +53,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     DeepSeekHarnessV150OfficialMatrixManifest,
     DeepSeekHarnessV152HostHeadroomScaffoldManifest,
     DeepSeekHarnessV154OfficialMatrixManifest,
+    DeepSeekHarnessV156CommandRuntimeDiagnosticManifest,
     HweAdmissionPlanes,
     HweOfflineTaskLock,
     inspect_offline_image_archive,
@@ -87,6 +88,7 @@ from verigym.hwe.deepseek_harness_campaign import (
     load_v150_official_matrix_manifest,
     load_v152_host_headroom_scaffold_manifest,
     load_v154_official_matrix_manifest,
+    load_v156_command_runtime_diagnostic_manifest,
     migration_conclusions,
     new_matrix_state,
     record_matrix_attempt,
@@ -160,6 +162,9 @@ _V152_MANIFEST = _REPOSITORY_ROOT / (
 )
 _V154_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v154_official_matrix_v1.json"
+)
+_V156_MANIFEST = _REPOSITORY_ROOT / (
+    "configs/training/qwen35_hwe_deepseek_harness_v156_command_runtime_diagnostic_v1.json"
 )
 _V118_MANIFEST = _REPOSITORY_ROOT / (
     "configs/training/qwen35_hwe_deepseek_harness_v118_explicit_inner_inventory_scaffold_v1.json"
@@ -2166,3 +2171,65 @@ def test_v154_manifest_rejects_an_invalid_content_hash() -> None:
     changed["manifest_hash"] = "0" * 64
     with pytest.raises(ValueError, match="content hash changed"):
         DeepSeekHarnessV154OfficialMatrixManifest.model_validate(changed)
+
+
+def test_v156_manifest_freezes_the_fresh_zero_provider_diagnostic() -> None:
+    manifest = load_v156_command_runtime_diagnostic_manifest(_V156_MANIFEST)
+
+    assert isinstance(manifest, DeepSeekHarnessV156CommandRuntimeDiagnosticManifest)
+    assert manifest.v155_audit_merge == "1cba9d58de2fe8bd4952e4494d96e0bd75edd3ae"
+    assert manifest.v155_post_merge_main_run_id == 33957607230
+    assert manifest.task_id == "hwe-bench/repo-repair-v1/lowRISC__ibex__pr-465"
+    assert manifest.dind_data_volume == "verigym-deepseek-harness-v156-dind-data"
+    assert manifest.dind_socket_volume == "verigym-deepseek-harness-v156-dind-socket"
+    assert manifest.archive_import_timeout_seconds == 1800
+    assert manifest.archive_import_maximum_output_bytes == 1048576
+    assert manifest.expected_inherited_environment_subreason == "image_missing"
+    assert manifest.explicit_nested_engine_expected_pass is True
+    assert manifest.docker_cli_explicit_binding_required is True
+    assert manifest.explicit_archive_import_required is True
+    assert manifest.v148_volume_inspection_allowed is False
+    assert manifest.v148_volume_mutation_allowed is False
+    assert manifest.provider_credentials_available is False
+    assert manifest.provider_calls == 0
+    assert manifest.requires_independent_v137_audit is False
+    assert manifest.requires_independent_v157_audit is True
+    assert manifest.formal_collection_allowed is False
+    assert manifest.formal_collection_started is False
+    assert manifest.collection_started is False
+    assert manifest.training_started is False
+    assert manifest.production_training_ready is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("dind_data_volume", "verigym-deepseek-harness-v148-dind-data"),
+        ("expected_inherited_environment_subreason", "invalid_image_id"),
+        ("explicit_nested_engine_expected_pass", False),
+        ("explicit_archive_import_required", False),
+        ("v148_volume_inspection_allowed", True),
+        ("provider_credentials_available", True),
+        ("provider_calls", 1),
+        ("requires_independent_v157_audit", False),
+        ("formal_collection_allowed", True),
+    ],
+)
+def test_v156_manifest_rejects_a_broadened_or_changed_diagnostic(
+    field: str,
+    value: object,
+) -> None:
+    changed = json.loads(_V156_MANIFEST.read_text(encoding="utf-8"))
+    changed[field] = value
+    changed["manifest_hash"] = content_hash(
+        {key: item for key, item in changed.items() if key != "manifest_hash"}
+    )
+    with pytest.raises(ValueError):
+        DeepSeekHarnessV156CommandRuntimeDiagnosticManifest.model_validate(changed)
+
+
+def test_v156_manifest_rejects_an_invalid_content_hash() -> None:
+    changed = json.loads(_V156_MANIFEST.read_text(encoding="utf-8"))
+    changed["manifest_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash changed"):
+        DeepSeekHarnessV156CommandRuntimeDiagnosticManifest.model_validate(changed)

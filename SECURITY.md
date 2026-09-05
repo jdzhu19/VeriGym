@@ -1417,6 +1417,23 @@ inner provider controller alone may use `verigym-hwe-net`; agent command images 
 verifiers remain `network=none`. The v154 result stays pending an independent v155 audit and cannot
 start formal collection, candidate import, SFT, GPU work, held-out access, or production training.
 
+The sole v154 execution stopped during the first zero-provider command-runtime preparation with
+`DockerImageError`, marker `not_started`, zero provider calls or tokens, no task consumption, and
+confirmed cleanup. V154 is frozen. Its retained v148 data-volume reopen allowance is exhausted.
+The v155 audit permits only a fresh v156 command-runtime diagnostic; it does not authorize a
+provider retry.
+
+V156 uses new bind-backed data and socket volumes under `/data2`, reads only the completed and
+SHA-verified PR-465 archive, and never mounts or inspects the retained v148 data volume. It starts
+one networkless DinD, imports through the exact nested Unix socket, transfers the locked workspace
+runtime from the exact local host image, and rebuilds a semantically equivalent task command
+image. It compares one unbound Docker runtime preparation with one explicitly bound
+`DockerCliEngine(docker_host=...)` preparation. Only allowlisted Docker image subreasons and
+content-free probe metadata may be recorded; raw exceptions, Docker output, credentials, task
+execution, Harness/provider startup, collection, and training remain forbidden. V156 must clean
+all fresh resources and requires an independent v157 audit plus eight green post-merge `main`
+checks before any new provider identity can be considered.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its

@@ -4711,6 +4711,113 @@ class DeepSeekHarnessV154OfficialMatrixManifest(DeepSeekHarnessV150OfficialMatri
         return value
 
 
+class DeepSeekHarnessV156CommandRuntimeDiagnosticManifest(
+    DeepSeekHarnessV136CommandRuntimeDiagnosticManifest
+):
+    """Fresh provider-free diagnosis of the v154 nested Docker transport binding."""
+
+    format_id: Literal[  # type: ignore[assignment]
+        "verigym_deepseek_harness_hwe_v156_command_runtime_diagnostic_manifest_v1"
+    ]
+    identity: Literal[  # type: ignore[assignment]
+        "deepseek-harness-hwe-v156-command-runtime-diagnostic-v1"
+    ]
+    v127_archive_receipt_hash: str
+    v148_command_lock_sha256: str
+    v148_command_lock_hash: str
+    v148_security_scan_sha256: str
+    v148_security_scan_id: str
+    v148_command_image_id: str
+    v154_manifest_sha256: str
+    v154_manifest_hash: str
+    v154_runner_sha256: str
+    v154_launcher_sha256: str
+    v154_authorization_sha256: str
+    v154_authorization_commit: Literal["786a9b87c667fdcb918b6e591e47333d0005e310"]
+    v154_authorization_merge: Literal["dcfb9d5117d7fa2881d8694c7f86aed10857abc0"]
+    v154_post_merge_main_run_id: Literal[33956912403]
+    v154_post_merge_main_all_eight_classes_passed: Literal[True]
+    v154_report_sha256: str
+    v154_report_hash: str
+    v154_attempt_sha256: str
+    v154_attempt_hash: str
+    v154_cleanup_sha256: str
+    v154_cleanup_hash: str
+    v155_audit_sha256: str
+    v155_audit_commit: Literal["1c7c05d0b41a7773dad2102163d046bdf7639d3e"]
+    v155_audit_merge: Literal["1cba9d58de2fe8bd4952e4494d96e0bd75edd3ae"]
+    v155_post_merge_main_run_id: Literal[33957607230]
+    v155_post_merge_main_all_eight_classes_passed: Literal[True]
+    dind_data_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v156-dind-data"
+    ]
+    dind_socket_volume: Literal[  # type: ignore[assignment]
+        "verigym-deepseek-harness-v156-dind-socket"
+    ]
+    dind_data_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v156/data"
+    ]
+    dind_socket_backing: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/docker/deepseek-harness-hwe-v156/socket"
+    ]
+    output_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/experiments/"
+        "deepseek-harness-hwe-v156-command-runtime-diagnostic-v1"
+    ]
+    runtime_scratch_root: Literal[  # type: ignore[assignment]
+        "/data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v156-runtime"
+    ]
+    nested_docker_host: Literal[  # type: ignore[assignment]
+        "unix:///data2/jiadongzhu/docker/deepseek-harness-hwe-v156/socket/docker.sock"
+    ]
+    scanner_policy_id: Literal[  # type: ignore[assignment]
+        "deepseek-harness-v156-bounded-command-scan-v1"
+    ]
+    scanner_container_name: Literal[  # type: ignore[assignment]
+        "verigym-hwe-v156-command-scan-pr-465"
+    ]
+    archive_import_timeout_seconds: Literal[1800]
+    archive_import_maximum_output_bytes: Literal[1048576]
+    explicit_archive_import_required: Literal[True]
+    structured_subreason_required: Literal[True]
+    v148_volume_inspection_allowed: Literal[False]
+    v148_volume_mutation_allowed: Literal[False]
+    requires_independent_v137_audit: Literal[False]  # type: ignore[assignment]
+    requires_independent_v157_audit: Literal[True]
+
+    @field_validator(
+        "v127_archive_receipt_hash",
+        "v148_command_lock_sha256",
+        "v148_command_lock_hash",
+        "v148_security_scan_sha256",
+        "v148_security_scan_id",
+        "v154_manifest_sha256",
+        "v154_manifest_hash",
+        "v154_runner_sha256",
+        "v154_launcher_sha256",
+        "v154_authorization_sha256",
+        "v154_report_sha256",
+        "v154_report_hash",
+        "v154_attempt_sha256",
+        "v154_attempt_hash",
+        "v154_cleanup_sha256",
+        "v154_cleanup_hash",
+        "v155_audit_sha256",
+    )
+    @classmethod
+    def validate_v156_sha256(cls, value: str) -> str:
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError("v156 command-runtime diagnostic requires lowercase SHA-256")
+        return value
+
+    @field_validator("v148_command_image_id")
+    @classmethod
+    def validate_v156_digest(cls, value: str) -> str:
+        if _DIGEST.fullmatch(value) is None:
+            raise ValueError("v156 command-runtime diagnostic requires immutable image IDs")
+        return value
+
+
 class HweAdmissionPlanes(StrictModel):
     """Independent result planes required for SFT admission."""
 
@@ -5485,6 +5592,21 @@ def load_v154_official_matrix_manifest(path: Path) -> DeepSeekHarnessV154Officia
         raise ConfigurationError("v154 official matrix manifest is invalid") from exc
 
 
+def load_v156_command_runtime_diagnostic_manifest(
+    path: Path,
+) -> DeepSeekHarnessV156CommandRuntimeDiagnosticManifest:
+    """Load the fresh, one-use, zero-provider v156 Docker transport diagnostic."""
+
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= _MAX_JSON_BYTES:
+        raise ConfigurationError("v156 command-runtime diagnostic manifest path is unsafe")
+    try:
+        return DeepSeekHarnessV156CommandRuntimeDiagnosticManifest.model_validate_json(
+            path.read_bytes()
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigurationError("v156 command-runtime diagnostic manifest is invalid") from exc
+
+
 def inspect_offline_image_archive(
     lock: HweOfflineTaskLock,
     *,
@@ -5667,6 +5789,7 @@ __all__ = [
     "DeepSeekHarnessV152HostHeadroomScaffoldManifest",
     "DeepSeekHarnessV154OfficialMatrixManifest",
     "DeepSeekHarnessV154TaskBinding",
+    "DeepSeekHarnessV156CommandRuntimeDiagnosticManifest",
     "HweAdmissionPlanes",
     "HweOfflineTaskLock",
     "HweTaskDisposition",
@@ -5716,6 +5839,7 @@ __all__ = [
     "load_v150_official_matrix_manifest",
     "load_v152_host_headroom_scaffold_manifest",
     "load_v154_official_matrix_manifest",
+    "load_v156_command_runtime_diagnostic_manifest",
     "migration_conclusions",
     "new_matrix_state",
     "record_matrix_attempt",
