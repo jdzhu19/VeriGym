@@ -1671,6 +1671,15 @@ and cleaned all transient resources. V179 freezes that six-file result. It autho
 v180 zero-provider successor that omits the invalid field while preserving Docker's default
 writable bind semantics; all other locks and collection/training closures remain unchanged.
 
+V180 repairs exactly the two writable output and scratch bind arguments by omitting their rejected
+bare `rw` field. The read-only host-sentinel bind keeps its existing `readonly` field, and the two
+named DinD volumes keep their accepted `:rw` suffixes. After start, v180 inspects the exact type,
+source/name, destination, and effective `RW` value of all five mounts; extra mounts, a host Docker
+socket, changed labels, a non-`none` outer network, or provider/proxy environment names fail
+closed. All frozen builder, HWE, source, tool, network, scan, route-separation, and cleanup locks
+remain unchanged. V180 is zero-provider and requires an independent v181 audit before a separately
+versioned v182 research-only canary can be considered.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
