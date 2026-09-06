@@ -943,7 +943,7 @@ def _run_secure_container(
         f"/tmp:rw,noexec,nosuid,nodev,size={tmpfs_size}",
     ]
     for source, destination in mounts:
-        create.extend(["--mount", f"type=bind,src={source},dst={destination},rw"])
+        create.extend(["--mount", f"type=bind,src={source},dst={destination}"])
     create.extend(
         ["--workdir", mounts[0][1] if mounts else "/workspace/repository", image_id, *command]
     )
