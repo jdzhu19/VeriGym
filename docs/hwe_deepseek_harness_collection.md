@@ -491,3 +491,25 @@ V186 loads no HWE image or task, prepares no PR-1816 source, runs no verifier or
 no provider client. It cannot authorize a dependency repair, qualification, canary, collection,
 SFT mixing, training, or production use. Only an independent v187 audit may interpret its fixed
 result.
+
+The sole v186 invocation completed within its build and output bounds and cleaned all owned
+resources. Its fixed classifier found two POSIX-sh `command not found` markers, both resolving to
+the single closed-dictionary enum `git`; the separate isolated builder probe also recorded
+`git=false`. No raw line, arbitrary token or token hash, path, argv, environment data, or raw output
+was retained. V187 freezes that result and authorizes no HWE or provider action.
+
+After v187 is merged and a new post-merge `main` run passes all eight classes, v188 may implement
+one task-free, zero-provider minimal builder repair. It may add only a fully locked git package
+closure to a fresh dependency-only builder, then rerun the otherwise exact v186 final-image build
+offline. Any missing input acquisition must be a separately bounded, checksum-verified command
+whose route is first verified not to use the VPN and whose container uses `verigym-hwe-net`, not
+the broken default bridge. Partial archives and implicit registry downloads remain forbidden.
+
+V188 requires fresh `/data2` resource identities and new absolute 9-GiB control-root and 50-GiB
+`/data2` capacity observations. The thresholds cannot be lowered: v186 started only 77,107,200
+bytes above the control-root threshold, and its later post-cleanup observation was below it. The
+final build and probes remain `network=none`, with the same time/output bounds, sensitive-value
+scan, fixed receipts, v2 image security scan, terminal report, and complete cleanup. V188 may not
+load an HWE image or task, prepare PR-1816, run either verifier route, start a model, call DeepSeek,
+publish a qualification contract, or begin collection/training. A later independent audit is
+required before the PR-1816 dual-route qualification can be authorized.
