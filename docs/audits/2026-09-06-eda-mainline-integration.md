@@ -49,6 +49,12 @@ mypy --config-file integrations/verigym-synopsys/pyproject.toml \
 Unix socket 长度限制和实际目录创建/复用断言。生产 launcher 与冻结身份均未修改。
 package、quality、reproducible-build、OpenHands 与 Docker zero-model security 检查已通过。
 
+后续 CI 已通过 core，进入 Claude integration 后发现两个旧断言仍期望原始异常文本。
+主线的共享 broker 已改为固定脱敏错误。更新这些测试以检查现有脱敏消息和分类，并增加
+原始异常不出现在工具响应中的断言；不恢复潜在泄漏，也不修改 broker 的生产实现。
+本地补查后续 ordinary CI integration：Claude 58 passed、RTL-Repo 24 passed/1 deselected、
+HWE 68 passed、codecomplete 5 passed/1 deselected、training-reference 149 passed/2 skipped。
+
 三类本地环境问题已排除，没有为它们修改已资格化实现：
 
 - 长 scratch 路径超过 Unix socket 长度限制：用短名称的独立 `--basetemp` 定向复测。
