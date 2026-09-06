@@ -273,8 +273,10 @@ def test_v188_saved_image_archive_rejects_role_alias(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("offline_successor", [False, True])
 def test_v188_v2_scan_locks_git_without_loading_the_official_image(
     monkeypatch: pytest.MonkeyPatch,
+    offline_successor: bool,
 ) -> None:
     successor = _successor()
     final_id = "sha256:" + "8" * 64
@@ -341,15 +343,22 @@ def test_v188_v2_scan_locks_git_without_loading_the_official_image(
     monkeypatch.setattr(runner.v172, "_run_secure_container", lambda **kwargs: dict(probe))
     monkeypatch.setattr(runner.v182, "_contains_sensitive_output", lambda *args, **kwargs: False)
 
+    from scripts.run_hwe_pr1816_open_research import OpenResearchImageLock
+
+    identity = "hwe-open-tools-offline-repair-20260906-v1" if offline_successor else runner.IDENTITY
+    lock_type = OpenResearchImageLock if offline_successor else runner.OpenToolchainV188ImageLock
     scan, lock = runner._scan_and_lock_open_image(  # noqa: SLF001
         successor,
         image_id=final_id,
         derived_builder_id=derived_id,
         docker_host="unix:///data2/docker.sock",
         active_sensitive_values=(),
+        identity=identity,
+        lock_type=lock_type,
     )
 
     assert scan["scan_passed"] is True
+    assert scan["identity"] == lock.identity == identity
     assert lock.binary_sha256["git"] == successor.git_binary_sha256
     assert lock.hwe_image_loaded is False
     assert lock.official_verifier_image == successor.official_verifier_image

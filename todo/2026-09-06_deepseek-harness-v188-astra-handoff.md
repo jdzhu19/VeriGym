@@ -1,119 +1,148 @@
-# DeepSeek Harness continuation
+# DeepSeek Harness continuation — 2026-09-06
 
-This handoff keeps the next owner focused on restoring the real trajectory path. Offline image
-work is development infrastructure; strict single-use consumption starts at the provider/task
-boundary.
+The objective is to restore a real research trajectory using open agent tools and the official HWE
+verifier. Offline build development can reuse intermediate results; a provider-started task is
+consumed and must never be retried or relabeled.
 
-| Field | Current value |
+## Current state
+
+| Step | Result |
 | --- | --- |
-| Updated | 2026-09-06 15:34:03 +08:00 |
-| Checkout | `/data2/jiadongzhu/Agent/VeriGym` |
-| Source before this change | `main` and `origin/main` at `642053bd38574f3baae52e61c09caf12dd6d29bc` |
-| Current work | Uncommitted v188 root-headroom simplification plus this handoff |
-| Immediate goal | Merge the 4-GiB gate, run v188, then qualify PR-1816 |
-| Provider state | No v188 provider client, request, token, task, or trajectory |
-| Local HWE images | The complete public GHCR set is present under `/data2/jiadongzhu/Agent/hwe-bench-public-images`; the completed-download layer cache has been removed |
+| Control-root headroom change | Merged in PR 216; `/` floor is 4 GiB and `/data2` floor remains 50 GiB. |
+| Original v188 execution | Git repair passed; final Verilator compilation failed; cleanup completed; all provider/HWE/task/verifier counters remained zero. |
+| Focused offline successor | Missing flex C++ header repaired; image scan and archive validation passed; archive exported; cleanup completed. |
+| PR-1816 official qualification | Base FAIL, reference PASS, no infrastructure error. |
+| PR-1816 open-tool qualification | Base FAIL, reference PASS, zero provider calls. |
+| Research canary `503/19` | Consumed and structurally incomplete: 13 provider calls, 26,793 tokens, 14 tool operations, `finish_reason=max-tokens`, zero edits and zero finish calls. No valid teacher transcript; final candidate verification was skipped. Cleanup completed. |
 
-## Do next
+The implementation and execution notes are in
+[`docs/hwe_open_research.md`](../docs/hwe_open_research.md) and
+[PR 218](https://github.com/jdzhu19/VeriGym/pull/218).
+The single research canary has run. Do not rerun this task, delete its consumption marker, relabel
+the attempt, fabricate a finish action, or admit its incomplete observations to SFT.
 
-1. Review and commit the current focused change, including this handoff. Do not stage or edit the
-   seven unrelated user-owned untracked files listed below.
-2. Run only the focused v188 tests and style checks shown below. Let the ordinary PR CI provide the
-   broad regression pass; do not repeat every historical campaign suite locally without a concrete
-   failure suggesting it is needed.
-3. Merge the focused PR and use its successful post-merge `main` run ID for v188. This is required
-   because the existing launcher checks clean merged source, not because offline image development
-   needs a new campaign for every edit.
-4. Run v188 once under its existing identity. Inspect its result and cleanup.
-5. If v188 succeeds, perform the existing v189 requirement as a narrow receipt and artifact review.
-   Avoid a new generic audit framework or another full local test sweep.
-6. After that review, move directly to PR-1816 base-FAIL/reference-PASS qualification on the open
-   toolchain and official HWE verifier, followed by the single research canary if qualification
-   passes.
+## Evidence and identities
 
-If the offline build exposes another ordinary prerequisite, preserve the terminal receipt, fix the
-root cause in one focused successor, and test it locally before freezing it. Do not create a chain
-of separate versions merely to inspect, classify, and reclassify the same zero-provider build
-failure. Never relabel or retry a provider-started task.
+[PR 216](https://github.com/jdzhu19/VeriGym/pull/216) merged as
+`2adb9447e49f98edb0584a4ea678cf0e522f626e`; post-merge main run `34020540010` passed all eight job
+classes. The focused v188 tests passed (25 tests), followed by the existing launcher invocation.
 
-## Current change and verification
-
-The v188 control-root threshold is now 4 GiB (`4,294,967,296` bytes); the `/data2` threshold remains
-50 GiB (`53,687,091,200` bytes). The control process writes only bounded state to `/`. DinD backing,
-scratch, experiment output, and the exported image are all on `/data2`, so the root gate should not
-reserve bulk image space a second time. Four GiB also matches the control-root floor used by the
-ordinary DeepSeek Harness campaigns.
-
-Changed paths:
+Original v188 terminal receipts remain unchanged at:
 
 ```text
-SECURITY.md
-configs/training/qwen35_hwe_deepseek_harness_v188_git_builder_repair_v1.json
-docs/hwe_deepseek_harness_collection.md
-integrations/verigym-deepseek-harness/tests/test_v188_git_builder_repair.py
-src/verigym/hwe/open_toolchain_git_builder_repair.py
-tests/unit/test_hwe_open_toolchain_git_builder_repair.py
-todo/2026-09-06_deepseek-harness-v188-astra-handoff.md
+/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v188-git-builder-repair-v1
 ```
 
-Run the focused checks:
+Its report hash is `9b92b274955e77cb51d3ed81d0badfdd9fe9edd26dbdc4858bfd09a41b19230e`.
+The old classifier reported only `no_command_context_marker`. Do not invoke the v188 identity
+again or represent the successor as a successful v188 run.
 
-```bash
-cd /data2/jiadongzhu/Agent/VeriGym
-pytest -q tests/unit/test_hwe_open_toolchain_git_builder_repair.py
-pytest -q integrations/verigym-deepseek-harness/tests/test_v188_git_builder_repair.py
-ruff check src/verigym/hwe/open_toolchain_git_builder_repair.py \
-  tests/unit/test_hwe_open_toolchain_git_builder_repair.py \
-  integrations/verigym-deepseek-harness/tests/test_v188_git_builder_repair.py
-ruff format --check src/verigym/hwe/open_toolchain_git_builder_repair.py \
-  tests/unit/test_hwe_open_toolchain_git_builder_repair.py \
-  integrations/verigym-deepseek-harness/tests/test_v188_git_builder_repair.py
+The focused successor retained compiler diagnostics and object files in one isolated work session.
+The actual failure was `FlexLexer.h: No such file or directory`. The repair adds the unmodified
+header from flex 2.6.4 commit `ab49343b08c933e32de8de78132649f9560a3727`, SHA-256
+`ee9859d6b3027ed565f98f42744e438ab31b2cd2e9f797ddf870029ca2021686`.
+Build and runtime operations used `network=none`; no HWE image or provider was used during repair.
+Its actual build phases, source provenance, scan, archive receipt, and cleanup are recorded under:
+
+```text
+/data2/jiadongzhu/Agent/experiments/hwe-open-tools-offline-repair-20260906-v1
 ```
 
-The updated manifest identities are:
+The final image is
+`sha256:70e7346e9819b6d4fa978a48ca618a1414a076412caffb607a308189a3d6dd90`.
+Its 887,967,744-byte archive is:
 
-- file SHA-256: `e5b2c868b7c9bce62e68969b5f8d05fe5ed3829f84900cdbd31ac1c043044e0b`;
-- canonical manifest hash: `4b4006624942229ea408c60c16565febb8b81537278ed429fceafe6b2cd66c69`.
-
-## Run v188 after merge
-
-Use a short preflight: confirm merged source, local inputs, capacity, and fresh output paths. There
-is no need to re-audit all predecessor history before this offline build.
-
-```bash
-cd /data2/jiadongzhu/Agent/VeriGym
-git status --short --branch
-git rev-parse HEAD origin/main
-sha256sum \
-  configs/training/qwen35_hwe_deepseek_harness_v188_git_builder_repair_v1.json \
-  /data2/jiadongzhu/Agent/datasets/tools/open-builder/v188/git-package-closure.tar \
-  /data2/jiadongzhu/Agent/datasets/tools/open-builder/v188/git-package-closure.tar.sha256
-
-root_free=$(df --output=avail -B1 / | tail -1 | tr -d ' ')
-data2_free=$(df --output=avail -B1 /data2 | tail -1 | tr -d ' ')
-test "$root_free" -ge 4294967296
-test "$data2_free" -ge 53687091200
-
-test ! -e /data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v188-git-builder-repair-v1
-test ! -e /data2/jiadongzhu/Agent/.verigym-tmp/deepseek-harness-v188-git-builder-repair
-test ! -e /data2/jiadongzhu/docker/deepseek-harness-hwe-v188
+```text
+/data2/jiadongzhu/Agent/datasets/tools/open-builder/research-20260906/open-rtl-tools.tar
 ```
 
-Resolve the successful run for the newly merged threshold change and pass its numeric ID:
+Archive SHA-256: `e69da96975b1d9ddc81facbf29c04969f803fe9144e4d01cf6a550004127f51e`.
+Image lock hash: `3cac97f263cbe6d9ec2404db3c281326f503906f6c31bd77191f3ad993e4672b`.
+The research runner independently cross-checks these receipts and actual cleanup before loading
+HWE inputs. This is the narrow receipt/artifact review requested by the earlier handoff; no extra
+audit framework or historical test sweep is needed.
 
-```bash
-post_merge_run_id=$(
-  gh run list --branch main --commit "$(git rev-parse HEAD)" --status success \
-    --limit 1 --json databaseId --jq '.[0].databaseId'
-)
-test -n "$post_merge_run_id"
-VERIGYM_RUN_DEEPSEEK_HARNESS_V188_GIT_BUILDER_REPAIR=1 \
-  python scripts/launch_hwe_deepseek_harness_v188_git_builder_repair.py \
-  --post-merge-main-run-id "$post_merge_run_id"
+## Qualification and canary
+
+Research output:
+
+```text
+/data2/jiadongzhu/Agent/experiments/deepseek-harness-pr1816-open-research-s503-v1
 ```
 
-The current v188 identity still accepts only the seven frozen untracked paths below. Committing this
-handoff with the threshold change avoids the previous temporary move-and-restore workaround:
+`official-qualification/smoke-report.json` establishes official base-FAIL/reference-PASS. Its SHA-256
+is `671efde28c37991e0e128b530971a930b6f4b83d3557b096f408d3998e347f4b`.
+`open-comparison.json` establishes the same result on open tools, receipt hash
+`8973eaa14b0871d2bc1c991e1949ee25f21fa3b8264bb6828941389af8e6017b`.
+`qualification.json` binds both results to the task and images.
+
+The single-use marker is:
+
+```text
+/data2/jiadongzhu/Agent/experiments/pr1816-open-research-s503-consumed.json
+```
+
+The runner command is `python scripts/run_hwe_pr1816_open_research.py --run-canary` for a fresh
+identity. `--resume-canary` is restricted to an unchanged successful qualification, clean previous
+cleanup, no episode marker, and no research run. It preserves previous stop receipts. These are
+usage references, not instructions to rerun this identity after it is consumed.
+
+The task remains `hwe-bench/repo-repair-v1/lowRISC__ibex__pr-1816`, instance
+`lowRISC/ibex:pr-1816`. The frozen task manifest records source commit
+`7b1be3354d650bc5b23dff6f439459c353288e4f`; the prepared archive records runtime base commit
+`70186c57aeff46ff47b80e8f3d6e2c3d849f2e5b` and repository hash
+`75c1418baec53fccbf9055e52880e21d4813b0f4875f0687372e24e6a62de9fa`.
+The authoritative verifier is
+`sha256:7ad60e4cd099379b038d99def95f3a310d2f636116d8790f778b1f93ee2f20f7`.
+The agent sees only the repaired open tools. Task/verifier execution is networkless inside the
+isolated Docker endpoint. The trusted Harness controller uses the canonical host Docker socket
+and its existing provider network. Credentials remain confined to that controller path.
+
+All trajectories remain research-only. Formal collection, SFT admission, training, and production
+readiness are outside this continuation. VCS remains safety-prework only; do not run untrusted HWE
+RTL through host `LocalRuntime`.
+
+## Actual canary outcome and remaining work
+
+The consumed run used source commit `65d6e0e` and the native Harness v4 adapter. Its
+`research-canary.json` and `artifacts/deepseek_harness/collection_evidence.json` record:
+
+- 13 provider calls: 20,440 input tokens + 6,353 output tokens = 26,793 total;
+- 14 tool operations: 8 reads, 5 shell commands, and 1 other inspection; zero mutations;
+- the provider returned `max-tokens` under the pinned 2,048-token per-response cap;
+- one permitted format-recovery interval within the same episode, zero whole-episode retries;
+- no explicit `finish`, failure category `incomplete_harness_trajectory`, no valid teacher
+  transcript, and final candidate verification skipped because the candidate was quarantined;
+- passed artifact security scan, no formal collection/SFT/training, and complete physical cleanup.
+
+`result.json` says `research_canary_completed` because the invocation finished; it does **not**
+mean the model completed the repair. Both `resolved` and `transcript_valid` are false. The two
+qualification routes succeeded, but a complete training trajectory has not been recovered.
+
+The next work is the Harness completion/output-budget behavior, not another image build or
+qualification replay. Use offline fixtures to examine truncated typed-tool output and the
+2,048-token response cap. Any later real experiment needs a different, unconsumed task with its
+own frozen identity and budget; it must not reuse or relabel PR-1816 `503/19`.
+
+Three earlier stops preceded the consumption boundary and are preserved under
+`pre-canary-stops/1`, `/2`, and `/3`: socket canonicalization, complete ripgrep version matching,
+and the required nonempty initialization system prompt. Their fixes were tested before the one
+provider-started episode. Successful qualification was reused unchanged.
+
+## Existing local assets and unrelated work
+
+The complete public HWE image collection remains under
+`/data2/jiadongzhu/Agent/hwe-bench-public-images`: 177 tar archives, 177 SHA-256 sidecars, and no
+incomplete downloads in the prior inventory. The completed-download `crane-layer-cache` was
+removed earlier, reclaiming about 57.1 GiB. Reuse these archives; do not download them again.
+The pre-existing suspended downloader was neither stopped nor resumed.
+
+PR-1816 archive: `docker-tar-archives/lowrisc_m_ibex/pr-1816.tar`, SHA-256
+`91395d522a65b0ae35f9c4504d74aa5a460242ab6629bcdfb1155c6cbc6821ed`.
+The v188 git package closure remains available locally with SHA-256
+`315102c5bf97a839d7f4fcedfed79fd788ac20796e4f7008e84928c2b7541773`.
+
+Preserve these seven unrelated user-owned untracked paths; do not stage or edit them:
 
 ```text
 configs/training/qwen35_hwe_openhands_v56_direct_oci_provisioning_v1.json
@@ -125,67 +154,4 @@ tests/unit/test_hwe_oci_resumable.py
 tests/unit/test_hwe_public_ghcr.py
 ```
 
-Inspect only the outputs needed to decide whether the repair worked:
-
-```bash
-result_root=/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v188-git-builder-repair-v1
-python -m json.tool "$result_root/zero-provider-report.json"
-python -m json.tool "$result_root/cleanup.json"
-docker ps -a --filter label=verigym.owner=deepseek-harness-hwe-v188-git-builder-repair
-docker volume ls --filter label=verigym.owner=deepseek-harness-hwe-v188-git-builder-repair
-```
-
-Success means the repair succeeded, the final image archive and sidecar were exported, cleanup is
-complete, and HWE/provider counters remain zero. Do not invoke the same v188 identity a second time
-after it creates a terminal result; the existing implementation requires a fresh output identity.
-
-## Continue to the experiment
-
-The next meaningful experiment is PR-1816 dual-route qualification:
-
-The complete collection of official HWE-Bench prebuilt images publicly released on GHCR is already
-downloaded under `/data2/jiadongzhu/Agent/hwe-bench-public-images`. The current local inventory has
-177 Docker tar archives, 177 matching SHA-256 sidecars, and no `.partial`, `.part`, or `.tmp` files.
-Use this local collection for later tasks; do not pull the same HWE images from the registry again.
-The completed-download `crane-layer-cache` was removed after confirming that no campaign runtime
-references it. This reclaimed `61,268,738,048` bytes (about 57.1 GiB) and reduced the collection to
-about 310 GiB without changing any archive, sidecar, or digest lock. PR-1816 passed both its
-SHA-256 check and `crane validate` after the deletion. A future registry download will no longer
-benefit from the old shared-layer cache. The pre-existing downloader process from the other
-checkout remains suspended and was neither stopped nor resumed; it held no cache file open.
-PR-1816 is available at the following exact lock:
-
-- HWE archive:
-  `/data2/jiadongzhu/Agent/hwe-bench-public-images/docker-tar-archives/lowrisc_m_ibex/pr-1816.tar`;
-- archive SHA-256:
-  `91395d522a65b0ae35f9c4504d74aa5a460242ab6629bcdfb1155c6cbc6821ed`;
-- official verifier image:
-  `sha256:7ad60e4cd099379b038d99def95f3a310d2f636116d8790f778b1f93ee2f20f7`.
-
-Qualification must show base-FAIL/reference-PASS with both the repaired open-tool route and the
-official verifier. If it passes, run one DeepSeek v4 Flash research canary with seed/sample
-`503/19`: the agent sees only open tools and the final candidate is judged by the official HWE
-verifier. Keep that trajectory research-only; do not automatically mix it into official-route SFT
-data.
-
-Apply the stricter controls at this point: freeze task/source/image/toolchain identities, keep
-verification at `network=none`, protect credentials, and treat a provider-started task as consumed.
-Formal collection, SFT, training, and production readiness remain disabled.
-
-VCS remains safety-prework only. Do not run untrusted HWE RTL through host `LocalRuntime`; a real
-HWE+VCS experiment requires a separately controlled licensed verifier endpoint.
-
-## Compact evidence chain
-
-| Evidence | Finding | Continuation path |
-| --- | --- | --- |
-| PR 215 and main run `34004192438` | The v188 implementation previously passed CI but has not run. | Merge and validate the 4-GiB adjustment before execution. |
-| Local git package archive SHA-256 `315102c5bf97a839d7f4fcedfed79fd788ac20796e4f7008e84928c2b7541773` | The offline repair input is complete; no download is needed. | Run the repaired builder with `network=none`. |
-| Bulk v188 paths resolve under `/data2` | Root stores bounded controller state rather than image data. | Gate `/` at 4 GiB and retain the 50-GiB `/data2` gate. |
-| Local HWE inventory contains 177 tar archives, 177 checksum sidecars, and zero partial files; PR-1816 revalidated after cache removal | The complete public GHCR image collection remains usable without `crane-layer-cache`. | Reuse local archives; expect a fresh download to lack layer-cache acceleration. |
-
-Repository references:
-
-- [`docs/hwe_deepseek_harness_collection.md`](../docs/hwe_deepseek_harness_collection.md)
-- [`docs/audits/2026-09-06_deepseek-harness-v187-v186-result.md`](../docs/audits/2026-09-06_deepseek-harness-v187-v186-result.md)
-- [`SECURITY.md`](../SECURITY.md)
+The root `AGENTS.md` is deliberately ignored by the repository and remains a local working guide.

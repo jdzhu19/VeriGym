@@ -1113,6 +1113,8 @@ def _scan_and_lock_open_image(
     derived_builder_id: str,
     docker_host: str,
     active_sensitive_values: tuple[bytes, ...],
+    identity: str = IDENTITY,
+    lock_type: type[OpenToolchainV188ImageLock] = OpenToolchainV188ImageLock,
 ) -> tuple[dict[str, Any], OpenToolchainV188ImageLock]:
     image = v172._inspect_image(image_id, host=docker_host)  # noqa: SLF001
     derived = v172._inspect_image(derived_builder_id, host=docker_host)  # noqa: SLF001
@@ -1171,7 +1173,7 @@ def _scan_and_lock_open_image(
     probe = v172._run_secure_container(  # noqa: SLF001
         docker_host=docker_host,
         image_id=image_id,
-        role="v188-security-scan",
+        role=f"{identity}-security-scan",
         command=["/bin/bash", "-c", script],
         mounts=[],
         timeout=successor.probe_timeout_seconds,
@@ -1216,7 +1218,7 @@ def _scan_and_lock_open_image(
     scan_base = {
         "schema_version": "1.0",
         "format_id": "verigym_open_hwe_toolchain_security_scan_v2",
-        "identity": IDENTITY,
+        "identity": identity,
         "scanner_profile_id": successor.scanner_profile_id,
         "image_id": image_id,
         "check_count": len(checks),
@@ -1243,7 +1245,7 @@ def _scan_and_lock_open_image(
     lock_base = {
         "schema_version": "1.0",
         "format_id": "verigym_open_hwe_toolchain_image_lock_v2",
-        "identity": IDENTITY,
+        "identity": identity,
         "scanner_profile_id": successor.scanner_profile_id,
         "agent_toolchain_id": successor.agent_toolchain_id,
         "image_id": image_id,
@@ -1266,9 +1268,7 @@ def _scan_and_lock_open_image(
         "official_verifier_included": False,
         "security_scan_passed": True,
     }
-    lock = OpenToolchainV188ImageLock.model_validate(
-        {**lock_base, "lock_hash": content_hash(lock_base)}
-    )
+    lock = lock_type.model_validate({**lock_base, "lock_hash": content_hash(lock_base)})
     return scan, lock
 
 
