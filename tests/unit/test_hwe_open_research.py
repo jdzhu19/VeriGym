@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -68,6 +69,18 @@ def test_runtime_keeps_open_commands_separate_from_workspace_and_network() -> No
     assert command.network_mode == config.network_mode == "none"
     assert command.execution_backend == "episode_container_exec_v1"
     assert command.required_image_labels["org.verigym.official-verifier-included"] == "false"
+
+
+def test_runtime_probe_tempfiles_are_visible_to_nested_docker(tmp_path: Path) -> None:
+    previous = tempfile.tempdir
+    previous_env = os.environ.get("TMPDIR")
+    scratch = tmp_path / "shared-scratch"
+    with research._runtime_temporary_directory(scratch):
+        with tempfile.TemporaryDirectory() as probe:
+            assert Path(probe).is_relative_to(scratch)
+        assert os.environ["TMPDIR"] == str(scratch)
+    assert tempfile.tempdir == previous
+    assert os.environ.get("TMPDIR") == previous_env
 
 
 def test_open_test_bind_mount_uses_supported_docker_syntax_and_is_removed(

@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +144,23 @@ def _without_provider_environment():
 
 
 @contextlib.contextmanager
+def _runtime_temporary_directory(path: Path):
+    path.mkdir(mode=0o700)
+    previous = tempfile.tempdir
+    previous_env = os.environ.get("TMPDIR")
+    tempfile.tempdir = str(path)
+    os.environ["TMPDIR"] = str(path)
+    try:
+        yield
+    finally:
+        tempfile.tempdir = previous
+        if previous_env is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = previous_env
+
+
+@contextlib.contextmanager
 def isolated_runtime(manifest: Any):
     """Own fresh /data2 storage and remove only resources created by this invocation."""
     for path in (BACKING, SCRATCH):
@@ -181,7 +199,8 @@ def isolated_runtime(manifest: Any):
             startup_timeout_s=120,
             on_container_started=mark_started,
         )
-        yield name, f"unix://{BACKING / 'socket/docker.sock'}"
+        with _runtime_temporary_directory(SCRATCH / "temporary"):
+            yield name, f"unix://{BACKING / 'socket/docker.sock'}"
     finally:
         if started:
             _docker("container", "rm", "--force", name)
