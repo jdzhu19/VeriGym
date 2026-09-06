@@ -1,0 +1,138 @@
+name: Publish Verilator RTL image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - agent/verilator-public-feedback-v1
+    paths:
+      - .github/workflows/publish-verilator-rtl-image.yml
+      - docker/verilator5052-iverilog12/**
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-verilator-rtl-image-r1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the exact publication source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR with the repository token
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve immutable publication reference
+        id: identity
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          owner=${OWNER,,}
+          reference="ghcr.io/${owner}/verigym-rtl-verilator:5.052-iverilog12-r1"
+          if docker buildx imagetools inspect "$reference" >/dev/null 2>&1; then
+            echo "refusing to replace existing release tag: $reference" >&2
+            exit 1
+          fi
+          echo "reference=$reference" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish with SBOM and provenance
+        id: build
+        env:
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --file docker/verilator5052-iverilog12/Dockerfile \
+            --platform linux/amd64 \
+            --pull \
+            --provenance=mode=max \
+            --sbom=true \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "$REFERENCE" \
+            --metadata-file build-metadata.json \
+            --push \
+            docker/verilator5052-iverilog12
+          digest=$(jq -r '."containerimage.digest" // empty' build-metadata.json)
+          if [[ ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "published image has no immutable registry digest" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify pulled artifact and attestations
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+        run: |
+          set -euo pipefail
+          immutable="${REFERENCE%@*}@${DIGEST}"
+          docker pull "$immutable"
+          inspect=$(docker image inspect "$immutable")
+          [[ $(jq -r '.[0].Config.User' <<<"$inspect") == 10001:10001 ]]
+          [[ $(jq -r '.[0].Config.Labels["org.verigym.verilator.version"]' <<<"$inspect") \
+              == 5.052 ]]
+          docker history --no-trunc --format '{{.CreatedBy}}' "$immutable" > image-history.txt
+          if grep -Eiq '(snpslmd|lm_license_file|license[_ -]?server|password=|token=|secret=)' \
+              image-history.txt; then
+            echo "image history contains a forbidden commercial or credential marker" >&2
+            exit 1
+          fi
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --user 10001:10001 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            "$immutable" sh -eu -c \
+              'test "$(id -u):$(id -g)" = 10001:10001 &&
+               iverilog -V >/dev/null 2>&1 &&
+               vvp -V >/dev/null 2>&1 &&
+               verilator --version | grep -F "Verilator 5.052" >/dev/null &&
+               test -s /usr/share/licenses/verilator/LICENSE &&
+               test -s /usr/share/verigym/sources/verilator-source.tar.gz'
+          index=$(docker buildx imagetools inspect --raw "$immutable")
+          predicates=$(
+            while read -r attestation; do
+              docker buildx imagetools inspect --raw "${REFERENCE%@*}@${attestation}" \
+                | jq -r '.layers[]?.annotations["in-toto.io/predicate-type"] // empty'
+            done < <(
+              jq -r '.manifests[]? | select(
+                .annotations["vnd.docker.reference.type"] == "attestation-manifest"
+              ) | .digest' <<<"$index"
+            )
+          )
+          grep -Eiq 'spdx' <<<"$predicates"
+          grep -Eiq 'slsa|provenance' <<<"$predicates"
+
+      - name: Record immutable publication identity
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+        run: |
+          {
+            echo '### verigym-rtl-verilator'
+            echo
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Reference: \`${REFERENCE}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo '- Platform: `linux/amd64`'
+            echo '- SBOM/provenance: verified'
+            echo '- Network-none runtime smoke: passed'
+          } >> "$GITHUB_STEP_SUMMARY"

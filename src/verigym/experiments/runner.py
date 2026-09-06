@@ -14,6 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from verigym.core.agent_feedback import (
+    resolve_agent_feedback_contract,
+    task_with_agent_feedback_contract,
+)
 from verigym.core.errors import (
     ArtifactIntegrityError,
     ConfigurationError,
@@ -28,8 +32,17 @@ from verigym.core.integrity import (
     write_experiment_artifact_manifest,
 )
 from verigym.core.orchestrator import VeriGym
+from verigym.core.public_test_profiles import (
+    resolve_public_test_profile,
+    validate_required_public_test_profile,
+)
 from verigym.core.replay import replay_run
 from verigym.core.sampling import classify_sample_outcome
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+    validate_required_verifier_profile,
+)
 from verigym.experiments.identity import plan_items_hash_payload
 from verigym.experiments.planner import ExperimentPlanner
 from verigym.experiments.schemas import (
@@ -815,6 +828,46 @@ class BatchRunner:
 
         service = self.planner.service
         _, task, _ = service.load_task(item.task_id, item.suite_source)
+        validate_required_verifier_profile(task, config.verifier_profile)
+        if config.verifier_profile is not None:
+            resolved_verifier = resolve_verifier_profile(
+                task=task,
+                profile=config.verifier_profile,
+                tools=service.registries.tools,
+                expected=config.expected_resolved_verifier_profile,
+            )
+            if resolved_verifier != item.resolved_verifier_profile:
+                raise ConfigurationError("verifier profile differs from frozen plan")
+            task = task_with_verifier_profile(task, config.verifier_profile)
+        validate_required_public_test_profile(task, config.public_test_profile)
+        if config.public_test_profile is not None:
+            resolved_public_test = resolve_public_test_profile(
+                task=task,
+                profile=config.public_test_profile,
+                tools=service.registries.tools,
+                expected=config.expected_resolved_public_test_profile,
+            )
+            if resolved_public_test != item.resolved_public_test_profile:
+                raise ConfigurationError("public-test profile differs from frozen plan")
+        profile = (
+            service.registries.profiles.get(config.toolchain_profile)
+            if config.toolchain_profile is not None
+            else None
+        )
+        feedback_contract = resolve_agent_feedback_contract(
+            task=task,
+            ppa_enabled=config.agent_ppa_feedback,
+            ppa_max_executions=config.agent_ppa_max_calls,
+            resolved_profile=item.resolved_profile,
+            profile_backend=(
+                profile.flow.backend_plugin
+                if profile is not None and profile.flow is not None
+                else None
+            ),
+        )
+        if feedback_contract != item.agent_feedback_contract:
+            raise ConfigurationError("agent feedback contract differs from frozen plan")
+        execution_task = task_with_agent_feedback_contract(task, feedback_contract)
         agent = service.registries.agents.get(item.system.agent_id)
         actual_agent_hash = agent_configuration_hash(agent.descriptor, config.agent_options)
         if actual_agent_hash != item.system.agent_configuration_hash:
@@ -824,7 +877,7 @@ class BatchRunner:
                 interaction_mode=config.mode,
                 agent=agent,
                 agent_options=config.agent_options,
-                task=task,
+                task=execution_task,
             )
             resolved_prompt_hash = (
                 resolved_prompt.configuration_fingerprint if resolved_prompt is not None else None
@@ -839,7 +892,7 @@ class BatchRunner:
                 agent_descriptor=agent.descriptor,
                 protocol_spec=agent.action_protocol_spec,
                 agent_options=config.agent_options,
-                task=task,
+                task=execution_task,
             )
             validate_repository_action_protocol_binding(
                 expected=item.action_protocol,
@@ -853,6 +906,7 @@ class BatchRunner:
                 "resolved_prompt_policy_hash": resolved_prompt_hash,
                 "resolved_agent_configuration_hash": actual_agent_hash,
                 "resolved_action_protocol": resolved_action_protocol,
+                "resolved_agent_feedback_contract": feedback_contract,
             }
         )
 
@@ -1499,6 +1553,20 @@ def _child_config(
         runtime=item.runtime_id,
         docker_config=item.docker_config,
         toolchain_profile=item.requested_profile_id,
+        verifier_profile_id=(
+            item.verifier_profile.id if item.verifier_profile is not None else None
+        ),
+        verifier_profile=item.verifier_profile,
+        public_test_profile_id=(
+            item.public_test_profile.id if item.public_test_profile is not None else None
+        ),
+        public_test_profile=item.public_test_profile,
+        agent_ppa_feedback=item.agent_feedback_contract.ppa_enabled
+        if item.agent_feedback_contract is not None
+        else False,
+        agent_ppa_max_calls=item.agent_feedback_contract.ppa_max_executions
+        if item.agent_feedback_contract is not None
+        else 3,
         seed=item.child_seed,
         output=root / "runs",
         run_id=run_id,
@@ -1511,10 +1579,13 @@ def _child_config(
         expected_suite_source_snapshot=item.suite_source_snapshot,
         expected_runtime=item.runtime_descriptor,
         expected_resolved_profile=item.resolved_profile,
+        expected_resolved_verifier_profile=item.resolved_verifier_profile,
+        expected_resolved_public_test_profile=item.resolved_public_test_profile,
         expected_prompt_policy=item.prompt_policy,
         expected_prompt_policy_hash=item.prompt_policy_hash,
         expected_agent_configuration_hash=item.system.agent_configuration_hash,
         expected_action_protocol=item.action_protocol,
+        expected_agent_feedback_contract=item.agent_feedback_contract,
     )
 
 

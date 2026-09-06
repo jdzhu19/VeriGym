@@ -47,6 +47,7 @@ _VERSION = re.compile(
 class VcsSimulationRequest(StrictModel):
     sources: list[str] = Field(min_length=1, max_length=64)
     testbench: str
+    auxiliary_files: list[str] = Field(default_factory=list, max_length=64)
     top: str | None = None
     pass_marker: str = "VERIGYM_PASS"
     fail_marker: str = "VERIGYM_FAIL"
@@ -71,6 +72,17 @@ class VcsSimulationRequest(StrictModel):
             raise ValueError("the VCS testbench must use a .v or .sv filename")
         return normalized
 
+    @field_validator("auxiliary_files")
+    @classmethod
+    def validate_auxiliary_files(cls, value: list[str]) -> list[str]:
+        normalized = [safe_relative_path(item) for item in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("VCS auxiliary files must not contain duplicates")
+        reserved = {".verigym_internal", "csrc", "input", "out"}
+        if any(Path(item).parts[0] in reserved for item in normalized):
+            raise ValueError("VCS auxiliary files collide with private build paths")
+        return normalized
+
     @field_validator("top")
     @classmethod
     def validate_top(cls, value: str | None) -> str | None:
@@ -92,8 +104,9 @@ class VcsSimulationRequest(StrictModel):
 
     @model_validator(mode="after")
     def testbench_is_distinct(self) -> VcsSimulationRequest:
-        if self.testbench in self.sources:
-            raise ValueError("testbench must be separate from candidate sources")
+        paths = [*self.sources, self.testbench, *self.auxiliary_files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("testbench, candidate sources, and auxiliary files must be distinct")
         if self.pass_marker == self.fail_marker:
             raise ValueError("pass and fail markers must differ")
         return self
@@ -126,45 +139,51 @@ def _version_from_output(value: str) -> str | None:
     return max(matches, key=len) if matches else None
 
 
+def probe_vcs(executable_value: str) -> HealthCheckResult:
+    """Probe one explicit VCS installation without compiling candidate RTL."""
+
+    executable = resolve_executable(executable_value, home_variable="VCS_HOME")
+    if shutil.which(executable) is None and not Path(executable).is_file():
+        return HealthCheckResult(
+            healthy=False,
+            message="Synopsys VCS was not found on PATH or under VCS_HOME",
+        )
+    try:
+        completed = subprocess.run(
+            [executable, "-full64", "-ID"],
+            capture_output=True,
+            check=False,
+            env={
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                **vcs_environment(executable),
+            },
+            shell=False,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return HealthCheckResult(
+            healthy=False,
+            message="Synopsys VCS identity probe failed",
+            executable=executable,
+        )
+    output = redact(completed.stdout + "\n" + completed.stderr)
+    version = _version_from_output(output)
+    return HealthCheckResult(
+        healthy=completed.returncode == 0 and version is not None,
+        message=("available" if completed.returncode == 0 else "VCS identity probe failed"),
+        version=version,
+        executable=executable,
+    )
+
+
 class VcsSimulationTool(ToolPlugin):
     descriptor = _descriptor()
 
     def health_check(self, context: ToolContext | None = None) -> HealthCheckResult:
         del context
         requested = os.environ.get("VERIGYM_VCS_EXECUTABLE", "vcs")
-        executable = resolve_executable(requested, home_variable="VCS_HOME")
-        if shutil.which(executable) is None and not Path(executable).is_file():
-            return HealthCheckResult(
-                healthy=False,
-                message="Synopsys VCS was not found on PATH or under VCS_HOME",
-            )
-        try:
-            completed = subprocess.run(
-                [executable, "-full64", "-ID"],
-                capture_output=True,
-                check=False,
-                env={
-                    "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-                    **vcs_environment(executable),
-                },
-                shell=False,
-                text=True,
-                timeout=15,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return HealthCheckResult(
-                healthy=False,
-                message="Synopsys VCS identity probe failed",
-                executable=executable,
-            )
-        output = redact(completed.stdout + "\n" + completed.stderr)
-        version = _version_from_output(output)
-        return HealthCheckResult(
-            healthy=completed.returncode == 0 and version is not None,
-            message=("available" if completed.returncode == 0 else "VCS identity probe failed"),
-            version=version,
-            executable=executable,
-        )
+        return probe_vcs(requested)
 
     def validate_request(self, request: dict[str, Any]) -> VcsSimulationRequest:
         return VcsSimulationRequest.model_validate(request)
@@ -186,6 +205,12 @@ class VcsSimulationTool(ToolPlugin):
             target = f"{stage}/input/{index:03d}{suffix}"
             context.session.write_file(target, payload)
             staged.append(f"input/{index:03d}{suffix}")
+        for relative in request.auxiliary_files:
+            payload = _bounded_file(context.session.root, relative)
+            total += len(payload)
+            if total > _MAX_TOTAL_SOURCE_BYTES:
+                raise ValueError("VCS inputs exceed the aggregate byte limit")
+            context.session.write_file(f"{stage}/{relative}", payload)
         context.session.write_file(f"{stage}/out/.verigym_keep", b"")
         requested = (
             os.environ.get("VERIGYM_VCS_EXECUTABLE", request.executable)
@@ -308,4 +333,4 @@ class VcsSimulationTool(ToolPlugin):
             )
 
 
-__all__ = ["VcsSimulationRequest", "VcsSimulationTool"]
+__all__ = ["VcsSimulationRequest", "VcsSimulationTool", "probe_vcs"]

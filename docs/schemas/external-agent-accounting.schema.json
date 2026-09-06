@@ -171,6 +171,18 @@
       ],
       "default": null,
       "title": "Total Tokens"
+    },
+    "usage_complete": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Usage Complete"
     }
   },
   "required": [

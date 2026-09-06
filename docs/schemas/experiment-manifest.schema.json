@@ -333,6 +333,18 @@
     "ExperimentRunsConfig": {
       "additionalProperties": false,
       "properties": {
+        "agent_ppa_feedback": {
+          "default": false,
+          "title": "Agent Ppa Feedback",
+          "type": "boolean"
+        },
+        "agent_ppa_max_calls": {
+          "default": 3,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Agent Ppa Max Calls",
+          "type": "integer"
+        },
         "mode": {
           "$ref": "#/$defs/InteractionMode",
           "default": "agent"
@@ -1081,6 +1093,18 @@
         "resolved_image_id": {
           "title": "Resolved Image Id",
           "type": "string"
+        },
+        "verilator_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verilator Version"
         },
         "vvp_version": {
           "anyOf": [

@@ -14,6 +14,11 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentDescriptor
+from verigym.schemas.agent_feedback import (
+    AgentFeedbackContract,
+    AgentFeedbackEvaluation,
+    AgentFeedbackEvaluationV2,
+)
 from verigym.schemas.base import SCHEMA_VERSION, StrictModel
 from verigym.schemas.common import (
     InteractionMode,
@@ -35,6 +40,7 @@ from verigym.schemas.runtime import DockerRuntimeConfig
 from verigym.schemas.score import ScoreCard
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import BudgetSpec
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 
 
 class RunConfig(StrictModel):
@@ -51,6 +57,14 @@ class RunConfig(StrictModel):
     runtime: str = "local"
     docker_config: DockerRuntimeConfig | None = None
     toolchain_profile: str | None = None
+    verifier_profile_id: str | None = None
+    verifier_profile: VerifierToolProfile | None = None
+    expected_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    public_test_profile_id: str | None = None
+    public_test_profile: VerifierToolProfile | None = None
+    expected_resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
+    agent_ppa_feedback: bool = False
+    agent_ppa_max_calls: int = Field(default=3, ge=1, le=8)
     seed: int = 0
     output: Path = Path("runs")
     run_id: str | None = None
@@ -71,6 +85,8 @@ class RunConfig(StrictModel):
     resolved_agent_configuration_hash: str | None = None
     expected_action_protocol: RepositoryActionProtocolDescriptor | None = None
     resolved_action_protocol: RepositoryActionProtocolDescriptor | None = None
+    expected_agent_feedback_contract: AgentFeedbackContract | None = None
+    resolved_agent_feedback_contract: AgentFeedbackContract | None = None
 
     def identity_payload(self) -> dict[str, Any]:
         """Preserve pre-extension hashes while binding every nonempty option."""
@@ -78,6 +94,32 @@ class RunConfig(StrictModel):
         payload = self.model_dump(mode="json")
         if not payload.get("agent_options"):
             payload.pop("agent_options", None)
+        if payload.get("agent_ppa_feedback") is False:
+            payload.pop("agent_ppa_feedback", None)
+        if payload.get("agent_ppa_max_calls") == 3:
+            payload.pop("agent_ppa_max_calls", None)
+        if all(
+            payload.get(field) is None
+            for field in (
+                "verifier_profile_id",
+                "verifier_profile",
+                "expected_resolved_verifier_profile",
+            )
+        ):
+            payload.pop("verifier_profile_id", None)
+            payload.pop("verifier_profile", None)
+            payload.pop("expected_resolved_verifier_profile", None)
+        if all(
+            payload.get(field) is None
+            for field in (
+                "public_test_profile_id",
+                "public_test_profile",
+                "expected_resolved_public_test_profile",
+            )
+        ):
+            payload.pop("public_test_profile_id", None)
+            payload.pop("public_test_profile", None)
+            payload.pop("expected_resolved_public_test_profile", None)
         prompt_binding_fields = (
             "expected_prompt_policy",
             "expected_prompt_policy_hash",
@@ -87,6 +129,8 @@ class RunConfig(StrictModel):
             "resolved_agent_configuration_hash",
             "expected_action_protocol",
             "resolved_action_protocol",
+            "expected_agent_feedback_contract",
+            "resolved_agent_feedback_contract",
         )
         if all(payload.get(field) is None for field in prompt_binding_fields):
             for field in prompt_binding_fields:
@@ -135,6 +179,27 @@ class RunConfig(StrictModel):
             raise ValueError("expected runtime identity does not match runtime selection")
         if self.expected_resolved_profile is not None and self.toolchain_profile is None:
             raise ValueError("an expected resolved profile requires toolchain_profile")
+        if (self.verifier_profile_id is None) != (self.verifier_profile is None):
+            raise ValueError("verifier profile ID and document must be supplied together")
+        if (
+            self.verifier_profile is not None
+            and self.verifier_profile.id != self.verifier_profile_id
+        ):
+            raise ValueError("verifier profile ID differs from the loaded document")
+        if self.expected_resolved_verifier_profile is not None and self.verifier_profile is None:
+            raise ValueError("an expected resolved verifier profile requires a profile")
+        if (self.public_test_profile_id is None) != (self.public_test_profile is None):
+            raise ValueError("public-test profile ID and document must be supplied together")
+        if (
+            self.public_test_profile is not None
+            and self.public_test_profile.id != self.public_test_profile_id
+        ):
+            raise ValueError("public-test profile ID differs from the loaded document")
+        if (
+            self.expected_resolved_public_test_profile is not None
+            and self.public_test_profile is None
+        ):
+            raise ValueError("an expected resolved public-test profile requires a profile")
         experiment_fields = (
             self.experiment_id,
             self.plan_item_id,
@@ -164,6 +229,11 @@ class RunConfig(StrictModel):
             raise ValueError("a resolved agent configuration requires a frozen expected hash")
         if self.resolved_action_protocol is not None and self.expected_action_protocol is None:
             raise ValueError("resolved repository action protocol requires a frozen expectation")
+        if (
+            self.resolved_agent_feedback_contract is not None
+            and self.expected_agent_feedback_contract is None
+        ):
+            raise ValueError("resolved agent feedback requires a frozen expected contract")
         return self
 
 
@@ -208,6 +278,16 @@ class RunManifest(StrictModel):
     declared_profile_hash: str | None = None
     resolved_profile_hash: str | None = None
     resolved_toolchain_profile: ResolvedToolchainProfile | None = None
+    requested_verifier_profile_id: str | None = None
+    requested_verifier_profile_version: str | None = None
+    verifier_declared_profile_hash: str | None = None
+    resolved_verifier_profile_hash: str | None = None
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    requested_public_test_profile_id: str | None = None
+    requested_public_test_profile_version: str | None = None
+    public_test_declared_profile_hash: str | None = None
+    resolved_public_test_profile_hash: str | None = None
+    resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
     synthesis_flow_script_hash: str | None = None
     reference_summary_hash: str | None = None
     reference_strategy: str | None = None
@@ -216,6 +296,12 @@ class RunManifest(StrictModel):
     prompt_policy_hash: str | None = None
     action_protocol: RepositoryActionProtocolDescriptor | None = None
     action_protocol_records: list[RepositoryActionTurnRecord] = Field(default_factory=list)
+    agent_feedback_contract: AgentFeedbackContract | None = None
+    agent_feedback_contract_hash: str | None = None
+    agent_feedback_evaluations: list[AgentFeedbackEvaluation | AgentFeedbackEvaluationV2] = Field(
+        default_factory=list
+    )
+    agent_feedback_evaluations_hash: str | None = None
     experiment_id: str | None = None
     plan_item_id: str | None = None
     system_id: str | None = None

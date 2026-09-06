@@ -55,6 +55,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
     from verigym.tools.file_tools import builtin_file_tools
     from verigym.tools.iverilog import builtin_iverilog_tools
     from verigym.tools.repository import builtin_repository_tools
+    from verigym.tools.verilator import builtin_verilator_tools
     from verigym.tools.yosys import builtin_yosys_tools
 
     registries = Registries(
@@ -79,6 +80,7 @@ def build_registries(*, discover_external: bool = True) -> Registries:
         *builtin_file_tools(),
         *builtin_iverilog_tools(),
         *builtin_repository_tools(),
+        *builtin_verilator_tools(),
         *builtin_verilog_eval_tools(),
         *builtin_yosys_tools(),
     ]:

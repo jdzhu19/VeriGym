@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 from verigym.core.errors import ConfigurationError
 from verigym.core.hashing import content_hash
 from verigym.core.loaders import dump_json
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.workspace import normalize_relative_path
 from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime, RuntimeSession
@@ -64,26 +66,39 @@ def _stage_candidate(
     staging: Path,
     source_root: Path,
     source_paths: list[str],
+    *,
+    task: VeriTask,
 ) -> None:
+    projection = resolve_synthesis_source_projection(task)
+    if source_paths != projection.profile_sources:
+        raise ConfigurationError("resolved synthesis sources differ from the task projection")
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(_safe_source(source_root, normalized))
+        workspace_source = projection.workspace_source(normalized)
+        destination.write_bytes(_safe_source(source_root, workspace_source))
 
 
 def _stage_reference(
     staging: Path,
     reference: Candidate,
     source_paths: list[str],
+    *,
+    task: VeriTask,
 ) -> None:
+    projection = resolve_synthesis_source_projection(task)
+    if source_paths != projection.profile_sources:
+        raise ConfigurationError("resolved synthesis sources differ from the task projection")
     for relative in source_paths:
         normalized = normalize_relative_path(relative)
+        workspace_source = projection.workspace_source(normalized)
         try:
-            content = reference.files[normalized]
+            content = reference.files[workspace_source]
         except KeyError as exc:
             raise ConfigurationError(
-                f"suite reference does not provide required synthesis source {normalized!r}"
+                "suite reference does not provide required projected synthesis source "
+                f"{workspace_source!r}"
             ) from exc
         destination = staging / normalized
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +152,10 @@ def _result_from_tool(
         status = VerifierStatus.FAILED
     else:
         status = VerifierStatus.ERROR
+    metadata: dict[str, Any] = {"synthesis": metrics.model_dump(mode="json")}
+    execution = tool_result.metadata.get("agent_feedback_execution")
+    if isinstance(execution, dict):
+        metadata["agent_feedback_execution"] = execution
     return (
         VerifierResult(
             node_id=node_id,
@@ -146,7 +165,7 @@ def _result_from_tool(
             message=tool_result.message,
             exit_code=tool_result.exit_code,
             diagnostics=tool_result.diagnostics,
-            metadata={"synthesis": metrics.model_dump(mode="json")},
+            metadata=metadata,
         ),
         metrics,
     )
@@ -162,15 +181,21 @@ def _execute_one(
     environment: dict[str, str],
     role: str,
     max_output_bytes: int,
+    dispatch_callback: Callable[[], None] | None = None,
 ) -> tuple[VerifierResult, SynthesisMetrics]:
     session: RuntimeSession | None = None
     try:
+        session_environment = (
+            {}
+            if request.get("transport_execution_boundary") == "host_verifier_control_plane"
+            else environment
+        )
         session = runtime.create_session(
             SessionSpec(
                 source_dir=str(source_staging),
                 label="verifier",
                 max_output_bytes=max_output_bytes,
-                environment=environment,
+                environment=session_environment,
             )
         )
         tool_result = plugin.execute(
@@ -179,6 +204,7 @@ def _execute_one(
                 session=session,
                 max_output_bytes=max_output_bytes,
                 artifact_dir=artifact_dir,
+                dispatch_callback=dispatch_callback,
             ),
         )
         return _result_from_tool(f"{role}_synthesis", tool_result, reference=role == "reference")
@@ -277,7 +303,7 @@ def execute_synthesis_quality(
     reference_summary_path = backend_root / "reference_summary.json"
     with tempfile.TemporaryDirectory(prefix="verigym-synthesis-candidate-") as temporary:
         candidate_staging = Path(temporary)
-        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths)
+        _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths, task=task)
         plugin.stage_profile_assets(profile, resolved, candidate_staging)
         candidate_result, candidate_metrics = _execute_one(
             runtime=runtime,
@@ -317,7 +343,12 @@ def execute_synthesis_quality(
         tempfile.TemporaryDirectory(prefix="verigym-reference-artifacts-") as artifacts,
     ):
         reference_staging = Path(temporary)
-        _stage_reference(reference_staging, reference_candidate, resolved.source_paths)
+        _stage_reference(
+            reference_staging,
+            reference_candidate,
+            resolved.source_paths,
+            task=task,
+        )
         plugin.stage_profile_assets(profile, resolved, reference_staging)
         reference_result, reference_metrics = _execute_one(
             runtime=runtime,
@@ -378,4 +409,69 @@ def execute_synthesis_quality(
     )
 
 
-__all__ = ["SynthesisEvaluation", "execute_synthesis_quality"]
+def execute_candidate_synthesis_feedback(
+    *,
+    task: VeriTask,
+    candidate_dir: Path,
+    runtime: Runtime,
+    profile: ToolchainProfile,
+    resolved: ResolvedToolchainProfile,
+    plugin: SynthesisBackendPlugin,
+) -> tuple[VerifierResult, SynthesisMetrics, bool]:
+    """Run candidate-only synthesis without persisting raw reports or reference data."""
+
+    dispatched = False
+
+    def mark_dispatched() -> None:
+        nonlocal dispatched
+        dispatched = True
+
+    try:
+        environment = _profile_environment(profile)
+        with (
+            tempfile.TemporaryDirectory(prefix="verigym-agent-ppa-source-") as temporary,
+            tempfile.TemporaryDirectory(prefix="verigym-agent-ppa-artifacts-") as artifacts,
+        ):
+            candidate_staging = Path(temporary)
+            _stage_candidate(candidate_staging, candidate_dir, resolved.source_paths, task=task)
+            plugin.stage_profile_assets(profile, resolved, candidate_staging)
+            result, metrics = _execute_one(
+                runtime=runtime,
+                plugin=plugin,
+                source_staging=candidate_staging,
+                artifact_dir=Path(artifacts),
+                request=plugin.build_agent_feedback_request(profile, resolved),
+                environment=environment,
+                role="candidate",
+                max_output_bytes=task.budget.max_output_bytes_per_tool,
+                dispatch_callback=mark_dispatched,
+            )
+            return result, metrics, dispatched
+    except Exception as exc:
+        metrics = SynthesisMetrics(
+            status="error",
+            synthesis_ok=False,
+            role="candidate",
+            top=resolved.top_module,
+            failure_category=ErrorCategory.SANDBOX_ERROR.value,
+            failure_message=str(exc),
+        )
+        return (
+            VerifierResult(
+                node_id="candidate_synthesis",
+                plugin=plugin.descriptor.name,
+                status=VerifierStatus.ERROR,
+                error_category=ErrorCategory.SANDBOX_ERROR,
+                message=str(exc),
+                metadata={"synthesis": metrics.model_dump(mode="json")},
+            ),
+            metrics,
+            dispatched,
+        )
+
+
+__all__ = [
+    "SynthesisEvaluation",
+    "execute_candidate_synthesis_feedback",
+    "execute_synthesis_quality",
+]

@@ -117,6 +117,7 @@ class RuntimeImageIdentity(StrictModel):
     observed_gid: int | None = Field(default=None, ge=0)
     iverilog_version: str | None = None
     vvp_version: str | None = None
+    verilator_version: str | None = None
     compatibility_status: str | None = None
 
 

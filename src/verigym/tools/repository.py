@@ -71,7 +71,7 @@ class RepositoryPublicTestTool(ToolPlugin):
             category = ErrorCategory.OUT_OF_MEMORY
         elif completed.output_truncated:
             category = ErrorCategory.OUTPUT_LIMIT
-        elif completed.error is not None:
+        elif completed.error is not None or completed.failure_origin == "control_plane":
             category = ErrorCategory.SANDBOX_ERROR
         else:
             category = ErrorCategory.SUCCESS
@@ -86,7 +86,8 @@ class RepositoryPublicTestTool(ToolPlugin):
             completed.exit_code not in {0, 1}
             or payload is None
             or payload.get("schema_version") != "1.0"
-            or payload.get("protocol") != "verigym_public_test_v1"
+            or payload.get("protocol")
+            not in {"verigym_public_test_v1", "verigym_agent_feedback_v1"}
             or payload.get("test_id") != request.test_id
             or not isinstance(payload.get("passed"), bool)
         ):
@@ -113,7 +114,7 @@ class RepositoryPublicTestTool(ToolPlugin):
             output_truncated=completed.output_truncated,
             metadata={
                 "test_id": request.test_id,
-                "launcher_protocol": "verigym_public_test_v1",
+                "launcher_protocol": payload.get("protocol") if payload is not None else None,
                 "public_assets_read_only": bool(completed.metadata.get("public_assets_read_only")),
                 "network_policy": completed.metadata.get("network_policy"),
                 "result_category": payload.get("category") if payload is not None else None,
@@ -130,7 +131,11 @@ class RepositoryPublicTestTool(ToolPlugin):
                 message="repository public test requires a runtime session",
             )
             return _publish_result(result, context, {"test_id": request.test_id})
-        completed = context.session.execute_public_test(request.test_id)
+        completed = (
+            context.public_test_executor(request.test_id, context.session)
+            if context.public_test_executor is not None
+            else context.session.execute_public_test(request.test_id)
+        )
         return _publish_result(
             self.parse_result(request, completed, context),
             context,

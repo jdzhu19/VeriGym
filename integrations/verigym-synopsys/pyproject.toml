@@ -17,6 +17,9 @@ dev = ["mypy>=1.10", "pytest>=8", "ruff>=0.6"]
 
 [project.entry-points."verigym.tools"]
 synopsys-vcs-simulate = "verigym_synopsys:VcsSimulationTool"
+synopsys-vcs-mcp = "verigym_synopsys:McpVcsSimulationTool"
+synopsys-vcs-public-compile = "verigym_synopsys:VcsPublicCompileTool"
+synopsys-vcs-public-compile-mcp = "verigym_synopsys:McpVcsPublicCompileTool"
 synopsys-dc-synthesis = "verigym_synopsys:DesignCompilerSynthesisTool"
 synopsys-dc-mcp = "verigym_synopsys:McpDesignCompilerSynthesisTool"
 synopsys-formality-equivalence = "verigym_synopsys:FormalityEquivalenceTool"
@@ -25,6 +28,18 @@ synopsys-formality-equivalence = "verigym_synopsys:FormalityEquivalenceTool"
 verigym-synopsys-prepare-profile = "verigym_synopsys.prepare:main"
 verigym-synopsys-export-mcp-profile = "verigym_synopsys.export_mcp_profile:main"
 verigym-synopsys-mcp-server = "verigym_synopsys.mcp_server:main"
+verigym-synopsys-agent-worker = "verigym_synopsys.agent_worker:inner_main"
+verigym-synopsys-lsf-agent-launcher = "verigym_synopsys.agent_worker:lsf_main"
+verigym-synopsys-prepare-vcs-profile = "verigym_synopsys.prepare_vcs_profile:main"
+verigym-synopsys-export-vcs-mcp-profile = "verigym_synopsys.export_vcs_mcp_profile:main"
+verigym-synopsys-vcs-mcp-server = "verigym_synopsys.vcs_mcp_server:main"
+verigym-synopsys-vcs-public-mcp-server = "verigym_synopsys.vcs_public_mcp_server:main"
+verigym-synopsys-reissue-vcs-mcp-profile = "verigym_synopsys.reissue_vcs_mcp_profile:main"
+verigym-synopsys-prepare-verilog-eval-vcs-bundle = "verigym_synopsys.prepare_verilog_eval_vcs_bundle:main"
+verigym-synopsys-qualify-verilog-eval-vcs-bundle = "verigym_synopsys.qualify_verilog_eval_vcs_bundle:main"
+verigym-synopsys-merge-verilog-eval-vcs-qualifications = "verigym_synopsys.merge_verilog_eval_vcs_qualifications:main"
+verigym-synopsys-prepare-verilog-eval-vcs-public-bundle = "verigym_synopsys.prepare_verilog_eval_vcs_public_bundle:main"
+verigym-synopsys-qualify-verilog-eval-vcs-public-bundle = "verigym_synopsys.qualify_verilog_eval_vcs_public_bundle:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

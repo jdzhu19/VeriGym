@@ -104,7 +104,14 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
         policy = context.prompt_policy
-        if policy is None or policy.id != self.prompt_policy_spec.prompt_contract_id:
+        expected_prompt_id = (
+            context.action_protocol.prompt_contract_id
+            if context.action_protocol is not None
+            else "repository_action_v2_prompt_v3"
+            if context.agent_feedback_contract is not None
+            else self.prompt_policy_spec.prompt_contract_id
+        )
+        if policy is None or policy.id != expected_prompt_id:
             raise ValueError("OpenHands repository prompt contract is not frozen")
         if (
             policy.agent_version_id != settings.agent_version_id
@@ -153,6 +160,7 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
                     bridge=bridge,
                     socket_path=control / "b" / "mcp.sock",
                     public_test_ids=_public_test_ids(context),
+                    agent_feedback_contract=context.agent_feedback_contract,
                     capture_training_transcript=settings.capture_training_transcript,
                     campaign_role=settings.campaign_role,
                 )
@@ -261,7 +269,15 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
             ) from exc
         duration = time.monotonic() - started
         self._pending_training_trajectory = training_trajectory
-        identity = _identity(settings, broker_stats)
+        identity = _identity(
+            settings,
+            broker_stats,
+            state_machine_id=(
+                context.agent_feedback_contract.state_machine_id
+                if context.agent_feedback_contract is not None
+                else "repository_action_state_machine_v2"
+            ),
+        )
         accounting = ExternalAgentAccounting(
             process_wall_time_s=duration,
             cli_event_count=event_count,
@@ -334,6 +350,8 @@ class OpenHandsRepositoryAgentAdapter(AgentAdapter):
 def _identity(
     settings: OpenHandsSettings,
     broker: RepositoryToolBrokerStats,
+    *,
+    state_machine_id: str,
 ) -> ExternalAgentCallIdentity:
     return ExternalAgentCallIdentity(
         adapter_name="openhands-repository-agent",
@@ -354,7 +372,7 @@ def _identity(
         model_client_kind="sdk_agent_mediated",
         agent_harness_kind="openhands_sdk",
         tool_availability_policy="verigym_mcp_only_no_default_tools_v1",
-        tool_use_policy="repository_action_state_machine_v2",
+        tool_use_policy=state_machine_id,
         tool_event_count=broker.tool_calls,
         side_effecting_tool_event_count=0,
         read_only_tool_event_count=0,
@@ -372,7 +390,7 @@ def _identity(
 
 
 def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": "1.0",
         "task": {
             "id": context.task.id,
@@ -397,6 +415,15 @@ def _agent_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Shell, network, host files, hidden assets, and reference solutions are unavailable.",
         ],
     }
+    if context.agent_feedback_contract is not None:
+        payload["agent_feedback_contract"] = context.agent_feedback_contract.model_dump(mode="json")
+        payload["instructions"].extend(
+            [
+                "Every successful patch invalidates prior compile, PPA, and diff evidence.",
+                "Run compile for the current revision before PPA and before finish; inspect the "
+                "current diff after the final patch.",
+            ]
+        )
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -408,8 +435,12 @@ def _system_prompt() -> str:
 
 
 def _public_test_ids(context: AgentContext) -> tuple[str, ...]:
-    repository = context.task.metadata.get("repository_repair")
-    values = repository.get("public_test_ids") if isinstance(repository, dict) else []
+    values: object
+    if context.agent_feedback_contract is not None:
+        values = context.agent_feedback_contract.public_test_ids
+    else:
+        repository = context.task.metadata.get("repository_repair")
+        values = repository.get("public_test_ids") if isinstance(repository, dict) else []
     if not isinstance(values, list) or not all(
         isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value)
         for value in values

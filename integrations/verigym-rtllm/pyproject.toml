@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "verigym-rtllm"
 version = "0.3.0"
-description = "Pinned external-source RTLLM counter-family suite adapter for VeriGym."
+description = "Pinned metadata-driven external-source RTLLM suite adapter for VeriGym."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -28,12 +28,28 @@ verigym_rtllm = [
   "assets/workspace/rtl/*.v",
   "assets/workspace_up_down/README.md",
   "assets/workspace_up_down/rtl/*.v",
+  "assets/public_smoke/*.sv",
+  "assets/public_smoke_harder/*.sv",
+  "assets/workspace_harder/rtl/*.v",
+  "assets/public_smoke_l2_batch1/*.sv",
+  "assets/workspace_l2_batch1/rtl/*.v",
+  "assets/public_smoke_l2_batch2/*.sv",
+  "assets/workspace_l2_batch2/rtl/*.v",
+  "assets/public_smoke_l2_full/*.sv",
+  "assets/public_smoke_v2/*.sv",
+  "assets/workspace_l2_full/rtl/*.v",
+  "assets/workspace_all/README.md",
+  "assets/rtllm_v2_additional_tasks.json",
 ]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
-markers = ["commercial: requires site-installed licensed commercial tools"]
+markers = [
+  "commercial: requires site-installed licensed commercial tools",
+  "external_benchmark: requires an explicitly supplied external benchmark checkout",
+  "docker_integration: requires an explicitly supplied local Docker image",
+]
 
 [tool.ruff]
 line-length = 100

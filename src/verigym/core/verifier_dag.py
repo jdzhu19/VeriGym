@@ -19,6 +19,7 @@ from verigym.schemas.verifier import (
     VerifierResult,
     VerifierStatus,
 )
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.tools.base import ToolContext, ToolPlugin
 
 _INFRASTRUCTURE_CATEGORIES = {
@@ -50,6 +51,8 @@ class VerifierExecutor:
         artifact_root: Path,
         *,
         max_output_bytes: int,
+        verifier_profile: VerifierToolProfile | None = None,
+        resolved_verifier_profile: ResolvedVerifierToolProfile | None = None,
     ) -> list[VerifierResult]:
         artifact_root.mkdir(parents=True, exist_ok=True)
         nodes = {node.id: node for node in graph.nodes}
@@ -104,6 +107,8 @@ class VerifierExecutor:
                         session=session,
                         max_output_bytes=max_output_bytes,
                         artifact_dir=artifact_root / node.id,
+                        verifier_profile=verifier_profile,
+                        resolved_verifier_profile=resolved_verifier_profile,
                     ),
                 )
                 tool_results[node.id] = tool_result

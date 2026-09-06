@@ -9,13 +9,24 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from verigym.agents.base import AgentAdapter, AgentContext
 from verigym.cli.app import app
 from verigym.core.hashing import hash_directory
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.core.trace import read_trace
 from verigym.models.static import StaticModelClient
 from verigym.registry.collections import build_registries
-from verigym.schemas.common import InteractionMode
+from verigym.schemas.agent import (
+    AgentAction,
+    ApplyPatchAction,
+    EpisodeResult,
+    FinalSubmissionAction,
+    Observation,
+    ToolCallAction,
+)
+from verigym.schemas.base import PLUGIN_API_VERSION, SCHEMA_VERSION
+from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.model import ModelRequest, ModelResponse, ModelRunConfig
 from verigym.schemas.run import RunConfig
 from verigym.schemas.runtime import DockerRuntimeConfig
@@ -40,6 +51,58 @@ GOOD = """module TopModule(input logic a, input logic b, output logic y);
 endmodule
 """
 BAD = GOOD.replace("a & b", "a | b")
+
+
+class _VerilogAgentEvalFixtureAgent(AgentAdapter):
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="verilog-agent-eval-fixture",
+        version="1.0.0",
+        api_version=PLUGIN_API_VERSION,
+        provider="tests",
+        capabilities=["deterministic", "agent_eval_fixture"],
+    )
+
+    def __init__(self) -> None:
+        self._actions: list[AgentAction] = []
+
+    def start(self, context: AgentContext) -> None:
+        assert context.agent_feedback_contract is not None
+        self._actions = [
+            ApplyPatchAction(
+                patch="""--- a/repository/rtl/TopModule.sv
++++ b/repository/rtl/TopModule.sv
+@@ -1,2 +1,3 @@
+-module TopModule;
++module TopModule(input logic a, input logic b, output logic y);
++    assign y = a & b;
+ endmodule
+"""
+            ),
+            ToolCallAction(tool="repository.public_test", arguments={"test_id": "compile"}),
+            ToolCallAction(tool="file.diff", arguments={}),
+            ApplyPatchAction(
+                patch="""--- a/repository/rtl/TopModule.sv
++++ b/repository/rtl/TopModule.sv
+@@ -1,3 +1,4 @@
+ module TopModule(input logic a, input logic b, output logic y);
++    // final revision
+     assign y = a & b;
+ endmodule
+"""
+            ),
+            FinalSubmissionAction(message="stale evidence must be rejected"),
+            ToolCallAction(tool="repository.public_test", arguments={"test_id": "compile"}),
+            ToolCallAction(tool="file.diff", arguments={}),
+            FinalSubmissionAction(message="fixture complete"),
+        ]
+
+    def act(self, observation: Observation) -> AgentAction:
+        del observation
+        return self._actions.pop(0)
+
+    def finish(self, result: EpisodeResult) -> None:
+        del result
 
 
 class CountingStaticModelClient(StaticModelClient):
@@ -138,10 +201,52 @@ def test_reference_candidate_passes_native_regression_and_replays(tmp_path: Path
     assert profile["compatibility_status"] == compile_result.metadata["compatibility_status"]
     assert all(tool["version"] for tool in profile["tools"])
     assert hash_directory(FIXTURE) == before
-
     replay = replay_run(result.run_dir, verify=True, service=vg)
     assert replay.reverified_resolved is True
     assert hash_directory(FIXTURE) == before
+
+
+@requires_icarus
+def test_agent_eval_multiturn_compile_hidden_verify_and_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    iverilog = shutil.which("iverilog")
+    assert iverilog is not None
+    monkeypatch.setattr(
+        "verigym.public_test_launcher.TOOLCHAIN_PATH",
+        f"{Path(iverilog).parent}:/usr/local/bin:/usr/bin:/bin",
+    )
+    registries = build_registries(discover_external=False)
+    registries.agents.register(_VerilogAgentEvalFixtureAgent())
+    service = VeriGym(registries)
+    variant = "v2-spec-to-rtl-agent-eval-v1"
+    result = service.run(
+        RunConfig(
+            task_id=TASK_ID,
+            mode=InteractionMode.AGENT,
+            agent="verilog-agent-eval-fixture",
+            suite_source=SuiteSourceConfig(source_root=FIXTURE, variant=variant),
+            runtime="local",
+            output=tmp_path / "agent-eval",
+        )
+    )
+
+    assert result.scorecard.resolved
+    assert result.manifest.agent_feedback_contract is not None
+    assert result.manifest.agent_feedback_contract.benchmark_variant == variant
+    evaluations = result.manifest.agent_feedback_evaluations
+    assert [item.test_id for item in evaluations] == ["compile", "compile"]
+    assert all(item.passed for item in evaluations)
+    assert evaluations[0].candidate_hash != evaluations[1].candidate_hash
+    rejected = [
+        event
+        for event in read_trace(result.run_dir / "trace.jsonl")
+        if event.event_type == "agent_action_rejected"
+    ]
+    assert [event.payload["category"] for event in rejected] == ["agent_finish_invalid"]
+    replay = replay_run(result.run_dir, verify=True, service=service)
+    assert replay.reverified_resolved is True
 
 
 @requires_icarus

@@ -135,7 +135,7 @@ def test_repository_source_and_workspace_schemas_fail_closed() -> None:
             max_candidate_bytes=1000,
             max_file_bytes=500,
         )
-    with pytest.raises(ValidationError, match="Icarus"):
+    with pytest.raises(ValidationError, match="approved open RTL"):
         PublicTestCommand(argv=["curl", "https://example.test"], timeout_s=1)
     with pytest.raises(ValidationError, match="absolute"):
         PublicTestCommand(argv=["iverilog", "/host/source.sv"], timeout_s=1)

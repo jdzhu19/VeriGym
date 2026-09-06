@@ -1,0 +1,178 @@
+name: Publish open RTL images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/publish-qualified-rtl-images
+    paths:
+      - .github/workflows/publish-open-rtl-images.yml
+      - docker/iverilog12/**
+      - docker/open-rtl-tools-opensta/**
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-open-rtl-images-r1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.package }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: verigym-rtl-iverilog
+            context: docker/iverilog12
+            tag: 12.0-r1
+            version: 12.0-r1
+            smoke: >-
+              test "$(id -u):$(id -g)" = 10001:10001 &&
+              iverilog -V >/dev/null 2>&1 &&
+              vvp -V >/dev/null 2>&1 &&
+              test -s /usr/share/licenses/iverilog/COPYING &&
+              test -s /usr/share/verigym/sources/iverilog-source.tar.gz
+          - package: verigym-open-rtl-tools
+            context: docker/open-rtl-tools-opensta
+            tag: iverilog12-yosys067-opensta310-r1
+            version: iverilog12-yosys067-opensta310-r1
+            smoke: >-
+              test "$(id -u):$(id -g)" = 10001:10001 &&
+              iverilog -V >/dev/null 2>&1 &&
+              vvp -V >/dev/null 2>&1 &&
+              yosys -V | grep -F 'Yosys 0.67' >/dev/null &&
+              test "$(sta -version)" = 3.1.0 &&
+              test -s /usr/share/licenses/iverilog/COPYING &&
+              test -s /usr/share/licenses/yosys/COPYING &&
+              test -s /usr/share/licenses/opensta/LICENSE &&
+              test -s /usr/share/licenses/cudd/LICENSE &&
+              test "$(find /usr/share/verigym/sources -maxdepth 1 -name '*.tar.gz' | wc -l)" = 4
+    steps:
+      - name: Check out the exact publication source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR with the repository token
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to replace an existing release tag
+        id: identity
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TAG: ${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          reference="ghcr.io/${owner}/${PACKAGE}:${TAG}"
+          if docker buildx imagetools inspect "$reference" >/dev/null 2>&1; then
+            echo "refusing to replace existing release tag: $reference" >&2
+            exit 1
+          fi
+          echo "reference=$reference" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish with SBOM and provenance
+        id: build
+        env:
+          CONTEXT: ${{ matrix.context }}
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --file "${CONTEXT}/Dockerfile" \
+            --platform linux/amd64 \
+            --pull \
+            --provenance=mode=max \
+            --sbom=true \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --tag "$REFERENCE" \
+            --metadata-file build-metadata.json \
+            --push \
+            "$CONTEXT"
+          digest=$(jq -r '."containerimage.digest" // empty' build-metadata.json)
+          if [[ ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "published image has no immutable registry digest" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the pulled artifact and attestations
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+          SMOKE: ${{ matrix.smoke }}
+        run: |
+          set -euo pipefail
+          immutable="${REFERENCE%@*}@${DIGEST}"
+          docker pull "$immutable"
+          inspect=$(docker image inspect "$immutable")
+          [[ $(jq -r '.[0].Config.User' <<<"$inspect") == 10001:10001 ]]
+          [[ $(jq -r '.[0].Config.Labels["org.opencontainers.image.source"]' <<<"$inspect") \
+              == "https://github.com/${GITHUB_REPOSITORY}" ]]
+          [[ $(jq -r '.[0].Config.Labels["org.opencontainers.image.revision"]' <<<"$inspect") \
+              == "$GITHUB_SHA" ]]
+          jq -e '.[0].Config.Env == ["PATH=" + (.[0].Config.Env[0] | sub("^PATH="; ""))]' \
+            <<<"$inspect" >/dev/null
+          docker history --no-trunc --format '{{.CreatedBy}}' "$immutable" > image-history.txt
+          if grep -Eiq '(snpslmd|lm_license_file|license[_ -]?server|password=|token=|secret=)' \
+              image-history.txt; then
+            echo "image history contains a forbidden commercial or credential marker" >&2
+            exit 1
+          fi
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --user 10001:10001 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            "$immutable" /bin/sh -eu -c "$SMOKE"
+
+          index=$(docker buildx imagetools inspect --raw "$immutable")
+          mapfile -t attestations < <(
+            jq -r '.manifests[]? | select(
+              .annotations["vnd.docker.reference.type"] == "attestation-manifest"
+            ) | .digest' <<<"$index"
+          )
+          if [[ ${#attestations[@]} -lt 1 ]]; then
+            echo "published image has no attestation manifest" >&2
+            exit 1
+          fi
+          predicates=$(
+            for attestation in "${attestations[@]}"; do
+              docker buildx imagetools inspect --raw "${REFERENCE%@*}@${attestation}" \
+                | jq -r '.layers[]?.annotations["in-toto.io/predicate-type"] // empty'
+            done
+          )
+          grep -Eiq 'spdx' <<<"$predicates"
+          grep -Eiq 'slsa|provenance' <<<"$predicates"
+
+      - name: Record the immutable publication identity
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REFERENCE: ${{ steps.identity.outputs.reference }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ matrix.package }}"
+            echo
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Reference: \`${REFERENCE}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Platform: \`linux/amd64\`"
+            echo "- SBOM/provenance: verified"
+            echo "- Network-none runtime smoke: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -11,10 +11,25 @@ from verigym.tools.yosys.schemas import YosysSynthesisRequest
 OpenSTAFlowTemplateId = Literal[
     "verigym-yosys-opensta-atp-v1",
     "verigym-yosys-opensta-atp-v2",
+    "verigym-yosys-opensta-atp-v3",
+    "verigym-yosys-opensta-atp-v4",
 ]
 LEGACY_FLOW_TEMPLATE_ID: Literal["verigym-yosys-opensta-atp-v1"] = "verigym-yosys-opensta-atp-v1"
 FLOW_TEMPLATE_ID: Literal["verigym-yosys-opensta-atp-v2"] = "verigym-yosys-opensta-atp-v2"
-FLOW_TEMPLATE_IDS = frozenset({LEGACY_FLOW_TEMPLATE_ID, FLOW_TEMPLATE_ID})
+COMPATIBILITY_FLOW_TEMPLATE_ID: Literal["verigym-yosys-opensta-atp-v3"] = (
+    "verigym-yosys-opensta-atp-v3"
+)
+LATCH_MAPPING_FLOW_TEMPLATE_ID: Literal["verigym-yosys-opensta-atp-v4"] = (
+    "verigym-yosys-opensta-atp-v4"
+)
+FLOW_TEMPLATE_IDS = frozenset(
+    {
+        LEGACY_FLOW_TEMPLATE_ID,
+        FLOW_TEMPLATE_ID,
+        COMPATIBILITY_FLOW_TEMPLATE_ID,
+        LATCH_MAPPING_FLOW_TEMPLATE_ID,
+    }
+)
 _BASE_FLOW_TEMPLATE_CONTRACT_LINES = [
     "exec yosys -Q -T -l out/yosys.log -s synthesis.ys 2>@1",
     "read_liberty profile/cells.lib",
@@ -41,10 +56,34 @@ FLOW_TEMPLATE_CONTRACT = "\n".join(
         "write deterministic metrics.kv",
     ]
 )
+COMPATIBILITY_FLOW_TEMPLATE_CONTRACT = "\n".join(
+    [
+        *FLOW_TEMPLATE_CONTRACT.splitlines(),
+        "Yosys netlist export: -noattr -noexpr -nodec -simple-lhs",
+    ]
+)
+LATCH_MAPPING_FLOW_TEMPLATE_CONTRACT = "\n".join(
+    [
+        *COMPATIBILITY_FLOW_TEMPLATE_CONTRACT.splitlines(),
+        "Yosys techmap: $_DLATCH_N_ -> DLL_X1 and $_DLATCH_P_ -> DLH_X1",
+        "OpenSTA internal latch-gate analysis clock: main-clock period on mapped G/GN pins",
+    ]
+)
 FLOW_TEMPLATE_CONTRACTS = {
     LEGACY_FLOW_TEMPLATE_ID: LEGACY_FLOW_TEMPLATE_CONTRACT,
     FLOW_TEMPLATE_ID: FLOW_TEMPLATE_CONTRACT,
+    COMPATIBILITY_FLOW_TEMPLATE_ID: COMPATIBILITY_FLOW_TEMPLATE_CONTRACT,
+    LATCH_MAPPING_FLOW_TEMPLATE_ID: LATCH_MAPPING_FLOW_TEMPLATE_CONTRACT,
 }
+
+LATCH_MAPPING_SOURCE = """\
+module \\$_DLATCH_N_ (input D, E, output Q);
+  DLL_X1 _TECHMAP_REPLACE_ (.D(D), .GN(E), .Q(Q));
+endmodule
+module \\$_DLATCH_P_ (input D, E, output Q);
+  DLH_X1 _TECHMAP_REPLACE_ (.D(D), .G(E), .Q(Q));
+endmodule
+"""
 
 _POWER_UNIT_SCALE_WATTS = {
     "W": 1.0,
@@ -61,6 +100,12 @@ def _tcl_float(value: float | None, name: str) -> str:
     return f"{value:.12g}"
 
 
+def opensta_power_activity_identity(*, mode: str, activity: float, duty: float) -> str:
+    if not mode or not math.isfinite(activity) or not math.isfinite(duty):
+        raise ValueError("OpenSTA power activity contract is incomplete")
+    return f"opensta_{mode}:activity={activity:.12g}:duty={duty:.12g}"
+
+
 def power_activity_identity(request: YosysSynthesisRequest) -> str:
     if (
         request.power_activity_mode is None
@@ -68,9 +113,10 @@ def power_activity_identity(request: YosysSynthesisRequest) -> str:
         or request.power_duty is None
     ):
         raise ValueError("OpenSTA power activity contract is incomplete")
-    return (
-        f"opensta_{request.power_activity_mode}:"
-        f"activity={request.power_activity:.12g}:duty={request.power_duty:.12g}"
+    return opensta_power_activity_identity(
+        mode=request.power_activity_mode,
+        activity=request.power_activity,
+        duty=request.power_duty,
     )
 
 
@@ -101,7 +147,7 @@ def build_opensta_script(request: YosysSynthesisRequest) -> str:
     assert request.power_unit is not None
     activity_identity = power_activity_identity(request)
     diagnostic_reports = ""
-    if request.flow_template_id == FLOW_TEMPLATE_ID:
+    if request.flow_template_id != LEGACY_FLOW_TEMPLATE_ID:
         diagnostic_reports = (
             "sta::redirect_file_begin out/units.rpt\n"
             "report_units\n"
@@ -109,6 +155,15 @@ def build_opensta_script(request: YosysSynthesisRequest) -> str:
             "sta::redirect_file_begin out/activity_annotation.rpt\n"
             "report_activity_annotation\n"
             "sta::redirect_file_end\n"
+        )
+    latch_clock = ""
+    if request.flow_template_id == LATCH_MAPPING_FLOW_TEMPLATE_ID:
+        latch_clock = (
+            "set vg_latch_gates [concat [get_pins -hierarchical */GN] "
+            "[get_pins -hierarchical */G]]\n"
+            "if {[llength $vg_latch_gates] > 0} { "
+            f"create_clock -name verigym_latch_gate -period {expected_period} "
+            "$vg_latch_gates }\n"
         )
     return (
         "set vg_yosys_status [catch {exec yosys -Q -T -l out/yosys.log -s synthesis.ys "
@@ -125,6 +180,7 @@ def build_opensta_script(request: YosysSynthesisRequest) -> str:
         "set vg_period [get_property $vg_clock period]\n"
         f"if {{abs($vg_period - {expected_period}) > 1.0e-9}} "
         '{ error "clock period differs from profile" }\n'
+        f"{latch_clock}"
         f"set_power_activity -global -activity {activity} -duty {duty} -clock $vg_clock\n"
         "set vg_path_ends [find_timing_paths -path_delay max -group_path_count 1 "
         "-endpoint_path_count 1]\n"
@@ -206,14 +262,20 @@ def parse_opensta_power_json(payload: bytes, *, target_unit: str) -> float:
 
 
 __all__ = [
+    "COMPATIBILITY_FLOW_TEMPLATE_CONTRACT",
+    "COMPATIBILITY_FLOW_TEMPLATE_ID",
     "FLOW_TEMPLATE_CONTRACT",
     "FLOW_TEMPLATE_CONTRACTS",
     "FLOW_TEMPLATE_ID",
     "FLOW_TEMPLATE_IDS",
     "LEGACY_FLOW_TEMPLATE_CONTRACT",
     "LEGACY_FLOW_TEMPLATE_ID",
+    "LATCH_MAPPING_FLOW_TEMPLATE_CONTRACT",
+    "LATCH_MAPPING_FLOW_TEMPLATE_ID",
+    "LATCH_MAPPING_SOURCE",
     "OpenSTAFlowTemplateId",
     "build_opensta_script",
+    "opensta_power_activity_identity",
     "parse_opensta_metrics",
     "parse_opensta_power_json",
     "power_activity_identity",
