@@ -1,5 +1,8 @@
 # RealBench 真实数据与 functional slice 执行记录
 
+后续状态见 [SEC 站点尝试](2026-09-06-realbench-sec-site-attempt.md)：用户随后授权临时部署，
+三题预检通过，首个真实调用因许可证失败停止。下文保留本次 functional 执行时的历史快照。
+
 2026-09-06。**数据已准备，三个 module 的 functional 控制已通过；最终 JasperGold SEC
 仍未执行，不能宣称 suite-qualified 或原生 benchmark 分数。** 本文接续
 [初版状态](2026-09-06-realbench-jasper-draft-status.md)，不改写该初版和失败 invocation 的证据。

@@ -5,6 +5,11 @@ accepts only operator-audited candidate hashes. The native worker is trusted-fix
 sandbox for generated RTL. No commercial tools, license values, site wrappers or golden assets
 are distributed. Installing this package does not install JasperGold or Yosys.
 
+The [bounded site attempt](../../docs/audits/2026-09-06-realbench-sec-site-attempt.md) resolved
+three real task profiles, then stopped on `license_unavailable` for its first reference SEC
+invocation. The other five controls were not run, and the temporary entries are disabled.
+This is not positive SEC qualification or authorization to retry.
+
 ## Check the implementation without commercial tools
 
 From the repository root, using a Python 3.11+ environment:
@@ -26,6 +31,7 @@ The private `ServerProfile` in [protocol.py](src/verigym_cadence/protocol.py) fi
 top, ordered sources, approved candidate hashes, timeout, worker executable and content hash,
 JasperGold/Yosys versions, and every private asset's role/path/hash. The resolved identity binds
 the server Python release as well. Site paths and environment values are not exposed or hashed.
+Patch releases such as `2022.12p001` are preserved and matched exactly, not reduced to `2022.12`.
 
 The native worker accepts these private asset roles:
 
@@ -63,7 +69,7 @@ implement and qualify remote job termination before accepting generated candidat
 
 ## Qualification still required
 
-Real reference/negative-control SEC, site license behavior, remote scheduler isolation/cleanup,
-and RealBench template/version compatibility remain unqualified. The operator must supply the
-external checkout and approve the execution boundary before that work proceeds. Do not remove
-the approved-candidate check as a substitute for isolation.
+Successful real reference/negative-control SEC, usable SEC entitlement, remote scheduler
+isolation/cleanup, and RealBench template/version compatibility remain unqualified. The operator
+must resolve the observed license blocker and approve a new invocation before commercial work
+resumes. Do not remove the approved-candidate check as a substitute for isolation.

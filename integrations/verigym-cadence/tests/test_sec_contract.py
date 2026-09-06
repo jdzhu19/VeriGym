@@ -250,10 +250,12 @@ def test_doctor_without_profile_is_unavailable(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.parametrize("status", ["proven", "cex"])
+@pytest.mark.parametrize("version", ["2022.12", "2022.12p001"])
 def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     status: str,
+    version: str,
 ) -> None:
     profile, _ = fixture(tmp_path, {"status": "proven"})
     yosys = executable(
@@ -271,7 +273,7 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
         tmp_path / "jg.py",
         (
             "import sys\nfrom pathlib import Path\n"
-            "if sys.argv[1:] == ['-version']: print('JasperGold 2022.12')\n"
+            f"if sys.argv[1:] == ['-version']: print('JasperGold {version}')\n"
             "else:\n"
             " assert sys.argv[1:] == ['-no_gui', '-sec', 'test.tcl']\n"
             " assert Path('a.v').is_file() and Path('b.v').is_file()\n"
@@ -286,6 +288,7 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
     template.write_text("# synthetic template ###TOPMODULE###\n", encoding="utf-8")
     profile = profile.model_copy(
         update={
+            "tool_version": version,
             "assets": [
                 jg,
                 yosys,
@@ -295,7 +298,7 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
                     path=str(template),
                     sha256=hash_bytes(template.read_bytes()),
                 ),
-            ]
+            ],
         }
     )
     request = request_for(profile)

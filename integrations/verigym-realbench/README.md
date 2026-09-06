@@ -5,6 +5,9 @@ RealBench benchmark**. Three real modules have reference, functional-negative an
 coverage. Final SEC still requires the optional [Cadence integration](../verigym-cadence/README.md)
 and approved site execution. Native metric aggregation and full 60-module/4-system execution are
 not implemented. See the [qualification evidence](../../docs/audits/2026-09-06-realbench-functional-slice.md).
+The subsequent [SEC site attempt](../../docs/audits/2026-09-06-realbench-sec-site-attempt.md)
+passed three profile preflights but stopped on the first reference's license failure; no formal
+control has been qualified, and no further SEC invocation is automatic.
 
 ## Validate the adapter without benchmark data
 

@@ -81,7 +81,8 @@ def run(payload: Any) -> dict[str, Any]:
             ):
                 return {"status": "tool_unavailable"}
             jg_match = re.search(
-                r"\b(20\d\d\.\d\d(?:-[A-Za-z0-9._-]+)?)\b", jg_version.stdout + jg_version.stderr
+                r"\b(20\d\d\.\d\d(?:p\d+)?(?:-[A-Za-z0-9._-]+)?)\b",
+                jg_version.stdout + jg_version.stderr,
             )
             yosys_match = re.search(r"\bYosys\s+(\S+)", yosys_version.stdout + yosys_version.stderr)
             if jg_match is None or yosys_match is None:
