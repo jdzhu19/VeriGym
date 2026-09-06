@@ -8,12 +8,14 @@ import contextlib
 import hashlib
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -65,6 +67,66 @@ def _json(path: Path, *, maximum: int = 4 * 1024**2) -> dict[str, Any]:
 def _hash(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def validate_image_archive(path: Path, image_id: str, tag: str) -> None:
+    """Validate Docker save output and internal layer aliases without extracting files."""
+    with tarfile.open(path, "r:") as bundle:
+        members = bundle.getmembers()
+        entries = {member.name: member for member in members}
+        if len(entries) != len(members):
+            raise ValueError("Duplicate image archive entries")
+        for member in members:
+            name = PurePosixPath(member.name)
+            if (
+                name.is_absolute()
+                or ".." in name.parts
+                or not (member.isfile() or member.isdir() or member.issym())
+            ):
+                raise ValueError("Unsafe image archive entry")
+            if member.issym():
+                target = posixpath.normpath(posixpath.join(str(name.parent), member.linkname))
+                resolved = entries.get(target)
+                if (
+                    name.name != "layer.tar"
+                    or PurePosixPath(member.linkname).is_absolute()
+                    or resolved is None
+                    or not resolved.isfile()
+                    or PurePosixPath(target).name != "layer.tar"
+                ):
+                    raise ValueError("Unsafe image layer link")
+
+        def read_json(name: str):
+            member = entries[name]
+            if not member.isfile() or member.size > 1024**2:
+                raise ValueError("Unsafe image metadata")
+            stream = bundle.extractfile(member)
+            assert stream is not None
+            return stream.read()
+
+        manifest = json.loads(read_json("manifest.json"))
+        config_name = image_id.removeprefix("sha256:") + ".json"
+        if (
+            len(manifest) != 1
+            or manifest[0].get("Config") != config_name
+            or manifest[0].get("RepoTags") != [tag]
+        ):
+            raise ValueError("Image archive identity mismatch")
+        config_data = read_json(config_name)
+        if "sha256:" + hashlib.sha256(config_data).hexdigest() != image_id:
+            raise ValueError("Image config digest mismatch")
+        config = json.loads(config_data)
+        layers = manifest[0]["Layers"]
+        digests = config["rootfs"]["diff_ids"]
+        if len(layers) != len(digests):
+            raise ValueError("Image layer count mismatch")
+        for layer, expected in zip(layers, digests, strict=True):
+            stream = bundle.extractfile(entries[layer])
+            if (
+                stream is None
+                or "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest() != expected
+            ):
+                raise ValueError("Image layer digest mismatch")
 
 
 def _receipt(path: Path, field: str) -> dict[str, Any]:

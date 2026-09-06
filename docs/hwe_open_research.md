@@ -4,7 +4,7 @@ This continuation tests whether the repaired open toolchain can support one real
 trajectory while the official HWE image remains the authoritative verifier. It uses PR-1816 and
 seed/sample `503/19`, as described in the [v188 handoff](../todo/2026-09-06_deepseek-harness-v188-astra-handoff.md).
 
-Run from the repository's Python environment after the v188 repair succeeds:
+Run from the repository's Python environment after the offline successor repair succeeds:
 
 ```bash
 python scripts/run_hwe_pr1816_open_research.py --run-canary
@@ -14,7 +14,7 @@ Omit `--run-canary` for qualification only. Each invocation requires fresh outpu
 Docker backing paths; it never overwrites an earlier result or retries a consumed canary. The
 script records its Git commit and its own SHA-256. Exact resource paths are defined in the script.
 
-The runner cross-checks the repair report, image lock, cleanup receipt, and exported archive before
+The runner cross-checks the repair report, image lock, security scan, cleanup receipt, and exported archive before
 loading task inputs. It reuses local HWE archives, starts fresh bind-backed Docker storage under
 `/data2`, and requires base-FAIL/reference-PASS on both the open toolchain and official verifier.
 Provider configuration is removed during qualification. A failed route stops before the canary.
@@ -42,3 +42,37 @@ ruff check scripts/run_hwe_pr1816_open_research.py \
   scripts/materialize_hwe_deepseek_harness_v172_open_toolchain.py \
   tests/unit/test_hwe_open_research.py
 ```
+
+## Offline build repair
+
+The v188 run completed its git-package repair but failed during Verilator compilation. Its
+terminal evidence remains unchanged under
+`/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v188-git-builder-repair-v1`.
+A focused successor uses identity `hwe-open-tools-offline-repair-20260906-v1` and records bounded,
+sanitized compiler diagnostics in its own experiment directory.
+
+The actual compiler error was `FlexLexer.h: No such file or directory`. The builder had flex 2.6.4
+but omitted its C++ header. The host's flex 2.5.37 header was deliberately not used. The added input
+is the unmodified [official flex 2.6.4 header](https://raw.githubusercontent.com/westes/flex/ab49343b08c933e32de8de78132649f9560a3727/src/FlexLexer.h),
+SHA-256 `ee9859d6b3027ed565f98f42744e438ab31b2cd2e9f797ddf870029ca2021686`, retained with its
+copyright notice under `/data2/jiadongzhu/Agent/datasets/tools/flex/2.6.4/`.
+
+[`Dockerfile.research`](../docker/open-rtl-tools-hwe/Dockerfile.research) records the combined
+recipe. Its local context requires the pinned Verilator and ripgrep archives from the v172
+manifest plus `FlexLexer.h`. First load the v178 builder archive and accepted open-tools image into
+an isolated daemon, build `Dockerfile.v188-builder`, and bind that result to the local
+`verigym/open-rtl-tools:v180-builder` tag. Build the research Dockerfile with `--network=none`,
+`--pull=false`, and the same Verilator/ripgrep hash and host UID/GID arguments as v180.
+No registry access is needed after input acquisition.
+
+The repair session executed configuration, compilation, installation, and runtime-image assembly
+as separate phases. Compilation used a retained container with 8 CPUs and 32 GiB memory, enabling
+the missing-header fix to reuse completed object files. `build-provenance.json`, the executed
+Dockerfile fragments, bounded phase logs, and the final image/archive locks record the actual
+build. The combined Dockerfile is a reproduction recipe; it was not independently rebuilt after
+those phases passed.
+
+The continuation also fixes two dormant open-route defects: Docker bind mounts used an unsupported
+bare `rw` field, and reference candidate paths already prefixed with `repository/` were incorrectly
+written into a nested repository directory. A regression test verifies that the test actually
+reads the patched reference file. Failed comparisons now retain their result receipt.

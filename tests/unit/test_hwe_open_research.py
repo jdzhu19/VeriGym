@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +15,41 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_hwe_pr1816_open_research as research
+
+
+@pytest.mark.parametrize("unsafe_link", [False, True])
+def test_image_archive_allows_only_internal_regular_layer_aliases(tmp_path, unsafe_link):
+    layer = b"synthetic tar layer"
+    digest = "sha256:" + hashlib.sha256(layer).hexdigest()
+    config = json.dumps({"rootfs": {"diff_ids": [digest, digest]}}).encode()
+    image_id = "sha256:" + hashlib.sha256(config).hexdigest()
+    config_name = image_id.removeprefix("sha256:") + ".json"
+    manifest = [
+        {
+            "Config": config_name,
+            "RepoTags": ["test:locked"],
+            "Layers": ["first/layer.tar", "second/layer.tar"],
+        }
+    ]
+    path = tmp_path / "image.tar"
+    with tarfile.open(path, "w:") as bundle:
+        for name, data in [
+            (config_name, config),
+            ("manifest.json", json.dumps(manifest).encode()),
+            ("first/layer.tar", layer),
+        ]:
+            item = tarfile.TarInfo(name)
+            item.size = len(data)
+            bundle.addfile(item, io.BytesIO(data))
+        alias = tarfile.TarInfo("second/layer.tar")
+        alias.type = tarfile.SYMTYPE
+        alias.linkname = "../../outside/layer.tar" if unsafe_link else "../first/layer.tar"
+        bundle.addfile(alias)
+    if unsafe_link:
+        with pytest.raises(ValueError, match="Unsafe image layer link"):
+            research.validate_image_archive(path, image_id, "test:locked")
+    else:
+        research.validate_image_archive(path, image_id, "test:locked")
 
 
 def test_receipt_tampering_is_rejected(tmp_path: Path) -> None:
