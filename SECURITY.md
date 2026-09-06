@@ -1737,6 +1737,19 @@ dictionary enum; unknown text, arbitrary token hashes, raw matching lines, paths
 data, and raw output remain forbidden. Mixed, unscoped, unknown, and multiple results fail closed.
 V186 remains task-free and zero-provider and requires an independent v187 audit before any repair.
 
+The sole v186 invocation completed its bounded task-free refinement and uniquely classified two
+POSIX-sh markers as the single closed-dictionary command `git`. The isolated builder probe also
+recorded `git` absent. V187 freezes that raw-output-free result and authorizes only a separately
+versioned minimal repair that adds a fully locked git package closure to a fresh dependency-only
+builder. It does not authorize adding any other absent probe command. The final image build must
+remain offline and otherwise byte-for-byte input-equivalent to v186, with fresh resource names,
+absolute capacity gates, bounded secret-scanned output, terminal reporting, and complete cleanup.
+Any missing builder input must be acquired by an explicit bounded command only after its route is
+verified not to use the VPN; the dedicated `verigym-hwe-net` bridge is required instead of the
+broken default bridge. HWE import, PR-1816 preparation, verification, model/provider use,
+qualification, collection, SFT mixing, training, and production use remain unauthorized pending a
+successful repair and a later independent audit.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
