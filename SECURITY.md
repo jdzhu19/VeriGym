@@ -25,6 +25,23 @@ images, stubs and audited public dependencies are projected into the model works
 preflight without the declared functional and SEC backends; it must not downgrade missing
 functional support to lint-only. Its synthetic tests do not qualify actual RealBench data.
 
+The separate `realbench.verilator.public.mcp` service now runs a fixed syntax/function flow in
+`DockerRuntime`, never in `LocalRuntime`. The host stdio wrapper is a hash-bound control-plane
+process only. A task-bound profile owns all verifier assets and the exact image ID, source order,
+public output names and resource limits. No request selects flags, commands, testbench bytes or
+paths. Each process handles one candidate without retry. Only a status, bounded phase/exit code,
+cleanup boolean and frozen identities return; private diagnostics, comparisons, logs and waveform
+content do not. The public-test controller projects fixed messages without those private assets.
+
+The current derived slice accepts one target module and prohibits simulation side effects,
+preprocessor interference, cross-module checker references and Verilator metacomments. This is
+an eligibility restriction, not an RTL sandbox or a claim of compatibility with all native tasks.
+Network-none, non-root, read-only-root and bounded Docker controls remain mandatory. The numeric
+container UID/GID must match the worker's non-root host user so generated build directories can
+be removed; only `.verigym_internal` is writable during compilation/simulation. A cleanup failure
+invalidates the result. A transport timeout does not establish worker cleanup and cannot count as
+a candidate rejection. Functional feedback is not final SEC proof or a benchmark score.
+
 ## DockerRuntime boundary
 
 `DockerRuntime` is an opt-in, Linux-first containment profile labeled `docker_standard`. For each

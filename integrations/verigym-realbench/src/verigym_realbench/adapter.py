@@ -17,7 +17,7 @@ from verigym.core.repository_candidate import (
     repository_workspace_contract,
     verify_frozen_repository_candidate_offline,
 )
-from verigym.plugin_api import ConfigurationError, SuiteAdapter, content_hash
+from verigym.plugin_api import ConfigurationError, SuiteAdapter, content_hash, hash_bytes
 from verigym.schemas.common import (
     AssetRef,
     InteractionMode,
@@ -42,6 +42,17 @@ from verigym.schemas.task import (
 from verigym.schemas.verifier import VerifierGraph, VerifierNode
 
 from .source import UPSTREAM, VARIANT, ModuleTask, SourceLock, load_source
+
+PUBLIC_FEEDBACK_NOTICE = """# RealBench public feedback
+
+Call `repository.public_test` with `test_id` set to `compile`.
+For this backend, `compile` runs both syntax and functional checks in an isolated verifier.
+Feedback contains fixed status messages only; testbench, reference RTL and logs stay private.
+The one-target-module slice forbids simulation side effects, preprocessing interference and
+cross-module references. Required helper modules are supplied by the verifier, not reimplemented.
+After editing, check public feedback and inspect the diff, then submit with typed finish.
+Public success is not a formal proof. Final JasperGold SEC is a separate, gated verification.
+"""
 
 
 class RealBenchSuite(SuiteAdapter):
@@ -184,6 +195,8 @@ class RealBenchSuite(SuiteAdapter):
                 "diagnostic_only": True,
                 "benchmark_score_claimed": False,
                 "qualification_status": "draft",
+                "verification_requires_final_submission": True,
+                "public_feedback_notice_sha256": hash_bytes(PUBLIC_FEEDBACK_NOTICE.encode()),
                 "partition": "module",
                 "module_kind": manifest.kind,
                 "source_lock_hash": lock.identity,
@@ -223,6 +236,9 @@ class RealBenchSuite(SuiteAdapter):
             repository_files=files,
             compile_contract=self._contract(manifest),
             ppa_available=False,
+        )
+        (workspace.visible_root / "PUBLIC_TESTS.md").write_text(
+            PUBLIC_FEEDBACK_NOTICE, encoding="utf-8"
         )
         for asset in manifest.assets:
             if asset.role == "image" and asset.destination is not None:

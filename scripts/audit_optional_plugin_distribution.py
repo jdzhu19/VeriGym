@@ -67,6 +67,10 @@ _POLICIES = {
         entry_markers=(
             "[verigym.suites]",
             "realbench = verigym_realbench.adapter:RealBenchSuite",
+            "[verigym.tools]",
+            "realbench-verilator-public-mcp = verigym_realbench.public_client:RealBenchPublicTool",
+            "[console_scripts]",
+            "verigym-realbench-public-server = verigym_realbench.public_server:main",
         ),
         forbidden_member_names=frozenset({"verigym-realbench.lock.json", "benchmark_info.py"}),
         forbidden_member_suffixes=frozenset(

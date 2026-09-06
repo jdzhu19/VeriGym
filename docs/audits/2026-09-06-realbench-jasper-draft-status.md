@@ -1,5 +1,9 @@
 # RealBench / JasperGold 初版实施状态
 
+后续数据准备和真实 public functional 进展见
+[functional slice 执行记录](2026-09-06-realbench-functional-slice.md)。下文保留初版时点，
+不再代表 source/public backend 的最新状态；SEC 尚未资格化的结论仍成立。
+
 2026-09-06。**纵向切片尚未完成，也没有 RealBench 分数或商业资格化结果。**
 当前交付限于可检查的初版适配代码、无凭据测试和只读站点探测。
 

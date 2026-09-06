@@ -69,7 +69,14 @@ def identity_request(profile: VerifierToolProfile) -> dict[str, Any]:
     }
 
 
-def rpc(profile: VerifierToolProfile, name: str, arguments: dict[str, Any], timeout: int) -> Any:
+def rpc(
+    profile: VerifierToolProfile,
+    name: str,
+    arguments: dict[str, Any],
+    timeout: int,
+    *,
+    server_name: str = SERVER_NAME,
+) -> Any:
     executable = Path(profile.transport_executable)
     if (
         not executable.is_absolute()
@@ -138,7 +145,7 @@ def rpc(profile: VerifierToolProfile, name: str, arguments: dict[str, Any], time
         raise ConfigurationError("SEC response was rejected")
     initialized = init.get("result", {})
     if initialized.get("protocolVersion") != MCP_VERSION or initialized.get("serverInfo") != {
-        "name": SERVER_NAME,
+        "name": server_name,
         "version": profile.server_version,
     }:
         raise ConfigurationError("SEC server identity mismatch")

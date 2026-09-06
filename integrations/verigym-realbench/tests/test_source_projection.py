@@ -221,3 +221,17 @@ def test_multifile_freeze_and_offline_replay_preserve_readonly_images(tmp_path: 
             run_root=rejected,
             artifact_root=rejected / "artifacts",
         )
+
+
+def test_functional_notice_is_hash_bound_and_final_verification_requires_submission(
+    tmp_path: Path,
+) -> None:
+    source_fixture(tmp_path)
+    suite = RealBenchSuite(SuiteSourceConfig(source_root=tmp_path))
+    task = suite.load_task(next(iter(suite.discover())))
+    assets = suite.resolve_assets(task)
+    notice = (Path(assets.visible_root) / "PUBLIC_TESTS.md").read_bytes()
+    assert b"both syntax and functional checks" in notice
+    assert b"syntax/elaboration only" not in notice
+    assert task.metadata["public_feedback_notice_sha256"] == hash_bytes(notice)
+    assert task.metadata["verification_requires_final_submission"] is True

@@ -13,6 +13,12 @@ dependencies = ["verigym>=0.1.0,<0.2", "verigym-cadence>=0.1.0,<0.2"]
 [project.entry-points."verigym.suites"]
 realbench = "verigym_realbench.adapter:RealBenchSuite"
 
+[project.entry-points."verigym.tools"]
+realbench-verilator-public-mcp = "verigym_realbench.public_client:RealBenchPublicTool"
+
+[project.scripts]
+verigym-realbench-public-server = "verigym_realbench.public_server:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -21,7 +27,10 @@ verigym_realbench = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["external_benchmark: operator-provided and audited external RealBench checkout"]
+markers = [
+    "external_benchmark: operator-provided and audited external RealBench checkout",
+    "docker: explicit Docker execution opt-in",
+]
 
 [tool.mypy]
 python_version = "3.11"
