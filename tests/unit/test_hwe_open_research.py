@@ -155,6 +155,7 @@ def test_runtime_keeps_open_commands_separate_from_workspace_and_network() -> No
     command = config.command_image
     assert command is not None
     assert command.image == lock.image_id != config.image
+    assert command.expected_rg_version == "ripgrep 15.2.0 (rev e89fff89ac)"
     assert command.network_mode == config.network_mode == "none"
     assert command.execution_backend == "episode_container_exec_v1"
     assert command.required_image_labels["org.verigym.official-verifier-included"] == "false"

@@ -409,7 +409,7 @@ def runtime_config(lock: OpenToolchainV188ImageLock):
         command_image=DockerCommandImageRuntimeConfig(
             image=lock.image_id,
             expected_image_id=lock.image_id,
-            expected_rg_version="15.2.0",
+            expected_rg_version="ripgrep 15.2.0 (rev e89fff89ac)",
             expected_rg_sha256=lock.binary_sha256["rg"],
             protocol="hwe_command_image_v1",
             execution_backend="episode_container_exec_v1",
