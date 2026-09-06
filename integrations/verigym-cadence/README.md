@@ -9,6 +9,8 @@ The [bounded site attempt](../../docs/audits/2026-09-06-realbench-sec-site-attem
 three real task profiles, then stopped on `license_unavailable` for its first reference SEC
 invocation. The other five controls were not run, and the temporary entries are disabled.
 This is not positive SEC qualification or authorization to retry.
+Subsequent zero-job diagnostics found and fixed a missing server-to-worker license-environment
+handoff. The corrected environment chain passes on the site, but SEC has not been retried.
 
 ## Check the implementation without commercial tools
 
@@ -47,6 +49,14 @@ A private no-argument wrapper selects the runtime and launches
 `python -m verigym_cadence.server --profile` with its operator-owned profile path. The caller does
 not select that path. These site-specific wrappers are not generated or deployed automatically.
 
+The operator's server startup must load the site's environment before launching Python. The
+server explicitly forwards only `CDS_LIC_FILE` and `LM_LICENSE_FILE` to the fixed worker; the
+native worker forwards the same allowlist to its tools. Values remain in subprocess environments,
+never in requests, profiles, hashes, traces or responses. Core `LocalRuntime` still strips other
+ambient variables and uses a temporary `HOME`; a worker's `module load` alone does not guarantee
+that the user's shell license configuration has been loaded. Do not forward the entire ambient
+environment or restore the real home directory to work around this boundary.
+
 The client uses the existing `VerifierToolProfile` and `ResolvedVerifierToolProfile` schemas.
 Its target is `cadence.jaspergold.sec.mcp`; `VERIGYM_JASPERGOLD_MCP_PROFILE` selects the local client
 profile for doctor. Resolution verifies fixed assets and actual version output, but does not
@@ -71,5 +81,5 @@ implement and qualify remote job termination before accepting generated candidat
 
 Successful real reference/negative-control SEC, usable SEC entitlement, remote scheduler
 isolation/cleanup, and RealBench template/version compatibility remain unqualified. The operator
-must resolve the observed license blocker and approve a new invocation before commercial work
-resumes. Do not remove the approved-candidate check as a substitute for isolation.
+must approve a new invocation to check actual SEC after the environment-handoff repair. Do not
+remove the approved-candidate check as a substitute for isolation.

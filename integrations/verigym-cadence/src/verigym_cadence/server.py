@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -16,6 +17,7 @@ from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.runtime import SessionSpec
 
 from .protocol import (
+    LICENSE_ENVIRONMENT_NAMES,
     MAX_REQUEST_BYTES,
     MCP_VERSION,
     SERVER_NAME,
@@ -46,6 +48,13 @@ def worker_call(profile: ServerProfile, operation: str, request: VerifyRequest |
                     argv=[profile.worker.path],
                     stdin=json.dumps(payload),
                     timeout_s=profile.timeout_s + 10,
+                    # LocalRuntime deliberately strips ambient variables. The fixed site
+                    # worker needs these two only; values never enter the JSON/profile/trace.
+                    env={
+                        name: os.environ[name]
+                        for name in LICENSE_ENVIRONMENT_NAMES
+                        if name in os.environ
+                    },
                 )
             )
     if result.timed_out:

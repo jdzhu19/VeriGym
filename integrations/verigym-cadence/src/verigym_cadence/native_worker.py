@@ -19,6 +19,7 @@ from verigym.runtimes.local import LocalRuntime, LocalRuntimeSession
 from verigym.schemas.runtime import SessionSpec
 
 from .protocol import (
+    LICENSE_ENVIRONMENT_NAMES,
     MAX_REQUEST_BYTES,
     Outcome,
     ServerProfile,
@@ -53,7 +54,7 @@ def parse_sec(completed: CompletedCommand, log: str) -> Outcome:
 
 def _execute(session: LocalRuntimeSession, argv: list[str], timeout: int) -> CompletedCommand:
     environment = {
-        name: os.environ[name] for name in ("CDS_LIC_FILE", "LM_LICENSE_FILE") if name in os.environ
+        name: os.environ[name] for name in LICENSE_ENVIRONMENT_NAMES if name in os.environ
     }
     return session.execute(CommandSpec(argv=argv, timeout_s=timeout, env=environment))
 

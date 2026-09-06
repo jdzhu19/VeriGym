@@ -4,6 +4,10 @@
 没有得到任何 formal proof，不能宣称 site-qualified、suite-qualified 或 benchmark 分数。**
 本文接续 [functional slice](2026-09-06-realbench-functional-slice.md)，不覆盖旧证据。
 
+后续只读诊断已定位并修复 server → worker 的许可证环境丢失，HPC 上修复后的环境链
+预检通过，详见文末更新。尚未重新运行真实 SEC；先前失败不能据此改为通过，也不再把
+“请管理员提供许可证”当作唯一下一步。
+
 ## Scope
 
 用户批准临时固定 worker，只接受 `aes_sbox`、`aes_rcon`、`aes_key_expand_128` 的预审
@@ -79,3 +83,35 @@ ruff check integrations/verigym-cadence
 ruff format --check integrations/verigym-cadence
 mypy --config-file integrations/verigym-cadence/pyproject.toml integrations/verigym-cadence/src
 ```
+
+## 后续更新：环境传递缺陷已修复，未重跑 SEC
+
+用户说明已在 HPC `.bashrc` 配置相关环境。此阶段仅做 shell/env/version 预检和软件修复，
+没有修改用户启动文件，也没有重新启用原有 SEC 入口。
+
+### Evidence
+
+| ID | 观察与复现入口 | SHA-256 / 结果 |
+| --- | --- | --- |
+| E8 | 外部 `post-bashrc-environment-probe.json`：对比正常启动与复现旧 worker bootstrap；站点专属只读诊断，公开报告不含环境值 | `4059b930081de29a2b14db7ef096d19c19cf90d27667623c0ef194c1670a2cb0`；正常环境有 `CDS_LIC_FILE`/`LM_LICENSE_FILE`，受控 worker bootstrap 缺失两者，工具版本仍能查询 |
+| E9 | [test_worker_receives_only_site_license_environment](../../integrations/verigym-cadence/tests/test_sec_contract.py)：凭据无关、真实子进程回归 | 修复前配置变量的 probe/verify 两例失败，未配置两例通过；修复后 Cadence 37 + shared verifier 7，共 44 passed；lint/format/mypy 通过 |
+| E10 | 外部 `fixed-environment-probe.json`：将修复后的 Python 代码放入新的临时 probe-only 入口，直接检查 server → worker → tool child，不接受 verify 操作 | `2b255e7288faa323bc4c4eba42e587f87aec3daaf4de5812270f75831fb93e6c`；三层均有两个变量，版本 `2022.12p001` / `0.44+9`；商业作业 0，probe 目录已移除，旧 reservation 仍为 1、worker 仍停用 |
+
+E10 的新 server release 为
+`e16bc5771d8aca7cf4101d7f1bc387319e1a28dcdbad6e0a1c6476b258ca153e`，不是原 v2 的
+`25ab5a13…`。没有覆盖原始 SEC evidence、profile 或候选执行记录。
+
+### Finding 与 Path
+
+F5（E8、E9）：`LocalRuntime` 正确地清理了继承环境并使用临时 `HOME`，但 Cadence server
+没有显式传递许可证变量。worker 再执行 `module load jasper/2022.12` 只能提供工具环境，
+不能保证重新载入用户 shell 中的许可证配置。native worker 原本已有下游两变量 allowlist，
+缺的是 server → worker 这一段。此缺陷可以解释旧错误，不能断言站点本身缺 SEC entitlement。
+
+F6（E9、E10）：server 和 native worker 现在共用相同的两个变量名白名单；没有把整份环境、
+真实 HOME、模型密钥或代理值放进 worker。回归同时检查无关秘密不继承、许可证值不进入
+请求/结果；真实站点只返回变量存在性和版本，不返回配置值。
+
+路径：E8 对比环境 → E9 先复现失败再修复 → E10 HPC probe-only 验证 →
+**待批准的新冻结身份下单次 S-box reference SEC**。新预检不等于许可证 checkout 或 proof；
+需要真实 SEC 才能确认此次修复是否足以恢复任务。所有旧商业调用停止/零重试约束仍然有效。

@@ -21,7 +21,7 @@ from verigym_cadence.protocol import (
     bounded_read,
     unique_json,
 )
-from verigym_cadence.server import Service
+from verigym_cadence.server import Service, worker_call
 
 from verigym.plugin_api import (
     CompletedCommand,
@@ -247,6 +247,48 @@ def test_sec_native_parser_does_not_equate_no_cex_with_proof(
 def test_doctor_without_profile_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VERIGYM_JASPERGOLD_MCP_PROFILE", raising=False)
     assert not JasperGoldMcpTool().health_check().healthy
+
+
+@pytest.mark.parametrize("operation", ["probe", "verify"])
+@pytest.mark.parametrize("configured", [False, True])
+def test_worker_receives_only_site_license_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    configured: bool,
+) -> None:
+    profile, _ = fixture(tmp_path, {"status": "proven"})
+    expected = {"CDS_LIC_FILE": "synthetic-cds", "LM_LICENSE_FILE": "synthetic-lm"}
+    for name, value in expected.items():
+        if configured:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("VERIGYM_UNRELATED_SECRET", "synthetic-unrelated")
+    worker = executable(
+        tmp_path / "license-worker.py",
+        "import json, os, sys\n"
+        "raw = sys.stdin.read()\n"
+        "payload = json.loads(raw)\n"
+        f"expected = {expected if configured else {}!r}\n"
+        "actual = {n: os.environ[n] for n in ('CDS_LIC_FILE', 'LM_LICENSE_FILE') "
+        "if n in os.environ}\n"
+        "assert actual == expected\n"
+        "assert 'VERIGYM_UNRELATED_SECRET' not in os.environ\n"
+        "assert all(value not in raw for value in expected.values())\n"
+        "print(json.dumps({'tool_version': '2022.12', 'yosys_version': '0.55'} "
+        "if payload['operation'] == 'probe' else {'status': 'proven'}))\n",
+    )
+    profile = profile.model_copy(update={"worker": worker})
+    result = worker_call(
+        profile, operation, request_for(profile) if operation == "verify" else None
+    )
+    assert result == (
+        {"tool_version": "2022.12", "yosys_version": "0.55"}
+        if operation == "probe"
+        else {"status": "proven"}
+    )
+    assert not any(value in str(result) for value in expected.values())
 
 
 @pytest.mark.parametrize("status", ["proven", "cex"])

@@ -18,6 +18,7 @@ PROTOCOL: Literal["verigym.cadence.jaspergold.sec.mcp.v1"] = "verigym.cadence.ja
 VERSION: Literal["0.1.0"] = "0.1.0"
 MCP_VERSION = "2024-11-05"
 SERVER_NAME = "verigym-cadence"
+LICENSE_ENVIRONMENT_NAMES = ("CDS_LIC_FILE", "LM_LICENSE_FILE")
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 32 * 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024

@@ -19,6 +19,12 @@ and frozen identities only, never raw counterexamples or logs. Version resolutio
 or suite qualification. Local process-group termination does not establish remote scheduler
 cancellation; production generated-RTL execution requires a separately qualified site wrapper.
 
+The Cadence server explicitly forwards the operator's `CDS_LIC_FILE` and `LM_LICENSE_FILE`
+environment variables to its fixed worker, which uses the same allowlist for tool subprocesses.
+The request cannot supply environment values. Values are not included in profile identities,
+structured requests, traces or responses. Other ambient variables remain filtered by
+`LocalRuntime`, and its temporary `HOME` is not replaced with the operator's real home directory.
+
 The draft `verigym-realbench` adapter requires an explicit external source lock and visibility
 audit. It never downloads, decrypts or executes upstream scripts. Only declared public specs,
 images, stubs and audited public dependencies are projected into the model workspace. It fails
