@@ -460,6 +460,35 @@ def resume_qualification(manifest: Any, lock: OpenToolchainV188ImageLock) -> dic
     return qualified
 
 
+def initialize_harness(settings: Any, scratch: Path) -> None:
+    from verigym_deepseek_harness.process import run_harness_helper
+
+    session_root = scratch / "initialize-session"
+    broker_root = scratch / "initialize-broker"
+    session_root.mkdir(mode=0o700)
+    broker_root.mkdir(mode=0o700)
+    initialized = run_harness_helper(
+        replace(settings, process_timeout_s=300),
+        mode="initialize",
+        prompt="",
+        system_prompt="Initialize the VeriGym HWE tool protocol without starting an episode.",
+        session_id=f"{IDENTITY}-initialize",
+        session_root=session_root,
+        broker_root=broker_root,
+        docker_host=settings.docker_host,
+    )
+    if (
+        initialized.events
+        or initialized.provider_request_started
+        or initialized.finish_reason is not None
+        or initialized.final_response
+        or initialized.format_repairs
+        or initialized.run_interval_count != 0
+        or (session_root / "provider-request-started-v1.json").exists()
+    ):
+        raise ValueError("Harness initialization crossed the provider boundary")
+
+
 def run_canary(
     manifest: Any, lock: OpenToolchainV188ImageLock, qualified: dict[str, Any], name: str, host: str
 ) -> dict[str, Any]:
@@ -504,32 +533,7 @@ def run_canary(
         configured.prepare(f"{IDENTITY}-preflight")
     finally:
         configured.close()
-    from verigym_deepseek_harness.process import run_harness_helper
-
-    session_root = SCRATCH / "initialize-session"
-    broker_root = SCRATCH / "initialize-broker"
-    session_root.mkdir(mode=0o700)
-    broker_root.mkdir(mode=0o700)
-    initialized = run_harness_helper(
-        replace(settings, process_timeout_s=300),
-        mode="initialize",
-        prompt="",
-        system_prompt="",
-        session_id=f"{IDENTITY}-initialize",
-        session_root=session_root,
-        broker_root=broker_root,
-        docker_host=settings.docker_host,
-    )
-    if (
-        initialized.events
-        or initialized.provider_request_started
-        or initialized.finish_reason is not None
-        or initialized.final_response
-        or initialized.format_repairs
-        or initialized.run_interval_count != 0
-        or (session_root / "provider-request-started-v1.json").exists()
-    ):
-        raise ValueError("Harness initialization crossed the provider boundary")
+    initialize_harness(settings, SCRATCH)
     with CONSUMPTION.open("x") as stream:
         json.dump(
             {

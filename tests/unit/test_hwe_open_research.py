@@ -9,12 +9,44 @@ import os
 import subprocess
 import tarfile
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from scripts import run_hwe_pr1816_open_research as research
+
+
+@pytest.mark.parametrize("provider_started", [False, True])
+def test_initialize_supplies_required_prompt_and_rejects_provider_activity(
+    tmp_path, monkeypatch, provider_started
+):
+    from verigym_deepseek_harness import process
+
+    @dataclass
+    class Settings:
+        process_timeout_s: int = 3600
+        docker_host: str = "unix:///run/docker.sock"
+
+    def helper(settings, **kwargs):
+        assert settings.process_timeout_s == 300
+        assert kwargs["mode"] == "initialize" and kwargs["system_prompt"].strip()
+        return SimpleNamespace(
+            events=(),
+            provider_request_started=provider_started,
+            finish_reason=None,
+            final_response="",
+            format_repairs=(),
+            run_interval_count=0,
+        )
+
+    monkeypatch.setattr(process, "run_harness_helper", helper)
+    if provider_started:
+        with pytest.raises(ValueError, match="provider boundary"):
+            research.initialize_harness(Settings(), tmp_path)
+    else:
+        research.initialize_harness(Settings(), tmp_path)
 
 
 @pytest.mark.parametrize("unsafe_link", [False, True])
