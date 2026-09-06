@@ -7,6 +7,7 @@ from typing import Any
 
 from verigym.agents.api_repository import _provider_failure_category
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
+from verigym.core.agent_feedback import public_feedback_test_ids
 from verigym.core.episode import TerminationReason
 from verigym.core.hashing import content_hash
 from verigym.core.model_gateway import ModelBudgetError
@@ -88,6 +89,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
         self._state: RepositoryActionState = "awaiting_action"
         self._patch_applied = False
         self._public_test_observed = False
+        self._compile_passed = False
         self._diff_observed = False
         self._max_output_tokens: int | None = None
 
@@ -98,7 +100,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
             raise ValueError("provider-neutral API repository agent requires a resolved protocol")
         if context.prompt_builder is not None:
             raise ValueError("provider-neutral API repository agent owns its execution prompt")
-        if context.prompt_policy.id != self.prompt_policy_spec.prompt_contract_id:
+        if context.prompt_policy.id != context.action_protocol.prompt_contract_id:
             raise ValueError("repository action prompt identity mismatch")
         if context.action_protocol.protocol_id != "repository_action.v2":
             raise ValueError("repository action protocol identity mismatch")
@@ -126,6 +128,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
         self._state = "awaiting_action"
         self._patch_applied = False
         self._public_test_observed = False
+        self._compile_passed = False
         self._diff_observed = False
         self._max_output_tokens = context.task.budget.max_output_tokens
 
@@ -176,6 +179,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
         self._bootstrap_content[path] = result.stdout
 
     def _capture_action_result(self, observation: Observation) -> None:
+        context = self._require_context()
         if self._last_action is None:
             return
         action = self._last_action
@@ -229,10 +233,27 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
             )
         if isinstance(action, ApplyPatchAction) and result.success:
             self._patch_applied = True
+            if context.action_protocol is not None and context.action_protocol.state_machine_id == (
+                "repository_action_state_machine_v3"
+            ):
+                self._public_test_observed = False
+                self._compile_passed = False
+                self._diff_observed = False
             self._state = "candidate_modified"
         elif isinstance(action, ToolCallAction) and action.tool == "repository.public_test":
             self._public_test_observed = True
-            self._state = "public_test_observed"
+            test_id = action.arguments.get("test_id")
+            if context.agent_feedback_contract is not None and test_id == (
+                context.agent_feedback_contract.compile_test_id
+            ):
+                self._compile_passed = result.success
+                self._state = "compile_observed"
+            elif context.agent_feedback_contract is not None and test_id == (
+                context.agent_feedback_contract.ppa_test_id
+            ):
+                self._state = "ppa_observed"
+            else:
+                self._state = "public_test_observed"
         elif isinstance(action, ToolCallAction) and action.tool == "file.diff":
             self._diff_observed = True
             self._state = "diff_observed"
@@ -311,7 +332,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
             )
             envelope, arguments = validate_canonical_action(raw, task=context.task)
             action = canonical_repository_action_to_agent_action(envelope.action, arguments)
-            self._validate_state_transition(envelope.action)
+            self._validate_state_transition(envelope.action, envelope.arguments)
         except RepositoryActionProtocolViolation as exc:
             gateway.emit_action_rejected(
                 request.request_id,
@@ -400,7 +421,7 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
             subcategory, "provider response finish state is incompatible with the action protocol"
         )
 
-    def _validate_state_transition(self, action: str) -> None:
+    def _validate_state_transition(self, action: str, arguments: dict[str, Any]) -> None:
         context = self._require_context()
         protocol = context.action_protocol
         assert protocol is not None
@@ -412,6 +433,18 @@ class ProviderNeutralApiRepositoryAgent(AgentAdapter):
             public_observed=self._public_test_observed,
             diff_observed=self._diff_observed,
             finished=self._state == "finished",
+            public_test_id=(arguments.get("test_id") if action == "run_public_test" else None),
+            compile_test_id=(
+                context.agent_feedback_contract.compile_test_id
+                if context.agent_feedback_contract is not None
+                else None
+            ),
+            compile_passed=self._compile_passed,
+            compile_required_for_finish=(
+                context.agent_feedback_contract.compile_required_for_finish
+                if context.agent_feedback_contract is not None
+                else False
+            ),
         )
         if failure is not None:
             raise RepositoryActionProtocolViolation(
@@ -434,8 +467,7 @@ def _render_prompt(
     policy = context.prompt_policy
     protocol = context.action_protocol
     assert policy is not None and protocol is not None
-    repository = context.task.metadata.get("repository_repair")
-    public_ids = repository.get("public_test_ids") if isinstance(repository, dict) else []
+    public_ids = public_feedback_test_ids(context.task)
     payload = {
         "schema_version": "1.0",
         "prompt_contract": prompt_contract(protocol.state_machine_id),
@@ -447,7 +479,7 @@ def _render_prompt(
             "entrypoints": sorted(context.task.workspace.entrypoints),
             "editable_globs": sorted(context.task.workspace.editable_globs),
             "readonly_globs": sorted(context.task.workspace.readonly_globs),
-            "public_test_ids": sorted(public_ids) if isinstance(public_ids, list) else [],
+            "public_test_ids": sorted(public_ids),
             "max_changed_files": context.task.workspace.max_changed_files,
             "max_patch_lines": context.task.workspace.max_patch_lines,
         },
@@ -457,6 +489,8 @@ def _render_prompt(
         "bounded_observations": observations,
         "seed": context.seed,
     }
+    if context.agent_feedback_contract is not None:
+        payload["agent_feedback_contract"] = context.agent_feedback_contract.model_dump(mode="json")
     rendered = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if len(rendered.encode("utf-8")) > (policy.max_task_context_bytes or 0):
         raise ValueError("repository action task context exceeds its frozen byte bound")

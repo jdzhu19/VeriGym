@@ -50,6 +50,10 @@ upstream data explicitly. See the
 [VerilogEval source guide](integrations/verigym-verilog-eval-codecomplete/README.md) and
 [RTL-Repo adapter guide](docs/rtl_repo.md).
 
+The three RTL integrations also provide independently partitioned multi-turn
+[AgentEval v1 variants](docs/rtl_agent_eval.md). They do not change or aggregate the existing
+single-turn scores.
+
 The optional [external training reference](docs/external_training_reference.md) covers
 verifier-filtered strong-model SFT and a bounded rLLM/VeriGym/verl GRPO path. Training frameworks,
 GPU runtimes, model weights, and credentials remain outside the evaluator package.
@@ -232,6 +236,19 @@ docker build \
   docker/iverilog12
 ```
 
+The optional public Verilator backend has its own non-root, source-complete image and does not
+replace the Icarus tag:
+
+```bash
+docker build \
+  -f docker/verilator5052-iverilog12/Dockerfile \
+  -t verigym/rtl-verilator:5.052-iverilog12-r1 \
+  docker/verilator5052-iverilog12
+```
+
+Its VerilogEval and RTLLM variants use Verilator only for repeatable candidate-only compile/lint
+feedback. Hidden functional verification remains isolated and PPA is not enabled by this choice.
+
 Run the same toy AgentEval vertical slice under fail-closed Docker isolation:
 
 ```bash
@@ -331,7 +348,9 @@ pytest -m docker_yosys
 
 The `verigym-rtllm` integration exposes pinned external RTLLM `counter_12` and
 `up_down_counter` tasks without redistributing the benchmark. Their chat and agent modes share a
-verifier-only VCS regression. A user-supplied `synopsys.dc.synth` profile can add
+verifier-only VCS regression. New commercial campaigns can replace that node with the hash-bound
+`synopsys.vcs.mcp` backend through a verifier profile. A user-supplied `synopsys.dc.mcp` profile
+can add
 correctness-gated area, cell-count, delay, WNS, explicit-activity power, and QoR summaries. The
 same optional package also
 provides `synopsys.formality.equivalence` for verifier-only RTL equivalence checks:
@@ -339,11 +358,24 @@ provides `synopsys.formality.equivalence` for verifier-only RTL equivalence chec
 ```bash
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant counter_12
 verigym suites validate --suite rtllm --source /path/to/RTLLM --variant up_down_counter
+verigym suites validate --suite rtllm --source /path/to/RTLLM \
+  --variant v2-agent-eval-functional-all-v1
 verigym run --suite rtllm --task counter_12 --suite-source /path/to/RTLLM \
   --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
-  --toolchain-profile site-synopsys-dc \
-  --toolchain-profile-file /private/profiles/dc.yaml --output runs/
+  --verifier-profile rtllm-counter-vcs-client-v1 \
+  --verifier-profile-file /private/profiles/rtllm-counter-vcs-client.yaml \
+  --toolchain-profile rtllm-counter-dc-mcp-v1 \
+  --toolchain-profile-file /private/profiles/rtllm-counter-dc-client.yaml \
+  --output runs/
 ```
+
+RTLLM AgentEval may also expose bounded DC feedback through the existing
+`run_public_test("ppa")` action when the selected `synopsys.dc.mcp` client profile binds a
+hash-checked disposable worker contract. Each uncached attempt is one isolated worker dispatch;
+the agent receives only candidate area, maximum-path delay, WNS, power, units, and sanitized
+budget/identity fields. This path is explicit opt-in and is separately partitioned from open
+Yosys/OpenSTA and from final PPA scoring. See the
+[phase-two worker qualification](docs/audits/rtl_agent_dc_worker_qualification_v2.md).
 
 Both integrations are separate installable packages. No benchmark files, commercial binaries,
 libraries, or license values are present in the core distribution. See the
@@ -351,6 +383,8 @@ libraries, or license values are present in the core distribution. See the
 a restricted verifier-only MCP stdio service and `synopsys.dc.mcp` synthesis backend for a
 dedicated licensed host. A sanitized client profile lets normal `verigym run` use the service; it
 accepts only server-approved profiles and hash-bound RTL, not arbitrary commands or Tcl.
+See [verifier backend profiles](docs/verifier_profiles.md) for VCS MCP setup, experiment freezing,
+Icarus version boundaries, replay identities, and failure behavior.
 
 ## External VerilogEval V2
 

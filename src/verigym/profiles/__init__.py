@@ -6,6 +6,13 @@ from verigym.profiles.base import (
     ResolvedToolchainProfile,
     ResolvedToolIdentity,
 )
+from verigym.profiles.identity import (
+    RESOLVED_PROFILE_IDENTITY_COMPONENTS,
+    ResolvedProfileComparisonEvidence,
+    compare_resolved_profile_identity,
+    require_resolved_profile_identity,
+    resolved_profile_component_hashes,
+)
 from verigym.profiles.registry import ToolchainProfileRegistry, builtin_profiles
 
 __all__ = [
@@ -15,4 +22,9 @@ __all__ = [
     "ResolvedToolchainProfile",
     "ToolchainProfileRegistry",
     "builtin_profiles",
+    "RESOLVED_PROFILE_IDENTITY_COMPONENTS",
+    "ResolvedProfileComparisonEvidence",
+    "compare_resolved_profile_identity",
+    "require_resolved_profile_identity",
+    "resolved_profile_component_hashes",
 ]

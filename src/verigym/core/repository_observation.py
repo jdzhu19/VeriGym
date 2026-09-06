@@ -306,6 +306,15 @@ def bounded_read_view(
         raise ValueError("start_line is outside the file")
     if end_line is not None and end_line > line_count:
         raise ValueError("end_line is outside the file")
+    if line_count == 0:
+        return "", {
+            "view_mode": "concise" if concise else "full",
+            "line_count": 0,
+            "line_range": [0, 0],
+            "concise": bool(concise),
+            "structural_line_count": 0 if concise else None,
+            "omitted_line_ranges": [],
+        }
     selected_start = start_line or 1
     selected_end = end_line or line_count
     if selected_start > selected_end:

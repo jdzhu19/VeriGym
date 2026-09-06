@@ -1,0 +1,8 @@
+Runtime base image:
+  ghcr.io/jdzhu19/verigym-rtl-iverilog@sha256:44d5e56dc4ecede0aa9b53fd1dc63b2bdfb153b140084ace6b4847edbb673269
+
+Verilator v5.052 peeled commit:
+  ea338be98e1e838d3518809ce8899f85a009963c
+
+Verilator release version:
+  5.052 2026-09-05

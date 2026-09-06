@@ -1,0 +1,1575 @@
+{
+  "schema_version": "rtllm-task-catalog-v1",
+  "tasks": [
+    {
+      "auxiliary_files": [],
+      "candidate_top": "accu",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "b90ba45a643f49833e221fbe0cd27c92356a76bd4ce9df5b4ccdbf134208a048"
+        ],
+        [
+          "makefile",
+          "117debf6e3cc66dfb8a4c2745af69712ba89520e98c388277f56f7099e5e3926"
+        ],
+        [
+          "testbench.v",
+          "caa0a4c575f65691ab0dc1ceb018a64611b64cf3f6a20049c6f191c720f724b0"
+        ],
+        [
+          "verified_accu.v",
+          "67067237d33fa00128ceb7f60c3139cc1daae46d5c4af1d3e0ba140e63846fa2"
+        ]
+      ],
+      "name": "accu",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_accu.v",
+      "reference_module": "verified_accu",
+      "root": "Arithmetic/Accumulator/accu",
+      "synthesis_top": "accu",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_valid_ready",
+      "title": "RTLLM accu"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "adder_16bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "6a8e0c8e21e5b050cea03be7ad433027349695a51b6162a65a95b718436bf9f5"
+        ],
+        [
+          "makefile",
+          "84d7ae041f7568813e06a4847b6f6fda064c2a4f32b76ac213e9603fb766f9b0"
+        ],
+        [
+          "testbench.v",
+          "5be2dc776570bcb1148ad08ff17612ecd198046eae3f8a45680be2701c478f39"
+        ],
+        [
+          "verified_adder_16bit.v",
+          "3ee85639497d6a85eeec48faea60a5aa47fc6bdeaa48066fb135602f11d92275"
+        ]
+      ],
+      "name": "adder_16bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_adder_16bit.v",
+      "reference_module": "verified_adder_16bit",
+      "root": "Arithmetic/Adder/adder_16bit",
+      "synthesis_top": "adder_16bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "add16_tb",
+      "title": "RTLLM adder_16bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "adder_32bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "48f1483db542ce225ab8bbbf8e20e79ab47a5dcf1775ff194ecda1f439aec852"
+        ],
+        [
+          "makefile",
+          "01ff835b64e49f2588bd7da2a96c311919f4c4e121c9d90408669c3721f5fb96"
+        ],
+        [
+          "testbench.v",
+          "ebca058493802ceeb3819c8758ef003c14d08f86affc3c896a207af00dc9b1c1"
+        ],
+        [
+          "verified_adder_32bit.v",
+          "a5529a8fe85748de646ebf34da72cd9fdc5457f706101b3c77fd7f17ef26d57a"
+        ]
+      ],
+      "name": "adder_32bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_adder_32bit.v",
+      "reference_module": "verified_adder_32bit",
+      "root": "Arithmetic/Adder/adder_32bit",
+      "synthesis_top": "adder_32bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "adder32_tb",
+      "title": "RTLLM adder_32bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "adder_8bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "56031f3ec5fae6d1d41154a71bf238410847de0e5e28e23f111af171f9fc75b4"
+        ],
+        [
+          "makefile",
+          "150a39a6cbf616c69ed2aecbe9f2c0a5d2d5a811a9542e9774d4a825874edf5f"
+        ],
+        [
+          "testbench.v",
+          "226c529e5e64eb272acb1ccb5ced70bdcd28e270f64a51b020f50a2adc7fa9f6"
+        ],
+        [
+          "verified_adder_8bit.v",
+          "ec6f653763cb7ccd07afa7223f4b66d5f9c37f307eb4cb1606fdfa556a7f444f"
+        ]
+      ],
+      "name": "adder_8bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_adder_8bit.v",
+      "reference_module": "verified_adder_8bit",
+      "root": "Arithmetic/Adder/adder_8bit",
+      "synthesis_top": "adder_8bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM adder_8bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "adder_bcd",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "b38196c578dd6285cb2fefbd693b63098509818f5c9d206481b70fdbe13c8c36"
+        ],
+        [
+          "makefile",
+          "d0cb8f2e18976011ca06ecd8dfa1764860754c42d49877a731db73039db0f559"
+        ],
+        [
+          "testbench.v",
+          "05c80fdf3f9660c5bcfc35f24dd73f46cb40b3be506589bc8747db4703f70323"
+        ],
+        [
+          "verified_adder_bcd.v",
+          "7bc3695726c0dc21f88fb6752e092dfb781eee82974af1e1f5e371986fd8c779"
+        ]
+      ],
+      "name": "adder_bcd",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_adder_bcd.v",
+      "reference_module": "adder_bcd",
+      "root": "Arithmetic/Adder/adder_bcd",
+      "synthesis_top": "adder_bcd",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM adder_bcd"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "adder_pipe_64bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "f5f1f2f71dcc559f37b2b0f41ccf286110e3afeb147f894cb94ded1ad90547bc"
+        ],
+        [
+          "makefile",
+          "037819bee9f35158c373d1c2ded651a47e8f239f5bac6b265ac3f9192038df9e"
+        ],
+        [
+          "testbench.v",
+          "07a84afbcfea71800dd87410ca75e27e77b2ed66363b296d10241897d63745da"
+        ],
+        [
+          "verified_adder_64bit.v",
+          "78ddd3f77dac5c273a906698773f19087d4a915c0a003857137188da4c26b8cb"
+        ]
+      ],
+      "name": "adder_pipe_64bit",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_adder_64bit.v",
+      "reference_module": "verified_adder_64bit",
+      "root": "Arithmetic/Adder/adder_pipe_64bit",
+      "synthesis_top": "adder_pipe_64bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_adder64",
+      "title": "RTLLM adder_pipe_64bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "comparator_3bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "977cd1b8e6b773df16de4fdca3f6dea30dc46455c82042ef20ec2948604b6c1b"
+        ],
+        [
+          "makefile",
+          "9aa3b414c9f4900ea9e4058d56c85be4ebe9357d4eaafaf826ac562f660f7144"
+        ],
+        [
+          "testbench.v",
+          "f96e7996fd5f5cd0a2cfc6c7bfdd658d5d4137df8722897820ddfb238c65d06c"
+        ],
+        [
+          "verified_comparator_3bit.v",
+          "7f331b457a27a90ef781081ca3338218acbb8f640890f4a1676f9f8e21307407"
+        ]
+      ],
+      "name": "comparator_3bit",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_comparator_3bit.v",
+      "reference_module": "comparator_3bit",
+      "root": "Arithmetic/Comparator/comparator_3bit",
+      "synthesis_top": "comparator_3bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM comparator_3bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "comparator_4bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "e96f4efb0fb1bc3b4ff5dc54c6d2d61f83420e761f883dfd208286c3b92a1fce"
+        ],
+        [
+          "makefile",
+          "7e7c4b14fb2f9432ca48d8565123df1e5596db5a662364563ba7d979e43ee39b"
+        ],
+        [
+          "testbench.v",
+          "e4ace357af22532e79cf655830c1a6358d76108634cccd04fc958d4677a92192"
+        ],
+        [
+          "verified_comparator_4bit.v",
+          "abb2225be214b06f6c295b7ca88eb7893d468f0581cda978422792f5780dcefe"
+        ]
+      ],
+      "name": "comparator_4bit",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_comparator_4bit.v",
+      "reference_module": "comparator_4bit",
+      "root": "Arithmetic/Comparator/comparator_4bit",
+      "synthesis_top": "comparator_4bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM comparator_4bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "div_16bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "95fc527ad373c18a7c39770875b4c3a280d8a7c7596a52380246428154219f79"
+        ],
+        [
+          "makefile",
+          "e37825d45d98fb37ddb0ebfc014cceef668db7a76b6b5dfb8b48b7bbdb3e8871"
+        ],
+        [
+          "testbench.v",
+          "f4b0a45fb280868e1e13c5f01a83028895f0ffba30ec2257734a9f28595e9d3f"
+        ],
+        [
+          "verified_div_16bit.v",
+          "89625978c731ef4c91640ee144e5caca17ffdfeca855e3b32168d64cf5ea8837"
+        ]
+      ],
+      "name": "div_16bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_div_16bit.v",
+      "reference_module": "verified_div_16bit",
+      "root": "Arithmetic/Divider/div_16bit",
+      "synthesis_top": "div_16bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_division",
+      "title": "RTLLM div_16bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "multi_16bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "47576648e3df1a57490f542571f6f15fb51f86674aaef98f363a7823b05c4aed"
+        ],
+        [
+          "makefile",
+          "59f531e199a58a4cebdbb971c25f2e9d5175fec45f1856f8688232563c645249"
+        ],
+        [
+          "testbench.v",
+          "78e9b599707b0c5686ddd05266fe705015bec816297d5890061d97beea353b69"
+        ],
+        [
+          "verified_multi_16bit.v",
+          "e8f856d7b09ef1cbf301ae699b13954c1638ac8f57a53ffbd7783155e2d54ea9"
+        ]
+      ],
+      "name": "multi_16bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_multi_16bit.v",
+      "reference_module": "verified_multi_16bit",
+      "root": "Arithmetic/Multiplier/multi_16bit",
+      "synthesis_top": "multi_16bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_multi_16bit",
+      "title": "RTLLM multi_16bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "multi_8bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "8d21cf2b47a9c529eb0830ca6eb3ca4b9021be254eeed2063319f18a9d601895"
+        ],
+        [
+          "makefile",
+          "036da75f04527d7c75e1d34bb3f798dc55a21ac8b6d5668008ef78a5d051da11"
+        ],
+        [
+          "testbench.v",
+          "d3cae1657ade1c6443e3a33e85417aaa61f55db12bc5fff20d7e5d5d689276e9"
+        ],
+        [
+          "verified_multi_8bit.v",
+          "2dbbc317ac7f55a4be3b4a763df9226969ec98bc05c7162c16b206a3b563321b"
+        ]
+      ],
+      "name": "multi_8bit",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_multi_8bit.v",
+      "reference_module": "multi_8bit",
+      "root": "Arithmetic/Multiplier/multi_8bit",
+      "synthesis_top": "multi_8bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM multi_8bit"
+    },
+    {
+      "auxiliary_files": [
+        "test_data.dat"
+      ],
+      "candidate_top": "multi_booth_8bit",
+      "clocks": [],
+      "fail_marker": "=========== Failed ===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "2c49fd123f165369cf6dfef0f6fb6b2e3b886e3985e83db4582ec331a7655842"
+        ],
+        [
+          "makefile",
+          "8b28ce5cc6ef49acc93faa2945477cec304585678bd0a251c96a3bab83f6f117"
+        ],
+        [
+          "test_data.dat",
+          "c8969417dc5a7dc05f20783c17b00909022d4b0ec050420256961a818208fe9a"
+        ],
+        [
+          "testbench.v",
+          "0d4abbb1fbc0775bd0241e147173979bedabfc01773f11f68d6dd674c29b3cdb"
+        ],
+        [
+          "verified_booth4_mul.v",
+          "ebdfb95c5ac427b8b5e202732491072bddb6f3523f4f55d3ce7e2b9ddf229777"
+        ]
+      ],
+      "name": "multi_booth_8bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_booth4_mul.v",
+      "reference_module": "verified_multi_booth_8bit",
+      "root": "Arithmetic/Multiplier/multi_booth_8bit",
+      "synthesis_top": "multi_booth_8bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "booth4_mul_tb",
+      "title": "RTLLM multi_booth_8bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "multi_pipe_4bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "81d819692c9df2fbf8664a882cc319ba0baee22876c69e4e4ea02ba35c382db3"
+        ],
+        [
+          "makefile",
+          "c6149f29fa0b57fa5bdc1db942c4836715f9c04a155de769f916650d60d49d04"
+        ],
+        [
+          "testbench.v",
+          "db977283522383b6cdc089932bb371fb3e43f13695345cb7f02325ed8b8e0793"
+        ],
+        [
+          "verified_multi_pipe_4bit.v",
+          "0d8037af028cf6186de5f19a962883b1d061e4583cb85ea5aa97d53d6513372d"
+        ]
+      ],
+      "name": "multi_pipe_4bit",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_multi_pipe_4bit.v",
+      "reference_module": "verified_multi_pipe",
+      "root": "Arithmetic/Multiplier/multi_pipe_4bit",
+      "synthesis_top": "multi_pipe_4bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "multi_pipe_tb",
+      "title": "RTLLM multi_pipe_4bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "fixed_point_adder",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "2e035845450923f438b7bbd450cef9d4eef8f1e30dba713bb985a04e504f7b68"
+        ],
+        [
+          "makefile",
+          "93030fcebb68ad3d20feee60dc3ea35f19fd8c4f3365118a0e6e3422d85f9d76"
+        ],
+        [
+          "testbench.v",
+          "e178ec5bcf8767e43fa26d611365d0586e8b1c40e79a3bfa9c86ccdd515506ec"
+        ],
+        [
+          "verified_fixed_point_adder.v",
+          "f7f37c20ccf3786d6a9629d5546b7dda16e9daf4f7ebf01e79f90cc51b4f00ee"
+        ]
+      ],
+      "name": "fixed_point_adder",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_fixed_point_adder.v",
+      "reference_module": "fixed_point_adder",
+      "root": "Arithmetic/Other/fixed_point_adder",
+      "synthesis_top": "fixed_point_adder",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM fixed_point_adder"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "fixed_point_subtractor",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "7159e5359c9c93aff9b73714997c9f29c493bb0c5ba81e9b1cdd98f555faab17"
+        ],
+        [
+          "makefile",
+          "08e64e42da9ead6ca5700c90077cbaa2e25e08c361a0fd18122ad36efa50bef4"
+        ],
+        [
+          "testbench.v",
+          "474170110696301028acea02492eaec591b7d3fbb27863530281860284661a07"
+        ],
+        [
+          "verified_fixed_point_substractor.v",
+          "ec8a083638dbd36009fa8dea9ebcfc6e080c8bd781905576a597edb70857c7ca"
+        ]
+      ],
+      "name": "fixed_point_substractor",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_fixed_point_substractor.v",
+      "reference_module": "fixed_point_subtractor",
+      "root": "Arithmetic/Other/fixed_point_substractor",
+      "synthesis_top": "fixed_point_subtractor",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_fixed_point_subtractor",
+      "title": "RTLLM fixed_point_substractor"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "float_multi",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "b5b52a39d155ff8bec4a95148ac3f3be9b6ac803b53ed8d139c9ba49a8852df7"
+        ],
+        [
+          "makefile",
+          "d4abe22d86ba27f641b7bf0aca2c813835c6c5094cc958ea6b84e4e6e8937edc"
+        ],
+        [
+          "testbench.v",
+          "db695b8279956680f1ce48e364b0a3f3aae82d442af50fea069905bb5b3c2195"
+        ],
+        [
+          "verified_float_multi.v",
+          "b22bf486597af9c3fdc3f8913a3fff291482a9387eff57f64644fa0a65e6c6c3"
+        ]
+      ],
+      "name": "float_multi",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_float_multi.v",
+      "reference_module": "float_multi",
+      "root": "Arithmetic/Other/float_multi",
+      "synthesis_top": "float_multi",
+      "testbench_file": "testbench.v",
+      "testbench_top": "fmultiplier_tb",
+      "title": "RTLLM float_multi"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "sub_64bit",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "7a13380004226e8405fb8fe44ad038e9f564ebbce6e9295f1b0856c6492f5b5d"
+        ],
+        [
+          "makefile",
+          "3de628f419ba554b60aedd523069721e5ba1b4077a8e0bb6400ee0e651dcfab5"
+        ],
+        [
+          "testbench.v",
+          "8ebb6dc553459da7292651cf9c350a062cec1a309c8e18f340e22d00aadfe1fc"
+        ],
+        [
+          "verified_sub_64bit.v",
+          "93caba743a1839915ef7a306bfee4a8b48a564753d63c2141196dcecf43daf7c"
+        ]
+      ],
+      "name": "sub_64bit",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_sub_64bit.v",
+      "reference_module": "sub_64bit",
+      "root": "Arithmetic/Substractor/sub_64bit",
+      "synthesis_top": "sub_64bit",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM sub_64bit"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "JC_counter",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "562151aa7c605e33648ccfdd2c1f768950e6fbe16ad52ddc35e33b896bc57b5b"
+        ],
+        [
+          "makefile",
+          "a64aad3a5ff7acf7f90476c35ad035a614417d9762724e5027592183d5796b9e"
+        ],
+        [
+          "testbench.v",
+          "c04f5550514414ee42da3d4ab2efe33eb10649ef0f8859c0e8de50f0bdf33857"
+        ],
+        [
+          "verified_JC_counter.v",
+          "063822c3c64f8e0e0cf66dc1e1e06edfd48571e01dc73b728ac2aed225c4b48b"
+        ]
+      ],
+      "name": "JC_counter",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_JC_counter.v",
+      "reference_module": "verified_JC_counter",
+      "root": "Control/Counter/JC_counter",
+      "synthesis_top": "JC_counter",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM JC_counter"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "ring_counter",
+      "clocks": [],
+      "fail_marker": "Failed",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "c39396bb8dada70508d378d8863a5da6d1a6adb8543f479ecdc58a957e9d9420"
+        ],
+        [
+          "makefile",
+          "43e596b454046f494154d62f31770207c05946ceb0792668429b3fd144ebb65c"
+        ],
+        [
+          "testbench.v",
+          "d9af8fbe1dc239eefc56c05025d3379a313b6abe3d3dd1a39c12fa2c9964705d"
+        ],
+        [
+          "verified_ring_counter.v",
+          "7697be7e93b8d745acfb86073a28a495b9876b6fb25c673fae427238fb5de62a"
+        ]
+      ],
+      "name": "ring_counter",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_ring_counter.v",
+      "reference_module": "ring_counter",
+      "root": "Control/Counter/ring_counter",
+      "synthesis_top": "ring_counter",
+      "testbench_file": "testbench.v",
+      "testbench_projection": "iverilog12-unpacked-array-race-v1",
+      "testbench_projection_sha256": "db03da558fca84651dacdf44689a30c16787db3d5982787ac9ecccb6e81c9407",
+      "testbench_top": "testbench",
+      "title": "RTLLM ring_counter"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "fsm",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "a7eea663bbfb91998dffefae2fbffb20f9840cb1ce361286c92c4569b6769674"
+        ],
+        [
+          "makefile",
+          "20b6009fb0ba1bb099768155f9872cc566a739fec58aca5b0953c0dff4d111c4"
+        ],
+        [
+          "testbench.v",
+          "77f50dcd0b5c748cab25508efe0685e1af5bd037e2c0b7299bc75aef6f67f667"
+        ],
+        [
+          "verified_fsm.v",
+          "ea1e64be378b21e14efa99484ed4763237328cb5def9fd51fee8f93d4d959c2d"
+        ]
+      ],
+      "name": "fsm",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_fsm.v",
+      "reference_module": "verified_fsm",
+      "root": "Control/Finite State Machine/fsm",
+      "synthesis_top": "fsm",
+      "testbench_file": "testbench.v",
+      "testbench_top": "main",
+      "title": "RTLLM fsm"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "sequence_detector",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "3f866f086fa045abc84985d5117b151d8c422f3e4ed91591b83b8519ee88ba1b"
+        ],
+        [
+          "makefile",
+          "c0819d631a6c862fc0bdd5432f35c080cc58ebe764bffb05989f28f55ce0c83b"
+        ],
+        [
+          "testbench.v",
+          "5e62b9f961945baad2fff327d46c664ce0fc1f1f02adeb02b5560398a1f2f101"
+        ],
+        [
+          "verified_sequence_detector.v",
+          "a4cc0144891bfeccffdbc9a3725b04d45d6ef3f4e07f028b750f4209b96cd965"
+        ]
+      ],
+      "name": "sequence_detector",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_sequence_detector.v",
+      "reference_module": "sequence_detector",
+      "root": "Control/Finite State Machine/sequence_detector",
+      "synthesis_top": "sequence_detector",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_sequence_detector",
+      "title": "RTLLM sequence_detector"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "LFSR",
+      "clocks": [],
+      "fail_marker": "=========== Failed ===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "6154471fcc6d73a92fdd13b0a0f574806700aafb11ec3eaec48bc25d49e4c0cb"
+        ],
+        [
+          "makefile",
+          "d05b7409b95b6a823ab448045356b1844b52ef2d652d7800282476cc110fb69d"
+        ],
+        [
+          "testbench.v",
+          "5e1b2d06fefe9257138acf99088dc590292d8cb3ab27805ac85a763436f8743c"
+        ],
+        [
+          "verified_LFSR.v",
+          "445e1e00eb81aee75b6d7fdd76695c9b2ae73ac9c5105615f75d4b9f2c57af77"
+        ]
+      ],
+      "name": "LFSR",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_LFSR.v",
+      "reference_module": "LFSR",
+      "root": "Memory/Shifter/LFSR",
+      "synthesis_top": "LFSR",
+      "testbench_file": "testbench.v",
+      "testbench_top": "lfsr_tb",
+      "title": "RTLLM LFSR"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "barrel_shifter",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "27e82eb31a001a0c617f344a6c5a0b530de22c3643bead764124cf271bfc5aa1"
+        ],
+        [
+          "makefile",
+          "87aab3564f874bc6f60f01725dacda51a1e7e864424dc52ac7d20ef03d33b541"
+        ],
+        [
+          "testbench.v",
+          "3915b57c7fb2777df35f7f97d05435ac7c47d2ecaad1ef6ff5f2b1e8e1f126de"
+        ],
+        [
+          "verified_barrel_shifter.v",
+          "dbfdb5cbbbd3f15709ef5918308c5400839cedf66f3bcb97af48f9b0de986571"
+        ]
+      ],
+      "name": "barrel_shifter",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_barrel_shifter.v",
+      "reference_module": "barrel_shifter",
+      "root": "Memory/Shifter/barrel_shifter",
+      "synthesis_top": "barrel_shifter",
+      "testbench_file": "testbench.v",
+      "testbench_top": "barrel_shifter_tb",
+      "title": "RTLLM barrel_shifter"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "right_shifter",
+      "clocks": [],
+      "fail_marker": "===========Failed===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "a91255bb26a231d440c6253235f5afc10a497eef0a4481953f945d1930560f27"
+        ],
+        [
+          "makefile",
+          "a1ddbcc9223cb7f2aec09b2ea8c981d6d33868235095321bc09e2333a11d9e6f"
+        ],
+        [
+          "testbench.v",
+          "f09a6e060cedfebd470cab0af67ae21e49d13d5298b9a4f9c02da11369472ef9"
+        ],
+        [
+          "verified_right_shifter.v",
+          "0a3746d0e25ec9ec94cdf9e78bd781f8b3657a2a3b8393985d5d0c5640671364"
+        ]
+      ],
+      "name": "right_shifter",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_right_shifter.v",
+      "reference_module": "verified_right_shifter",
+      "root": "Memory/Shifter/right_shifter",
+      "synthesis_top": "right_shifter",
+      "testbench_file": "testbench.v",
+      "testbench_top": "right_shifter_tb",
+      "title": "RTLLM right_shifter"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "freq_div",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "781fb97e943c0998f6cc7573b772214ab8c242905531d2e95577593e9d0910e0"
+        ],
+        [
+          "makefile",
+          "d751250bf0c4e7236a0e97d2254b2921c5b5436a1126169afc5c143645301ed7"
+        ],
+        [
+          "testbench.v",
+          "3a24463619481aa88979edeb0721fef154f62d2c9aa09d9c4b56c3a24c0e3300"
+        ],
+        [
+          "verified_freq_div.v",
+          "01e245de204b7d8b33f04909e7ed05a4e1f0ec2ef3667dadb7283e9058738950"
+        ]
+      ],
+      "name": "freq_div",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_freq_div.v",
+      "reference_module": "freq_div",
+      "root": "Miscellaneous/Frequency divider/freq_div",
+      "synthesis_top": "freq_div",
+      "testbench_file": "testbench.v",
+      "testbench_top": "test",
+      "title": "RTLLM freq_div"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "freq_diveven",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "8449e54a111d8115f5b2915baffedc0b0a482a209dc9324f9cbea2194591da87"
+        ],
+        [
+          "makefile",
+          "27381669a8ec708d4c1dd12d4cea94379b245881703413a96bb7bd45eafc65a2"
+        ],
+        [
+          "testbench.v",
+          "7f2c7f12ab8047f6f94f1ec3f9bc88143b98aeeb9dbf6271a26896568d3d2d99"
+        ],
+        [
+          "verified_freq_divbyeven.v",
+          "e9665cac8a75ec9871c4bb4a1425f6075b902d6c05d584fad0a37bfbc6e7f473"
+        ]
+      ],
+      "name": "freq_divbyeven",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_freq_divbyeven.v",
+      "reference_module": "freq_divbyeven",
+      "root": "Miscellaneous/Frequency divider/freq_divbyeven",
+      "synthesis_top": "freq_diveven",
+      "testbench_file": "testbench.v",
+      "testbench_projection": "candidate-module-normalization-v1",
+      "testbench_projection_sha256": "dc9e03450fa03307db9cf32075da676aa76926a4207fb102c01947a328fd9dbb",
+      "testbench_top": "testb_div_even",
+      "title": "RTLLM freq_divbyeven"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "freq_divbyfrac",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "fdaeed3857a7355a341002ff6024b2d8fade32f846a390c70cbfbd56e4fa3e7b"
+        ],
+        [
+          "makefile",
+          "be6b37aa816dd1d92a005c550013cd6a8ad62da9131e25b9c169a5cc6ccad57e"
+        ],
+        [
+          "testbench.v",
+          "b9ce1c1af21970c3f039fc6324a6746c91fd85138de3dc1fa1414285c72bddcf"
+        ],
+        [
+          "verified_freq_divbyfrac.v",
+          "b252ccc57171c1807f30bcd7ddd9064d66c424108f361e2d050cefce6714edcd"
+        ]
+      ],
+      "name": "freq_divbyfrac",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_freq_divbyfrac.v",
+      "reference_module": "freq_divbyfrac",
+      "root": "Miscellaneous/Frequency divider/freq_divbyfrac",
+      "synthesis_top": "freq_divbyfrac",
+      "testbench_file": "testbench.v",
+      "testbench_top": "freq_divbyfrac_tb",
+      "title": "RTLLM freq_divbyfrac"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "freq_divbyodd",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "b3dd15f6551cf8885956fd5c60b4042831aba3cb09798a230b694f089e3150c8"
+        ],
+        [
+          "makefile",
+          "ecbb073df984b1411df348dee82728955fd22350ee9e45eb7e241504a7476d4a"
+        ],
+        [
+          "testbench.v",
+          "4a166ba5583588e19cef2403c5d112f99186075a20c65165cb75f271fe603426"
+        ],
+        [
+          "verified_freq_divbyodd.v",
+          "8b90949d26263926cce4f9298b7482594e502cf8b103a3028abf1327f8fadaea"
+        ]
+      ],
+      "name": "freq_divbyodd",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_freq_divbyodd.v",
+      "reference_module": "freq_divbyodd",
+      "root": "Miscellaneous/Frequency divider/freq_divbyodd",
+      "synthesis_top": "freq_divbyodd",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testb_div_odd",
+      "title": "RTLLM freq_divbyodd"
+    },
+    {
+      "auxiliary_files": [
+        "reference.txt"
+      ],
+      "candidate_top": "calendar",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "9f4d90cde753dc658801a7f6e1ac9f773ebd284d7e1f2b507a3ba7b84f17d6a3"
+        ],
+        [
+          "makefile",
+          "e549a36faa3636040ca7dd45e3679d9145055d63e56297a8b816cd768fc8e24f"
+        ],
+        [
+          "reference.txt",
+          "3f0fd2eb09f451ed784ec2f56c228be36190b4051abab01b121cf42bf70ca821"
+        ],
+        [
+          "testbench.v",
+          "50f9797c93eadd11cd73c8caa64c0c01e78b743e1d62f8f1ea653192a3c37535"
+        ],
+        [
+          "verified_calendar.v",
+          "aa9a3069521b019f973c9c8fdc8fe166ef2e1cbc5d03b29f253e88cb6fe3e7a9"
+        ]
+      ],
+      "name": "calendar",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_calendar.v",
+      "reference_module": "verified_calendar",
+      "root": "Miscellaneous/Others/calendar",
+      "synthesis_top": "calendar",
+      "testbench_file": "testbench.v",
+      "testbench_top": "main",
+      "title": "RTLLM calendar"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "edge_detect",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "b43f7c9c42905a08212e5662720e1866689b2c8125efbb7994500d511d6690bc"
+        ],
+        [
+          "makefile",
+          "970dd78016f8396652e2ab9e5e5fbe58562aad15bdafc015617cbcff7334a255"
+        ],
+        [
+          "testbench.v",
+          "f2186de69147c392f2bf65d1763951f1856e98f04cc7168867056fbb00a13a88"
+        ],
+        [
+          "verified_edge_detect.v",
+          "6b1596f9961cad0c28efb27c21a7ef527d2afbdf4ff00b263ed2e8082a8fbce6"
+        ]
+      ],
+      "name": "edge_detect",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_edge_detect.v",
+      "reference_module": "verified_edge_detect",
+      "root": "Miscellaneous/Others/edge_detect",
+      "synthesis_top": "edge_detect",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM edge_detect"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "parallel2serial",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "690e82a1f60b4a170a1d39f4277b66ec46ed9dddb5ee5f0ab980dd83301e9ee4"
+        ],
+        [
+          "makefile",
+          "ebe0de1e4677e7c1de5cb6a948b9be07c2994466e5b903861e86ad927ffd30bf"
+        ],
+        [
+          "testbench.v",
+          "5e58d526baa6e5e4c04141b85b6e7b512c469bb209829bb657e67df63fda4721"
+        ],
+        [
+          "verified_parallel2serial.v",
+          "730ebfdfce685f046173499418944f1d0cf07a8bc99f9f9f85abbbbaebeb1e1e"
+        ]
+      ],
+      "name": "parallel2serial",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_parallel2serial.v",
+      "reference_module": "verified_parallel2serial",
+      "root": "Miscellaneous/Others/parallel2serial",
+      "synthesis_top": "parallel2serial",
+      "testbench_file": "testbench.v",
+      "testbench_top": "parallel2serial_tb",
+      "title": "RTLLM parallel2serial"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "pulse_detect",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "cdc350928bd3af1c4849fb1c04382096164236ffbdc979420628715bb1727c5a"
+        ],
+        [
+          "makefile",
+          "ba7be024574c4cea96bb1f01f5561c5dcf4519bee14459611786b64a67aca260"
+        ],
+        [
+          "testbench.v",
+          "747cba291a0151428565d6418e228c62fa7265b93da146d412e179e67acf8b13"
+        ],
+        [
+          "verified_pulse_detect.v",
+          "6f131f4e47a60986b4dc3c7f9f42f75b82c10ddbc188f9e7b3d2d3ffeb48beda"
+        ]
+      ],
+      "name": "pulse_detect",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_pulse_detect.v",
+      "reference_module": "verified_pulse_detect",
+      "root": "Miscellaneous/Others/pulse_detect",
+      "synthesis_top": "pulse_detect",
+      "testbench_file": "testbench.v",
+      "testbench_top": "pulse_detect_tb",
+      "title": "RTLLM pulse_detect"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "serial2parallel",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "c0291c60826f647cc75900338a9aa8959e586a9e7d595480687afda25fd2908b"
+        ],
+        [
+          "makefile",
+          "07f77ce13d00fc4e37ab865a015f0d31b6da8c294ccfceb95faae9c8a2eaaf49"
+        ],
+        [
+          "testbench.v",
+          "745790c22eb49ec3ed76e5a43554df030f9441efed60de7744f4b3f0256a9a3c"
+        ],
+        [
+          "verified_serial2parallel.v",
+          "287b284fd52a1e6f982401fbadba20213781d25a29b2bfff0dd95925b1b7ec0e"
+        ]
+      ],
+      "name": "serial2parallel",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_serial2parallel.v",
+      "reference_module": "verified_serial2parallel",
+      "root": "Miscellaneous/Others/serial2parallel",
+      "synthesis_top": "serial2parallel",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb",
+      "title": "RTLLM serial2parallel"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "synchronizer",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "2a763a4120bcffae5dd421f9e5cf6292fb65fcf16433f40c91282c119228cb3f"
+        ],
+        [
+          "makefile",
+          "e3042d7e9cf6f0b0c47de35659f6f1cd4ddb3d5c602edf6f602d9826b44d8f64"
+        ],
+        [
+          "testbench.v",
+          "0d20968418301ed61df89fe95dc3b76b9cc8bbc231cf4f03bd31546cfd92a7df"
+        ],
+        [
+          "verified_synchronizer.v",
+          "384bdb6c873e02763cecbe80647460d6eb86222ce0d0fcdeacf6e405f46dd679"
+        ]
+      ],
+      "name": "synchronizer",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_synchronizer.v",
+      "reference_module": "verified_synchronizer",
+      "root": "Miscellaneous/Others/synchronizer",
+      "synthesis_top": "synchronizer",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM synchronizer"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "traffic_light",
+      "clocks": [],
+      "fail_marker": "===========Failed===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "9b10903e7cc88e7da0ecd7acc60685302e74c33891dc030d362fd64afcc25506"
+        ],
+        [
+          "makefile",
+          "adaf30b7d1f8379236f4ef4fd57c9346727459d843787cd7e403827ed070fbac"
+        ],
+        [
+          "testbench.v",
+          "270cdacf8544889440e53fb0d457516723918893c5f5cc47aa8ccc57fc098b76"
+        ],
+        [
+          "verified_traffic_light.v",
+          "f4fe30d2867d48011e1c9d459b318d3cae99ed1959cfb419317d98708a9e89bc"
+        ]
+      ],
+      "name": "traffic_light",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_traffic_light.v",
+      "reference_module": "verified_traffic_light",
+      "root": "Miscellaneous/Others/traffic_light",
+      "synthesis_top": "traffic_light",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_traffic_light",
+      "title": "RTLLM traffic_light"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "width_8to16",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "e5ead5c4adb9523c6d3bb9a036a9e53197afc138963a08afcadde5ad35a16acd"
+        ],
+        [
+          "makefile",
+          "3044bda89612be92eb5036e2ae3f1899cb6a8314902c6b5ca149a9bb2b23a69e"
+        ],
+        [
+          "testbench.v",
+          "55ace40c26b5e38451f171a7650a0035c933898c0b17b7f2d5039582b8fc1c12"
+        ],
+        [
+          "verified_width_8to16.v",
+          "2edba8f052b476d73ab83105a06269c1750199a38cd5e418538cfc7cc925685f"
+        ]
+      ],
+      "name": "width_8to16",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_width_8to16.v",
+      "reference_module": "verified_width_8to16",
+      "root": "Miscellaneous/Others/width_8to16",
+      "synthesis_top": "width_8to16",
+      "testbench_file": "testbench.v",
+      "testbench_top": "testbench",
+      "title": "RTLLM width_8to16"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "RAM",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "a3bf09a92c659ede1d5c4a417af1e232da4852dacc497da221db1f3d6eaa285c"
+        ],
+        [
+          "makefile",
+          "8a677c7bbba6639ddb351c24eeed4bf6efefeb142125f75c0af150cba9495535"
+        ],
+        [
+          "testbench.v",
+          "7bf2b2180c7a48d39d868cc6219b0bd54e30cb3a57f189f37a12a428ec5f6cd9"
+        ],
+        [
+          "verified_RAM.v",
+          "ddaa3c540dadc1c1d2b6982d7b306e805be5e41c01a3b43ce7038c4aba98333e"
+        ]
+      ],
+      "name": "RAM",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_RAM.v",
+      "reference_module": "verified_RAM",
+      "root": "Miscellaneous/RISC-V/RAM",
+      "synthesis_top": "RAM",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_RAM",
+      "title": "RTLLM RAM"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "ROM",
+      "clocks": [],
+      "fail_marker": "errors",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "8f70db969671ec10d3f50f19be6eb4faed3208e90401fe1e536446c8de60b773"
+        ],
+        [
+          "makefile",
+          "b30efe292048cb6a1c110d8ef2f13d4fad21e05b69fdabab95fc44b247a0844a"
+        ],
+        [
+          "testbench.v",
+          "1c8385dd83551284e592e0e9a1fc54908be3408fc8cedd36d848f40deb428dbd"
+        ],
+        [
+          "verified_ROM.v",
+          "374b0ab3509914d23f170f35a9d28ced2446cb9770a16484c3cd2c6c2c39b64a"
+        ]
+      ],
+      "name": "ROM",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_ROM.v",
+      "reference_module": "ROM",
+      "root": "Miscellaneous/RISC-V/ROM",
+      "synthesis_top": "ROM",
+      "testbench_file": "testbench.v",
+      "testbench_top": "rom_tb",
+      "title": "RTLLM ROM"
+    },
+    {
+      "auxiliary_files": [
+        "reference.dat"
+      ],
+      "candidate_top": "alu",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "d64c714297c27f7f771ca8b6053268452bd37d0f24dc7f502028d773a3e5f05f"
+        ],
+        [
+          "makefile",
+          "63b134506f8d8f2c19080ee3a26c76c4c5512f9771d5137ecf34456a462bcd95"
+        ],
+        [
+          "reference.dat",
+          "b6e90efc75ad43792cfaf5bcf77a928d8d391e3af2e710750e49cde80e272715"
+        ],
+        [
+          "testbench.v",
+          "d9a40250ad2a7993dc07f72de08d3af1ef13d22a72425ecdc7da48628778646f"
+        ],
+        [
+          "verified_alu.v",
+          "98dca493c6f226b3a9781bd69af8a7dd861d635210358779b6ddb20b1d59c8b3"
+        ]
+      ],
+      "name": "alu",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_alu.v",
+      "reference_module": "verified_alu",
+      "root": "Miscellaneous/RISC-V/alu",
+      "synthesis_top": "alu",
+      "testbench_file": "testbench.v",
+      "testbench_top": "test_alu",
+      "title": "RTLLM alu"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "clkgenerator",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "bfc7800fd9ba18c8047b9e1ad864d547c484bbb1110fab518111aae6359b3ec7"
+        ],
+        [
+          "makefile",
+          "71f94141e940d026a93c8f165497f3695f7f24bd1cd53193c6494300759ac25c"
+        ],
+        [
+          "testbench.v",
+          "139d92585a02a081a7031709a64d689ce72fe61b8f34557f4aba77df7acd618d"
+        ],
+        [
+          "verified_clkgenerator.v",
+          "62129a458c3648cde000e1eb0ac149d3970b4160664012afbf6f662811e89a92"
+        ]
+      ],
+      "name": "clkgenerator",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_clkgenerator.v",
+      "reference_module": "clkgenerator",
+      "root": "Miscellaneous/RISC-V/clkgenerator",
+      "synthesis_top": "clkgenerator",
+      "testbench_file": "testbench.v",
+      "testbench_projection": "pre-edge-clock-sampling-v1",
+      "testbench_projection_sha256": "4915d329ba590765c74a74929074071382256d55ac881df3f256ddbfe17e7937",
+      "testbench_top": "clkgenerator_tb",
+      "title": "RTLLM clkgenerator"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "instr_reg",
+      "clocks": [],
+      "fail_marker": "failures",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "5d85fc993aaf861ab08f8b1561d7e1532326e9e9072bd1348521bfa0960b48de"
+        ],
+        [
+          "makefile",
+          "3f60afd284c55bb7d352473267fdbdbe7e2bf0115c69d0a033c419980daffeff"
+        ],
+        [
+          "testbench.v",
+          "5dd4f4bf5f62f828433a00ce7d48929221a8fd5736c5e47ff7f2d9db7ab94331"
+        ],
+        [
+          "verified_instr_reg.v",
+          "164a6818f62494be71793d1b31e8ecc4670e04dd1bef4a4b8344b2c57553dddc"
+        ]
+      ],
+      "name": "instr_reg",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_instr_reg.v",
+      "reference_module": "instr_reg",
+      "root": "Miscellaneous/RISC-V/instr_reg",
+      "synthesis_top": "instr_reg",
+      "testbench_file": "testbench.v",
+      "testbench_top": "instr_reg_tb",
+      "title": "RTLLM instr_reg"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "pe",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "148e558f0d41fd68c218cd8222e279d3b84d88f21c1bd4ea13c2dabbd15effcf"
+        ],
+        [
+          "makefile",
+          "383942b6002a248f8cc21647c4d99b0ec081af4752b100790010521ba1a4b284"
+        ],
+        [
+          "testbench.v",
+          "ef3d60f510a67a693aea17e1649c45177fcfdb57054331de4e61e3bac701d028"
+        ],
+        [
+          "verified_pe.v",
+          "9815e6036337bfbd658c8b767542c3106fb99b02a550b86ccb018eb983e9fe45"
+        ]
+      ],
+      "name": "pe",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_pe.v",
+      "reference_module": "verified_pe",
+      "root": "Miscellaneous/RISC-V/pe",
+      "synthesis_top": "pe",
+      "testbench_file": "testbench.v",
+      "testbench_top": "test54",
+      "title": "RTLLM pe"
+    },
+    {
+      "auxiliary_files": [
+        "tri_gen.txt"
+      ],
+      "candidate_top": "signal_generator",
+      "clocks": [],
+      "fail_marker": "===========Error===========",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "a744d3be142fa9c1b630ccb24c582be3a8d963952e549e172aa41aad262f95d6"
+        ],
+        [
+          "makefile",
+          "dad0c27b3c8835073595b9abfb75084950d72beb3837a76ab66b7eec08b3b882"
+        ],
+        [
+          "testbench.v",
+          "53b6eadedabe49eb0db5d013de4e2efa68c3365d3936aa045fca8a450e004ed8"
+        ],
+        [
+          "tri_gen.txt",
+          "1eb5ce27830b09108fffb49ca9c2a2ce1e6212a89b64557f4d768c039ef8507f"
+        ],
+        [
+          "verified_signal_generator.v",
+          "ef8fb029d6d48f1560e3663dc7170b6638f8b050f6374ea2bd638145a3d5f503"
+        ]
+      ],
+      "name": "signal_generator",
+      "pass_marker": "===========Your Design Passed===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_signal_generator.v",
+      "reference_module": "verified_signal_generator",
+      "root": "Miscellaneous/Signal generation/signal_generator",
+      "synthesis_top": "signal_generator",
+      "testbench_file": "testbench.v",
+      "testbench_top": "tb_signal_generator",
+      "title": "RTLLM signal_generator"
+    },
+    {
+      "auxiliary_files": [],
+      "candidate_top": "square_wave",
+      "clocks": [],
+      "fail_marker": "Error",
+      "file_hashes": [
+        [
+          "design_description.txt",
+          "041d9c44829d46b71635dc56c8f739f50663e11d2c6685708a8289aee9ca2f00"
+        ],
+        [
+          "makefile",
+          "a7bde84af2da950067856536dc7bbd6e23297379904168fdb3043d2a42d5f32d"
+        ],
+        [
+          "testbench.v",
+          "c5258a22ec73312bcf090d16a7110607e08d46eb32d86510315b4cae2bb6c964"
+        ],
+        [
+          "verified_square_wave.v",
+          "f66679b43669251b4f314f17b1fde4b3989edd0562cc251b41958b3a39bb75ff"
+        ]
+      ],
+      "name": "square_wave",
+      "pass_marker": "=========== Your Design Passed ===========",
+      "power_base_clock": "",
+      "prompt_file": "design_description.txt",
+      "reference_file": "verified_square_wave.v",
+      "reference_module": "square_wave",
+      "root": "Miscellaneous/Signal generation/square_wave",
+      "synthesis_top": "square_wave",
+      "testbench_file": "testbench.v",
+      "testbench_top": "square_wave_tb",
+      "title": "RTLLM square_wave"
+    }
+  ]
+}

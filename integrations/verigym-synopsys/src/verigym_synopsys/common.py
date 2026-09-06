@@ -49,8 +49,28 @@ def licensed_environment() -> dict[str, str]:
     return {name: value for name in _ENVIRONMENT_NAMES if (value := os.environ.get(name))}
 
 
+def temporary_environment() -> dict[str, str]:
+    """Forward one trusted, existing scratch root without accepting it from a tool request."""
+
+    temporary_value = os.environ.get("TMPDIR")
+    if not temporary_value:
+        return {}
+    temporary = Path(temporary_value).expanduser()
+    try:
+        resolved = temporary.resolve(strict=True)
+    except OSError:
+        return {}
+    if (
+        temporary.is_symlink()
+        or not resolved.is_dir()
+        or not os.access(resolved, os.W_OK | os.X_OK)
+    ):
+        return {}
+    return {"TMPDIR": str(resolved)}
+
+
 def vcs_environment(executable: str) -> dict[str, str]:
-    environment = licensed_environment()
+    environment = {**licensed_environment(), **temporary_environment()}
     path = Path(executable)
     if "VCS_HOME" not in environment and path.is_absolute() and path.parent.name == "bin":
         environment["VCS_HOME"] = str(path.parent.parent)
@@ -80,6 +100,8 @@ def license_failure(text: str) -> bool:
     return (
         "license checkout failed" in lowered
         or "unable to checkout" in lowered
+        or "cannot find license file" in lowered
+        or "no valid license" in lowered
         or ("license" in lowered and any(word in lowered for word in ("denied", "unavailable")))
     )
 
@@ -91,5 +113,6 @@ __all__ = [
     "resolve_executable",
     "safe_executable",
     "safe_relative_path",
+    "temporary_environment",
     "vcs_environment",
 ]

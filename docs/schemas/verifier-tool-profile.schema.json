@@ -1,0 +1,100 @@
+{
+  "$id": "https://verigym.dev/schemas/1.0/verifier-tool-profile.schema.json",
+  "additionalProperties": false,
+  "description": "Sanitized client contract for one fixed model-invisible tool backend.",
+  "properties": {
+    "accepted_tool_version": {
+      "title": "Accepted Tool Version",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "runtime": {
+      "const": "local",
+      "default": "local",
+      "title": "Runtime",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "server_contract_hash": {
+      "title": "Server Contract Hash",
+      "type": "string"
+    },
+    "server_declared_profile_hash": {
+      "title": "Server Declared Profile Hash",
+      "type": "string"
+    },
+    "server_profile_id": {
+      "title": "Server Profile Id",
+      "type": "string"
+    },
+    "server_version": {
+      "title": "Server Version",
+      "type": "string"
+    },
+    "service_protocol": {
+      "title": "Service Protocol",
+      "type": "string"
+    },
+    "source_plugin": {
+      "title": "Source Plugin",
+      "type": "string"
+    },
+    "target_plugin": {
+      "title": "Target Plugin",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "transport_environment": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 2,
+      "title": "Transport Environment",
+      "type": "array"
+    },
+    "transport_executable": {
+      "title": "Transport Executable",
+      "type": "string"
+    },
+    "transport_sha256": {
+      "title": "Transport Sha256",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "task_id",
+    "source_plugin",
+    "target_plugin",
+    "transport_executable",
+    "transport_sha256",
+    "service_protocol",
+    "server_version",
+    "server_profile_id",
+    "server_declared_profile_hash",
+    "server_contract_hash",
+    "accepted_tool_version"
+  ],
+  "title": "VerifierToolProfile",
+  "type": "object"
+}

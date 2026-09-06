@@ -849,6 +849,13 @@
           "title": "Resolved Toolchain Profile Hashes",
           "type": "array"
         },
+        "resolved_verifier_profile_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Resolved Verifier Profile Hashes",
+          "type": "array"
+        },
         "run_config_hash": {
           "title": "Run Config Hash",
           "type": "string"
@@ -867,6 +874,13 @@
         "verifier_hash": {
           "title": "Verifier Hash",
           "type": "string"
+        },
+        "verifier_profile_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Verifier Profile Ids",
+          "type": "array"
         }
       },
       "required": [

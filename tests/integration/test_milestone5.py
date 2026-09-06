@@ -287,6 +287,52 @@ class LimitedBudgetVeriGym(VeriGym):
         return suite, task, assets
 
 
+class FinalSubmissionRequiredVeriGym(LimitedBudgetVeriGym):
+    def load_task(self, task_id: str) -> tuple[Any, Any, Any]:
+        suite, task, assets = super().load_task(task_id)
+        task.metadata["verification_requires_final_submission"] = True
+        return suite, task, assets
+
+
+def test_hidden_verifier_is_not_executed_without_required_final_submission(tmp_path) -> None:
+    model = StaticModelClient(
+        name="test-final-submission-gate",
+        responses=['{"type":"tool_call","tool":"file.read","arguments":{"path":"rtl/counter.v"}}'],
+    )
+    registries = build_registries(discover_external=False)
+    registries.models.register(model)
+    vg = FinalSubmissionRequiredVeriGym(registries, max_model_calls=1)
+
+    result = vg.run(
+        run_config(
+            tmp_path / "final-submission-gate",
+            mode=InteractionMode.AGENT,
+            agent="react",
+            model=model.descriptor.name,
+        )
+    )
+
+    assert result.scorecard.termination_reason == "model_budget_exhausted"
+    assert {item.status.value for item in result.scorecard.verifier_results} == {"skipped"}
+    events = read_trace(result.run_dir / "trace.jsonl")
+    assert any(
+        event.event_type == "verifier_skipped"
+        and event.payload.get("reason") == "typed_final_submission_required"
+        for event in events
+    )
+    assert not (result.run_dir / "artifacts" / "compile_hidden").exists()
+
+    replay = replay_run(result.run_dir, verify=True, service=vg)
+    assert replay.reverified_results is None
+    replay_evidence = json.loads(
+        (result.run_dir / "artifacts" / "replay-verification" / "replay_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert replay_evidence["verifier_reexecuted"] is False
+    assert not (result.run_dir / "artifacts" / "replay-verification" / "compile_hidden").exists()
+
+
 @pytest.mark.parametrize(
     ("limits", "responses", "expected_reason", "expected_calls"),
     [

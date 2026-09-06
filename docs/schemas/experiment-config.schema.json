@@ -637,6 +637,18 @@
     "ExperimentRunsConfig": {
       "additionalProperties": false,
       "properties": {
+        "agent_ppa_feedback": {
+          "default": false,
+          "title": "Agent Ppa Feedback",
+          "type": "boolean"
+        },
+        "agent_ppa_max_calls": {
+          "default": 3,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Agent Ppa Max Calls",
+          "type": "integer"
+        },
         "mode": {
           "$ref": "#/$defs/InteractionMode",
           "default": "agent"
@@ -996,6 +1008,31 @@
       "default": null,
       "title": "Profile File"
     },
+    "public_test_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Profile"
+    },
+    "public_test_profile_file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Public Test Profile File"
+    },
     "runs": {
       "$ref": "#/$defs/ExperimentRunsConfig"
     },
@@ -1019,6 +1056,31 @@
       "minItems": 1,
       "title": "Systems",
       "type": "array"
+    },
+    "verifier_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verifier Profile"
+    },
+    "verifier_profile_file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verifier Profile File"
     }
   },
   "required": [

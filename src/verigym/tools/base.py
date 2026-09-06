@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from verigym.profiles.base import ResolvedToolchainProfile
 from verigym.runtimes.base import Runtime, RuntimeSession
 from verigym.schemas.common import ToolchainProfile, ToolDescriptor
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,10 @@ class ToolContext:
     artifact_dir: Path | None = None
     observation_policy: RepositoryObservationPolicy | None = None
     audit_callback: RawObservationCallback | None = None
+    public_test_executor: Callable[[str, RuntimeSession], CompletedCommand] | None = None
+    dispatch_callback: Callable[[], None] | None = None
+    verifier_profile: VerifierToolProfile | None = None
+    resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
 
 
 class ToolPlugin(ABC):
@@ -60,6 +66,8 @@ class ToolPlugin(ABC):
             raise ValueError(f"tool {self.descriptor.name} requested a shell unexpectedly")
         if context.session is None:
             raise ValueError(f"tool {self.descriptor.name} requires a runtime session")
+        if context.dispatch_callback is not None:
+            context.dispatch_callback()
         completed = context.session.execute(command)
         return self.parse_result(request, completed, context)
 
@@ -96,6 +104,15 @@ class SynthesisBackendPlugin(ToolPlugin):
     ) -> dict[str, Any]:
         """Build one strict candidate or reference request."""
 
+    def build_agent_feedback_request(
+        self,
+        profile: ToolchainProfile,
+        resolved: ResolvedToolchainProfile,
+    ) -> dict[str, Any]:
+        """Build candidate-only feedback; commercial plugins may require a worker label."""
+
+        return self.build_synthesis_request(profile, resolved, run_label="candidate")
+
     @abstractmethod
     def stage_profile_assets(
         self,
@@ -106,4 +123,17 @@ class SynthesisBackendPlugin(ToolPlugin):
         """Copy only profile-approved assets into verifier-private staging."""
 
 
-__all__ = ["SynthesisBackendPlugin", "ToolContext", "ToolPlugin"]
+class VerifierBackendPlugin(ToolPlugin):
+    """Verifier-only backend whose external transport must resolve before model lookup."""
+
+    @abstractmethod
+    def resolve_verifier_profile(
+        self,
+        profile: VerifierToolProfile,
+        *,
+        expected: ResolvedVerifierToolProfile | None = None,
+    ) -> ResolvedVerifierToolProfile:
+        """Resolve transport and remote tool identity without evaluating a candidate."""
+
+
+__all__ = ["SynthesisBackendPlugin", "ToolContext", "ToolPlugin", "VerifierBackendPlugin"]

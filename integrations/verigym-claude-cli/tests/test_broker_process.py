@@ -267,12 +267,14 @@ def test_unexpected_bridge_exception_is_infrastructure_not_policy(tmp_path: Path
     )
     broker.start()
     try:
-        assert _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"]
+        response = _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})
+        assert response["isError"]
     finally:
         broker.stop()
     stats = broker.stats()
     assert stats.policy_failure is None
-    assert stats.infrastructure_failure == "simulated bridge control-plane failure"
+    assert stats.infrastructure_failure == "repository broker dispatch failed"
+    assert "simulated bridge control-plane failure" not in json.dumps(response)
 
 
 def test_bridge_path_rejection_is_policy_not_infrastructure(tmp_path: Path) -> None:
@@ -283,12 +285,14 @@ def test_bridge_path_rejection_is_policy_not_infrastructure(tmp_path: Path) -> N
     )
     broker.start()
     try:
-        assert _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})["isError"]
+        response = _call(broker.socket_path, "read_file", {"path": "repository/a.sv"})
+        assert response["isError"]
     finally:
         broker.stop()
     stats = broker.stats()
-    assert stats.policy_failure == "simulated absolute-path policy rejection"
+    assert stats.policy_failure == "repository workspace path policy violation"
     assert stats.infrastructure_failure is None
+    assert "simulated absolute-path policy rejection" not in json.dumps(response)
 
 
 def test_patch_context_error_is_retryable_not_terminal_policy(tmp_path: Path) -> None:

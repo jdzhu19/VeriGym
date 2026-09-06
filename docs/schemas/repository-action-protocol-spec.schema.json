@@ -36,7 +36,13 @@
       "default": "repository_action_v2_prompt_v2",
       "enum": [
         "repository_action_v2_prompt_v1",
-        "repository_action_v2_prompt_v2"
+        "repository_action_v2_prompt_v2",
+        "repository_action_v2_prompt_v3",
+        "repository_action_v2_prompt_v4",
+        "repository_action_v2_prompt_v5",
+        "repository_action_v2_prompt_v6",
+        "repository_action_v2_prompt_v7",
+        "repository_action_v2_prompt_v8"
       ],
       "title": "Prompt Contract Id",
       "type": "string"
@@ -68,7 +74,8 @@
       "default": "repository_action_state_machine_v2",
       "enum": [
         "repository_action_state_machine_v1",
-        "repository_action_state_machine_v2"
+        "repository_action_state_machine_v2",
+        "repository_action_state_machine_v3"
       ],
       "title": "State Machine Id",
       "type": "string"

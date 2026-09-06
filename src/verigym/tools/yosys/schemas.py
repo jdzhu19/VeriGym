@@ -30,6 +30,8 @@ class YosysSynthesisRequest(StrictModel):
         "verigym-yosys-area-v1",
         "verigym-yosys-opensta-atp-v1",
         "verigym-yosys-opensta-atp-v2",
+        "verigym-yosys-opensta-atp-v3",
+        "verigym-yosys-opensta-atp-v4",
     ] = "verigym-yosys-area-v1"
     emit_netlist_verilog: bool = True
     emit_netlist_json: bool = True
@@ -133,6 +135,8 @@ class YosysSynthesisRequest(StrictModel):
         if self.flow_template_id in {
             "verigym-yosys-opensta-atp-v1",
             "verigym-yosys-opensta-atp-v2",
+            "verigym-yosys-opensta-atp-v3",
+            "verigym-yosys-opensta-atp-v4",
         }:
             if any(value is None for value in timing_power_fields):
                 raise ValueError("the Yosys/OpenSTA flow requires a complete timing/power contract")

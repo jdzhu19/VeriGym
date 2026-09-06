@@ -6,10 +6,12 @@ from typing import Literal
 
 from verigym.core.hashing import hash_bytes
 from verigym.tools.yosys.opensta import (
-    FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS,
+    COMPATIBILITY_FLOW_TEMPLATE_ID,
+    LATCH_MAPPING_FLOW_TEMPLATE_ID,
+    build_opensta_script,
 )
 from verigym.tools.yosys.opensta import (
-    build_opensta_script,
+    FLOW_TEMPLATE_IDS as OPENSTA_FLOW_TEMPLATE_IDS,
 )
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
 
@@ -65,13 +67,20 @@ def build_yosys_script(request: YosysSynthesisRequest) -> str:
         "dffunmap",
         "dfflibmap -liberty profile/cells.lib",
         "abc -liberty profile/cells.lib",
-        "clean -purge",
-        "check -assert",
     ]
+    if request.flow_template_id == LATCH_MAPPING_FLOW_TEMPLATE_ID:
+        lines.append("techmap -map profile/latch_map.v")
+    lines.extend(("clean -purge", "check -assert"))
     if request.emit_netlist_json:
         lines.append("write_json out/netlist.json")
     if request.emit_netlist_verilog:
-        lines.append("write_verilog -noattr out/netlist.v")
+        netlist_options = (
+            "-noattr -noexpr -nodec -simple-lhs"
+            if request.flow_template_id
+            in {COMPATIBILITY_FLOW_TEMPLATE_ID, LATCH_MAPPING_FLOW_TEMPLATE_ID}
+            else "-noattr"
+        )
+        lines.append(f"write_verilog {netlist_options} out/netlist.v")
     if request.emit_stat_json:
         lines.append(
             f"tee -o out/stat.json stat -json -top {request.top} -liberty profile/cells.lib"

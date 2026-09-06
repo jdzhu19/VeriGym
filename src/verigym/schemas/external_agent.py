@@ -645,6 +645,7 @@ class ExternalAgentCallIdentity(StrictModel):
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
             "codex_cli_hwe_native_shell",
+            "codex_cli_agenteval_scoring",
             "claude_cli_external_agent",
             "openhands_sdk_agent",
             "deepseek_harness_hwe_native_shell",
@@ -666,11 +667,15 @@ class ExternalAgentCallIdentity(StrictModel):
         Literal[
             "cli_agent_single_turn_readonly",
             "cli_agent_workspace_writing",
+            "cli_agent_mcp_repository_scoring",
             "sdk_agent_broker_tools",
         ]
         | None
     ) = None
     harness_id: str | None = Field(default=None, min_length=1, max_length=128)
+    agent_version_hash: str | None = None
+    prompt_contract_hash: str | None = None
+    tool_policy_fingerprint: str | None = None
     model_client_kind: Literal["cli_agent_mediated", "sdk_agent_mediated"] | None = None
     agent_harness_kind: (
         Literal[
@@ -710,10 +715,13 @@ class ExternalAgentCallIdentity(StrictModel):
         "executable_sha256",
         "capability_fingerprint",
         "configuration_fingerprint",
+        "agent_version_hash",
+        "prompt_contract_hash",
+        "tool_policy_fingerprint",
     )
     @classmethod
-    def validate_hash(cls, value: str) -> str:
-        if not _SHA256.fullmatch(value):
+    def validate_hash(cls, value: str | None) -> str | None:
+        if value is not None and not _SHA256.fullmatch(value):
             raise ValueError("external-agent identity hashes must be lowercase SHA-256 values")
         return value
 
@@ -813,6 +821,7 @@ class ExternalAgentAccounting(StrictModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     total_tokens: int | None = Field(default=None, ge=0)
+    usage_complete: bool | None = None
     cost: float | None = Field(default=None, ge=0.0)
     currency: str | None = None
 
@@ -826,6 +835,15 @@ class ExternalAgentAccounting(StrictModel):
             self.total_tokens = self.input_tokens + self.output_tokens
         if self.currency is not None and self.cost is None:
             raise ValueError("external-agent currency requires a known cost")
+        if self.usage_complete is False and any(
+            value is not None
+            for value in (self.input_tokens, self.output_tokens, self.total_tokens)
+        ):
+            raise ValueError("incomplete external-agent usage cannot contain token counts")
+        if self.usage_complete is True and (
+            self.input_tokens is None or self.output_tokens is None
+        ):
+            raise ValueError("complete external-agent usage requires input and output tokens")
         return self
 
 

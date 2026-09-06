@@ -166,6 +166,8 @@ def readonly_agent_settings(
     capabilities: CapabilityReport,
     *,
     task_wall_time_s: int,
+    allowed_reasoning_efforts: frozenset[str] = frozenset({_CONFORMANCE_REASONING_EFFORT}),
+    reasoning_integration: str = "read-only conformance",
 ) -> CodexSettings:
     _reject_unknown(options, _READONLY_OPTIONS, kind="read-only agent")
     model = options.get("model_id")
@@ -198,8 +200,8 @@ def readonly_agent_settings(
         model_id=model_id,
         reasoning_effort=_reasoning_effort(
             options,
-            allowed=frozenset({_CONFORMANCE_REASONING_EFFORT}),
-            integration="read-only conformance",
+            allowed=allowed_reasoning_efforts,
+            integration=reasoning_integration,
         ),
         sandbox=sandbox,
         sandbox_backend="codex_cli_default",

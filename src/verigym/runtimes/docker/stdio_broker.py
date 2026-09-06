@@ -58,6 +58,8 @@ class LoopbackWebSocketStdioBroker:
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._stop = threading.Event()
         self._ready = threading.Event()
+        self._failed = threading.Event()
+        self._error_lock = threading.Lock()
         self._client: socket.socket | None = None
         self._error: BaseException | None = None
         self._stderr = bytearray()
@@ -79,6 +81,20 @@ class LoopbackWebSocketStdioBroker:
                 f"external-agent stdio broker failed: {type(self._error).__name__}",
                 subreason=(f"hwe_protocol_{reason}" if reason else "stdio_broker_failed"),
             ) from self._error
+
+    def wait_until_ready(self, *, timeout_s: float) -> bool:
+        """Wait until the single client has completed its WebSocket handshake."""
+
+        if timeout_s < 0:
+            raise ValueError("timeout_s must be non-negative")
+        return self._ready.wait(timeout=timeout_s)
+
+    def wait_until_failed(self, *, timeout_s: float) -> bool:
+        """Wait until an asynchronous broker failure has been retained."""
+
+        if timeout_s < 0:
+            raise ValueError("timeout_s must be non-negative")
+        return self._failed.wait(timeout=timeout_s)
 
     def stop(self) -> BrokerResult:
         protocol_records: tuple[dict[str, object], ...] = ()
@@ -168,7 +184,7 @@ class LoopbackWebSocketStdioBroker:
             inbound.join(timeout=2)
         except BaseException as exc:
             if not self._stop.is_set():
-                self._error = exc
+                self._record_error(exc)
             self._stop.set()
         finally:
             self._close_process_stdin()
@@ -243,8 +259,14 @@ class LoopbackWebSocketStdioBroker:
                 self._stop.set()
         except BaseException as exc:
             if not self._stop.is_set():
-                self._error = exc
+                self._record_error(exc)
                 self._stop.set()
+
+    def _record_error(self, error: BaseException) -> None:
+        with self._error_lock:
+            if self._error is None:
+                self._error = error
+                self._failed.set()
 
     def _process_to_client(self, client: socket.socket) -> None:
         assert self._process.stdout is not None

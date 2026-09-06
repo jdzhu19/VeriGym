@@ -112,7 +112,7 @@ def _connect(url: str) -> socket.socket:
     parsed = urlsplit(url)
     assert parsed.hostname == "127.0.0.1"
     assert parsed.port is not None
-    client = socket.create_connection((parsed.hostname, parsed.port), timeout=2)
+    client = socket.create_connection((parsed.hostname, parsed.port), timeout=10)
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     client.sendall(
         (
@@ -129,6 +129,7 @@ def _connect(url: str) -> socket.socket:
     while b"\r\n\r\n" not in response:
         response.extend(client.recv(4096))
     assert response.startswith(b"HTTP/1.1 101 ")
+    client.settimeout(10)
     return client
 
 
@@ -167,6 +168,7 @@ def test_loopback_broker_translates_one_masked_websocket_client_to_stdio() -> No
     broker = LoopbackWebSocketStdioBroker(_echo_process(), max_output_bytes=64 * 1024)
     broker.start()
     client = _connect(broker.url)
+    assert broker.wait_until_ready(timeout_s=10)
     payload = b'{"jsonrpc":"2.0","id":1,"method":"ping"}'
     _send_masked(client, payload)
     opcode, observed = _receive(client)
@@ -184,15 +186,7 @@ def test_loopback_broker_rejects_unmasked_client_frames() -> None:
     broker.start()
     client = _connect(broker.url)
     client.sendall(bytes((0x81, 2)) + b"{}")
-    deadline = time.monotonic() + 2
-    while True:
-        try:
-            broker.assert_healthy()
-        except DockerContainerError:
-            break
-        if time.monotonic() >= deadline:
-            pytest.fail("broker did not reject the unmasked frame")
-        time.sleep(0.01)
+    assert broker.wait_until_failed(timeout_s=10), "broker did not reject the unmasked frame"
     with pytest.raises(DockerContainerError, match="stdio broker failed"):
         broker.stop()
     client.close()
@@ -255,11 +249,7 @@ def test_loopback_broker_preserves_hwe_protocol_subreason_and_cleanup(tmp_path: 
         client,
         b'{"jsonrpc":"2.0","id":1,"method":"fs/unknownRead","params":{}}',
     )
-    deadline = time.monotonic() + 2
-    while broker._error is None:  # noqa: SLF001 - assert asynchronous broker evidence
-        if time.monotonic() >= deadline:
-            pytest.fail("broker did not retain the HWE protocol failure")
-        time.sleep(0.01)
+    assert broker.wait_until_failed(timeout_s=10), "broker did not retain the HWE protocol failure"
     with pytest.raises(DockerContainerError) as captured:
         broker.stop()
     error = captured.value

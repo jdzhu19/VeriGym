@@ -134,6 +134,11 @@ def diagnose_docker(image: str | None = None) -> list[DockerDiagnostic]:
                     healthy=descriptor.image.vvp_version is not None,
                     message=str(descriptor.image.vvp_version),
                 ),
+                DockerDiagnostic(
+                    component="docker:verilator",
+                    healthy=descriptor.image.verilator_version is not None,
+                    message=str(descriptor.image.verilator_version or "not installed"),
+                ),
             ]
         )
     except DockerRuntimeError as exc:

@@ -14,7 +14,13 @@ from pathlib import Path
 import yaml
 
 from .common import licensed_environment, redact, resolve_executable, safe_executable
-from .dc import FLOW_TEMPLATE_HASH, FLOW_TEMPLATE_ID, _probe_dc
+from .dc import (
+    FLOW_TEMPLATE_HASH,
+    FLOW_TEMPLATE_ID,
+    MULTICLOCK_FLOW_TEMPLATE_HASH,
+    MULTICLOCK_FLOW_TEMPLATE_ID,
+    _probe_dc,
+)
 
 _LIBRARY_NAME = re.compile(r'\blibrary\s*\(\s*"?([A-Za-z_][A-Za-z0-9_$]*)"?\s*\)')
 _LICENSE_NAMES = {"SNPSLMD_LICENSE_FILE", "LM_LICENSE_FILE"}
@@ -115,6 +121,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--power-activity", type=float, default=0.1)
     parser.add_argument("--power-static-probability", type=float, default=0.5)
     parser.add_argument("--power-base-clock", required=True)
+    parser.add_argument(
+        "--multi-clock",
+        action="store_true",
+        help="Aggregate maximum arrival and worst slack across multiple clock groups.",
+    )
     parser.add_argument("--lc-shell", default=os.environ.get("VERIGYM_LC_EXECUTABLE", "lc_shell"))
     parser.add_argument("--dc-shell", default=os.environ.get("VERIGYM_DC_EXECUTABLE", "dc_shell"))
     parser.add_argument(
@@ -158,6 +169,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     dc_executable, dc_version = _probe_dc(args.dc_shell)
     db_hash = _sha256(target_db)
     sdc_hash = _sha256(sdc)
+    flow_template_id = MULTICLOCK_FLOW_TEMPLATE_ID if args.multi_clock else FLOW_TEMPLATE_ID
+    flow_template_hash = MULTICLOCK_FLOW_TEMPLATE_HASH if args.multi_clock else FLOW_TEMPLATE_HASH
     profile = {
         "id": args.profile_id,
         "version": args.profile_version,
@@ -210,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "scripts": [
             {
                 "name": "dc-flow-template",
-                "content_hash": FLOW_TEMPLATE_HASH,
+                "content_hash": flow_template_hash,
                 "media_type": "application/x-tcl-template",
                 "source_kind": "generated",
                 "attribution": "verigym-synopsys",
@@ -226,7 +239,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "default_sources": args.source,
             "top_module": args.top,
             "backend_plugin": "synopsys.dc.synth",
-            "template_id": FLOW_TEMPLATE_ID,
+            "template_id": flow_template_id,
             "abc_policy_id": "not-applicable",
             "liberty_mapping": True,
             "emit_netlist_verilog": True,

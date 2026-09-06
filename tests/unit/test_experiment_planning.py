@@ -32,6 +32,8 @@ def test_experiment_schema_round_trip_is_strict_and_secret_free(tmp_path: Path) 
     config = experiment_config(tmp_path / "out")
     assert ExperimentConfig.model_validate_json(config.model_dump_json()) == config
     assert config.identity_payload()["output"] == {"root": "."}
+    assert "verifier_profile" not in config.identity_payload()
+    assert "verifier_profile_file" not in config.identity_payload()
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ExperimentConfig.model_validate(
             {**config.model_dump(mode="json"), "api_key": "must-not-be-accepted"}

@@ -8,16 +8,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from verigym.core.agent_feedback import task_with_agent_feedback_contract
+from verigym.core.episode import TerminationReason
 from verigym.core.errors import ArtifactIntegrityError, ReplayError
 from verigym.core.hashing import content_hash, hash_bytes, hash_directory
 from verigym.core.integrity import verify_artifact_manifest
 from verigym.core.loaders import dump_json, load_model
-from verigym.core.orchestrator import VeriGym
+from verigym.core.orchestrator import VeriGym, _verification_requires_final_submission
 from verigym.core.repository_candidate import (
     repository_plan_identity,
     verify_frozen_repository_candidate_offline,
 )
 from verigym.core.synthesis import execute_synthesis_quality
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.trace import read_trace
 from verigym.core.verifier_dag import has_infrastructure_error
 from verigym.core.workspace import normalize_relative_path
@@ -44,7 +47,8 @@ from verigym.schemas.task import VeriTask
 from verigym.schemas.tool import ToolResult
 from verigym.schemas.trace import EpisodeEvent
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
-from verigym.tools.base import SynthesisBackendPlugin
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
+from verigym.tools.base import SynthesisBackendPlugin, VerifierBackendPlugin
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,30 @@ def replay_run(
             if record.turn_index != expected_turn:
                 raise ReplayError("repository action protocol records are not contiguous")
             expected_turn += 1
+    if (manifest.agent_feedback_contract is None) != (
+        manifest.agent_feedback_contract_hash is None
+    ):
+        raise ReplayError("run manifest feedback contract and hash are inconsistent")
+    if (
+        manifest.agent_feedback_contract is not None
+        and content_hash(manifest.agent_feedback_contract) != manifest.agent_feedback_contract_hash
+    ):
+        raise ReplayError("run manifest feedback contract hash is inconsistent")
+    if manifest.agent_feedback_evaluations:
+        if content_hash(manifest.agent_feedback_evaluations) != (
+            manifest.agent_feedback_evaluations_hash
+        ):
+            raise ReplayError("run manifest feedback evaluation hash is inconsistent")
+        if any(
+            evaluation.sequence != index
+            for index, evaluation in enumerate(manifest.agent_feedback_evaluations)
+        ):
+            raise ReplayError("run manifest feedback evaluations are not contiguous")
+    elif manifest.agent_feedback_evaluations_hash not in {
+        None,
+        content_hash([]),
+    }:
+        raise ReplayError("empty feedback evaluation ledger has an invalid hash")
     task = load_model(run_dir / "task_snapshot.json", VeriTask)
     try:
         task_payload = json.loads((run_dir / "task_snapshot.json").read_text(encoding="utf-8"))
@@ -218,18 +246,109 @@ def replay_run(
         _validate_stored_synthesis_artifacts(run_dir, manifest, scorecard)
     elif resolved_profile_path.exists():
         raise ReplayError("run has a resolved profile artifact but no manifest identity")
+    verifier_profile_path = run_dir / "artifacts" / "verifier_profile.json"
+    resolved_verifier_profile_path = run_dir / "artifacts" / "resolved_verifier_profile.json"
+    stored_verifier_profile: VerifierToolProfile | None = None
+    stored_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+    if manifest.resolved_verifier_profile_hash is not None:
+        if not verifier_profile_path.is_file() or not resolved_verifier_profile_path.is_file():
+            raise ReplayError("verifier-profile run lacks its declared or resolved artifact")
+        stored_verifier_profile = load_model(verifier_profile_path, VerifierToolProfile)
+        stored_resolved_verifier_profile = load_model(
+            resolved_verifier_profile_path,
+            ResolvedVerifierToolProfile,
+        )
+        if (
+            stored_verifier_profile.id != manifest.requested_verifier_profile_id
+            or stored_verifier_profile.version != manifest.requested_verifier_profile_version
+            or content_hash(stored_verifier_profile) != manifest.verifier_declared_profile_hash
+            or stored_resolved_verifier_profile.declared_profile_hash
+            != manifest.verifier_declared_profile_hash
+            or stored_resolved_verifier_profile.resolved_profile_hash
+            != manifest.resolved_verifier_profile_hash
+            or content_hash(stored_resolved_verifier_profile.identity_payload())
+            != stored_resolved_verifier_profile.resolved_profile_hash
+            or manifest.resolved_verifier_profile != stored_resolved_verifier_profile
+        ):
+            raise ReplayError("resolved verifier profile identity does not match the manifest")
+        if scorecard.reproducibility.verifier_profile_ids != [
+            stored_resolved_verifier_profile.profile_id
+        ] or scorecard.reproducibility.resolved_verifier_profile_hashes != [
+            stored_resolved_verifier_profile.resolved_profile_hash
+        ]:
+            raise ReplayError("scorecard verifier profile identity does not match the manifest")
+    elif (
+        verifier_profile_path.exists()
+        or resolved_verifier_profile_path.exists()
+        or manifest.requested_verifier_profile_id is not None
+        or manifest.requested_verifier_profile_version is not None
+        or manifest.verifier_declared_profile_hash is not None
+        or manifest.resolved_verifier_profile is not None
+    ):
+        raise ReplayError("run has an incomplete verifier profile identity")
+    elif (
+        scorecard.reproducibility.verifier_profile_ids
+        or scorecard.reproducibility.resolved_verifier_profile_hashes
+    ):
+        raise ReplayError("scorecard has verifier profile identities without manifest artifacts")
+    public_test_profile_path = run_dir / "artifacts" / "public_test_profile.json"
+    resolved_public_test_profile_path = run_dir / "artifacts" / "resolved_public_test_profile.json"
+    if manifest.resolved_public_test_profile_hash is not None:
+        if (
+            not public_test_profile_path.is_file()
+            or not resolved_public_test_profile_path.is_file()
+        ):
+            raise ReplayError("public-test-profile run lacks its declared or resolved artifact")
+        stored_public_test_profile = load_model(
+            public_test_profile_path,
+            VerifierToolProfile,
+        )
+        stored_resolved_public_test_profile = load_model(
+            resolved_public_test_profile_path,
+            ResolvedVerifierToolProfile,
+        )
+        if (
+            stored_public_test_profile.id != manifest.requested_public_test_profile_id
+            or stored_public_test_profile.version != manifest.requested_public_test_profile_version
+            or content_hash(stored_public_test_profile)
+            != manifest.public_test_declared_profile_hash
+            or stored_resolved_public_test_profile.declared_profile_hash
+            != manifest.public_test_declared_profile_hash
+            or stored_resolved_public_test_profile.resolved_profile_hash
+            != manifest.resolved_public_test_profile_hash
+            or content_hash(stored_resolved_public_test_profile.identity_payload())
+            != stored_resolved_public_test_profile.resolved_profile_hash
+            or manifest.resolved_public_test_profile != stored_resolved_public_test_profile
+        ):
+            raise ReplayError("resolved public-test profile identity does not match the manifest")
+    elif (
+        public_test_profile_path.exists()
+        or resolved_public_test_profile_path.exists()
+        or manifest.requested_public_test_profile_id is not None
+        or manifest.requested_public_test_profile_version is not None
+        or manifest.public_test_declared_profile_hash is not None
+        or manifest.resolved_public_test_profile is not None
+    ):
+        raise ReplayError("run has an incomplete public-test profile identity")
     events = read_trace(run_dir / "trace.jsonl", expected_run_id=manifest.run_id)
     if not events or events[0].event_type != "episode_started":
         raise ReplayError("trace does not begin with episode_started")
     if events[-1].event_type != "episode_terminated":
         raise ReplayError("trace does not end with episode_terminated")
     _validate_provider_request_identities(manifest, events)
-    _validate_repository_action_protocol_replay(manifest, events, task)
+    replay_task = task_with_agent_feedback_contract(task, manifest.agent_feedback_contract)
+    _validate_repository_action_protocol_replay(manifest, events, replay_task)
 
     reverified: list[VerifierResult] | None = None
     replay_candidate_synthesis: SynthesisMetrics | None = None
     replay_reference_synthesis: SynthesisMetrics | None = None
-    if verify:
+    policy_quarantined = _is_external_workspace_quarantine(scorecard)
+    final_submission_missing = bool(
+        _verification_requires_final_submission(task)
+        and scorecard.termination_reason != TerminationReason.FINAL_SUBMISSION.value
+    )
+    verification_suppressed = policy_quarantined or final_submission_missing
+    if verify and not verification_suppressed:
         if verification_artifact_root is not None:
             replay_artifacts.mkdir(mode=0o700)
         service = service or VeriGym()
@@ -267,16 +386,30 @@ def replay_run(
                     raise ReplayError("stored profile backend is not a synthesis backend")
                 synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
+                source_projection = resolve_synthesis_source_projection(task)
                 replay_resolved_profile = resolve_toolchain_profile(
                     stored_profile,
                     runtime,
-                    source_paths=list(task.workspace.entrypoints),
+                    source_paths=source_projection.profile_sources,
                     top_module=stored_resolved_profile.top_module,
                     reference_candidate_hash=(
                         content_hash(reference) if reference is not None else None
                     ),
                     expected=stored_resolved_profile,
                     backend=synthesis_backend,
+                    synthesis_source_projection_hash=source_projection.projection_hash,
+                )
+            replay_resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+            if stored_resolved_verifier_profile is not None:
+                assert stored_verifier_profile is not None
+                verifier_backend = service.registries.tools.get(
+                    stored_verifier_profile.target_plugin
+                )
+                if not isinstance(verifier_backend, VerifierBackendPlugin):
+                    raise ReplayError("stored verifier profile backend is unsupported")
+                replay_resolved_verifier_profile = verifier_backend.resolve_verifier_profile(
+                    stored_verifier_profile,
+                    expected=stored_resolved_verifier_profile,
                 )
             reverified = service._verify_candidate(
                 suite=suite,
@@ -285,6 +418,8 @@ def replay_run(
                 runtime=runtime,
                 candidate_dir=run_dir / "candidate",
                 artifact_root=replay_artifacts,
+                verifier_profile=stored_verifier_profile,
+                resolved_verifier_profile=replay_resolved_verifier_profile,
             )
             if replay_resolved_profile is not None:
                 assert stored_profile is not None
@@ -332,6 +467,22 @@ def replay_run(
                     content_hash(reverified) if reverified is not None else None
                 ),
                 runtime=runtime.descriptor,
+                build_provenance=get_build_provenance(),
+            ),
+        )
+    elif verify:
+        replay_artifact_root = run_dir / "artifacts" / "replay-verification"
+        replay_artifact_root.mkdir(parents=True, exist_ok=True)
+        dump_json(
+            replay_artifact_root / "replay_evidence.json",
+            ReplayEvidence(
+                run_id=manifest.run_id,
+                created_at_utc=datetime.now(UTC),
+                verifier_reexecuted=False,
+                stored_integrity_status=integrity.status,
+                original_artifact_manifest_hash=integrity.manifest_hash,
+                reverified_result_hash=None,
+                runtime=None,
                 build_provenance=get_build_provenance(),
             ),
         )
@@ -494,6 +645,7 @@ def _validate_repository_action_protocol_replay(
     patch_applied = False
     public_observed = False
     diff_observed = False
+    compile_passed = False
     records = manifest.action_protocol_records
     for index, record in enumerate(records):
         if record.turn_index != index or record.state_before != state:
@@ -557,6 +709,22 @@ def _validate_repository_action_protocol_replay(
                     public_observed=public_observed,
                     diff_observed=diff_observed,
                     finished=state == "finished",
+                    public_test_id=(
+                        envelope.arguments.get("test_id")
+                        if envelope.action == "run_public_test"
+                        else None
+                    ),
+                    compile_test_id=(
+                        manifest.agent_feedback_contract.compile_test_id
+                        if manifest.agent_feedback_contract is not None
+                        else None
+                    ),
+                    compile_passed=compile_passed,
+                    compile_required_for_finish=(
+                        manifest.agent_feedback_contract.compile_required_for_finish
+                        if manifest.agent_feedback_contract is not None
+                        else False
+                    ),
                 )
             except RepositoryActionProtocolViolation as exc:
                 failure = exc.subcategory
@@ -604,10 +772,27 @@ def _validate_repository_action_protocol_replay(
                 raise ReplayError("repository action tool-result hash cannot be reproduced")
             if result.success and envelope.action == "apply_patch":
                 patch_applied = True
+                if manifest.agent_feedback_contract is not None:
+                    public_observed = False
+                    compile_passed = False
+                    diff_observed = False
                 state = "candidate_modified"
             elif envelope.action == "run_public_test":
                 public_observed = True
-                state = "public_test_observed"
+                test_id = envelope.arguments.get("test_id")
+                if (
+                    manifest.agent_feedback_contract is not None
+                    and test_id == manifest.agent_feedback_contract.compile_test_id
+                ):
+                    compile_passed = result.success
+                    state = "compile_observed"
+                elif (
+                    manifest.agent_feedback_contract is not None
+                    and test_id == manifest.agent_feedback_contract.ppa_test_id
+                ):
+                    state = "ppa_observed"
+                else:
+                    state = "public_test_observed"
             elif envelope.action == "inspect_diff":
                 diff_observed = True
                 state = "diff_observed"
@@ -663,9 +848,17 @@ def _validate_stored_synthesis_artifacts(
 ) -> None:
     candidate = scorecard.quality.synthesis
     if candidate is None:
+        reference_summaries = list((run_dir / "artifacts").glob("*/reference_summary.json"))
+        if (
+            _is_external_workspace_quarantine(scorecard)
+            and manifest.reference_summary_hash is None
+            and not reference_summaries
+        ):
+            return
         raise ReplayError("profile-enabled scorecard has no candidate synthesis record")
     backend_root = _resolve_synthesis_backend_artifact_root(run_dir, manifest, candidate)
     artifact_root = backend_root / "candidate" if backend_root is not None else None
+    generated_scripts: dict[str, bytes] = {}
     for artifact in candidate.artifacts:
         if artifact.visibility != "public":
             raise ReplayError("candidate synthesis artifact has an invalid visibility")
@@ -678,12 +871,23 @@ def _validate_stored_synthesis_artifacts(
         payload = path.read_bytes()
         if len(payload) != artifact.size_bytes or hash_bytes(payload) != artifact.content_hash:
             raise ReplayError(f"stored candidate synthesis artifact changed: {relative}")
-    flow = next(
-        (artifact for artifact in candidate.artifacts if artifact.role == "generated_script"),
-        None,
-    )
+        if artifact.role == "generated_script":
+            if relative in generated_scripts:
+                raise ReplayError("stored candidate synthesis script path is duplicated")
+            generated_scripts[relative] = payload
     if candidate.synthesis_ok:
-        if flow is None or flow.content_hash != candidate.generated_script_hash:
+        if candidate.generated_script_hash is None or not generated_scripts:
+            raise ReplayError("stored candidate synthesis script identity is inconsistent")
+        stored_script_hash: str | None = None
+        if len(generated_scripts) == 1:
+            stored_script_hash = hash_bytes(next(iter(generated_scripts.values())))
+        elif set(generated_scripts) == {"synthesis.ys", "flow.tcl"}:
+            stored_script_hash = hash_bytes(
+                generated_scripts["synthesis.ys"]
+                + b"\n--- opensta.tcl ---\n"
+                + generated_scripts["flow.tcl"]
+            )
+        if stored_script_hash != candidate.generated_script_hash:
             raise ReplayError("stored candidate synthesis script identity is inconsistent")
         if manifest.synthesis_flow_script_hash != candidate.generated_script_hash:
             raise ReplayError("manifest and candidate synthesis script hashes differ")
@@ -715,6 +919,22 @@ def _validate_stored_synthesis_artifacts(
         or summary.get("reference_netlist_exported") is not False
     ):
         raise ReplayError("reference summary identity or visibility contract is invalid")
+
+
+def _is_external_workspace_quarantine(scorecard: ScoreCard) -> bool:
+    return (
+        scorecard.status == "failed"
+        and not scorecard.resolved
+        and scorecard.termination_reason == "policy_violation"
+        and scorecard.quality.synthesis is None
+        and scorecard.quality.reference_synthesis is None
+        and bool(scorecard.verifier_results)
+        and all(
+            result.status == VerifierStatus.SKIPPED
+            and result.message == "candidate quarantined after external workspace policy violation"
+            for result in scorecard.verifier_results
+        )
+    )
 
 
 def _resolve_synthesis_backend_artifact_root(

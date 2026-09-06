@@ -15,6 +15,7 @@ from verigym.schemas.action_protocol import (
     RepositoryActionTurnRecord,
 )
 from verigym.schemas.agent import AgentAction, EpisodeResult, Observation
+from verigym.schemas.agent_feedback import AgentFeedbackContract
 from verigym.schemas.common import AgentDescriptor, InteractionMode
 from verigym.schemas.options import JsonValue
 from verigym.schemas.prompt import AgentPromptPolicySpec, PromptPolicyDescriptor
@@ -38,6 +39,7 @@ class AgentContext:
     external_bridge: ExternalAgentBridge | None = None
     prompt_policy: PromptPolicyDescriptor | None = None
     action_protocol: RepositoryActionProtocolDescriptor | None = None
+    agent_feedback_contract: AgentFeedbackContract | None = None
 
 
 class AgentTerminationError(Exception):

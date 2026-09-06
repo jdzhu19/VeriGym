@@ -1,0 +1,3 @@
+module div_16bit(input wire [15:0] A,input wire [7:0] B,output wire [15:0] result,odd);
+    // Implement the complete combinational divider here.
+endmodule

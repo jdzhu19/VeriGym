@@ -15,11 +15,14 @@ RepositoryActionTransport = Literal["json_content", "native_tool_call"]
 RepositoryActionStateMachine = Literal[
     "repository_action_state_machine_v1",
     "repository_action_state_machine_v2",
+    "repository_action_state_machine_v3",
 ]
 RepositoryActionState = Literal[
     "awaiting_action",
     "candidate_modified",
     "public_test_observed",
+    "compile_observed",
+    "ppa_observed",
     "diff_observed",
     "finished",
 ]
@@ -53,6 +56,12 @@ class RepositoryActionProtocolSpec(StrictModel):
     prompt_contract_id: Literal[
         "repository_action_v2_prompt_v1",
         "repository_action_v2_prompt_v2",
+        "repository_action_v2_prompt_v3",
+        "repository_action_v2_prompt_v4",
+        "repository_action_v2_prompt_v5",
+        "repository_action_v2_prompt_v6",
+        "repository_action_v2_prompt_v7",
+        "repository_action_v2_prompt_v8",
     ] = "repository_action_v2_prompt_v2"
     normalizer_id: Literal["repository_action_json_representation_v1"] = (
         "repository_action_json_representation_v1"
@@ -70,8 +79,20 @@ class RepositoryActionProtocolSpec(StrictModel):
         expected = {
             "repository_action_state_machine_v1": "repository_action_v2_prompt_v1",
             "repository_action_state_machine_v2": "repository_action_v2_prompt_v2",
+            "repository_action_state_machine_v3": "repository_action_v2_prompt_v3",
         }[self.state_machine_id]
-        if self.prompt_contract_id != expected:
+        compatible = {expected}
+        if self.state_machine_id == "repository_action_state_machine_v3":
+            compatible.update(
+                {
+                    "repository_action_v2_prompt_v4",
+                    "repository_action_v2_prompt_v5",
+                    "repository_action_v2_prompt_v6",
+                    "repository_action_v2_prompt_v7",
+                    "repository_action_v2_prompt_v8",
+                }
+            )
+        if self.prompt_contract_id not in compatible:
             raise ValueError("repository action prompt and state-machine versions must match")
         return self
 

@@ -13,6 +13,17 @@ from verigym.schemas.task import ValidationIssue
 
 class VerilogEvalVariant(StrEnum):
     V2_SPEC_TO_RTL = "v2-spec-to-rtl"
+    V2_SPEC_TO_RTL_AGENT_EVAL_V1 = "v2-spec-to-rtl-agent-eval-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1 = "v2-spec-to-rtl-agent-eval-verilator-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1 = "v2-spec-to-rtl-agent-eval-vcs-mcp-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1 = "v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1 = "v2-spec-to-rtl-agent-eval-functional-v1"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2 = "v2-spec-to-rtl-agent-eval-functional-v2"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3 = "v2-spec-to-rtl-agent-eval-functional-v3"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4 = "v2-spec-to-rtl-agent-eval-functional-v4"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5 = "v2-spec-to-rtl-agent-eval-functional-v5"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6 = "v2-spec-to-rtl-agent-eval-functional-v6"
+    V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7 = "v2-spec-to-rtl-agent-eval-functional-v7"
 
 
 class IcarusCompatibility(StrEnum):
