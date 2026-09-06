@@ -6,6 +6,21 @@ the benchmark's repository-context, next-line-completion prompt and reports its 
 Match and Edit Similarity metrics. Both ChatEval and AgentEval use the same single-line candidate
 contract. It does not turn RTL-Repo into a compile or simulation task.
 
+The separate `official-parquet-v1-agent-eval-v1` variant exposes a browsable read-only
+official-context projection. It does not expose `next_line`, load `all_code`, or claim that the
+projection is a complete repository; only `repository/completion.txt` is editable.
+
+The independently versioned `official-parquet-v1-agent-eval-v2` projection preserves every v1
+context snippet in official order and adds UTF-8 byte counts plus a frozen source/generated path
+classification to `repository/context/index.json`. The task directs the agent to the cropped
+target tail and source-priority context first. It retains the same hidden target and official
+scorer, but has distinct suite, source, task, and configuration identities.
+
+`official-parquet-v1-agent-eval-v3` preserves the complete v2 context projection and freezes the
+task as `immediate_next_physical_line_v1`: write only the first missing physical source line, with
+one terminating newline, and never flatten or append later source lines. v1 and v2 remain
+unchanged. v3 has another independent suite revision and source/task/configuration identities.
+
 Install from the VeriGym checkout:
 
 ```bash

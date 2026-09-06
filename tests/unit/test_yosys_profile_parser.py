@@ -23,14 +23,19 @@ from verigym.registry.collections import build_registries
 from verigym.runtimes.local import LocalRuntime
 from verigym.schemas.common import RuntimeRequirement, ToolchainProfile
 from verigym.tools.yosys.opensta import (
-    FLOW_TEMPLATE_ID as OPENSTA_FLOW_TEMPLATE_ID,
-)
-from verigym.tools.yosys.opensta import (
+    COMPATIBILITY_FLOW_TEMPLATE_CONTRACT,
+    COMPATIBILITY_FLOW_TEMPLATE_ID,
+    LATCH_MAPPING_FLOW_TEMPLATE_CONTRACT,
+    LATCH_MAPPING_FLOW_TEMPLATE_ID,
+    LATCH_MAPPING_SOURCE,
     LEGACY_FLOW_TEMPLATE_CONTRACT,
     LEGACY_FLOW_TEMPLATE_ID,
     build_opensta_script,
     parse_opensta_metrics,
     parse_opensta_power_json,
+)
+from verigym.tools.yosys.opensta import (
+    FLOW_TEMPLATE_ID as OPENSTA_FLOW_TEMPLATE_ID,
 )
 from verigym.tools.yosys.parser import YosysStatParseError, parse_yosys_stat_json
 from verigym.tools.yosys.schemas import YosysSynthesisRequest
@@ -427,6 +432,36 @@ def test_opensta_v1_replay_contract_remains_distinct_from_v2_diagnostics() -> No
     assert "report_activity_annotation" not in script
     assert hash_bytes((LEGACY_FLOW_TEMPLATE_CONTRACT + "\n").encode()) == (
         "3970b2a27fcd92f9cefe950c0741fdc0ead30cca604e273fb38f75b908c7a60b"
+    )
+
+
+def test_opensta_v3_exports_a_parser_compatible_structural_netlist() -> None:
+    request = _opensta_request(flow_template_id=COMPATIBILITY_FLOW_TEMPLATE_ID)
+
+    synthesis = build_yosys_script(request)
+
+    assert "write_verilog -noattr -noexpr -nodec -simple-lhs out/netlist.v" in synthesis
+    assert "report_units" in build_opensta_script(request)
+    assert hash_bytes((COMPATIBILITY_FLOW_TEMPLATE_CONTRACT + "\n").encode()) == (
+        "5c02c175d93601b8c153fabe62decfd8213ace994d2f9b496ed872c45304f5ea"
+    )
+    assert generated_script_hash(request) != generated_script_hash(_opensta_request())
+
+
+def test_opensta_v4_maps_latches_to_the_frozen_liberty_cells() -> None:
+    request = _opensta_request(flow_template_id=LATCH_MAPPING_FLOW_TEMPLATE_ID)
+
+    synthesis = build_yosys_script(request)
+
+    assert "techmap -map profile/latch_map.v" in synthesis
+    assert "write_verilog -noattr -noexpr -nodec -simple-lhs out/netlist.v" in synthesis
+    assert "$_DLATCH_N_" in LATCH_MAPPING_SOURCE and "DLL_X1" in LATCH_MAPPING_SOURCE
+    assert "$_DLATCH_P_" in LATCH_MAPPING_SOURCE and "DLH_X1" in LATCH_MAPPING_SOURCE
+    opensta = build_opensta_script(request)
+    assert "get_pins -hierarchical */GN" in opensta
+    assert "create_clock -name verigym_latch_gate -period 10" in opensta
+    assert hash_bytes((LATCH_MAPPING_FLOW_TEMPLATE_CONTRACT + "\n").encode()) != hash_bytes(
+        (COMPATIBILITY_FLOW_TEMPLATE_CONTRACT + "\n").encode()
     )
 
 

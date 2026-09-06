@@ -83,8 +83,9 @@ backend, user, and executable identities; the recorded source distinguishes `fre
 inspection. Aggregate regeneration rejects mixed runtime/image fingerprints as non-homogeneous.
 
 A fresh preparation runs one combined, fixed identity command per role image. The verifier command
-checks UID, GID, Icarus and VVP; the external-agent command checks UID, GID, executable version and
-hash, plus repository-agent tool and launcher identities when required. Fixed section markers and
+checks UID, GID, Icarus, VVP, and optional Verilator; the external-agent command checks UID, GID,
+executable version and hash, plus repository-agent tool and launcher identities when required.
+Fixed section markers and
 an exact section inventory prevent ambiguous parsing. Combining checks reduces a verifier plus
 repository-agent preparation from eleven container lifecycles to two without weakening any
 identity comparison. Cache hits still require the newly inspected immutable image IDs and complete

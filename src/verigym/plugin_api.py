@@ -2,6 +2,12 @@
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
 from verigym.agents.external import ExternalAgentBridge
+from verigym.core.agent_feedback_assets import (
+    AgentEvalWorkspace,
+    compile_feedback_contract,
+    compile_smoke_feedback_contract,
+    materialize_agent_eval_workspace,
+)
 from verigym.core.episode import TerminationReason
 from verigym.core.errors import ConfigurationError, PathPolicyError
 from verigym.core.external_process_identity import (
@@ -97,11 +103,18 @@ from verigym.schemas.task import (
 )
 from verigym.schemas.tool import CommandSpec, CompletedCommand, HealthCheckResult, ToolResult
 from verigym.schemas.verifier import VerifierGraph, VerifierNode, VerifierResult, VerifierStatus
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext, ToolPlugin
+from verigym.tools.base import (
+    SynthesisBackendPlugin,
+    ToolContext,
+    ToolPlugin,
+    VerifierBackendPlugin,
+)
 
 __all__ = [
     "AgentAction",
+    "AgentEvalWorkspace",
     "AgentAdapter",
     "AgentContext",
     "AgentDescriptor",
@@ -160,6 +173,7 @@ __all__ = [
     "RuntimeRequirement",
     "ResolvedToolchainProfile",
     "ResolvedToolIdentity",
+    "ResolvedVerifierToolProfile",
     "Runtime",
     "SCHEMA_VERSION",
     "ScoringSpec",
@@ -190,7 +204,9 @@ __all__ = [
     "ValidationReport",
     "VeriTask",
     "VerifierGraph",
+    "VerifierBackendPlugin",
     "VerifierNode",
+    "VerifierToolProfile",
     "VerifierResult",
     "VerifierStatus",
     "WorkspaceSpec",
@@ -202,9 +218,12 @@ __all__ = [
     "bind_external_process_payload",
     "build_external_process_request",
     "content_hash",
+    "compile_feedback_contract",
+    "compile_smoke_feedback_contract",
     "copy_tree_safely",
     "hash_bytes",
     "hash_directory",
+    "materialize_agent_eval_workspace",
     "preview_external_process_identity",
     "resolve_external_process_invocation_spec",
     "validate_external_process_request_identity",

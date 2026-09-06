@@ -733,7 +733,7 @@ class DockerRuntimeSession(RuntimeSession):
         root.chmod(0o555)
 
     def _tool_versions(self) -> dict[str, dict[str, str | None]]:
-        return {
+        versions: dict[str, dict[str, str | None]] = {
             "iverilog": {
                 "version": self._image.iverilog_version,
                 "executable": "iverilog",
@@ -745,6 +745,13 @@ class DockerRuntimeSession(RuntimeSession):
                 "compatibility_status": self._image.compatibility_status,
             },
         }
+        if self._image.verilator_version is not None:
+            versions["verilator"] = {
+                "version": self._image.verilator_version,
+                "executable": "verilator",
+                "compatibility_status": "available",
+            }
+        return versions
 
 
 def _external_process_mounts(

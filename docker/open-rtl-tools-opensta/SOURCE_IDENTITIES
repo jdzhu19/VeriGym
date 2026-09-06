@@ -1,0 +1,19 @@
+Base image repository digest:
+  debian@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+
+Yosys v0.67 release archive SHA-256:
+  608d758a6efc73c9f866b0a822aa2f788c2889fcb70dcdcc0e758009465049f6
+Yosys vendored source identity:
+  b8e7da6f40ae8f552c116bf6c359b07c6533e159
+ABC vendored source identity:
+  e026ed5380f3bdc3beea2ff9ffc23236fc549d5b
+
+Icarus Verilog v12_0 peeled commit:
+  4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf
+
+OpenSTA 3.1.0 source commit:
+  be771a0116985d57effb4120668ae98e8a7b0f79
+OpenSTA source archive SHA-256:
+  3751516f6275197aef4bdb2eadd7385a03641de928c362bc5aae37b9177cbf05
+CUDD 3.0.0 archive SHA-256:
+  b8e966b4562c96a03e7fbea239729587d7b395d53cadcc39a7203b49cf7eeb69

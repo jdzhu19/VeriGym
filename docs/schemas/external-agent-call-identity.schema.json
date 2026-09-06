@@ -28,6 +28,18 @@
       "default": null,
       "title": "Agent Harness Kind"
     },
+    "agent_version_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Version Hash"
+    },
     "approval_policy": {
       "anyOf": [
         {
@@ -213,6 +225,7 @@
             "codex_cli_readonly_single_turn_agent",
             "codex_cli_external_agent",
             "codex_cli_hwe_native_shell",
+            "codex_cli_agenteval_scoring",
             "claude_cli_external_agent",
             "openhands_sdk_agent",
             "deepseek_harness_hwe_native_shell",
@@ -234,6 +247,7 @@
           "enum": [
             "cli_agent_single_turn_readonly",
             "cli_agent_workspace_writing",
+            "cli_agent_mcp_repository_scoring",
             "sdk_agent_broker_tools"
           ],
           "type": "string"
@@ -289,6 +303,18 @@
         }
       ],
       "title": "Observed Model Id"
+    },
+    "prompt_contract_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Contract Hash"
     },
     "pure_api_model_eval": {
       "anyOf": [
@@ -449,6 +475,18 @@
       ],
       "default": null,
       "title": "Tool Event Count"
+    },
+    "tool_policy_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Policy Fingerprint"
     },
     "tool_use_policy": {
       "anyOf": [

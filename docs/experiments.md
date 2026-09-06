@@ -47,6 +47,26 @@ output:
   root: "runs/experiments/toy-milestone9-baseline"
 ```
 
+AgentEval uses the same frozen experiment surface as an ordinary run. Enable iterative RTLLM
+feedback in `runs` and select exactly one Yosys/OpenSTA ATP v2 or isolated DC/MCP profile at
+experiment scope:
+
+```yaml
+runs:
+  mode: "agent"
+  seeds: [0]
+  samples_per_task: 1
+  pass_k: [1]
+  agent_ppa_feedback: true
+  agent_ppa_max_calls: 3  # 1..8; repeated cache hits do not consume executions
+profile: profiles/nangate45-opensta.yaml
+```
+
+The resolved feedback contract and profile hash are frozen into every plan item. VerilogEval and
+RTL-Repo AgentEval variants reject `agent_ppa_feedback`. RTLLM accepts a commercial profile only
+when its remote resolution proves the hash-bound disposable-worker contract; a final-PPA-only DC
+profile is rejected instead of silently changing execution modes.
+
 The schema is strict and versioned. Unknown fields, duplicate YAML/JSON keys, recursive aliases,
 oversized/deep documents, duplicate systems or seeds, invalid paths, nonpositive sample counts,
 and `k` values outside `1..samples_per_task` are rejected. A model-free agent cannot carry an

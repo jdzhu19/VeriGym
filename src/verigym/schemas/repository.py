@@ -150,8 +150,8 @@ class PublicTestCommand(StrictModel):
             for value in values
         ):
             raise ValueError("public-test argv contains an invalid argument")
-        if values[0] not in {"iverilog", "vvp"}:
-            raise ValueError("public tests may invoke only exact Icarus 12 executables")
+        if values[0] not in {"iverilog", "verilator", "vvp"}:
+            raise ValueError("public tests may invoke only approved open RTL executables")
         for value in values[1:]:
             if value.startswith("/"):
                 raise ValueError("public-test argv may not contain undeclared absolute paths")

@@ -1,0 +1,246 @@
+{
+  "$defs": {
+    "AgentFeedbackMetrics": {
+      "additionalProperties": false,
+      "description": "The complete and deliberately narrow model-visible PPA projection.",
+      "properties": {
+        "area": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area"
+        },
+        "area_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Unit"
+        },
+        "maximum_path_delay": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Path Delay"
+        },
+        "power": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power"
+        },
+        "power_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Unit"
+        },
+        "timing_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Unit"
+        },
+        "worst_negative_slack": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Negative Slack"
+        }
+      },
+      "title": "AgentFeedbackMetrics",
+      "type": "object"
+    }
+  },
+  "$id": "https://verigym.dev/schemas/1.0/agent-feedback-evaluation-v2.schema.json",
+  "additionalProperties": false,
+  "description": "POSTEDA-inspired execution ledger for isolated commercial feedback.",
+  "properties": {
+    "cache_hit": {
+      "title": "Cache Hit",
+      "type": "boolean"
+    },
+    "candidate_hash": {
+      "title": "Candidate Hash",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "passed",
+        "compile_failed",
+        "compile_required",
+        "ppa_disabled",
+        "ppa_quota_exhausted",
+        "synthesis_failed",
+        "infrastructure_error"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "duration_s": {
+      "minimum": 0,
+      "title": "Duration S",
+      "type": "number"
+    },
+    "evaluation_contract_id": {
+      "const": "agent_feedback_evaluation.v2",
+      "default": "agent_feedback_evaluation.v2",
+      "title": "Evaluation Contract Id",
+      "type": "string"
+    },
+    "execution_dispatched": {
+      "title": "Execution Dispatched",
+      "type": "boolean"
+    },
+    "last_valid_candidate_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Valid Candidate Hash"
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentFeedbackMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "observation_hash": {
+      "title": "Observation Hash",
+      "type": "string"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "ppa_execution_index": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ppa Execution Index"
+    },
+    "ppa_tool_call_index": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ppa Tool Call Index"
+    },
+    "profile_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Profile Hash"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "synthesis_executed": {
+      "title": "Synthesis Executed",
+      "type": "boolean"
+    },
+    "test_id": {
+      "title": "Test Id",
+      "type": "string"
+    },
+    "worker_contract_hash": {
+      "title": "Worker Contract Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sequence",
+    "test_id",
+    "candidate_hash",
+    "cache_hit",
+    "synthesis_executed",
+    "duration_s",
+    "category",
+    "passed",
+    "observation_hash",
+    "execution_dispatched",
+    "worker_contract_hash"
+  ],
+  "title": "AgentFeedbackEvaluationV2",
+  "type": "object"
+}

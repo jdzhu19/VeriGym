@@ -202,6 +202,8 @@ class ReproducibilityMetrics(StrictModel):
     run_config_hash: str
     toolchain_profile_ids: list[str] = Field(default_factory=list)
     resolved_toolchain_profile_hashes: list[str] = Field(default_factory=list)
+    verifier_profile_ids: list[str] = Field(default_factory=list)
+    resolved_verifier_profile_hashes: list[str] = Field(default_factory=list)
     deterministic: bool
     isolation_level: str
 

@@ -50,6 +50,12 @@ symlink, special-bit, or group/world-writable mode references fail closed. The e
 the mutable visible-source staging tree after runtime execution. Repository contracts continue to
 forbid mode changes, and canonical candidate comparison still checks every file mode.
 
+A task may additionally set the strict boolean `verification_requires_final_submission` metadata
+gate. For such tasks, any termination reason other than typed `FINAL_SUBMISSION` produces only
+skipped verifier placeholders: neither live execution nor verifier-enabled replay stages or runs
+hidden assets. This is used by scoring-only AgentEval variants where an unverified agent stop must
+remain distinct from a submitted candidate.
+
 The Docker CLI backend uses argument arrays with `shell=False`, bounded control-plane calls, and
 no tar extraction. It never mounts the repository root, host home, Docker socket, or an external
 benchmark checkout. Artifact acceptance rejects absolute paths, parent traversal, symlinked path
@@ -329,6 +335,22 @@ bounded content-free diagnostics, atomic progress, cleanup, and zero retries rem
 V51 has no provider, command-image build, canary, collection, training, GPU, or held-out authority.
 Either an ordinary qualification mismatch or an infrastructure/security stop permanently consumes
 the v51 attempt; a successful result still needs a separate audit before command-image work.
+
+The separate scoring-only RTL AgentEval adapter does not use the app-server/exec-server boundary.
+One exact host `codex exec --ephemeral --json` process runs in an empty control directory under the
+CLI read-only sandbox with user configuration, rules, shell, Web, skills, plugins, apps, and hooks
+disabled. Its only tool server is the reviewed Unix-socket `RepositoryToolBroker`, which exposes
+the six typed `repository_action.v2` actions against the Docker-owned task workspace. The host
+Codex process never receives a workspace path or filesystem-writing tool; the broker owns every
+bounded read, patch, compile/PPA request, diff, and typed finish. Scoring evidence deliberately
+omits prompt/response text, raw CLI output, parsed event text, and training transcripts.
+
+Malformed unified diffs are recoverable agent errors, not workspace-boundary violations. The
+broker distinguishes them from absolute, traversal, read-only, symlink, hardlink, hidden-asset,
+and other boundary failures, which remain terminal. Persisted scoring evidence contains only a
+fixed allowlisted terminal broker subtype; raw broker diagnostics and requested paths are not
+stored. Empty visible files return a bounded zero-line observation instead of escaping the broker
+as an internal exception.
 
 The opt-in CVA6 HWE native-shell profiles add protocol-aware inspection between the host app-server
 and task-keyed Codex 0.147.0 exec-server image. They correlate JSON-RPC requests and responses,
@@ -766,7 +788,49 @@ stream byte counts and digests, so a later stop remains diagnosable. Tar invento
 loaded image ID, manifest binding, network isolation, cleanup, capacity, and no-retry controls are
 unchanged; bounded diagnostics cannot substitute for any integrity check.
 
-### Verifier-only Synopsys MCP transport
+### Model-invisible Synopsys MCP transports
+
+RTL AgentEval keeps `synopsys.vcs.mcp` functional-verifier-only and DC/MCP control-plane-only. A
+strict verifier profile may replace one functional-verifier DAG node with `synopsys.vcs.mcp`,
+while a separately resolved toolchain profile may select `synopsys.dc.mcp` for final PPA or
+phase-two candidate-only feedback. VerilogEval may additionally use the separate
+`synopsys.vcs.public-compile.mcp` service for iterative, compile-only public feedback. None of
+these MCP services is registered as a model-visible tool. Each profile resolves and binds its
+fixed transport and server identity before model lookup. MCP transport, license configuration,
+hidden testbenches, PDK/library paths, raw reports, and reference artifacts never enter the agent
+container.
+
+The VCS stdio service approves task-bound profiles at startup and exposes only list, resolve, and
+simulate operations. The server owns the exact source order, task ID, top, hidden-testbench bytes
+and hash, optional hidden auxiliary files and hashes, pass/fail markers, timeout, VCS executable,
+and accepted tool version. Auxiliary identities expose only normalized verifier mount paths and
+SHA-256 values; source paths and bytes remain server-private. Simulation accepts only bounded,
+hash-checked candidate sources for that contract. It has no command, shell, flag, environment,
+testbench or auxiliary bytes, report, artifact-return, or license field. The client accepts no raw
+stdout, stderr, log, diagnostic, hidden RTL, license value, or server path; it validates the fixed
+wrapper hash, protocol/server versions, declared/resolved server identities, public contract,
+task, candidate, every hidden-asset result identity, and exact VCS version. Hidden auxiliary files
+are staged read-only only in the final verifier workspace and never enter model workspaces, public
+smokes, traces, or persisted VCS results. License failures remain infrastructure failures rather
+than candidate rejections.
+
+The public VCS service uses a distinct protocol, executable entry point, server profile, client
+profile, and task partition. Its server profile contains only the candidate source order, top,
+compile test ID, timeout, exact VCS identity, and environment-variable names. It has no testbench,
+reference RTL, pass/fail marker, simulation operation, arbitrary command, user-supplied flag,
+artifact-return field, or hidden asset. The fixed invocation compiles with VCS but never runs the
+resulting executable. Only pass/fail, a stable error category, and bounded diagnostics containing
+the controlled candidate path, line number, and VCS diagnostic code cross back into the public
+feedback protocol. Raw stdout, stderr, logs, source excerpts, absolute paths, license values, and
+commercial assets are rejected. A public profile can never satisfy the final hidden verifier
+profile requirement, or vice versa.
+
+For Docker AgentEval, `synopsys.vcs.mcp` and `synopsys.vcs.public-compile.mcp` use the same narrow
+controller-transport exception as the DC MCP path below. The run runtime may be `docker` while a
+model-invisible `remote_mcp` profile is `local`: candidate bytes are read from the policy-checked
+runtime session, while the fixed wrapper executes on the trusted host control plane. Hidden VCS
+still reads candidates only from its separate verifier staging. Other runtime mismatches fail
+closed. This exception adds no agent-container network, mount, executable, or model-visible tool.
 
 The optional `synopsys.dc.mcp` backend moves licensed DC execution to a separately administered
 verifier host; it is not a model-visible tool or a general remote shell. The control plane launches
@@ -775,9 +839,17 @@ only `SSH_AUTH_SOCK` or `KRB5CCNAME` by name to that wrapper. SSH deployments mu
 principal, host-key verification, a forced command or otherwise fixed server command, and no SSH
 agent forwarding. Transport environment values are never serialized.
 
+For Docker AgentEval, `synopsys.dc.mcp` uses an explicit
+`host_verifier_control_plane` transport boundary. Candidate bytes are first copied into the
+runtime's private, policy-checked verifier staging, but the fixed hash-bound MCP wrapper executes
+on the trusted host control plane rather than inside the open RTL image. The resolved profile still
+binds the exact immutable Docker image, network-none controls, resources, wrapper, server, and
+worker identities. No model-visible MCP tool, Docker network exception, shell fallback, or
+container-to-host executable lookup is introduced.
+
 The stdio MCP server approves its site profiles at startup and accepts only a profile ID plus
 declared hash, a reference-candidate hash, fixed top and ordered source names, candidate/reference
-role, bounded hash-checked RTL, and one bounded artifact-return policy. It does not accept an
+or agent-feedback role, bounded hash-checked RTL, and one bounded artifact-return policy. It does not accept an
 executable, shell command, Tcl, SDC, PDK/library bytes or paths, license configuration, timeout, or
 environment. It regenerates and hash-checks the existing DC flow. Messages, sources, output, and
 artifacts have individual and aggregate bounds. The client validates the server/protocol version,
@@ -786,13 +858,40 @@ metrics, and artifact hashes before importing candidate summary reports. Referen
 content never returns. MCP/SSH payload logging must remain disabled because a reference call
 necessarily transports verifier-private reference RTL to the remote verifier.
 
-This transport separates the ordinary control-plane host from commercial assets, but it is not an
-OS sandbox for hostile RTL. The current server invokes DC through the trusted local backend on the
-licensed host. Sites must use trusted/qualified inputs or add their own dedicated disposable
-account, scheduler job, VM, or equivalent containment around the server. The MCP label alone must
-not be used to claim that adversarial generated RTL is safe to parse on a shared licensed host.
-The residual trusted computing base includes the fixed wrapper, SSH client/server, MCP adapter,
-licensed EDA installation, verifier host, and its site-specific containment.
+The historical candidate/reference service remains transport and policy mediation, not an OS
+sandbox for hostile RTL. It invokes DC through the trusted local backend and is suitable only for
+frozen qualified inputs or a site that supplies its own containment.
+
+Phase-two agent feedback fails closed unless remote resolution returns a sanitized, hash-bound
+worker contract. The contract requires a fixed regular launcher, one candidate per disposable LSF
+job/container/VM, bounded wall time/memory/cores, worker-only commercial credentials, no raw
+artifact return, and cleanup before response. The launcher accepts no model-controlled command,
+argument, environment, queue, profile path, or resource setting. The worker request binds the
+candidate and contract to an expected `commercial_worker_release.v1` hash for new site profiles.
+That release includes server/worker/startup code and hash-only profile, remote-tool, commercial
+asset, and isolation manifests. Its code files are read-only and content-addressed; licensed DB,
+PDK, SDC, report, license, and credential content is forbidden from the bundle. Resolve and
+execute both check the release, and the server re-hashes the launcher immediately before use.
+Release mismatch or code mutation is infrastructure-invalid and stops a campaign before another
+model process is authorized. The worker request also binds the candidate source bundle and server
+profile. Its isolation identity hashes the loaded VeriGym
+core and Synopsys-integration Python source trees, interpreter, scheduler executable, site profile,
+queue, and resource settings; that code identity is checked again in the launcher and inner job.
+The receipt binds the request, dispatch, lifecycle, cleanup, launcher, code, and isolation-profile
+hashes. The MCP timeout must leave at least 300 seconds beyond the worker wall bound for scheduler
+termination and cleanup. Scheduler output is not written into the disposable workspace, and a
+receipt is returned only after absence of the exact bounded worker directory stabilizes. The
+client rejects missing or inconsistent receipts and never imports feedback reports, netlists,
+diagnostics, stdout, or stderr.
+
+The qualified LSF deployment uses a scheduler job as the site isolation boundary. It is not a VM
+or kernel-security claim: the job still trusts LSF, the compute host, shared filesystem policy,
+fixed launcher, Python environment, licensed EDA installation, and site license network. The
+worker network is therefore labeled `site_license_controlled`, not `none`. Only the Docker agent
+workspace is networkless. A stronger adversarial site can replace LSF with a separately identified
+container or VM contract; results from different resolved worker/profile hashes remain separate.
+The residual trusted computing base includes the fixed wrappers, SSH client/server, MCP adapter,
+scheduler, licensed EDA installation, verifier/worker hosts, and site-specific containment.
 
 ## Yosys and profile-specific protections
 

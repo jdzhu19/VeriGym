@@ -12,23 +12,191 @@ python -m pip install -e ./integrations/verigym-synopsys
 verigym doctor
 ```
 
-`synopsys.vcs.simulate` is a verifier-only regression tool. It accepts an explicit candidate source
-list and hidden testbench, invokes VCS without a shell, recognizes pass/fail sentinels, and maps
-license failures to `license_unavailable`. `synopsys.dc.synth` is a synthesis backend that reports
+`synopsys.vcs.simulate` is a trusted verifier-only regression tool. It accepts an explicit
+candidate source list and hidden testbench, invokes VCS without a shell, recognizes pass/fail
+sentinels, and maps license failures to `license_unavailable`. New remote or isolated campaigns
+should select `synopsys.vcs.mcp` through a task-bound verifier profile instead. The MCP server owns
+the hidden testbench and returns only a structured verdict.
+`synopsys.vcs.public-compile.mcp` is a separate, compile-only service for optional VerilogEval
+iterative feedback. It never accepts or runs a testbench and returns only a sanitized result.
+`synopsys.dc.synth` is a synthesis backend that reports
 mapped area, maximum-path delay, worst-negative slack, and estimated power from a hash-bound DB and
 SDC pair. The current explicit-power v4 flow runs `compile_ultra`, records mapped cell count, and
 retains `report_area`, `report_timing`, `report_power`, and `report_qor` artifacts. It annotates
 non-clock primary inputs with a frozen clock-relative toggle rate and static probability. Power is
-normalized as total dynamic plus cell leakage power. The v1/v2 area/timing flows and v3 legacy
-vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same DC
-metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
+normalized as total dynamic plus cell leakage power. The multi-clock explicit-power v5 flow keeps
+those semantics but evaluates every maximum timing path returned across asynchronous clock groups,
+reporting the largest arrival time and worst slack. Select it explicitly with `--multi-clock`; v4
+bytes and identity remain unchanged for single-clock replay. The v1/v2 area/timing flows and v3
+legacy vectorless-power flow remain accepted for exact replay. `synopsys.dc.mcp` provides the same
+DC metric semantics through a fixed verifier-only MCP transport. `synopsys.formality.equivalence`
 compares separately staged reference and implementation RTL, supports Verilog and SystemVerilog,
-and emits a script-bound structured equivalence result. All plugins are verifier-only and intended
-for site-controlled runtimes. Detailed Formality point reports are not exported because they can
-reveal golden-design identifiers.
+and emits a script-bound structured equivalence result. All plugins are model-invisible and
+intended for site-controlled runtimes; the core broker projects only the approved public compile
+result into an agent observation. Detailed Formality point reports are not exported because they
+can reveal golden-design identifiers.
 
 A bounded two-host run through the MCP client, fixed SSH transport, and real Design Compiler is
 recorded in the [remote Synopsys MCP smoke audit](../../docs/audits/synopsys_mcp_real_dc_smoke.md).
+The combined VCS/MCP and DC/MCP RTLLM qualification is recorded in the
+[RTL commercial MCP qualification](../../docs/audits/rtl_commercial_mcp_qualification_v1.md).
+The disposable LSF feedback path is recorded in the
+[phase-two worker qualification](../../docs/audits/rtl_agent_dc_worker_qualification_v2.md).
+
+## Task-bound VCS MCP verifier
+
+Prepare one private server profile for each exact benchmark task. The server profile contains the
+hidden testbench path and VCS setup, so it must stay on the verifier host:
+
+```bash
+verigym-synopsys-prepare-vcs-profile \
+  --id rtllm-counter-vcs-v1 --task-id rtllm/counter_12 \
+  --source rtl/counter_12.v --testbench /private/RTLLM/counter_12/testbench.v \
+  --top counter_12_tb --pass-marker '===========Your Design Passed===========' \
+  --fail-marker '===========Failed===========' --vcs /opt/synopsys/vcs/bin/vcs \
+  --output-profile /private/profiles/counter-vcs-server.yaml
+
+verigym-synopsys-vcs-mcp-server \
+  --profile /private/profiles/counter-vcs-server.yaml \
+  --work-root /private/verigym-vcs-work
+```
+
+Carry MCP stdio through a fixed local or SSH wrapper that accepts no arguments. After querying the
+service's sanitized declared-profile and contract hashes, export the client-only profile:
+
+```bash
+verigym-synopsys-export-vcs-mcp-profile \
+  --id rtllm-counter-vcs-client-v1 \
+  --server-profile-id rtllm-counter-vcs-v1 \
+  --server-declared-profile-hash "$SERVER_DECLARED_SHA256" \
+  --server-contract-hash "$SERVER_CONTRACT_SHA256" \
+  --task-id rtllm/counter_12 \
+  --transport-executable /usr/local/bin/verigym-vcs-mcp-transport \
+  --output-profile /private/profiles/counter-vcs-client.yaml
+```
+
+Select that profile independently of the final synthesis profile:
+
+```bash
+verigym run --suite rtllm --task counter_12 --suite-source /datasets/RTLLM \
+  --mode chat --agent single-turn --model YOUR_MODEL --runtime local \
+  --verifier-profile rtllm-counter-vcs-client-v1 \
+  --verifier-profile-file /private/profiles/counter-vcs-client.yaml \
+  --toolchain-profile site-synopsys-dc-mcp \
+  --toolchain-profile-file /private/profiles/counter-dc-mcp-client.yaml \
+  --output runs/
+```
+
+For VerilogEval, select the dedicated
+`v2-spec-to-rtl-agent-eval-vcs-mcp-v1` suite variant. Its VCS server profile uses
+`repository/rtl/TopModule.sv` as the sole candidate source and a private combined testbench made
+from the selected task's official `RefModule` followed by its official testbench. If needed, copy
+the testbench's own `` `timescale`` line before both exact bodies so VCS sees one consistent
+compilation unit. Freeze
+`Mismatches: 0 in` as the pass marker, the variant's explicit-failure sentinel as the fail marker,
+`tb` (or the normalized task's recorded testbench top) as top, and 180 seconds as timeout. The
+process timeout and absence of a zero-mismatch summary reject hangs; this avoids treating a
+same-timestep watchdog print after a complete zero-mismatch run as a failure. The task requires
+`synopsys.vcs.mcp`, so an absent/wrong profile fails before model startup; direct VCS fallback is
+not allowed. This partition performs no DC synthesis and reports no PPA.
+
+For a locally hosted licensed verifier, the integration also provides bulk site-only preparation
+and zero-model qualification commands:
+
+```bash
+verigym-synopsys-prepare-verilog-eval-vcs-bundle \
+  --source-root /datasets/verilog-eval \
+  --output-root /private/profiles/verilog-eval-vcs-mcp-v1 \
+  --vcs /opt/synopsys/vcs/bin/vcs
+
+verigym-synopsys-qualify-verilog-eval-vcs-bundle \
+  --source-root /datasets/verilog-eval \
+  --bundle-root /private/profiles/verilog-eval-vcs-mcp-v1 \
+  --work-root /private/work/verilog-eval-vcs \
+  --output /private/results/verilog-eval-vcs-qualification.json
+```
+
+The preparation command refuses to overwrite an existing directory and leaves an `INCOMPLETE`
+sentinel until the catalog is complete. `--defer-live-resolve` is intended for large bundles whose
+qualification is run immediately afterward; the qualification command still resolves every
+profile live before executing it. Bounded runs may use deterministic `--task` or
+`--shard-index`/`--shard-count` selection, then the merge command accepts only a complete,
+non-overlapping shard set. Site login-shell and environment-name options configure a fixed local
+transport without placing environment values in profiles or reports.
+
+Resolution occurs before model lookup. Manifest, scorecard, experiment plan, and replay bind the
+wrapper, server declared/resolved profile, public task contract, hidden-testbench result identity,
+and exact VCS version. Candidate verdicts expose no stdout, stderr, VCS log, report, hidden RTL,
+license value, or verifier path. See [verifier backend profiles](../../docs/verifier_profiles.md)
+for the full contract and Icarus/VCS benchmark-version boundaries.
+
+If a frozen server/client pair has canonical identity drift, do not edit either historical file.
+`verigym-synopsys-reissue-vcs-mcp-profile` probes the exact VCS identity, emits a new v2 server,
+transport, and client directory, resolves the result twice, and writes a sanitized hash-only
+receipt. `VERIGYM_VCS_MCP_PROFILE_V2` is the preferred default doctor binding;
+`VERIGYM_VCS_MCP_PROFILE` remains a legacy replay fallback. Safe profile failures expose only one
+of `profile_not_approved`, `profile_identity_mismatch`, `profile_contract_mismatch`,
+`profile_resolved_identity_mismatch`, or `tool_identity_mismatch`; verifier paths, commercial
+assets, and hidden checker contents remain server-owned. See the
+[VCS identity repair audit](../../docs/audits/rtllm_vcs_profile_repair_v2.md).
+
+The trusted launcher may set `TMPDIR` to an existing writable, executable, non-symlink directory
+when the host default temporary filesystem is constrained. The client passes that value to the
+fixed transport and direct VCS launches, but tool requests cannot supply or override it.
+
+## Iterative public VCS MCP compile feedback
+
+Use `v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1` when both iterative compile feedback and final
+hidden verification should use commercial VCS. It requires two different task-bound profiles:
+
+- `--public-test-profile` targets `synopsys.vcs.public-compile.mcp` and may run repeatedly before
+  submission;
+- `--verifier-profile` targets `synopsys.vcs.mcp` and runs only after final submission.
+
+The public server surface is limited to list, resolve, and compile. It binds
+`repository/rtl/TopModule.sv`, top `TopModule`, a 30-second timeout, and the exact VCS version. It
+does not accept a testbench, reference, simulation option, command, flags, environment values, or
+artifact policy. VCS is invoked without `-R`; only pass/fail, a stable category, and bounded
+candidate-path/line/error-code diagnostics are returned. Raw output, logs, source excerpts,
+absolute paths, and license details stay on the commercial host.
+
+Prepare and qualify public profiles independently from the final hidden bundle:
+
+```bash
+verigym-synopsys-prepare-verilog-eval-vcs-public-bundle \
+  --source-root /datasets/verilog-eval \
+  --output-root /private/profiles/verilog-eval-vcs-public-mcp-v1 \
+  --vcs /opt/synopsys/vcs/bin/vcs
+
+verigym-synopsys-qualify-verilog-eval-vcs-public-bundle \
+  --source-root /datasets/verilog-eval \
+  --bundle-root /private/profiles/verilog-eval-vcs-public-mcp-v1 \
+  --work-root /private/work/verilog-eval-vcs-public \
+  --output /private/results/verilog-eval-vcs-public-qualification.json
+```
+
+Qualification resolves every profile live, compiles the reference, rejects one compile-shaped
+syntax control, makes zero model calls, performs zero automatic retries, and stops immediately on
+an infrastructure failure. A task run then selects the matching public and hidden client files:
+
+```bash
+verigym run --suite verilog-eval --suite-source /datasets/verilog-eval \
+  --suite-variant v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1 \
+  --task verilog-eval/v2-spec-to-rtl-agent-eval-vcs-mcp-public-v1/Prob001_zero \
+  --mode agent --agent YOUR_AGENT --runtime docker \
+  --public-test-profile verilog-eval-Prob001_zero-vcs-public-mcp-v1 \
+  --public-test-profile-file /private/profiles/verilog-eval-vcs-public-mcp-v1/client/Prob001_zero.yaml \
+  --verifier-profile verilog-eval-Prob001_zero-vcs-mcp-v1 \
+  --verifier-profile-file /private/profiles/verilog-eval-vcs-mcp-v1/client/Prob001_zero.yaml \
+  --output runs/
+```
+
+Both profiles resolve before agent/model lookup and are frozen separately in run and experiment
+identities. Replay validates the stored public profile documents and hashes offline; verifier
+re-execution remains a separate, explicitly requested operation. The new variant is
+diagnostic-only, makes no upstream-tool compatibility claim, and adds no DC or PPA result. Real
+155-task evidence is recorded in the
+[iterative VCS/MCP feedback audit](../../docs/audits/verilog_eval_vcs_public_feedback_v1.md).
 
 ## Prepare a site profile
 
@@ -56,7 +224,7 @@ resolved profile hashes, activity settings, units, and all other profile identit
 Commercial tests are opt-in; the ordinary VeriGym test suite requires no Synopsys installation or
 credentials.
 
-## Verifier-only MCP service
+## Verifier-only DC MCP service
 
 The package also installs `verigym-synopsys-mcp-server`, a bounded standard MCP stdio endpoint for
 running DC on a site-controlled licensed machine. This is an alternative transport around the
@@ -108,6 +276,62 @@ Omit `--transport-sha256` when the wrapper is locally available to the exporter.
 name; values never enter the profile. The client profile contains remote DB, SDC, flow, and PDK
 hashes but no remote asset paths, bytes, or license-variable names.
 
+An already sanitized client profile can be rebound to an immutable Docker verifier image with
+`bind_mcp_client_profile_to_docker`. The resulting profile selects the Docker runtime and
+network-none staging contract but marks the fixed MCP transport as
+`host_verifier_control_plane`. The wrapper and commercial service remain trusted verifier-side
+components; they are not copied into the open RTL image or exposed as agent tools.
+
+## Enable disposable agent feedback
+
+Do not reuse the trusted final-PPA server process to parse live agent candidates. Configure the
+MCP server with a fixed no-argument launcher whose hash is checked before the service starts:
+
+```bash
+verigym-synopsys-mcp-server \
+  --profile /private/profiles/dc.yaml \
+  --work-root /private/verigym-mcp-work \
+  --agent-worker-executable /private/bin/dc-agent-worker-launcher \
+  --agent-worker-sha256 "$LAUNCHER_SHA256" \
+  --agent-worker-timeout 1200
+```
+
+The package supplies `verigym-synopsys-lsf-agent-launcher` as a reference site launcher. Put its
+fixed arguments in the no-argument wrapper; do not accept queue, profile, resource, environment,
+or command values from the MCP request:
+
+```bash
+verigym-synopsys-lsf-agent-launcher \
+  --profile /private/profiles/dc.yaml \
+  --work-root /private/verigym-agent-workers \
+  --queue short --bsub-executable /opt/lsf/bin/bsub \
+  --python-executable /private/venv/bin/python \
+  --max-wall-seconds 900 --memory-mb 4096 --cores 1
+```
+
+The launcher description returns only its sanitized isolation contract. Its identity covers the
+loaded VeriGym and Synopsys-integration Python source trees as well as the fixed scheduler,
+interpreter, profile, limits, and queue identities. The MCP timeout must reserve at least 300
+seconds beyond the worker wall bound so the launcher can terminate the scheduler wait and clean
+its workspace before its parent is stopped. Query the MCP resolve operation, take the combined
+launcher/isolation contract hash, and freeze it into a new client profile:
+
+```bash
+verigym-synopsys-export-mcp-profile \
+  --server-profile /private/profiles/dc.yaml \
+  --transport-executable /private/bin/dc-agent-mcp-transport \
+  --transport-sha256 "$TRANSPORT_SHA256" \
+  --agent-feedback-worker-contract-hash "$WORKER_CONTRACT_SHA256" \
+  --agent-feedback-worker-isolation-kind lsf_job \
+  --output-profile /private/profiles/dc-agent-mcp.yaml
+```
+
+Only this second client profile is eligible for `--agent-ppa-feedback`. Each uncached candidate
+dispatch creates one LSF job and one private workspace. Candidate failure, timeout, and completed
+success all require a cleanup receipt. No worker report, netlist, diagnostic, stdout, stderr,
+scheduler job ID, commercial path, or license value is returned. LSF provides site scheduling and
+process/resource isolation; it is not described as a VM or a networkless sandbox.
+
 After installing the integration on the control-plane machine, `verigym run` selects the remote
 backend through the client profile in the ordinary synthesis path:
 
@@ -129,8 +353,16 @@ client profile/transport hash and the independent server resolved-profile hash.
 Use a dedicated SSH principal and a forced command or fixed wrapper in production so the client
 cannot replace the server arguments. Do not enable SSH agent forwarding. Authentication and
 host-key policy belong to SSH; the MCP protocol never transports license values. Keep the process
-on a verifier control plane. Do not
-register it as a candidate-agent/model-visible tool, because candidate RTL and commercial assets
-must remain separated and the current DC execution backend still assumes a trusted,
-site-controlled host. The existing in-process `synopsys.dc.synth` plugin and its `LocalRuntime`
-contract remain available and unchanged.
+on a verifier control plane. Never register the MCP tools as candidate-agent/model-visible tools;
+AgentEval reaches isolated feedback only through its existing `run_public_test("ppa")` action. The
+existing in-process `synopsys.dc.synth` plugin and final candidate/reference MCP mode remain
+trusted, site-controlled backends and are unchanged.
+
+Phase-two worker profiles may require `commercial_worker_release.v1`. The release builder hashes
+the server and worker code, startup script, sanitized profile bundle, remote tools, commercial
+asset hash manifest, and isolation contract. Its code bundle is materialized read-only under an
+independent content-addressed release root (`--release-root`); the disposable `--work-root`
+remains empty after cleanup. Commercial assets are represented only by logical-name/SHA-256 pairs.
+The client supplies `expected_release_hash` at resolve and execute, and validates the server
+summary plus worker receipt against the profile. Existing release-free worker-protocol-v1
+messages remain supported for historical profiles.

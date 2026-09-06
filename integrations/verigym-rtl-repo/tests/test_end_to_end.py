@@ -2,13 +2,69 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from verigym.agents.base import AgentAdapter, AgentContext
 from verigym.api import ReportService, RunConfig, VeriGym, build_registries
+from verigym.core.replay import replay_run
 from verigym.core.trace import read_trace
 from verigym.models.static import StaticModelClient
-from verigym.plugin_api import InteractionMode, SuiteSourceConfig
+from verigym.plugin_api import (
+    PLUGIN_API_VERSION,
+    SCHEMA_VERSION,
+    AgentAction,
+    AgentDescriptor,
+    ApplyPatchAction,
+    EpisodeResult,
+    FinalSubmissionAction,
+    InteractionMode,
+    Observation,
+    SuiteSourceConfig,
+    ToolCallAction,
+)
 
 from verigym_rtl_repo import RtlRepoScoreTool, RtlRepoSuite
-from verigym_rtl_repo.dataset import VARIANT
+from verigym_rtl_repo.dataset import (
+    AGENT_EVAL_V2_VARIANT,
+    AGENT_EVAL_V3_VARIANT,
+    AGENT_EVAL_VARIANT,
+    VARIANT,
+)
+
+
+class _RtlRepoAgentEvalFixtureAgent(AgentAdapter):
+    descriptor = AgentDescriptor(
+        schema_version=SCHEMA_VERSION,
+        name="rtl-repo-agent-eval-fixture",
+        version="1.0.0",
+        api_version=PLUGIN_API_VERSION,
+        provider="tests",
+        capabilities=["deterministic", "agent_eval_fixture"],
+    )
+
+    def __init__(self) -> None:
+        self._actions: list[AgentAction] = []
+
+    def start(self, context: AgentContext) -> None:
+        assert context.agent_feedback_contract is not None
+        assert context.agent_feedback_contract.compile_test_id is None
+        self._actions = [
+            ApplyPatchAction(
+                patch="""--- a/repository/completion.txt
++++ b/repository/completion.txt
+@@ -0,0 +1 @@
++assign y = a & b;
+"""
+            ),
+            ToolCallAction(tool="file.diff", arguments={}),
+            FinalSubmissionAction(message="fixture complete"),
+        ]
+
+    def act(self, observation: Observation) -> AgentAction:
+        del observation
+        return self._actions.pop(0)
+
+    def finish(self, result: EpisodeResult) -> None:
+        del result
 
 
 def test_one_synthetic_task_runs_and_reports_native_metrics(
@@ -107,3 +163,38 @@ def test_instructional_line_completion_is_explicit_and_keeps_raw_user_prompt(
     assert [message["role"] for message in messages] == ["system", "user"]
     assert "Return exactly the single source-code line" in messages[0]["content"]
     assert messages[1]["content"].startswith("// Repo Name: verigym/synthetic-rtl\n")
+
+
+@pytest.mark.parametrize(
+    "variant", [AGENT_EVAL_VARIANT, AGENT_EVAL_V2_VARIANT, AGENT_EVAL_V3_VARIANT]
+)
+def test_agent_eval_projection_multiturn_hidden_score_and_replay(
+    synthetic_source: Path,
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    registries = build_registries(discover_external=False)
+    registries.suites.register(RtlRepoSuite())
+    registries.tools.register(RtlRepoScoreTool())
+    registries.agents.register(_RtlRepoAgentEvalFixtureAgent())
+    service = VeriGym(registries)
+    result = service.run(
+        RunConfig(
+            task_id=f"rtl-repo/{variant}/test-000000",
+            mode=InteractionMode.AGENT,
+            agent="rtl-repo-agent-eval-fixture",
+            suite_source=SuiteSourceConfig(
+                source_root=synthetic_source,
+                variant=variant,
+            ),
+            runtime="local",
+            output=tmp_path / "agent-eval",
+        )
+    )
+
+    assert result.scorecard.resolved
+    assert result.manifest.agent_feedback_contract is not None
+    assert result.manifest.agent_feedback_contract.public_test_ids == []
+    assert result.manifest.agent_feedback_evaluations == []
+    replay = replay_run(result.run_dir, verify=True, service=service)
+    assert replay.reverified_resolved is True

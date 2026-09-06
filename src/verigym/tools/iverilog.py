@@ -46,6 +46,27 @@ class IverilogSimulateRequest(StrictModel):
     timeout_s: int = Field(default=30, ge=1)
 
 
+class IverilogVerifierSimulateRequest(StrictModel):
+    """Verifier-only simulation request shared with fixed commercial backends."""
+
+    sources: list[str] = Field(min_length=1, max_length=64)
+    testbench: str
+    auxiliary_files: list[str] = Field(default_factory=list, max_length=64)
+    top: str
+    pass_marker: str = "VERIGYM_PASS"
+    fail_marker: str = "VERIGYM_FAIL"
+    timeout_s: int = Field(default=30, ge=1, le=3600)
+
+    @model_validator(mode="after")
+    def validate_distinct_inputs(self) -> IverilogVerifierSimulateRequest:
+        paths = [*self.sources, self.testbench, *self.auxiliary_files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("Icarus verifier inputs must use distinct paths")
+        if self.pass_marker == self.fail_marker:
+            raise ValueError("simulation pass and fail markers must differ")
+        return self
+
+
 def _descriptor(name: str, visibility: ToolVisibility, capability: str) -> ToolDescriptor:
     return ToolDescriptor(
         schema_version=SCHEMA_VERSION,
@@ -288,6 +309,85 @@ class IverilogSimulateVisibleTool(ToolPlugin):
             )
 
 
+class IverilogVerifierSimulateTool(ToolPlugin):
+    """Run one hidden functional verifier through a backend-replaceable request."""
+
+    descriptor = _descriptor("iverilog.simulate", ToolVisibility.VERIFIER_ONLY, "simulation")
+
+    def health_check(self, context: ToolContext | None = None) -> HealthCheckResult:
+        compiler = _health("iverilog")
+        runner = _health("vvp")
+        if not compiler.healthy:
+            return compiler
+        if not runner.healthy:
+            return runner
+        return HealthCheckResult(
+            healthy=True,
+            message="iverilog and vvp are available",
+            version=compiler.version,
+            executable=compiler.executable,
+        )
+
+    def validate_request(self, request: dict[str, Any]) -> IverilogVerifierSimulateRequest:
+        return IverilogVerifierSimulateRequest.model_validate(request)
+
+    def build_command(self, request: BaseModel, context: ToolContext) -> CommandSpec:
+        raise RuntimeError(
+            "Icarus verifier simulation executes its compile and run stages directly"
+        )
+
+    def parse_result(
+        self,
+        request: BaseModel,
+        completed: CompletedCommand,
+        context: ToolContext,
+    ) -> ToolResult:
+        raise RuntimeError("Icarus verifier simulation parses its compile and run stages directly")
+
+    def execute(self, raw_request: dict[str, Any], context: ToolContext) -> ToolResult:
+        started = time.monotonic()
+        try:
+            request = self.validate_request(raw_request)
+            if context.session is None:
+                raise ValueError("Icarus verifier simulation requires a runtime session")
+            for relative in request.auxiliary_files:
+                context.session.read_file(normalize_relative_path(relative))
+            compile_request = IverilogCompileRequest(
+                sources=[*request.sources, request.testbench],
+                top=request.top,
+                output=".verigym_internal/verifier-simulate/simv",
+                language="2012",
+                timeout_s=request.timeout_s,
+            )
+            compile_result = IverilogCompileTool().execute(compile_request.model_dump(), context)
+            if not compile_result.success:
+                compile_result.tool = self.descriptor.name
+                compile_result.duration_s = time.monotonic() - started
+                return compile_result
+            run_request = IverilogRunRequest(
+                executable=compile_request.output,
+                pass_marker=request.pass_marker,
+                fail_marker=request.fail_marker,
+                timeout_s=request.timeout_s,
+            )
+            command = IverilogRunTool().build_command(run_request, context)
+            completed = context.session.execute(command)
+            result = _parse_simulation(self.descriptor.name, run_request, completed)
+            result.duration_s = time.monotonic() - started
+            result.metadata["compile_stdout"] = compile_result.stdout
+            result.metadata["compile_stderr"] = compile_result.stderr
+            return result
+        except Exception as exc:
+            return ToolResult(
+                tool=self.descriptor.name,
+                success=False,
+                category=ErrorCategory.INVALID_REQUEST,
+                message=str(exc),
+                stderr=str(exc),
+                duration_s=time.monotonic() - started,
+            )
+
+
 def _parse_simulation(
     tool_name: str,
     request: IverilogRunRequest,
@@ -367,4 +467,9 @@ def _command_failure(
 
 
 def builtin_iverilog_tools() -> list[ToolPlugin]:
-    return [IverilogCompileTool(), IverilogRunTool(), IverilogSimulateVisibleTool()]
+    return [
+        IverilogCompileTool(),
+        IverilogRunTool(),
+        IverilogSimulateVisibleTool(),
+        IverilogVerifierSimulateTool(),
+    ]

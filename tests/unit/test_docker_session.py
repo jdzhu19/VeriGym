@@ -9,7 +9,11 @@ import pytest
 
 from verigym.core.errors import ConfigurationError, MissingDependencyError, PathPolicyError
 from verigym.core.hashing import hash_directory
-from verigym.profiles.resolver import resolve_toolchain_profile
+from verigym.profiles import resolver as profile_resolver_module
+from verigym.profiles.resolver import (
+    resolve_docker_tool_identities,
+    resolve_toolchain_profile,
+)
 from verigym.registry.collections import build_registries
 from verigym.runtimes.docker import runtime as docker_runtime_module
 from verigym.runtimes.docker.engine import EngineResult
@@ -65,6 +69,7 @@ class RecordingDockerEngine:
         self.oom_public_tests = False
         self.missing_commands: set[str] = set()
         self.image_labels: dict[str, str] = {}
+        self.start_timeouts: list[int] = []
 
     def version(self) -> dict[str, Any]:
         return {
@@ -170,6 +175,7 @@ class RecordingDockerEngine:
         return _engine_success()
 
     def wait_container(self, container_id: str, *, timeout_s: int) -> EngineResult:
+        self.start_timeouts.append(timeout_s)
         container = self.containers[container_id]
         execution = container.get("execution")
         if execution is None:
@@ -250,6 +256,7 @@ class RecordingDockerEngine:
                         "Icarus Verilog version 12.0 (stable) (v12_0)\n"
                         f"{marker}:vvp\n"
                         "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                        f"{marker}:verilator\nunavailable\n"
                         f"{marker}:launcher_sha256\n"
                         f"{LAUNCHER_SHA256}  ../usr/local/bin/verigym-public-test\n"
                     )
@@ -261,6 +268,7 @@ class RecordingDockerEngine:
                     "Icarus Verilog version 12.0 (stable) (v12_0)\n"
                     f"{marker}:vvp\n"
                     "Icarus Verilog runtime version 12.0 (stable) (v12_0)\n"
+                    f"{marker}:verilator\nunavailable\n"
                 )
             state.update({"Status": "exited", "ExitCode": 0})
         elif command and command[0] in self.missing_commands:
@@ -317,7 +325,13 @@ class RecordingDockerEngine:
                 "b8e7da6f40ae8f552c116bf6c359b07c6533e159\n"
                 "ABC vendored source identity: "
                 "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b\n"
+                "OpenSTA vendored source identity: "
+                "be771a0116985d57effb4120668ae98e8a7b0f79\n"
+                f"OpenSTA executable SHA-256: {'9' * 64}\n"
             )
+            state.update({"Status": "exited", "ExitCode": 0})
+        elif command == ["sta", "-version"]:
+            stdout = "3.1.0\n"
             state.update({"Status": "exited", "ExitCode": 0})
         elif command and command[0] == "sleepy":
             stdout = "partial\n"
@@ -330,8 +344,7 @@ class RecordingDockerEngine:
             exit_code = 125
             state.update({"Status": "created", "Error": "runtime create failed", "ExitCode": 125})
         elif command and command[0] == "large-output":
-            stdout = "x" * max_output_bytes
-            truncated = True
+            stdout = "x" * 4096
             state.update({"Status": "exited", "ExitCode": 0})
         else:
             stdout = "ok\n"
@@ -881,6 +894,56 @@ def test_docker_profile_resolution_records_actual_tools_and_is_canonical() -> No
     assert tools["yosys-abc"].version == "1.01"
     assert tools["yosys-abc"].git_hash == "e026ed5380f3bdc3beea2ff9ffc23236fc549d5b"
     assert first.generated_script_hash
+
+
+def test_docker_opensta_identity_is_resolved_inside_the_image() -> None:
+    profile_resolver_module._DOCKER_TOOL_IDENTITY_CACHE.clear()
+    engine = RecordingDockerEngine()
+    runtime = _prepared_runtime(engine, max_command_time_s=120)
+    try:
+        identities = resolve_docker_tool_identities(
+            runtime,
+            opensta_executable="sta",
+        )
+    finally:
+        runtime.close()
+    tools = {tool.logical_name: tool for tool in identities}
+    assert tools["opensta"].version == "3.1.0"
+    assert tools["opensta"].git_hash == "be771a0116985d57effb4120668ae98e8a7b0f79"
+    assert tools["opensta"].executable_sha256 == "9" * 64
+    assert tools["opensta"].identity_kind == "immutable_image_observation"
+    identity_commands = [
+        arguments[arguments.index(IMAGE_ID) + 1 :] for arguments in engine.create_arguments
+    ]
+    assert identity_commands[-4:] == [
+        ["yosys", "-V"],
+        ["yosys-abc", "-c", "version; quit"],
+        ["verigym-toolchain-identity"],
+        ["sta", "-version"],
+    ]
+    assert engine.start_timeouts[-4:] == [120, 120, 120, 120]
+    profile_resolver_module._DOCKER_TOOL_IDENTITY_CACHE.clear()
+
+
+def test_docker_tool_identity_cache_is_bound_to_exact_immutable_image() -> None:
+    profile_resolver_module._DOCKER_TOOL_IDENTITY_CACHE.clear()
+    first_engine = RecordingDockerEngine()
+    first_runtime = _prepared_runtime(first_engine, max_command_time_s=120)
+    second_engine = RecordingDockerEngine()
+    second_runtime = _prepared_runtime(second_engine, max_command_time_s=120)
+    try:
+        first = resolve_docker_tool_identities(first_runtime, opensta_executable="sta")
+        first_command_count = len(first_engine.create_arguments)
+        second_command_count = len(second_engine.create_arguments)
+        second = resolve_docker_tool_identities(second_runtime, opensta_executable="sta")
+    finally:
+        first_runtime.close()
+        second_runtime.close()
+        profile_resolver_module._DOCKER_TOOL_IDENTITY_CACHE.clear()
+
+    assert first == second
+    assert len(first_engine.create_arguments) == first_command_count
+    assert len(second_engine.create_arguments) == second_command_count
 
 
 @pytest.mark.parametrize("missing", ["yosys", "yosys-abc"])

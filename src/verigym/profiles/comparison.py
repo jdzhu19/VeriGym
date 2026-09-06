@@ -13,6 +13,14 @@ from verigym.schemas.base import StrictModel
 from verigym.schemas.run import RunManifest
 from verigym.schemas.score import ScoreCard
 
+from .identity import (
+    RESOLVED_PROFILE_IDENTITY_COMPONENTS,
+    ResolvedProfileComparisonEvidence,
+    compare_resolved_profile_identity,
+    require_resolved_profile_identity,
+    resolved_profile_component_hashes,
+)
+
 
 class AreaComparison(StrictModel):
     metric: Literal["area"] = "area"
@@ -278,7 +286,12 @@ __all__ = [
     "AreaComparison",
     "PowerComparison",
     "TimingComparison",
+    "RESOLVED_PROFILE_IDENTITY_COMPONENTS",
+    "ResolvedProfileComparisonEvidence",
     "compare_area",
     "compare_power",
+    "compare_resolved_profile_identity",
     "compare_timing",
+    "require_resolved_profile_identity",
+    "resolved_profile_component_hashes",
 ]

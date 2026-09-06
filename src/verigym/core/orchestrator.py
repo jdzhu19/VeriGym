@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from verigym.agents.base import AgentAdapter, AgentContext, AgentTerminationError
+from verigym.core.agent_feedback import (
+    AgentFeedbackController,
+    resolve_agent_feedback_contract,
+    task_with_agent_feedback_contract,
+)
 from verigym.core.artifact_policy import bound_value
 from verigym.core.artifacts import RunLayout, snapshot_candidate_file_modes
 from verigym.core.environment import VeriGymEnv
@@ -22,6 +27,11 @@ from verigym.core.integrity import write_run_artifact_manifest
 from verigym.core.loaders import dump_json
 from verigym.core.logging import append_json_log
 from verigym.core.model_gateway import ModelGateway
+from verigym.core.public_test_profiles import (
+    PublicTestProfileController,
+    resolve_public_test_profile,
+    validate_required_public_test_profile,
+)
 from verigym.core.repository_candidate import repository_plan_identity
 from verigym.core.repository_observation import (
     RawObservationAuditWriter,
@@ -30,8 +40,15 @@ from verigym.core.repository_observation import (
 )
 from verigym.core.scoring import build_scorecard
 from verigym.core.synthesis import SynthesisEvaluation, execute_synthesis_quality
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.core.trace import TraceWriter
 from verigym.core.verifier_dag import VerifierExecutor, has_infrastructure_error
+from verigym.core.verifier_profiles import (
+    resolve_verifier_profile,
+    task_with_verifier_profile,
+    uses_controller_verifier_transport,
+    validate_required_verifier_profile,
+)
 from verigym.core.workspace import copy_tree_safely, merge_tree_safely, normalize_relative_path
 from verigym.models.base import ModelClient
 from verigym.profiles.base import ResolvedToolchainProfile
@@ -68,8 +85,9 @@ from verigym.schemas.score import EpisodeFailure
 from verigym.schemas.suite import SuiteSourceConfig
 from verigym.schemas.task import ResolvedTaskAssets, VeriTask
 from verigym.schemas.verifier import VerifierResult, VerifierStatus
+from verigym.schemas.verifier_profile import ResolvedVerifierToolProfile, VerifierToolProfile
 from verigym.suites.base import SuiteAdapter
-from verigym.tools.base import SynthesisBackendPlugin, ToolContext
+from verigym.tools.base import SynthesisBackendPlugin, ToolContext, VerifierBackendPlugin
 from verigym.version import __version__
 
 
@@ -95,6 +113,15 @@ def _external_agent_isolation_label(agent_name: str, execution_backend: str) -> 
     if execution_backend == "docker_outer_runtime_delegated":
         return "docker_outer_runtime_delegated"
     return "codex_cli_sandbox_on_trusted_host"
+
+
+def _verification_requires_final_submission(task: VeriTask) -> bool:
+    value = task.metadata.get("verification_requires_final_submission", False)
+    if not isinstance(value, bool):
+        raise ConfigurationError(
+            "task verification_requires_final_submission metadata must be a boolean"
+        )
+    return value
 
 
 def _configured_observation_policy(
@@ -154,6 +181,51 @@ class VeriGym:
             suite, task, assets = self.load_task(config.task_id)
         else:
             suite, task, assets = self.load_task(config.task_id, config.suite_source)
+        validate_required_verifier_profile(task, config.verifier_profile)
+        resolved_verifier_profile: ResolvedVerifierToolProfile | None = None
+        if config.verifier_profile is not None:
+            verifier_backend = self.registries.tools.get(config.verifier_profile.target_plugin)
+            controller_transport = uses_controller_verifier_transport(
+                runtime=config.runtime,
+                profile=config.verifier_profile,
+                backend=verifier_backend,
+            )
+            if config.runtime != config.verifier_profile.runtime and not controller_transport:
+                raise ConfigurationError(
+                    "verifier profile requires the local control-plane runtime"
+                )
+            resolved_verifier_profile = resolve_verifier_profile(
+                task=task,
+                profile=config.verifier_profile,
+                tools=self.registries.tools,
+                expected=config.expected_resolved_verifier_profile,
+            )
+            task = task_with_verifier_profile(task, config.verifier_profile)
+        validate_required_public_test_profile(task, config.public_test_profile)
+        resolved_public_test_profile: ResolvedVerifierToolProfile | None = None
+        public_test_backend: VerifierBackendPlugin | None = None
+        if config.public_test_profile is not None:
+            candidate_public_backend = self.registries.tools.get(
+                config.public_test_profile.target_plugin
+            )
+            if not isinstance(candidate_public_backend, VerifierBackendPlugin):
+                raise ConfigurationError("public-test profile target is not a profile backend")
+            controller_transport = uses_controller_verifier_transport(
+                runtime=config.runtime,
+                profile=config.public_test_profile,
+                backend=candidate_public_backend,
+            )
+            if config.runtime != config.public_test_profile.runtime and not controller_transport:
+                raise ConfigurationError(
+                    "public-test profile requires the local control-plane runtime"
+                )
+            resolved_public_test_profile = resolve_public_test_profile(
+                task=task,
+                profile=config.public_test_profile,
+                tools=self.registries.tools,
+                expected=config.expected_resolved_public_test_profile,
+            )
+            public_test_backend = candidate_public_backend
         task_hash = content_hash(task)
         source_hash = task.source.content_hash or hash_directory(Path(assets.visible_root))
         source_snapshot = suite.source_snapshot()
@@ -187,6 +259,8 @@ class VeriGym:
         synthesis_profile: ToolchainProfile | None = None
         resolved_profile: ResolvedToolchainProfile | None = None
         synthesis_backend: SynthesisBackendPlugin | None = None
+        feedback_controller: AgentFeedbackController | None = None
+        public_test_controller: PublicTestProfileController | None = None
         try:
             runtime.prepare(run_id)
             if config.toolchain_profile is not None:
@@ -203,15 +277,48 @@ class VeriGym:
                 synthesis_backend = candidate_backend
                 reference = suite.reference_solution(task)
                 reference_hash = content_hash(reference) if reference is not None else None
+                source_projection = resolve_synthesis_source_projection(task)
                 resolved_profile = resolve_toolchain_profile(
                     synthesis_profile,
                     runtime,
-                    source_paths=list(task.workspace.entrypoints),
+                    source_paths=source_projection.profile_sources,
                     top_module=synthesis_profile.flow.top_module,
                     reference_candidate_hash=reference_hash,
                     expected=config.expected_resolved_profile,
                     backend=synthesis_backend,
+                    synthesis_source_projection_hash=source_projection.projection_hash,
                 )
+            agent_feedback_contract = resolve_agent_feedback_contract(
+                task=task,
+                ppa_enabled=config.agent_ppa_feedback,
+                ppa_max_executions=config.agent_ppa_max_calls,
+                resolved_profile=resolved_profile,
+                profile_backend=(
+                    synthesis_profile.flow.backend_plugin
+                    if synthesis_profile is not None and synthesis_profile.flow is not None
+                    else None
+                ),
+            )
+            if config.expected_agent_feedback_contract != agent_feedback_contract:
+                if config.expected_agent_feedback_contract is not None:
+                    raise ConfigurationError(
+                        "agent feedback contract changed after experiment planning"
+                    )
+            if (
+                config.resolved_agent_feedback_contract is not None
+                and config.resolved_agent_feedback_contract != agent_feedback_contract
+            ):
+                raise ConfigurationError("batch agent feedback resolution was not preserved")
+            if config.public_test_profile is not None:
+                assert resolved_public_test_profile is not None
+                assert public_test_backend is not None
+                public_test_controller = PublicTestProfileController(
+                    task=task,
+                    profile=config.public_test_profile,
+                    resolved_profile=resolved_public_test_profile,
+                    backend=public_test_backend,
+                )
+            execution_task = task_with_agent_feedback_contract(task, agent_feedback_contract)
             # Agent and model registries are intentionally consulted only after profile
             # resolution, so a bad image/tool/asset can never trigger a model lookup.
             agent: AgentAdapter = self.registries.agents.get(config.agent)
@@ -248,7 +355,7 @@ class VeriGym:
                     interaction_mode=config.mode,
                     agent=agent,
                     agent_options=config.agent_options,
-                    task=task,
+                    task=execution_task,
                 )
                 resolved_prompt_policy_hash = (
                     resolved_prompt_policy.configuration_fingerprint
@@ -259,7 +366,7 @@ class VeriGym:
                     agent_descriptor=agent.descriptor,
                     protocol_spec=agent.action_protocol_spec,
                     agent_options=config.agent_options,
-                    task=task,
+                    task=execution_task,
                 )
                 if config.expected_agent_configuration_hash is not None:
                     if actual_agent_configuration_hash != config.expected_agent_configuration_hash:
@@ -296,6 +403,8 @@ class VeriGym:
                         config.resolved_agent_configuration_hash,
                         config.expected_action_protocol,
                         config.resolved_action_protocol,
+                        config.expected_agent_feedback_contract,
+                        config.resolved_agent_feedback_contract,
                     )
                 ):
                     raise ValueError("run prompt binding is incomplete")
@@ -330,13 +439,15 @@ class VeriGym:
         )
         external_agent_selected = "external_coding_agent" in agent.descriptor.capabilities
         if (
-            repository_plan_identity(task) is not None
+            (repository_plan_identity(task) is not None or agent_feedback_contract is not None)
             and (agent.requires_model or external_agent_selected)
             and runtime.descriptor.isolation_level != "docker_standard"
         ):
             runtime.close()
             raise ConfigurationError(
-                "model-bearing repository repair requires the Docker security boundary"
+                "model-bearing repository AgentEval requires the Docker security boundary"
+                if agent_feedback_contract is not None
+                else "model-bearing repository repair requires the Docker security boundary"
             )
         tool_policy = ToolPolicySnapshot(
             allowed_tools=allowed_tools,
@@ -390,6 +501,12 @@ class VeriGym:
             agent_harness=agent.descriptor,
             prompt_policy=resolved_prompt_policy,
             action_protocol=resolved_action_protocol,
+            agent_feedback_contract=agent_feedback_contract,
+            agent_feedback_contract_hash=(
+                content_hash(agent_feedback_contract)
+                if agent_feedback_contract is not None
+                else None
+            ),
             tool_policy=tool_policy,
             generation=(
                 GenerationParameters(
@@ -427,6 +544,42 @@ class VeriGym:
                 resolved_profile.resolved_profile_hash if resolved_profile is not None else None
             ),
             resolved_toolchain_profile=resolved_profile,
+            requested_verifier_profile_id=(
+                config.verifier_profile.id if config.verifier_profile is not None else None
+            ),
+            requested_verifier_profile_version=(
+                config.verifier_profile.version if config.verifier_profile is not None else None
+            ),
+            verifier_declared_profile_hash=(
+                resolved_verifier_profile.declared_profile_hash
+                if resolved_verifier_profile is not None
+                else None
+            ),
+            resolved_verifier_profile_hash=(
+                resolved_verifier_profile.resolved_profile_hash
+                if resolved_verifier_profile is not None
+                else None
+            ),
+            resolved_verifier_profile=resolved_verifier_profile,
+            requested_public_test_profile_id=(
+                config.public_test_profile.id if config.public_test_profile is not None else None
+            ),
+            requested_public_test_profile_version=(
+                config.public_test_profile.version
+                if config.public_test_profile is not None
+                else None
+            ),
+            public_test_declared_profile_hash=(
+                resolved_public_test_profile.declared_profile_hash
+                if resolved_public_test_profile is not None
+                else None
+            ),
+            resolved_public_test_profile_hash=(
+                resolved_public_test_profile.resolved_profile_hash
+                if resolved_public_test_profile is not None
+                else None
+            ),
+            resolved_public_test_profile=resolved_public_test_profile,
             synthesis_flow_script_hash=(
                 resolved_profile.generated_script_hash if resolved_profile is not None else None
             ),
@@ -479,6 +632,23 @@ class VeriGym:
         dump_json(layout.artifacts / "toolchain_profile.json", profile)
         if resolved_profile is not None:
             dump_json(layout.artifacts / "resolved_toolchain_profile.json", resolved_profile)
+        if config.verifier_profile is not None:
+            dump_json(layout.artifacts / "verifier_profile.json", config.verifier_profile)
+        if resolved_verifier_profile is not None:
+            dump_json(
+                layout.artifacts / "resolved_verifier_profile.json",
+                resolved_verifier_profile,
+            )
+        if config.public_test_profile is not None:
+            dump_json(
+                layout.artifacts / "public_test_profile.json",
+                config.public_test_profile,
+            )
+        if resolved_public_test_profile is not None:
+            dump_json(
+                layout.artifacts / "resolved_public_test_profile.json",
+                resolved_public_test_profile,
+            )
         append_json_log(
             layout.logs / "runtime.log",
             event="runtime_created",
@@ -500,7 +670,10 @@ class VeriGym:
             bounded_action_protocol=(
                 resolved_action_protocol is not None
                 and resolved_action_protocol.state_machine_id
-                == "repository_action_state_machine_v2"
+                in {
+                    "repository_action_state_machine_v2",
+                    "repository_action_state_machine_v3",
+                }
             ),
         )
         raw_observation_audit: RawObservationAuditWriter | None = None
@@ -512,14 +685,34 @@ class VeriGym:
             raw_observation_audit = RawObservationAuditWriter(
                 layout.root / "private-audit" / "raw-observations.ndjson"
             )
+        if agent_feedback_contract is not None:
+            feedback_controller = AgentFeedbackController(
+                contract=agent_feedback_contract,
+                task=task,
+                runtime=runtime,
+                profile=synthesis_profile,
+                resolved_profile=resolved_profile,
+                backend=synthesis_backend,
+                compile_executor=(
+                    public_test_controller.execute if public_test_controller is not None else None
+                ),
+                compile_profile_hash=(
+                    public_test_controller.resolved_profile_hash
+                    if public_test_controller is not None
+                    else None
+                ),
+            )
         env = VeriGymEnv(
-            task=task,
+            task=execution_task,
             assets=assets,
             runtime=runtime,
             tools=self.registries.tools,
             mode=config.mode,
             observation_policy=observation_policy,
             audit_callback=raw_observation_audit,
+            public_test_executor=(
+                feedback_controller.execute if feedback_controller is not None else None
+            ),
         )
         verifier_results: list[VerifierResult] = []
         synthesis_evaluation: SynthesisEvaluation | None = None
@@ -541,6 +734,14 @@ class VeriGym:
                     trace=trace,
                     observation_policy=observation_policy,
                     audit_callback=raw_observation_audit,
+                    public_test_executor=(
+                        feedback_controller.execute if feedback_controller is not None else None
+                    ),
+                    agent_feedback_action_callback=(
+                        env.record_delegated_agent_feedback_action
+                        if agent_feedback_contract is not None
+                        else None
+                    ),
                 )
             model_gateway = (
                 ModelGateway(
@@ -570,7 +771,7 @@ class VeriGym:
             agent.start(
                 AgentContext(
                     run_id=run_id,
-                    task=task,
+                    task=execution_task,
                     seed=config.seed,
                     model_gateway=model_gateway,
                     prompt_builder=prompt_builder,
@@ -579,6 +780,7 @@ class VeriGym:
                     external_bridge=external_bridge,
                     prompt_policy=resolved_prompt_policy,
                     action_protocol=resolved_action_protocol,
+                    agent_feedback_contract=agent_feedback_contract,
                 )
             )
             agent_log = layout.logs / "agent.log"
@@ -757,6 +959,11 @@ class VeriGym:
             )
             trace.emit("verifier_started", {"graph_hash": verifier_hash})
             verifier_started = time.monotonic()
+            final_submission_required = _verification_requires_final_submission(task)
+            final_submission_missing = (
+                final_submission_required
+                and env.termination_reason != TerminationReason.FINAL_SUBMISSION
+            )
             if external_workspace_rejected:
                 verifier_results = [
                     VerifierResult(
@@ -769,6 +976,25 @@ class VeriGym:
                     )
                     for node in task.verifier.nodes
                 ]
+            elif final_submission_missing:
+                verifier_results = [
+                    VerifierResult(
+                        node_id=node.id,
+                        plugin=node.plugin,
+                        status=VerifierStatus.SKIPPED,
+                        error_category=ErrorCategory.SUCCESS,
+                        message="typed final submission required before hidden verification",
+                        request=node.request,
+                    )
+                    for node in task.verifier.nodes
+                ]
+                trace.emit(
+                    "verifier_skipped",
+                    {
+                        "reason": "typed_final_submission_required",
+                        "termination_reason": env.termination_reason.value,
+                    },
+                )
             else:
                 verifier_results = self._verify_candidate(
                     suite=suite,
@@ -778,6 +1004,8 @@ class VeriGym:
                     candidate_dir=layout.candidate,
                     artifact_root=layout.artifacts,
                     agent_session=env.session,
+                    verifier_profile=config.verifier_profile,
+                    resolved_verifier_profile=resolved_verifier_profile,
                 )
             if (
                 not external_workspace_rejected
@@ -845,21 +1073,30 @@ class VeriGym:
                 else []
             )
             manifest.action_protocol_records = agent.action_protocol_records()
+            if feedback_controller is not None:
+                manifest.agent_feedback_evaluations = feedback_controller.evaluations
+                manifest.agent_feedback_evaluations_hash = content_hash(
+                    manifest.agent_feedback_evaluations
+                )
             manifest.external_agent_observations = (
                 external_bridge.observations if external_bridge is not None else []
             )
             external_accounting = (
                 external_bridge.accounting if external_bridge is not None else None
             )
-            if manifest.repository_task_identity is not None:
-                manifest.repository_public_tool_invocation_count = (
-                    runtime_public_test_invocation_count
-                    + (
-                        external_accounting.public_test_invocation_count
-                        if external_accounting is not None
-                        and external_accounting.public_test_invocation_count is not None
-                        else 0
-                    )
+            if manifest.repository_task_identity is not None or feedback_controller is not None:
+                observed_public_test_invocation_count = runtime_public_test_invocation_count + (
+                    external_accounting.public_test_invocation_count
+                    if external_accounting is not None
+                    and external_accounting.public_test_invocation_count is not None
+                    else 0
+                )
+                feedback_evaluation_count = (
+                    len(feedback_controller.evaluations) if feedback_controller is not None else 0
+                )
+                manifest.repository_public_tool_invocation_count = max(
+                    observed_public_test_invocation_count,
+                    feedback_evaluation_count,
                 )
             if (
                 external_bridge is not None
@@ -899,6 +1136,7 @@ class VeriGym:
                 isolation_level=runtime.descriptor.isolation_level,
                 episode_failure=episode_failure,
                 resolved_profile=resolved_profile,
+                resolved_verifier_profile=resolved_verifier_profile,
                 candidate_synthesis=(
                     synthesis_evaluation.candidate if synthesis_evaluation is not None else None
                 ),
@@ -965,7 +1203,10 @@ class VeriGym:
         candidate_dir: Path,
         artifact_root: Path,
         agent_session: RuntimeSession | None = None,
+        verifier_profile: VerifierToolProfile | None = None,
+        resolved_verifier_profile: ResolvedVerifierToolProfile | None = None,
     ) -> list[VerifierResult]:
+        validate_required_verifier_profile(task, verifier_profile)
         if suite is not None:
             managed = suite.verify_candidate(
                 task=task,
@@ -1036,6 +1277,8 @@ class VeriGym:
                 verifier_session,
                 artifact_root,
                 max_output_bytes=task.budget.max_output_bytes_per_tool,
+                verifier_profile=verifier_profile,
+                resolved_verifier_profile=resolved_verifier_profile,
             )
             integrity_ok = all(
                 (verifier_session.root / relative).is_file()

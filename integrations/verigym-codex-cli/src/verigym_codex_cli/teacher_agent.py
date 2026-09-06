@@ -111,9 +111,14 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
             capabilities,
             task_wall_time_s=context.task.budget.max_wall_time_s,
         )
-        if context.prompt_policy is None or context.prompt_policy.id != (
-            self.prompt_policy_spec.prompt_contract_id
-        ):
+        expected_prompt_id = (
+            context.action_protocol.prompt_contract_id
+            if context.action_protocol is not None
+            else "repository_action_v2_prompt_v3"
+            if context.agent_feedback_contract is not None
+            else self.prompt_policy_spec.prompt_contract_id
+        )
+        if context.prompt_policy is None or context.prompt_policy.id != expected_prompt_id:
             raise ValueError("Codex MCP teacher prompt contract is not frozen")
         prompt = validate_prompt_text(_teacher_prompt(context, bridge), context.prompt_policy)
         self._context = context
@@ -142,6 +147,7 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
                     bridge=bridge,
                     socket_path=control / "b" / "mcp.sock",
                     public_test_ids=_public_test_ids(context),
+                    agent_feedback_contract=context.agent_feedback_contract,
                     limits=(
                         RepositoryToolBrokerLimits(
                             max_tool_calls=settings.max_tool_calls,
@@ -303,7 +309,17 @@ class CodexCliMcpTeacherAdapter(AgentAdapter):
                 failure_category="training_transcript_ineligible",
             )
             raise _termination("training_transcript_ineligible", str(exc)) from exc
-        identity = _identity(settings, capabilities, parsed, broker_stats)
+        identity = _identity(
+            settings,
+            capabilities,
+            parsed,
+            broker_stats,
+            state_machine_id=(
+                context.agent_feedback_contract.state_machine_id
+                if context.agent_feedback_contract is not None
+                else "repository_action_state_machine_v2"
+            ),
+        )
         accounting = ExternalAgentAccounting(
             process_wall_time_s=process.duration_s,
             cli_event_count=len(parsed.events),
@@ -386,6 +402,8 @@ def _identity(
     capabilities: CapabilityReport,
     parsed: ParsedEventStream,
     broker: RepositoryToolBrokerStats,
+    *,
+    state_machine_id: str,
 ) -> ExternalAgentCallIdentity:
     observed = parsed.observed_model_id
     calls = broker.tool_calls
@@ -412,7 +430,7 @@ def _identity(
         model_client_kind="cli_agent_mediated",
         agent_harness_kind="codex_cli",
         tool_availability_policy="verigym_required_allowlisted_mcp_only_v1",
-        tool_use_policy="repository_action_state_machine_v2",
+        tool_use_policy=state_machine_id,
         tool_event_count=calls,
         side_effecting_tool_event_count=0,
         read_only_tool_event_count=0,
@@ -435,7 +453,7 @@ def _identity(
 
 
 def _teacher_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": "1.0",
         "task": {
             "id": context.task.id,
@@ -465,6 +483,15 @@ def _teacher_prompt(context: AgentContext, bridge: ExternalAgentBridge) -> str:
             "Do not access shell, network, host files, hidden assets, or golden repair artifacts.",
         ],
     }
+    if context.agent_feedback_contract is not None:
+        payload["agent_feedback_contract"] = context.agent_feedback_contract.model_dump(mode="json")
+        payload["instructions"].extend(
+            [
+                "Every successful patch invalidates prior compile, PPA, and diff evidence.",
+                "Run compile for the current revision before PPA and before finish; inspect the "
+                "current diff after the final patch.",
+            ]
+        )
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -482,8 +509,12 @@ def _training_system_prompt() -> str:
 
 
 def _public_test_ids(context: AgentContext) -> tuple[str, ...]:
-    repository = context.task.metadata.get("repository_repair")
-    values = repository.get("public_test_ids") if isinstance(repository, dict) else []
+    values: object
+    if context.agent_feedback_contract is not None:
+        values = context.agent_feedback_contract.public_test_ids
+    else:
+        repository = context.task.metadata.get("repository_repair")
+        values = repository.get("public_test_ids") if isinstance(repository, dict) else []
     if not isinstance(values, list) or not all(
         isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value)
         for value in values

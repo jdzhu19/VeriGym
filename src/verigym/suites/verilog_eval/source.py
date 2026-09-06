@@ -18,6 +18,17 @@ from verigym.suites.verilog_eval.schemas import (
 
 _DATASET_BY_VARIANT = {
     VerilogEvalVariant.V2_SPEC_TO_RTL: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_V1: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VERILATOR_V1: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_V1: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_VCS_MCP_PUBLIC_V1: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V1: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V2: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V3: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V4: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V5: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V6: "dataset_spec-to-rtl",
+    VerilogEvalVariant.V2_SPEC_TO_RTL_AGENT_EVAL_FUNCTIONAL_V7: "dataset_spec-to-rtl",
 }
 _KNOWN_DATASET_DIRECTORIES = {
     "dataset_spec-to-rtl": VerilogEvalVariant.V2_SPEC_TO_RTL,

@@ -14,6 +14,8 @@ from typing import Any
 import yaml
 
 from verigym.core.hashing import hash_bytes
+from verigym.profiles.resolver import resolve_docker_tool_identities
+from verigym.runtimes.docker import DockerRuntime, DockerRuntimeConfig
 from verigym.schemas.common import ToolchainProfile
 from verigym.tools.yosys.identity import resolve_local_tool_identities
 from verigym.tools.yosys.opensta import FLOW_TEMPLATE_CONTRACT, FLOW_TEMPLATE_ID
@@ -81,7 +83,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--pdk-root", required=True)
     parser.add_argument("--sdc", required=True)
+    parser.add_argument("--runtime", choices=["local", "docker"], default="local")
     parser.add_argument("--opensta", required=True)
+    parser.add_argument("--docker-image")
     parser.add_argument("--output-manifest", required=True)
     parser.add_argument("--output-profile", required=True)
     parser.add_argument("--source", action="append", required=True)
@@ -113,7 +117,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     pdk_root = Path(args.pdk_root).expanduser().resolve(strict=True)
     liberty = _regular_file(pdk_root / _LIBERTY_RELATIVE)
     sdc = _regular_file(Path(args.sdc).expanduser())
-    opensta = _regular_file(Path(args.opensta).expanduser())
+    if args.runtime == "docker" and not args.docker_image:
+        raise ValueError("--docker-image is required for Docker profile preparation")
+    if args.runtime == "local" and args.docker_image is not None:
+        raise ValueError("--docker-image is valid only for Docker profile preparation")
+    opensta = _regular_file(Path(args.opensta).expanduser()) if args.runtime == "local" else None
     output_manifest = Path(args.output_manifest).expanduser().resolve()
     output_profile = Path(args.output_profile).expanduser().resolve()
     if output_manifest.is_relative_to(pdk_root) or output_profile.is_relative_to(pdk_root):
@@ -124,7 +132,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_manifest.parent.mkdir(parents=True, exist_ok=True)
     output_manifest.write_bytes(manifest_payload)
 
-    identities = resolve_local_tool_identities(opensta_executable=str(opensta))
+    prepared_image_id: str | None = None
+    if args.runtime == "docker":
+        runtime = DockerRuntime(
+            DockerRuntimeConfig(
+                image=args.docker_image,
+                pull_policy="never",
+                network_mode="none",
+                max_command_time_s=120,
+            )
+        )
+        try:
+            runtime.prepare("nangate45-profile-preparation")
+            identities = resolve_docker_tool_identities(
+                runtime,
+                opensta_executable=args.opensta,
+            )
+            image = runtime.descriptor.image
+            if image is None:
+                raise RuntimeError("Docker profile preparation did not resolve an image")
+            prepared_image_id = image.resolved_image_id
+        finally:
+            runtime.close()
+    else:
+        assert opensta is not None
+        identities = resolve_local_tool_identities(opensta_executable=str(opensta))
     tools = {identity.logical_name: identity for identity in identities}
     yosys = tools["yosys"]
     abc = tools["yosys-abc"]
@@ -139,7 +171,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "reproducibility_scope": "site_specific",
         "deterministic": True,
-        "runtime": {"runtime": "local", "allowed_runtimes": ["local"]},
+        "runtime": (
+            {
+                "runtime": "docker",
+                "allowed_runtimes": ["docker"],
+                "minimum_isolation_level": "docker_standard",
+                "requested_image": args.docker_image,
+                "immutable_image_required": True,
+                "network_policy": "none",
+                "resource_controls_required": True,
+                "supported_os": ["linux"],
+                "supported_architectures": ["amd64", "arm64"],
+            }
+            if args.runtime == "docker"
+            else {"runtime": "local", "allowed_runtimes": ["local"]}
+        ),
+        "container_image": args.docker_image if args.runtime == "docker" else None,
         "pdk": {
             "name": "nangate45-pdk-tree-manifest",
             "uri": str(output_manifest),
@@ -287,6 +334,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "power_duty": args.power_duty,
             "pdk_tree_sha256": manifest["tree_sha256"],
             "opensta_executable_sha256": sta.executable_sha256,
+            **({"prepared_image_id": prepared_image_id} if prepared_image_id is not None else {}),
             "scope_label": "synthesis-area-timing-power-vectorless-non-signoff",
         },
     }

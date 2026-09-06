@@ -17,6 +17,7 @@ from verigym.core.errors import VeriGymError
 from verigym.core.hashing import content_hash
 from verigym.core.orchestrator import VeriGym
 from verigym.core.replay import replay_run
+from verigym.core.synthesis_projection import resolve_synthesis_source_projection
 from verigym.evolution.comparison import build_evolving_evaluation
 from verigym.evolution.exporter import (
     TrajectoryExporter,
@@ -51,6 +52,7 @@ from verigym.experiments.state import (
 from verigym.profiles.comparison import compare_area, compare_power, compare_timing
 from verigym.profiles.resolver import resolve_toolchain_profile
 from verigym.profiles.validation import validate_profile
+from verigym.profiles.verifier_registry import load_verifier_profile
 from verigym.provenance import get_build_provenance
 from verigym.registry.collections import Registries, build_registries
 from verigym.reporting.service import ReportService
@@ -380,15 +382,17 @@ def doctor(
                 try:
                     runtime.prepare(f"doctor-profile-{uuid.uuid4().hex[:12]}")
                     reference = suite.reference_solution(task)
+                    source_projection = resolve_synthesis_source_projection(task)
                     resolved = resolve_toolchain_profile(
                         profile,
                         runtime,
-                        source_paths=list(task.workspace.entrypoints),
+                        source_paths=source_projection.profile_sources,
                         top_module=profile.flow.top_module if profile.flow is not None else "",
                         reference_candidate_hash=(
                             content_hash(reference) if reference is not None else None
                         ),
                         backend=_synthesis_backend(registries, profile),
+                        synthesis_source_projection_hash=source_projection.projection_hash,
                     )
                     table.add_row(
                         f"profile-resolution:{toolchain_profile}",
@@ -525,6 +529,42 @@ def run_task(
         dir_okay=False,
         help="Load a site-specific synthesis profile from YAML or JSON.",
     ),
+    verifier_profile: str | None = typer.Option(
+        None,
+        "--verifier-profile",
+        help="Opt in to one hash-bound verifier backend/transport profile.",
+    ),
+    verifier_profile_file: Path | None = typer.Option(
+        None,
+        "--verifier-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load a site-specific verifier profile from YAML or JSON.",
+    ),
+    public_test_profile: str | None = typer.Option(
+        None,
+        "--public-test-profile",
+        help="Opt in to one hash-bound public-test backend/transport profile.",
+    ),
+    public_test_profile_file: Path | None = typer.Option(
+        None,
+        "--public-test-profile-file",
+        exists=True,
+        dir_okay=False,
+        help="Load a site-specific public-test profile from YAML or JSON.",
+    ),
+    agent_ppa_feedback: bool = typer.Option(
+        False,
+        "--agent-ppa-feedback",
+        help="Enable revision-bound candidate-only PPA feedback for an RTLLM AgentEval task.",
+    ),
+    agent_ppa_max_calls: int = typer.Option(
+        3,
+        "--agent-ppa-max-calls",
+        min=1,
+        max=8,
+        help="Maximum real agent-visible synthesis executions (cached calls remain tool calls).",
+    ),
     seed: int = typer.Option(0, "--seed"),
     output: Path = typer.Option(Path("runs"), "--output"),
 ) -> None:
@@ -563,6 +603,37 @@ def run_task(
             if docker_image is not None:
                 raise ValueError("--docker-image requires --runtime docker")
             docker_config = None
+        if (verifier_profile is None) != (verifier_profile_file is None):
+            raise ValueError(
+                "--verifier-profile and --verifier-profile-file must be supplied together"
+            )
+        loaded_verifier_profile = (
+            load_verifier_profile(verifier_profile_file)
+            if verifier_profile_file is not None
+            else None
+        )
+        if loaded_verifier_profile is not None and loaded_verifier_profile.id != verifier_profile:
+            raise ValueError(
+                f"verifier profile file declares {loaded_verifier_profile.id!r}, "
+                f"expected {verifier_profile!r}"
+            )
+        if (public_test_profile is None) != (public_test_profile_file is None):
+            raise ValueError(
+                "--public-test-profile and --public-test-profile-file must be supplied together"
+            )
+        loaded_public_test_profile = (
+            load_verifier_profile(public_test_profile_file)
+            if public_test_profile_file is not None
+            else None
+        )
+        if (
+            loaded_public_test_profile is not None
+            and loaded_public_test_profile.id != public_test_profile
+        ):
+            raise ValueError(
+                f"public-test profile file declares {loaded_public_test_profile.id!r}, "
+                f"expected {public_test_profile!r}"
+            )
         config = RunConfig(
             task_id=task_id,
             mode=mode,
@@ -589,6 +660,12 @@ def run_task(
             runtime=runtime,
             docker_config=docker_config,
             toolchain_profile=toolchain_profile,
+            verifier_profile_id=verifier_profile,
+            verifier_profile=loaded_verifier_profile,
+            public_test_profile_id=public_test_profile,
+            public_test_profile=loaded_public_test_profile,
+            agent_ppa_feedback=agent_ppa_feedback,
+            agent_ppa_max_calls=agent_ppa_max_calls,
             seed=seed,
             output=output,
         )
@@ -704,6 +781,16 @@ def batch(
                     effective_config.profile_file,
                     expected_id=effective_config.profile,
                 )
+                if effective_config.verifier_profile_file is not None:
+                    verifier = load_verifier_profile(effective_config.verifier_profile_file)
+                    if verifier.id != effective_config.verifier_profile:
+                        raise ValueError("experiment verifier profile ID differs from its file")
+                if effective_config.public_test_profile_file is not None:
+                    public_profile = load_verifier_profile(
+                        effective_config.public_test_profile_file
+                    )
+                    if public_profile.id != effective_config.public_test_profile:
+                        raise ValueError("experiment public-test profile ID differs from its file")
             return VeriGym(registries)
 
         runner = BatchRunner(
@@ -1000,13 +1087,15 @@ def profiles_resolve(
         runtime = registries.runtimes.get(runtime_name).configure(docker_config)
         runtime.prepare(f"profile-resolve-{uuid.uuid4().hex[:12]}")
         reference = suite.reference_solution(task)
+        source_projection = resolve_synthesis_source_projection(task)
         resolved = resolve_toolchain_profile(
             profile,
             runtime,
-            source_paths=list(task.workspace.entrypoints),
+            source_paths=source_projection.profile_sources,
             top_module=profile.flow.top_module if profile.flow is not None else "",
             reference_candidate_hash=content_hash(reference) if reference is not None else None,
             backend=_synthesis_backend(registries, profile),
+            synthesis_source_projection_hash=source_projection.projection_hash,
         )
         console.print_json(resolved.model_dump_json(indent=2))
     except Exception as exc:

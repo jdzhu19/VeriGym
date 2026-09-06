@@ -141,10 +141,18 @@ class ExternalProcessEngine:
     def pull_image(self, reference: str) -> None:  # pragma: no cover
         raise AssertionError(reference)
 
-    def start_attach(
-        self, container_id: str, *, timeout_s: int, max_output_bytes: int
+    def start_container(self, container_id: str) -> EngineResult:  # pragma: no cover
+        raise AssertionError(container_id)
+
+    def wait_container(
+        self, container_id: str, *, timeout_s: int
     ) -> EngineResult:  # pragma: no cover
-        raise AssertionError((container_id, timeout_s, max_output_bytes))
+        raise AssertionError((container_id, timeout_s))
+
+    def logs_container(
+        self, container_id: str, *, max_output_bytes: int
+    ) -> EngineResult:  # pragma: no cover
+        raise AssertionError((container_id, max_output_bytes))
 
     def list_managed_volumes(self) -> list[str]:  # pragma: no cover
         raise AssertionError

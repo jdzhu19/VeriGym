@@ -143,6 +143,16 @@ def normalized_plan_item_payload(item: Any) -> dict[str, Any]:
         raw.pop("repository_task_identity", None)
     if raw.get("action_protocol") is None:
         raw.pop("action_protocol", None)
+    if raw.get("agent_feedback_contract") is None:
+        raw.pop("agent_feedback_contract", None)
+    if raw.get("verifier_profile") is None:
+        raw.pop("verifier_profile", None)
+    if raw.get("resolved_verifier_profile") is None:
+        raw.pop("resolved_verifier_profile", None)
+    if raw.get("public_test_profile") is None:
+        raw.pop("public_test_profile", None)
+    if raw.get("resolved_public_test_profile") is None:
+        raw.pop("resolved_public_test_profile", None)
     return cast(dict[str, Any], raw)
 
 
