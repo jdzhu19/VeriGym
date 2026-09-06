@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-realbench"
+version = "0.1.0"
+description = "Opt-in, external-source RealBench module-slice adapter for VeriGym."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["verigym>=0.1.0,<0.2", "verigym-cadence>=0.1.0,<0.2"]
+
+[project.entry-points."verigym.suites"]
+realbench = "verigym_realbench.adapter:RealBenchSuite"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_realbench = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["external_benchmark: operator-provided and audited external RealBench checkout"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["verigym_realbench"]

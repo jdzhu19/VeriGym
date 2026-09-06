@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigym-cadence"
+version = "0.1.0"
+description = "Fixed-profile, verifier-only JasperGold SEC transport for VeriGym."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["verigym>=0.1.0,<0.2"]
+
+[project.entry-points."verigym.tools"]
+cadence-jaspergold-sec-mcp = "verigym_cadence.client:JasperGoldMcpTool"
+
+[project.scripts]
+verigym-cadence-mcp-server = "verigym_cadence.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+verigym_cadence = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["commercial: explicitly opted-in licensed Cadence qualification"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["verigym_cadence"]

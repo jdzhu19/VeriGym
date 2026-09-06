@@ -9,6 +9,22 @@ Protected assets include the host filesystem and home directory, SSH/cloud/model
 credentials, Docker credentials and socket, network access, hidden verifier assets, benchmark
 golden sources, and workspaces belonging to other runs.
 
+## Draft RealBench and JasperGold boundary
+
+The draft `verigym-cadence` integration is **trusted-fixture-only**: both the MCP service and
+native Yosys/JasperGold worker require an operator-approved candidate content hash. A fixed
+server profile owns every executable, reference, dependency and Tcl asset. No request can select
+commands, Tcl, environment variables or site paths. The final response permits a status enum
+and frozen identities only, never raw counterexamples or logs. Version resolution is not license
+or suite qualification. Local process-group termination does not establish remote scheduler
+cancellation; production generated-RTL execution requires a separately qualified site wrapper.
+
+The draft `verigym-realbench` adapter requires an explicit external source lock and visibility
+audit. It never downloads, decrypts or executes upstream scripts. Only declared public specs,
+images, stubs and audited public dependencies are projected into the model workspace. It fails
+preflight without the declared functional and SEC backends; it must not downgrade missing
+functional support to lint-only. Its synthetic tests do not qualify actual RealBench data.
+
 ## DockerRuntime boundary
 
 `DockerRuntime` is an opt-in, Linux-first containment profile labeled `docker_standard`. For each
