@@ -470,3 +470,24 @@ may classify manifest-fixed shell/build contexts and at most one member of a clo
 dictionary, without retaining arbitrary tokens or hashes, raw lines, paths, argv, environment
 data, or raw output. It cannot change dependencies or the Dockerfile. Collection, SFT mixing,
 training, and production readiness remain closed.
+
+V186 freezes the v184 evidence tree and v185 audit, then reruns only the exact bounded final-image
+build under fresh `/data2` DinD, output, scratch, volume, and image identities. It does not alter
+the Dockerfile or dependencies. A mount-free, read-only-root, non-root probe records booleans for
+the fixed 119-command dictionary. The in-memory classifier accepts only fixed POSIX-sh, bash,
+Make, and unscoped `: not found` contexts and can retain at most one dictionary command enum.
+Unknown text and token hashes are never persisted; mixed, unscoped, unknown, and multiple matches
+remain fail closed.
+
+Run v186 exactly once from clean merged `main` after all eight post-merge classes pass:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V186_DIAGNOSTIC_CONTEXT=1 \
+  python scripts/launch_hwe_deepseek_harness_v186_diagnostic_context.py \
+  --post-merge-main-run-id <successful-v186-main-run-id>
+```
+
+V186 loads no HWE image or task, prepares no PR-1816 source, runs no verifier or model, and exposes
+no provider client. It cannot authorize a dependency repair, qualification, canary, collection,
+SFT mixing, training, or production use. Only an independent v187 audit may interpret its fixed
+result.

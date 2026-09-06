@@ -1728,6 +1728,15 @@ fixed diagnostic context and closed-dictionary matching under the same task-free
 networkless, bounded-output, secret-scan, and cleanup controls. It may not retain an arbitrary
 token or token hash.
 
+V186 is that bounded refinement. It freezes the complete v184 result and v185 audit, reuses the
+exact v184 build inputs and limits under fresh `/data2` identities, and does not change the
+Dockerfile or install anything. Its mount-free, read-only-root, non-root command probe is extended
+to a manifest-fixed 119-name dictionary. In-memory parsing recognizes only fixed POSIX-sh, bash,
+Make, and unscoped `: not found` grammars. Receipts contain fixed context counts and at most one
+dictionary enum; unknown text, arbitrary token hashes, raw matching lines, paths, argv, environment
+data, and raw output remain forbidden. Mixed, unscoped, unknown, and multiple results fail closed.
+V186 remains task-free and zero-provider and requires an independent v187 audit before any repair.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
