@@ -12,6 +12,11 @@ from verigym.core.agent_feedback_assets import (
     compile_feedback_contract,
     materialize_agent_eval_workspace,
 )
+from verigym.core.repository_candidate import (
+    freeze_repository_candidate,
+    repository_workspace_contract,
+    verify_frozen_repository_candidate_offline,
+)
 from verigym.plugin_api import ConfigurationError, SuiteAdapter, content_hash
 from verigym.schemas.common import (
     AssetRef,
@@ -20,6 +25,7 @@ from verigym.schemas.common import (
     TaskType,
     ToolVisibility,
 )
+from verigym.schemas.repository import RepositoryCandidateRecord, RepositoryWorkspaceContract
 from verigym.schemas.suite import SuiteSourceConfig, SuiteSourceSnapshot
 from verigym.schemas.task import (
     BudgetSpec,
@@ -118,7 +124,7 @@ class RealBenchSuite(SuiteAdapter):
         )
         sources = self._sources(manifest)
         readonly = [a.destination for a in manifest.assets if a.destination and a.role != "stub"]
-        return VeriTask(
+        task = VeriTask(
             id=ref.id,
             suite="realbench",
             suite_version=VARIANT,
@@ -198,6 +204,11 @@ class RealBenchSuite(SuiteAdapter):
             },
         )
 
+        task.metadata["repository_candidate_workspace_contract"] = self._workspace_contract(
+            task
+        ).model_dump(mode="json")
+        return task
+
     def resolve_assets(self, task: VeriTask) -> ResolvedTaskAssets:
         root, lock, manifest = self._manifest(task.id)
         if task.source.content_hash != lock.identity:
@@ -232,6 +243,54 @@ class RealBenchSuite(SuiteAdapter):
             return ValidationReport(
                 valid=False, errors=["External source/lock is unavailable or invalid"]
             )
+
+    @staticmethod
+    def _workspace_contract(task: VeriTask) -> RepositoryWorkspaceContract:
+        return RepositoryWorkspaceContract(
+            editable_globs=task.workspace.editable_globs,
+            read_only_globs=task.workspace.readonly_globs,
+            forbidden_globs=["repository/verifier/**", "repository/hidden/**"],
+            max_changed_files=task.workspace.max_changed_files or 1,
+            max_patch_lines=task.workspace.max_patch_lines or 8000,
+            max_candidate_bytes=task.budget.max_workspace_bytes or 32 * 1024 * 1024,
+            max_file_bytes=8 * 1024 * 1024,
+        )
+
+    def freeze_repository_candidate(
+        self,
+        *,
+        task: VeriTask,
+        candidate_dir: Path,
+        run_root: Path,
+        artifact_root: Path,
+    ) -> RepositoryCandidateRecord:
+        assets = self.resolve_assets(task)
+        return freeze_repository_candidate(
+            task_id=task.id,
+            base_repository=Path(assets.visible_root) / "repository",
+            candidate_repository=candidate_dir / "repository",
+            contract=repository_workspace_contract(task),
+            public_test_ids=["compile"],
+            run_root=run_root,
+            artifact_root=artifact_root,
+        )
+
+    def replay_repository_candidate(
+        self,
+        *,
+        task: VeriTask,
+        candidate_dir: Path,
+        run_root: Path,
+        record: RepositoryCandidateRecord,
+    ) -> None:
+        if record.task_id != task.id:
+            raise ConfigurationError("RealBench replay task identity mismatch")
+        verify_frozen_repository_candidate_offline(
+            candidate_repository=candidate_dir / "repository",
+            patch_file=run_root / "repository.patch",
+            record=record,
+            contract=repository_workspace_contract(task),
+        )
 
     def source_snapshot(self) -> SuiteSourceSnapshot:
         root, lock = self._source()

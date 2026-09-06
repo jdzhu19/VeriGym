@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,12 @@ from verigym_realbench.source import (
 )
 
 from verigym.core.public_test_profiles import validate_required_public_test_profile
+from verigym.core.repository_candidate import (
+    repository_plan_identity,
+    repository_workspace_contract,
+)
 from verigym.core.verifier_profiles import validate_required_verifier_profile
-from verigym.plugin_api import ConfigurationError, hash_bytes
+from verigym.plugin_api import ConfigurationError, PathPolicyError, hash_bytes
 from verigym.schemas.suite import SuiteSourceConfig
 
 
@@ -167,3 +172,52 @@ def test_draft_refuses_unreviewed_revision_or_more_than_three_tasks(tmp_path: Pa
     payload["tasks"].append(payload["tasks"][0])
     with pytest.raises(ValidationError):
         SourceLock.model_validate(payload)
+
+
+def test_multifile_freeze_and_offline_replay_preserve_readonly_images(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    source_fixture(source)
+    suite = RealBenchSuite(SuiteSourceConfig(source_root=source))
+    task = suite.load_task(list(suite.discover())[2])
+    assets = suite.resolve_assets(task)
+    run = tmp_path / "run"
+    run.mkdir()
+    candidate = run / "candidate"
+    shutil.copytree(assets.visible_root, candidate)
+    for relative in task.workspace.editable_globs:
+        with (candidate / relative).open("a", encoding="utf-8") as output:
+            output.write("// synthetic candidate edit\n")
+    record = suite.freeze_repository_candidate(
+        task=task, candidate_dir=candidate, run_root=run, artifact_root=run / "artifacts"
+    )
+    assert record.patch.reapply_exact
+    assert record.patch.changed_files == ["rtl/child.sv", "rtl/top.sv"]
+    assert (
+        repository_plan_identity(task) is None
+    )  # No invented golden patch identity for generation.
+    assert repository_workspace_contract(task).editable_globs == sorted(
+        task.workspace.editable_globs
+    )
+    assert not record.hidden_assets_present and not record.reference_patch_used
+    # Replay intentionally uses an adapter with no external source configuration or EDA tools.
+    RealBenchSuite().replay_repository_candidate(
+        task=task, candidate_dir=candidate, run_root=run, record=record
+    )
+    image = candidate / "repository/spec/ports.png"
+    image.write_bytes(b"tampered image")
+    with pytest.raises(ValueError):
+        RealBenchSuite().replay_repository_candidate(
+            task=task, candidate_dir=candidate, run_root=run, record=record
+        )
+    rejected = tmp_path / "rejected"
+    rejected.mkdir()
+    for relative in task.workspace.editable_globs:
+        shutil.copyfile(Path(assets.visible_root) / relative, candidate / relative)
+    with pytest.raises(PathPolicyError, match="read-only"):
+        suite.freeze_repository_candidate(
+            task=task,
+            candidate_dir=candidate,
+            run_root=rejected,
+            artifact_root=rejected / "artifacts",
+        )

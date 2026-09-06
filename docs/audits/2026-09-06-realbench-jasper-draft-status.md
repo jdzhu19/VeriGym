@@ -8,10 +8,10 @@
 | ID | 证据与复现入口 | 观察 |
 | --- | --- | --- |
 | E1 | [Cadence tests](../../integrations/verigym-cadence/tests/test_sec_contract.py)；按该包 README 执行 pytest | 31 passed：真实 stdio/fake worker、身份漂移、严格状态、隐藏输出、候选边界及 native staging/cleanup |
-| E2 | [RealBench tests](../../integrations/verigym-realbench/tests/test_source_projection.py)；按该包 README 执行 pytest | 5 passed：三类合成 module、公开/隐藏隔离、多文件范围、缺失 profile 拒绝、source drift |
+| E2 | [RealBench tests](../../integrations/verigym-realbench/tests/test_source_projection.py)；按该包 README 执行 pytest | 6 passed：三类合成 module、公开/隐藏隔离、多文件 freeze/offline replay、只读图片篡改、缺失 profile 拒绝、source drift |
 | E3 | 两个包的 mypy、ruff，`scripts/export_schemas.py --check`，`git diff --check` | 类型/风格通过，core schema 无变化 |
 | E4 | `uv build --offline` 构建两个包；`scripts/audit_optional_plugin_distribution.py` 的 `cadence` / `realbench` policies | 四个 wheel/sdist 均通过数据、商业资产及凭据扫描；未发布包 |
-| E5 | 操作者提供站点上的严格 host-key、非交互 SSH 只读探测；站点位置仅在本机交接文件中 | JasperGold 2022.12 安装存在；Yosys 0.44+9；另找到 Python 3.11.9 环境。未部署、未 checkout license、未运行 SEC |
+| E5 | 操作者提供站点上的严格 host-key、非交互 SSH 只读探测；站点位置仅在本机交接文件中 | JasperGold 2022.12 安装存在；Yosys 0.44+9；另找到 Python 3.11.9 环境。未部署、未开展许可证资格化、未运行 SEC |
 | E6 | [固定上游 catalog](https://github.com/IPRC-DIP/RealBench/blob/9bc9a6ac058b3a3acb09b9e7623526737bbf8312/benchmark_info.py) 与 [LICENSE](https://github.com/IPRC-DIP/RealBench/blob/9bc9a6ac058b3a3acb09b9e7623526737bbf8312/LICENSE) | 核实 60 module / 4 system metadata，冻结 commit、catalog 与 license hash；未下载或解密语料 |
 
 E5 的第三方复现要求操作者持有站点授权；公开仓库不包含连接地址、账号、部署脚本或配置。
@@ -20,6 +20,15 @@ E5 的第三方复现要求操作者持有站点授权；公开仓库不包含�
 
 共享 verifier-profile / installed-conformance 定向回归另有 16 passed；新增的独立 CI job
 仅安装、测试和打包两个 draft integrations，不启用 Docker、真实模型或商业作业。
+
+为生成任务的候选提供 `repository_candidate_workspace_contract` metadata，使 core offline
+replay 可以读取已冻结 workspace contract，而不伪造 repair-only golden patch identity。
+旧 `repository_repair` 入口及身份保持不变，双重 contract 不一致时拒绝。相关 repository
+repair、offline replay、synthesis artifact 回归共 26 passed；core mypy（232 files）通过。
+
+EDA 整合已通过最终全部 CI 并经 [PR #217](https://github.com/jdzhu19/VeriGym/pull/217)
+合入主线，merge commit `c4fa86060aa6ce987b44bfff71ca87eb7f282f43`。
+本文件对应的 [Draft PR #219](https://github.com/jdzhu19/VeriGym/pull/219) 保持独立，尚不合入。
 
 ## Findings
 
@@ -38,7 +47,7 @@ E5 的第三方复现要求操作者持有站点授权；公开仓库不包含�
 ## Path 与明确剩余项
 
 E6 source 冻结规则 → E2 public-only task projection → **未实现的 public Verilator functional
-backend** → **尚未验证的 typed finish / multi-file freeze / offline replay 闭环** → E1 的
+backend** → **尚未验证的 typed finish 端到端闭环** → E2 的 multi-file freeze / offline replay → E1 的
 final SEC transport → **尚未执行的真实 reference / negative-control SEC**。
 
 继续需要操作者提供 RealBench external checkout，以及确认远端执行入口；源码中的

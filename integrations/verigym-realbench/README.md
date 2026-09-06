@@ -21,6 +21,10 @@ not official tasks or evidence of hardware correctness. They exercise source dri
 editable boundaries, Markdown/image projection, hidden-content exclusion and missing-profile
 rejection. No tests download or decrypt a corpus.
 
+The adapter reuses core candidate freezing and offline patch replay. A synthetic two-file edit
+round-trips exactly without source data or EDA tools during replay; changed read-only image bytes
+are rejected. This is component coverage, not the pending end-to-end typed-finish qualification.
+
 ## Supply an audited external source
 
 The adapter accepts only an operator-prepared checkout and `verigym-realbench.lock.json` at its

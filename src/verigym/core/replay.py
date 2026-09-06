@@ -17,6 +17,7 @@ from verigym.core.loaders import dump_json, load_model
 from verigym.core.orchestrator import VeriGym, _verification_requires_final_submission
 from verigym.core.repository_candidate import (
     repository_plan_identity,
+    repository_workspace_contract,
     verify_frozen_repository_candidate_offline,
 )
 from verigym.core.synthesis import execute_synthesis_quality
@@ -190,17 +191,7 @@ def replay_run(
         raise ReplayError("scorecard verifier hash does not match the run manifest")
     if manifest.repository_candidate is not None:
         try:
-            raw_repository = task.metadata.get("repository_repair")
-            if not isinstance(raw_repository, dict) or not isinstance(
-                raw_repository.get("workspace_contract"),
-                dict,
-            ):
-                raise ValueError("repository task snapshot lacks its workspace contract")
-            from verigym.schemas.repository import RepositoryWorkspaceContract
-
-            contract = RepositoryWorkspaceContract.model_validate(
-                raw_repository["workspace_contract"]
-            )
+            contract = repository_workspace_contract(task)
             verify_frozen_repository_candidate_offline(
                 candidate_repository=run_dir / "candidate" / contract.repository_root,
                 patch_file=run_dir / "repository.patch",
