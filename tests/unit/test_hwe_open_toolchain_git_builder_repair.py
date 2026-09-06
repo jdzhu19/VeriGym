@@ -43,7 +43,7 @@ def test_v188_manifest_authorizes_only_the_task_free_minimal_git_repair() -> Non
     assert manifest.collection_started is False
     assert manifest.training_started is False
     assert manifest.production_training_ready is False
-    assert manifest.control_root_min_available_bytes == 9 * 1024**3
+    assert manifest.control_root_min_available_bytes == 4 * 1024**3
     assert manifest.data2_min_available_bytes == 50 * 1024**3
 
 
