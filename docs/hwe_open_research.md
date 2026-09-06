@@ -79,3 +79,18 @@ The continuation also fixes two dormant open-route defects: Docker bind mounts u
 bare `rw` field, and reference candidate paths already prefixed with `repository/` were incorrectly
 written into a nested repository directory. A regression test verifies that the test actually
 reads the patched reference file. Failed comparisons now retain their result receipt.
+
+## Result on 2026-09-06
+
+The offline repair, independent receipt review, and both PR-1816 base/reference comparisons passed.
+The single canary then made 13 real provider calls and 14 tool operations, consuming 26,793 tokens.
+It returned `max-tokens` without making an edit or calling `finish`. The adapter classified this
+as `incomplete_harness_trajectory`; it emitted no valid teacher transcript and quarantined the
+candidate, so the final official verifier was skipped. The earlier official qualification did run
+and passed its required base-FAIL/reference-PASS comparison.
+
+The run is consumed and must not be retried. Artifact scanning passed and all owned runtime
+resources were removed. `research_canary_completed` in the runner result means the attempt ended,
+not that the model repaired the task. No data was admitted to SFT or training. The remaining issue
+is bounded model completion under the pinned 2,048-token response cap; image repair and both
+qualification routes no longer block progress. See the handoff for exact receipts and next work.
