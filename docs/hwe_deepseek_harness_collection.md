@@ -513,3 +513,26 @@ scan, fixed receipts, v2 image security scan, terminal report, and complete clea
 load an HWE image or task, prepare PR-1816, run either verifier route, start a model, call DeepSeek,
 publish a qualification contract, or begin collection/training. A later independent audit is
 required before the PR-1816 dual-route qualification can be authorized.
+
+The v188 implementation binds the completed git closure to one deterministic 11,653,120-byte tar
+archive and six exact Debian package members. Acquisition is already complete; the execution
+runner has no download path. It first derives a dependency-only builder from the immutable v178
+builder, with `--network none --pull=false`, then proves that the closed 119-command probe differs
+from v186 only at `git=false -> git=true`. It retags that derived image only inside the isolated
+DinD daemon as the exact v180 builder input and rebuilds the unchanged v180 final Dockerfile.
+
+A successful final build must pass the v2 agent-toolchain scan with nine executable hashes,
+including `/usr/bin/git`, while the official HWE verifier image is absent from DinD. The resulting
+non-authoritative image is exported atomically to its fresh `/data2` directory with a checked
+Docker-save manifest and sidecar. The output report still publishes no qualification contract.
+Invoke v188 only once from clean merged `main`, after a new eight-class post-merge run and a fresh
+capacity check:
+
+```bash
+VERIGYM_RUN_DEEPSEEK_HARNESS_V188_GIT_BUILDER_REPAIR=1 \
+  python scripts/launch_hwe_deepseek_harness_v188_git_builder_repair.py \
+  --post-merge-main-run-id <successful-v188-main-run-id>
+```
+
+Whether the repair succeeds or fails, its sealed result requires independent v189 audit. No HWE
+qualification or DeepSeek canary is implied by building or exporting the image.

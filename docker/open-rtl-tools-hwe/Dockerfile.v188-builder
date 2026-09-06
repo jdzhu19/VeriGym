@@ -1,0 +1,53 @@
+# This dependency-only repair starts from the completed, locally archived v178 builder. The
+# package closure below is a completed deterministic archive whose six Debian packages and
+# metadata are independently hash-bound by the v188 campaign manifest. The build is required to
+# run with --network=none and --pull=false.
+FROM verigym/open-rtl-tools:v178-builder
+
+COPY git-package-closure.tar /inputs/git-package-closure.tar
+
+RUN printf '%s  %s\n' \
+        '315102c5bf97a839d7f4fcedfed79fd788ac20796e4f7008e84928c2b7541773' \
+        /inputs/git-package-closure.tar \
+        | sha256sum --check --strict - \
+    && mkdir -p /inputs/git \
+    && tar --extract --file /inputs/git-package-closure.tar --directory /inputs/git \
+    && printf '%s  %s\n' \
+        'b58306b60e1dff920e1e18bc7e1e499f2ef75184190ab3d98657b165969bf7c9' \
+        '/inputs/git/git-man_1%3a2.47.3-0+deb13u1_all.deb' \
+        '3e35662fd5c46add561703e54031a1d8ad9df45811927689f0a51122b13be722' \
+        '/inputs/git/git_1%3a2.47.3-0+deb13u1_amd64.deb' \
+        '351bf3bb1c816c1d88900cbfe59dc79433f20fb962947d78313028a00f97c856' \
+        '/inputs/git/libcurl3t64-gnutls_8.14.1-2+deb13u4_amd64.deb' \
+        '06110a972bdc52f6c6d6615dddbe97f836c61d0e36c685ef4107c2eaa81f871f' \
+        '/inputs/git/liberror-perl_0.17030-1_all.deb' \
+        '627eec81ebbd48c4e6091f5cd9dc5070b792b7075000eed60ab08c7daa961caf' \
+        '/inputs/git/libngtcp2-16_1.11.0-1+deb13u1_amd64.deb' \
+        '2a7f109c0c4db6a800e4661c5e5e34e1f1f83c8162482276183d1ada9da7c96c' \
+        '/inputs/git/libngtcp2-crypto-gnutls8_1.11.0-1+deb13u1_amd64.deb' \
+        '814680be9ea183abd6656b07a459356cd2bd292c5fab1d90a4e7bd1c162881f3' \
+        /inputs/git/git-package-closure.json \
+        | sha256sum --check --strict - \
+    && dpkg --install /inputs/git/*.deb \
+    && test "$(dpkg-query -W -f='${Version}' git)" = '1:2.47.3-0+deb13u1' \
+    && test "$(dpkg-query -W -f='${Version}' git-man)" = '1:2.47.3-0+deb13u1' \
+    && test "$(dpkg-query -W -f='${Version}' libcurl3t64-gnutls)" = \
+        '8.14.1-2+deb13u4' \
+    && test "$(dpkg-query -W -f='${Version}' liberror-perl)" = '0.17030-1' \
+    && test "$(dpkg-query -W -f='${Version}' libngtcp2-16)" = \
+        '1.11.0-1+deb13u1' \
+    && test "$(dpkg-query -W -f='${Version}' libngtcp2-crypto-gnutls8)" = \
+        '1.11.0-1+deb13u1' \
+    && test "$(git --version)" = 'git version 2.47.3' \
+    && printf '%s  %s\n' \
+        '356db14e102d68a1a37d8a1ac577dfd678d45d46e92f468bef8b7154e7bfdc60' \
+        /usr/bin/git \
+        | sha256sum --check --strict - \
+    && rm -rf /inputs /root/.cache /root/.gitconfig /var/lib/apt/lists/*
+
+LABEL org.verigym.role="dependency-only-git-builder" \
+      org.verigym.git-package-version="1:2.47.3-0+deb13u1" \
+      org.verigym.hwe-task-image-ancestor="false" \
+      org.verigym.provider-credentials-included="false"
+
+CMD ["bash"]
