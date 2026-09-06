@@ -55,6 +55,15 @@ package、quality、reproducible-build、OpenHands 与 Docker zero-model securit
 本地补查后续 ordinary CI integration：Claude 58 passed、RTL-Repo 24 passed/1 deselected、
 HWE 68 passed、codecomplete 5 passed/1 deselected、training-reference 149 passed/2 skipped。
 
+等待 CI 期间主线推进到 `2adb9447e49f98edb0584a4ea678cf0e522f626e`（PR #216）。
+已将该主线完整、无冲突地合入整合分支；这是 HWE control-root headroom 的既有主线修改，
+不改变 RTL/EDA 身份。检查对应两个测试文件，不重跑不受影响的 EDA 商业矩阵。
+
+`320f7c6` 的两个 CI workflow 中，ordinary 3.11/3.12/3.13、package、quality、OpenHands、
+reproducible-build 均通过。零模型 Docker job 出现一次间歇性失败：同提交的另一次通过，
+仅重跑失败 job 后原失败测试也通过；保留原失败记录，不据此声称已定位或修复根因。
+这不是实际模型 episode 或商业工具作业的重试。
+
 三类本地环境问题已排除，没有为它们修改已资格化实现：
 
 - 长 scratch 路径超过 Unix socket 长度限制：用短名称的独立 `--basetemp` 定向复测。

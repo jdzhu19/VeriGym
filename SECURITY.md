@@ -1856,6 +1856,11 @@ offline builder then verifies every installed package version and the `/usr/bin/
 the repair Dockerfile nor the runner contains a network download path. Both builder and final
 builds use `--network none --pull=false`.
 
+V188 requires 4 GiB available on the control root and 50 GiB on `/data2`. The lower control-root
+gate is appropriate because controller state on `/` is bounded; Docker backing, scratch, output,
+and image export are all assigned to `/data2`. The capacity receipt records both observations and
+fails before DinD starts when either gate is below its minimum.
+
 The repaired builder must retain the v178 builder as its layer ancestor, add only the locked
 dependency stage, remain free of HWE/EDA runtime tools and Codex, and change the closed command
 probe only by making `git` available. The final non-authoritative image must retain distinct

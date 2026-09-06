@@ -505,9 +505,10 @@ offline. Any missing input acquisition must be a separately bounded, checksum-ve
 whose route is first verified not to use the VPN and whose container uses `verigym-hwe-net`, not
 the broken default bridge. Partial archives and implicit registry downloads remain forbidden.
 
-V188 requires fresh `/data2` resource identities and new absolute 9-GiB control-root and 50-GiB
-`/data2` capacity observations. The thresholds cannot be lowered: v186 started only 77,107,200
-bytes above the control-root threshold, and its later post-cleanup observation was below it. The
+V188 requires fresh `/data2` resource identities and new absolute 4-GiB control-root and 50-GiB
+`/data2` capacity observations. The control process keeps only bounded controller state on `/`,
+while Docker backing, scratch, output, and the exported image remain on `/data2`; 4 GiB therefore
+matches the ordinary campaign control-root floor without budgeting bulk image data twice. The
 final build and probes remain `network=none`, with the same time/output bounds, sensitive-value
 scan, fixed receipts, v2 image security scan, terminal report, and complete cleanup. V188 may not
 load an HWE image or task, prepare PR-1816, run either verifier route, start a model, call DeepSeek,
