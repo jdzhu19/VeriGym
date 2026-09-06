@@ -64,6 +64,57 @@ def test_receipt_tampering_is_rejected(tmp_path: Path) -> None:
         research._receipt(path, "receipt_hash")
 
 
+@pytest.mark.parametrize("state", ["clean", "consumed", "changed"])
+def test_resume_reuses_only_unchanged_qualification_before_consumption(
+    tmp_path, monkeypatch, state
+):
+    monkeypatch.setattr(research, "OUTPUT", tmp_path)
+    marker = tmp_path / "consumed.json"
+    monkeypatch.setattr(research, "CONSUMPTION", marker)
+    official = {
+        "base_failed": True,
+        "base_resolved": False,
+        "reference_passed": True,
+        "base_infrastructure_error": False,
+        "model_process_count": 0,
+        "base_verifier_results": [{"status": "failed"}],
+        "verifier_results": [{"status": "passed"}],
+    }
+    smoke = tmp_path / "official-qualification/smoke-report.json"
+    smoke.parent.mkdir()
+    research.atomic_dump_json(smoke, official)
+    open_result = {"base_failed": True, "reference_passed": True, "provider_calls": 0}
+    open_result["receipt_hash"] = research.content_hash(open_result)
+    research.atomic_dump_json(tmp_path / "open-comparison.json", open_result)
+    qualified = {
+        "both_routes_qualified": True,
+        "provider_calls": 0,
+        "task_id": "task",
+        "agent_image": "open",
+        "official_verifier_image": "official",
+        "official_receipt_sha256": research._hash(smoke),
+        "open_receipt_hash": open_result["receipt_hash"],
+    }
+    research.atomic_dump_json(tmp_path / "qualification.json", qualified)
+    research.atomic_dump_json(
+        tmp_path / "result.json",
+        {"status": "stopped", "consumption_marker_present": False, "qualification": qualified},
+    )
+    research.atomic_dump_json(tmp_path / "cleanup.json", {"cleanup_complete": True})
+    if state == "consumed":
+        marker.write_text("{}")
+    if state == "changed":
+        official["reference_passed"] = False
+        research.atomic_dump_json(smoke, official)
+    manifest = SimpleNamespace(task=SimpleNamespace(task_id="task"))
+    lock = SimpleNamespace(image_id="open", official_verifier_image="official")
+    if state == "clean":
+        assert research.resume_qualification(manifest, lock) == qualified
+    else:
+        with pytest.raises(ValueError, match="Cannot resume"):
+            research.resume_qualification(manifest, lock)
+
+
 @pytest.mark.parametrize("qualified,consumed", [(False, False), (True, True)])
 def test_canary_gate_precedes_runtime_and_provider_access(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qualified: bool, consumed: bool

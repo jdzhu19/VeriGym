@@ -11,8 +11,11 @@ python scripts/run_hwe_pr1816_open_research.py --run-canary
 ```
 
 Omit `--run-canary` for qualification only. Each invocation requires fresh output, scratch, and
-Docker backing paths; it never overwrites an earlier result or retries a consumed canary. The
-script records its Git commit and its own SHA-256. Exact resource paths are defined in the script.
+Docker backing paths; it never overwrites an earlier result or retries a consumed canary. A stop before the episode marker and before any research run may be resumed with
+`--resume-canary`: this requires clean previous cleanup, unchanged successful comparison receipts,
+and the same task and image locks. It preserves the earlier stop receipts and reloads fresh
+Docker storage without rerunning the successful comparisons. The script records its Git commit
+and its own SHA-256. Exact resource paths are defined in the script.
 
 The runner cross-checks the repair report, image lock, security scan, cleanup receipt, and exported archive before
 loading task inputs. It reuses local HWE archives, starts fresh bind-backed Docker storage under
@@ -20,7 +23,7 @@ loading task inputs. It reuses local HWE archives, starts fresh bind-backed Dock
 Provider configuration is removed during qualification. A failed route stops before the canary.
 
 The canary uses the existing Harness v4 adapter and bounded episode protocol. The trusted Harness
-controller runs on the host Docker endpoint and its existing `verigym-hwe-net` network; task and
+controller runs on the canonical host Docker socket (`/run/docker.sock` here) and its existing `verigym-hwe-net` network; task and
 verifier containers run on the explicitly bound isolated Docker endpoint with `network=none`.
 Only the controller receives the existing `VERIGYM_DEEPSEEK_API_KEY` and
 `VERIGYM_DEEPSEEK_API_BASE_URL` configuration. No task image layers are imported into the host

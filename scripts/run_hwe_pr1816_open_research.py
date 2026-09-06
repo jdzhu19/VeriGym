@@ -429,6 +429,37 @@ def runtime_config(lock: OpenToolchainV188ImageLock):
     )
 
 
+def resume_qualification(manifest: Any, lock: OpenToolchainV188ImageLock) -> dict[str, Any]:
+    """Reuse successful comparisons only after a clean stop before episode consumption."""
+    previous = _json(OUTPUT / "result.json")
+    cleanup = _json(OUTPUT / "cleanup.json")
+    qualified = _json(OUTPUT / "qualification.json")
+    official = _json(OUTPUT / "official-qualification/smoke-report.json")
+    open_result = _receipt(OUTPUT / "open-comparison.json", "receipt_hash")
+    if not (
+        previous.get("status") == "stopped"
+        and previous.get("consumption_marker_present") is False
+        and cleanup.get("cleanup_complete") is True
+        and not CONSUMPTION.exists()
+        and not (OUTPUT / "research-runs").exists()
+        and previous.get("qualification") == qualified
+        and qualified.get("both_routes_qualified") is True
+        and qualified.get("provider_calls") == open_result.get("provider_calls") == 0
+        and qualified.get("task_id") == manifest.task.task_id
+        and qualified.get("agent_image") == lock.image_id
+        and qualified.get("official_verifier_image") == lock.official_verifier_image
+        and qualified.get("official_receipt_sha256")
+        == _hash(OUTPUT / "official-qualification/smoke-report.json")
+        and qualified.get("open_receipt_hash") == open_result.get("receipt_hash")
+        and qualification.zero_model_infrastructure_valid(official)
+        and qualification.zero_model_fail_to_pass_eligible(official)
+        and open_result.get("base_failed") is True
+        and open_result.get("reference_passed") is True
+    ):
+        raise ValueError("Cannot resume an unqualified, changed, or consumed canary")
+    return qualified
+
+
 def run_canary(
     manifest: Any, lock: OpenToolchainV188ImageLock, qualified: dict[str, Any], name: str, host: str
 ) -> dict[str, Any]:
@@ -464,7 +495,7 @@ def run_canary(
         "max_output_bytes": 32 * 1024**2,
         "command_image_lock_hash": lock.lock_hash,
         "whole_episode_retries": 0,
-        "controller_docker_host": "unix:///var/run/docker.sock",
+        "controller_docker_host": f"unix://{Path('/var/run/docker.sock').resolve(strict=True)}",
     }
     require_provider_environment()
     settings = resolve_settings(options, task_wall_time_s=task.budget.max_wall_time_s)
@@ -584,12 +615,14 @@ def run_canary(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-canary", action="store_true")
+    parser.add_argument("--resume-canary", action="store_true")
     args = parser.parse_args()
-    if os.getuid() == 0 or OUTPUT.exists() or OUTPUT.is_symlink():
+    run_requested = args.run_canary or args.resume_canary
+    if os.getuid() == 0 or OUTPUT.is_symlink() or (OUTPUT.exists() and not args.resume_canary):
         raise ValueError("Require a non-root operator and fresh research output")
     if "DOCKER_HOST" in os.environ or "DOCKER_CONTEXT" in os.environ:
         raise ValueError("Research launcher requires the default host Docker endpoint")
-    if args.run_canary and CONSUMPTION.exists():
+    if run_requested and CONSUMPTION.exists():
         raise ValueError("The research canary identity has already been consumed")
     if shutil.disk_usage("/").free < 4 * 1024**3 or shutil.disk_usage("/data2").free < 50 * 1024**3:
         raise ValueError("Insufficient control-root or /data2 headroom")
@@ -600,7 +633,16 @@ def main() -> int:
     lock, archive, review = review_repair(REPAIR_ROOT)
     if lock.official_verifier_image != manifest.official_verifier_image:
         raise ValueError("Qualification and repair bind different official verifiers")
-    OUTPUT.mkdir(mode=0o700)
+    cached = resume_qualification(manifest, lock) if args.resume_canary else None
+    if cached is None:
+        OUTPUT.mkdir(mode=0o700)
+    else:
+        history = OUTPUT / "pre-canary-stops"
+        history.mkdir(mode=0o700, exist_ok=True)
+        stop = history / str(len(list(history.iterdir())) + 1)
+        stop.mkdir(mode=0o700)
+        for receipt in ("result.json", "cleanup.json", "progress.json"):
+            shutil.copy2(OUTPUT / receipt, stop / receipt)
     atomic_dump_json(OUTPUT / "repair-review.json", review)
     outcome: dict[str, Any] = {
         "identity": IDENTITY,
@@ -615,12 +657,20 @@ def main() -> int:
     try:
         with isolated_runtime(manifest) as (name, host):
             with _without_provider_environment():
-                qualified = qualify(manifest, lock, archive, host)
+                if cached is None:
+                    qualified = qualify(manifest, lock, archive, host)
+                else:
+                    _docker(
+                        "--host", host, "load", "--input", archive["archive_path"], timeout=1800
+                    )
+                    with qualification._docker_host(host):
+                        qualification._load_official_image(manifest, archive_root=ARCHIVES)
+                    qualified = cached
             atomic_dump_json(OUTPUT / "qualification.json", qualified)
             outcome["qualification"] = qualified
             outcome["status"] = "qualified"
             atomic_dump_json(OUTPUT / "progress.json", outcome)
-            if args.run_canary:
+            if run_requested:
                 outcome["canary"] = run_canary(manifest, lock, qualified, name, host)
                 atomic_dump_json(OUTPUT / "research-canary.json", outcome["canary"])
                 outcome["status"] = "research_canary_completed"
