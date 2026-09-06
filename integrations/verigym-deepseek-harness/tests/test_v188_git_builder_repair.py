@@ -163,7 +163,7 @@ def test_v188_builder_failure_receipt_never_persists_raw_output(
     assert receipt["raw_output_persisted"] is False
 
 
-def test_v188_headroom_uses_frozen_nine_and_fifty_gibibyte_gates(
+def test_v188_headroom_uses_four_and_fifty_gibibyte_gates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     successor = _successor()
