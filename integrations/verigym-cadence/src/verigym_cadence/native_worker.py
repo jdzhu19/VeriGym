@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +21,7 @@ from verigym.schemas.runtime import SessionSpec
 
 from .protocol import (
     LICENSE_ENVIRONMENT_NAMES,
+    MAX_FILE_BYTES,
     MAX_REQUEST_BYTES,
     Outcome,
     ServerProfile,
@@ -28,6 +30,35 @@ from .protocol import (
     relative_path,
     unique_json,
 )
+
+
+def read_sec_log(root: Path, limit: int = MAX_FILE_BYTES) -> str:
+    """Read only this completed trusted tool's project log, including its session link.
+
+    This exception is for verifier-owned output, not candidate or site input assets.
+    It does not establish an isolation boundary for model-generated RTL.
+    """
+    project = root.absolute() / "jgproject"
+    log_path = project / "jg.log"
+    try:
+        if any(part.is_symlink() for part in (project, *project.parents)):
+            raise ValueError("invalid SEC log project")
+        if not log_path.exists() and not log_path.is_symlink():
+            return ""
+        resolved = log_path.resolve(strict=True)
+        if not resolved.is_relative_to(project):
+            raise ValueError("SEC log escapes project")
+        # The tool has exited. Never block on a special file or follow a replaced final link.
+        with os.fdopen(os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as log:
+            info = os.fstat(log.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
+                raise ValueError("invalid SEC log file or size")
+            payload = log.read(limit + 1)
+        if len(payload) > limit:
+            raise ValueError("SEC log exceeds byte bound")
+        return payload.decode("utf-8", errors="replace")
+    except (OSError, RuntimeError):
+        raise ValueError("unreadable SEC log") from None
 
 
 def parse_sec(completed: CompletedCommand, log: str) -> Outcome:
@@ -166,12 +197,7 @@ def run(payload: Any) -> dict[str, Any]:
             (session.root / "ref.f").write_text("a.v\n", encoding="ascii")
             (session.root / "top.f").write_text("b.v\n", encoding="ascii")
             result = _execute(session, [str(jg), "-no_gui", "-sec", "test.tcl"], profile.timeout_s)
-            log_path = session.root / "jgproject" / "jg.log"
-            log = (
-                bounded_read(log_path).decode("utf-8", errors="replace")
-                if log_path.exists()
-                else ""
-            )
+            log = read_sec_log(session.root)
             return parse_sec(result, log).model_dump()
 
 

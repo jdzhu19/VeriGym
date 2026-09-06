@@ -1,16 +1,16 @@
 # JasperGold SEC integration (draft)
 
-This integration is implemented and credential-free tested, **not site-qualified**. It currently
+This integration has **bounded trusted-fixture site evidence, not general suite qualification**. It
 accepts only operator-audited candidate hashes. The native worker is trusted-fixture-only, not a
 sandbox for generated RTL. No commercial tools, license values, site wrappers or golden assets
 are distributed. Installing this package does not install JasperGold or Yosys.
 
-The [bounded site attempt](../../docs/audits/2026-09-06-realbench-sec-site-attempt.md) resolved
-three real task profiles, then stopped on `license_unavailable` for its first reference SEC
-invocation. The other five controls were not run, and the temporary entries are disabled.
-This is not positive SEC qualification or authorization to retry.
-Subsequent zero-job diagnostics found and fixed a missing server-to-worker license-environment
-handoff. The corrected environment chain passes on the site, but SEC has not been retried.
+After fixing license-environment forwarding and verifier-owned log collection, all three audited
+RealBench reference/negative pairs matched expected SEC outcomes. A separately audited public-spec
+S-box also completed the full scripted orchestrator with final `proven` and offline replay.
+See the [qualification evidence](../../docs/audits/2026-09-07-realbench-sec-qualification.md).
+Historical license and result-collection failures remain invalid; they were not rewritten as
+passes. All temporary commercial entries are disabled, and no invocation retries automatically.
 
 ## Check the implementation without commercial tools
 
@@ -72,6 +72,11 @@ private exception text is returned. Unknown/malformed results fail closed. Only 
 `proven` is success; upstream `determined` / `determined_or_skipped` are not silently promoted
 to proof. Reference synthesis errors are infrastructure failures, not candidate rejections.
 
+The fixed `jgproject/jg.log` output may link to a bounded, single-link regular file within that
+invocation's non-symlinked project. Escapes, dangling/cyclic links, hard links, special files and
+oversized logs fail closed. This tool-output exception does not relax candidate/site input asset
+path checks; it remains within the trusted-fixture boundary.
+
 There is at most one SEC invocation per server process and zero automatic retries. Every new
 attempt requires an explicit new invocation. Timeout handling kills the local worker process
 group; this does **not** prove remote scheduler cancellation. A production site wrapper must
@@ -79,7 +84,7 @@ implement and qualify remote job termination before accepting generated candidat
 
 ## Qualification still required
 
-Successful real reference/negative-control SEC, usable SEC entitlement, remote scheduler
-isolation/cleanup, and RealBench template/version compatibility remain unqualified. The operator
-must approve a new invocation to check actual SEC after the environment-handoff repair. Do not
-remove the approved-candidate check as a substitute for isolation.
+Current site evidence covers the pinned three-task template/tool combination and successful-path
+cleanup only. Remote abnormal cancellation, scheduler isolation and arbitrary generated RTL remain
+unqualified, as do other tool versions and tasks. Continue authorized bounded diagnosis/fixes with
+fresh invocation identities; never remove the approved-candidate gate as a substitute for isolation.

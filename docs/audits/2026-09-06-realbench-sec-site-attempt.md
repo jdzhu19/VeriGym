@@ -1,5 +1,9 @@
 # RealBench SEC 站点预检与许可证阻塞
 
+最新进展见 [日志修复与 SEC 资格记录](2026-09-07-realbench-sec-qualification.md)：三题正负
+控制及完整 scripted orchestrator 均已得到预期结果。下文和 [v3 记录](2026-09-06-realbench-sec-single-reference-v3.md)
+保留此前许可证、结果读取故障的历史快照，不把旧失败改写为通过。
+
 2026-09-06。**三题 SSH/MCP 预检通过；首个真实 SEC 调用返回 `license_unavailable` 后停止。
 没有得到任何 formal proof，不能宣称 site-qualified、suite-qualified 或 benchmark 分数。**
 本文接续 [functional slice](2026-09-06-realbench-functional-slice.md)，不覆盖旧证据。

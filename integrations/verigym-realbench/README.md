@@ -5,9 +5,10 @@ RealBench benchmark**. Three real modules have reference, functional-negative an
 coverage. Final SEC still requires the optional [Cadence integration](../verigym-cadence/README.md)
 and approved site execution. Native metric aggregation and full 60-module/4-system execution are
 not implemented. See the [qualification evidence](../../docs/audits/2026-09-06-realbench-functional-slice.md).
-The subsequent [SEC site attempt](../../docs/audits/2026-09-06-realbench-sec-site-attempt.md)
-passed three profile preflights but stopped on the first reference's license failure; no formal
-control has been qualified, and no further SEC invocation is automatic.
+The subsequent [SEC qualification](../../docs/audits/2026-09-07-realbench-sec-qualification.md)
+completed three audited reference/negative pairs and one no-model scripted orchestrator with
+final `proven`, offline replay and cleanup. This is trusted-fixture slice evidence, not permission
+to execute arbitrary generated RTL; no commercial invocation retries automatically.
 
 ## Validate the adapter without benchmark data
 
@@ -113,10 +114,20 @@ finish, candidate freeze, leakage checks and source-free candidate replay on one
 It computes a repair from public GF(256) math, never reads golden RTL into the agent, and explicitly
 does not execute final SEC or produce an orchestrator scorecard.
 
+For the separately audited final-SEC path, `scripts/realbench_scripted_sec_slice.py` uses the
+ordinary orchestrator and Docker agent workspace. It requires explicit source/public profiles,
+a new fixed-candidate SEC profile and its resolved identity, a fresh output directory, and
+`--allow-commercial-sec`. Use `python scripts/realbench_scripted_sec_slice.py --help` for arguments.
+The site must approve the exact public-math candidate hash before dispatch. The script performs
+two public checks (expected failure, then pass), typed finish, candidate freeze and one final SEC;
+offline replay never reruns the verifier. Unexpected public results abort before final submission.
+The recorded legacy `repository_public_tests` list can be empty for this profile-backed route;
+its actual public-test results and ordering are in the ordinary `tool_result` trace events.
+
 Tasks are marked diagnostic-only, module-partitioned and non-scoring. The metadata records
 the intended `syntax@k`, `func@k`, `formal@k` dimensions; it does not calculate those metrics.
 The bounded functional evidence does not establish complete module/system coverage, model image
-consumption, commercial-tool qualification, or native-score compatibility.
+consumption, arbitrary generated-RTL commercial execution, or native-score compatibility.
 
 Upstream evidence: [repository](https://github.com/IPRC-DIP/RealBench),
 [pinned catalog](https://github.com/IPRC-DIP/RealBench/blob/9bc9a6ac058b3a3acb09b9e7623526737bbf8312/benchmark_info.py),

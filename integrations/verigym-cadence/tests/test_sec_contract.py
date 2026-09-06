@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 from verigym_cadence.client import JasperGoldMcpTool, rpc
-from verigym_cadence.native_worker import parse_sec, run
+from verigym_cadence.native_worker import parse_sec, read_sec_log, run
 from verigym_cadence.protocol import (
     PROTOCOL,
     VERSION,
@@ -293,11 +293,13 @@ def test_worker_receives_only_site_license_environment(
 
 @pytest.mark.parametrize("status", ["proven", "cex"])
 @pytest.mark.parametrize("version", ["2022.12", "2022.12p001"])
+@pytest.mark.parametrize("linked_log", [False, True])
 def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     status: str,
     version: str,
+    linked_log: bool,
 ) -> None:
     profile, _ = fixture(tmp_path, {"status": "proven"})
     yosys = executable(
@@ -321,7 +323,12 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
             " assert Path('a.v').is_file() and Path('b.v').is_file()\n"
             " assert '###TOPMODULE###' not in Path('test.tcl').read_text()\n"
             " Path('jgproject').mkdir()\n"
-            f" Path('jgproject/jg.log').write_text('PRIVATE_CEX_CANARY\\nJPW: {status}\\n')\n"
+            " log = Path('jgproject/jg.log')\n"
+            f" if {linked_log!r}:\n"
+            "  log = Path('jgproject/sessionLogs/session_0/jg.log')\n"
+            "  log.parent.mkdir(parents=True)\n"
+            "  Path('jgproject/jg.log').symlink_to('sessionLogs/session_0/jg.log')\n"
+            f" log.write_text('PRIVATE_CEX_CANARY\\nJPW: {status}\\n')\n"
         ),
     ).model_copy(update={"role": "jaspergold"})
     ref = tmp_path / "ref.sv"
@@ -355,6 +362,49 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
     )
     assert result == {"status": "proven" if status == "proven" else "counterexample"}
     assert list(scratch.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "layout",
+    ["escape", "dangling", "cycle", "project_link", "hardlink", "directory", "fifo", "oversize"],
+)
+def test_sec_log_rejects_unsafe_or_unbounded_outputs(tmp_path: Path, layout: str) -> None:
+    import os
+
+    project = tmp_path / "jgproject"
+    project.mkdir()
+    log = project / "jg.log"
+    outside = tmp_path / "outside.log"
+    outside.write_text("JPW: proven\n", encoding="ascii")
+    if layout == "escape":
+        log.symlink_to(outside)
+    elif layout == "dangling":
+        log.symlink_to("absent")
+    elif layout == "cycle":
+        log.symlink_to("jg.log")
+    elif layout == "project_link":
+        project.rmdir()
+        project.symlink_to(tmp_path, target_is_directory=True)
+        (tmp_path / "jg.log").write_text("JPW: proven\n", encoding="ascii")
+    elif layout == "hardlink":
+        os.link(outside, log)
+    elif layout == "directory":
+        log.mkdir()
+    elif layout == "fifo":
+        os.mkfifo(log)
+    else:
+        log.write_bytes(b"x" * 17)
+    with pytest.raises(ValueError, match="SEC log"):
+        read_sec_log(tmp_path, limit=16)
+
+
+def test_sec_log_missing_does_not_hide_process_failure(tmp_path: Path) -> None:
+    log = read_sec_log(tmp_path)
+    assert log == ""
+    completed = CompletedCommand(
+        argv=["jg"], cwd=".", exit_code=1, stderr="License checkout failed"
+    )
+    assert parse_sec(completed, log).status == "license_unavailable"
 
 
 def test_top_and_duplicate_sources_rejected_before_dispatch(tmp_path: Path) -> None:

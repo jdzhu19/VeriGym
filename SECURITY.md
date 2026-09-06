@@ -25,6 +25,12 @@ The request cannot supply environment values. Values are not included in profile
 structured requests, traces or responses. Other ambient variables remain filtered by
 `LocalRuntime`, and its temporary `HOME` is not replaced with the operator's real home directory.
 
+After the trusted tool exits, the native worker may follow its fixed `jgproject/jg.log` entry
+only to a bounded, single-link regular file inside that invocation's non-symlinked project.
+Escaping, dangling, cyclic, hard-linked, special and oversized log files fail closed. This is an
+output-collection exception only: candidate/site input symlink restrictions are unchanged, and
+it does not qualify the native worker to execute untrusted RTL. Log contents remain private.
+
 The draft `verigym-realbench` adapter requires an explicit external source lock and visibility
 audit. It never downloads, decrypts or executes upstream scripts. Only declared public specs,
 images, stubs and audited public dependencies are projected into the model workspace. It fails
