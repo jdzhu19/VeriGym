@@ -1750,6 +1750,22 @@ broken default bridge. HWE import, PR-1816 preparation, verification, model/prov
 qualification, collection, SFT mixing, training, and production use remain unauthorized pending a
 successful repair and a later independent audit.
 
+V188 materializes only that dependency repair. Its six-package git closure is a completed,
+deterministic local archive under `/data2`. Before starting DinD, the runner verifies the archive,
+sidecar, every member, embedded acquisition manifest, and direct non-VPN acquisition receipt. The
+offline builder then verifies every installed package version and the `/usr/bin/git` hash. Neither
+the repair Dockerfile nor the runner contains a network download path. Both builder and final
+builds use `--network none --pull=false`.
+
+The repaired builder must retain the v178 builder as its layer ancestor, add only the locked
+dependency stage, remain free of HWE/EDA runtime tools and Codex, and change the closed command
+probe only by making `git` available. The final non-authoritative image must retain distinct
+agent-toolchain and official-verifier identities, pass a mount-free, read-only-root, non-root,
+cap-drop-ALL v2 scan, and prove that the official verifier image was never loaded into the isolated
+daemon. Export is an atomic directory rename to `/data2`; partial archives are deleted on failure.
+No HWE task image, source, verifier, model, provider client, credential, or qualification contract
+is permitted in v188. Independent v189 audit remains mandatory.
+
 ## Trust assumptions and residual risk
 
 Docker is not a virtual machine and is not a perfect security boundary. The Docker daemon, its
