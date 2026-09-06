@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -402,7 +403,7 @@ def run_canary(
     session_root.mkdir(mode=0o700)
     broker_root.mkdir(mode=0o700)
     initialized = run_harness_helper(
-        settings,
+        replace(settings, process_timeout_s=300),
         mode="initialize",
         prompt="",
         system_prompt="",
@@ -412,7 +413,12 @@ def run_canary(
         docker_host=settings.docker_host,
     )
     if (
-        initialized.run_interval_count != 0
+        initialized.events
+        or initialized.provider_request_started
+        or initialized.finish_reason is not None
+        or initialized.final_response
+        or initialized.format_repairs
+        or initialized.run_interval_count != 0
         or (session_root / "provider-request-started-v1.json").exists()
     ):
         raise ValueError("Harness initialization crossed the provider boundary")
