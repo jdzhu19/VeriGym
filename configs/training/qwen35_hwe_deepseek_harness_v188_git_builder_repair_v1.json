@@ -140,7 +140,7 @@
   "probe_output_max_bytes": 1048576,
   "cleanup_timeout_seconds": 120,
   "cleanup_output_max_bytes": 1048576,
-  "control_root_min_available_bytes": 9663676416,
+  "control_root_min_available_bytes": 4294967296,
   "data2_min_available_bytes": 53687091200,
   "result_categories": [
     "success",
@@ -193,5 +193,5 @@
   "training_started": false,
   "production_training_ready": false,
   "requires_independent_v189_audit": true,
-  "manifest_hash": "1724875d87f966cd5f08723112088dad69a35fc6a914cd2b1cb98eb78a775bc6"
+  "manifest_hash": "4b4006624942229ea408c60c16565febb8b81537278ed429fceafe6b2cd66c69"
 }

@@ -219,7 +219,7 @@ class OpenToolchainV188GitBuilderRepairManifest(StrictModel):
     probe_output_max_bytes: Literal[1048576]
     cleanup_timeout_seconds: Literal[120]
     cleanup_output_max_bytes: Literal[1048576]
-    control_root_min_available_bytes: Literal[9663676416]
+    control_root_min_available_bytes: Literal[4294967296]
     data2_min_available_bytes: Literal[53687091200]
     result_categories: tuple[str, ...]
     builder_build_network: Literal["none"]
