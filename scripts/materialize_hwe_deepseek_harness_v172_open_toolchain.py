@@ -813,7 +813,10 @@ def _run_open_comparison(
     copy_tree_safely(visible_repository, base_repository, preserve_safe_file_modes=True)
     copy_tree_safely(visible_repository, reference_repository, preserve_safe_file_modes=True)
     for relative, content in reference.files.items():
-        destination = reference_repository / normalize_relative_path(relative)
+        normalized = Path(normalize_relative_path(relative))
+        if not normalized.is_relative_to("repository") or len(normalized.parts) < 2:
+            raise ConfigurationError("Open comparison reference must stay inside repository/")
+        destination = reference_repository / normalized.relative_to("repository")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
     results: dict[str, dict[str, Any]] = {}
@@ -856,6 +859,7 @@ def _run_open_comparison(
         "results": results,
     }
     report = {**report_base, "receipt_hash": content_hash(report_base)}
+    atomic_dump_json(root / "open-comparison.json", report)
     if not base_failed or not reference_passed:
         raise ConfigurationError("v172 open route is not base-FAIL/reference-PASS")
     return report

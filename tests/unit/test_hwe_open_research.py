@@ -128,3 +128,36 @@ def test_open_test_bind_mount_uses_supported_docker_syntax_and_is_removed(
     assert any(
         command[-4:] == ["container", "rm", "--force", "container-id"] for command in commands
     )
+
+
+def test_open_comparison_applies_reference_to_the_executed_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = research.qualification
+    source = tmp_path / "source"
+    repository = source / "workspaces/task/repository"
+    (repository / "rtl").mkdir(parents=True)
+    (repository / "rtl/core.sv").write_text("base")
+    suite = SimpleNamespace(
+        with_source=lambda config: suite,
+        discover=lambda: [SimpleNamespace(native_id="task")],
+        load_task=lambda reference: SimpleNamespace(id="task"),
+        reference_solution=lambda task: SimpleNamespace(files={"repository/rtl/core.sv": "fixed"}),
+    )
+    monkeypatch.setattr(module, "HweBenchSuite", lambda **kwargs: suite)
+
+    def run(**kwargs):
+        workspace = kwargs["repository"]
+        fixed = (workspace / "rtl/core.sv").read_text() == "fixed"
+        assert not (workspace / "repository").exists()
+        return {"returncode": 0 if fixed else 1, "pass_sentinel": fixed, "fail_sentinel": not fixed}
+
+    monkeypatch.setattr(module, "_run_open_public_test", run)
+    result = module._run_open_comparison(
+        source=source,
+        instance=SimpleNamespace(tb_script="synthetic test"),
+        image_id="unused",
+        docker_host="unused",
+        root=tmp_path,
+    )
+    assert result["base_failed"] and result["reference_passed"]

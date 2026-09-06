@@ -14,7 +14,7 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 for relative in (
@@ -40,13 +40,17 @@ from verigym.hwe.open_toolchain_git_builder_repair import OpenToolchainV188Image
 
 IDENTITY = "deepseek-harness-pr1816-open-research-s503-v1"
 ARCHIVES = Path("/data2/jiadongzhu/Agent/hwe-bench-public-images")
-REPAIR_ROOT = Path(
-    "/data2/jiadongzhu/Agent/experiments/deepseek-harness-hwe-v188-git-builder-repair-v1"
-)
+REPAIR_ROOT = Path("/data2/jiadongzhu/Agent/experiments/hwe-open-tools-offline-repair-20260906-v1")
 OUTPUT = Path("/data2/jiadongzhu/Agent/experiments") / IDENTITY
 BACKING = Path("/data2/jiadongzhu/docker") / IDENTITY
 SCRATCH = Path("/data2/jiadongzhu/Agent/.verigym-tmp") / IDENTITY
 CONSUMPTION = Path("/data2/jiadongzhu/Agent/experiments/pr1816-open-research-s503-consumed.json")
+
+
+class OpenResearchImageLock(OpenToolchainV188ImageLock):
+    """Reuse the image integrity contract under the actual offline successor identity."""
+
+    identity: Literal["hwe-open-tools-offline-repair-20260906-v1"]
 
 
 def _json(path: Path, *, maximum: int = 4 * 1024**2) -> dict[str, Any]:
@@ -75,7 +79,8 @@ def review_repair(root: Path) -> tuple[OpenToolchainV188ImageLock, dict[str, Any
     report = _receipt(root / "zero-provider-report.json", "report_hash")
     cleanup = _receipt(root / "cleanup.json", "cleanup_hash")
     archive = _receipt(root / "final-image-archive.json", "receipt_hash")
-    lock = OpenToolchainV188ImageLock.model_validate(_json(root / "final-image-lock.json"))
+    scan = _receipt(root / "security-scan.json", "scan_hash")
+    lock = OpenResearchImageLock.model_validate(_json(root / "final-image-lock.json"))
     if not (
         report.get("repair_succeeded") is True
         and report.get("archive_exported") is True
@@ -84,6 +89,15 @@ def review_repair(root: Path) -> tuple[OpenToolchainV188ImageLock, dict[str, Any
         and report.get("image_lock_hash") == lock.lock_hash
         and report.get("final_image_id") == lock.image_id == archive.get("image_id")
         and report.get("cleanup_hash") == cleanup.get("cleanup_hash")
+        and report.get("identity")
+        == archive.get("identity")
+        == scan.get("identity")
+        == lock.identity
+        and scan.get("image_id") == lock.image_id
+        and scan.get("scan_passed") is True
+        and report.get("security_scan_hash") == scan.get("scan_hash")
+        and not (Path("/data2/jiadongzhu/docker") / lock.identity).exists()
+        and not (Path("/data2/jiadongzhu/Agent/.verigym-tmp") / lock.identity).exists()
         and all(
             report.get(k) == 0
             for k in (
@@ -114,6 +128,7 @@ def review_repair(root: Path) -> tuple[OpenToolchainV188ImageLock, dict[str, Any
         "repair_report_hash": report["report_hash"],
         "cleanup_hash": cleanup["cleanup_hash"],
         "image_lock_hash": lock.lock_hash,
+        "security_scan_hash": scan["scan_hash"],
         "archive_receipt_hash": archive["receipt_hash"],
         "repair_receipt_files": {p.name: _hash(p) for p in sorted(root.glob("*.json"))},
         "zero_provider_repair_valid": True,
