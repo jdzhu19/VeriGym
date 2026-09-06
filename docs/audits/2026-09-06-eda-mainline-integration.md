@@ -44,6 +44,11 @@ mypy --config-file integrations/verigym-synopsys/pyproject.toml \
 冻结 suite、tool、profile 或 campaign identity。历史商业资格化仍以各自审计为准。
 此记录不替代远端 CI 状态。
 
+首次远端 ordinary Python 3.11/3.12/3.13 检查发现旧测试写死了本站 scratch 路径。
+仅将该单元测试改为使用 `tempfile` 的默认目录（本站可通过 `TMPDIR` 指定），保留
+Unix socket 长度限制和实际目录创建/复用断言。生产 launcher 与冻结身份均未修改。
+package、quality、reproducible-build、OpenHands 与 Docker zero-model security 检查已通过。
+
 三类本地环境问题已排除，没有为它们修改已资格化实现：
 
 - 长 scratch 路径超过 Unix socket 长度限制：用短名称的独立 `--basetemp` 定向复测。

@@ -311,8 +311,8 @@ def test_broker_environment_creates_new_root_and_reuses_existing_root(
 ) -> None:
     launcher = _launcher_module()
     monkeypatch.delenv("VERIGYM_CODEX_BROKER_ROOT", raising=False)
-    scratch = Path("/data/jzhu484/Agent/.verigym-tmp")
-    with tempfile.TemporaryDirectory(prefix="bg-", dir=scratch) as temporary:
+    # Respect TMPDIR on the site and the runner default elsewhere; never require site paths in CI.
+    with tempfile.TemporaryDirectory(prefix="bg-") as temporary:
         root = Path(temporary)
         fresh = root / "new"
 
