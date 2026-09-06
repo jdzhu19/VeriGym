@@ -49,8 +49,8 @@ SCRATCH = Path("/data2/jiadongzhu/Agent/.verigym-tmp") / IDENTITY
 CONSUMPTION = Path("/data2/jiadongzhu/Agent/experiments/pr1816-open-research-s503-consumed.json")
 
 
-def _json(path: Path) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024**2:
+def _json(path: Path, *, maximum: int = 4 * 1024**2) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > maximum:
         raise ValueError("Required bounded JSON input is missing or unsafe")
     value = json.loads(path.read_text())
     if not isinstance(value, dict):
@@ -464,7 +464,7 @@ def run_canary(
         )
         transcript_valid = False
         if transcript_path.is_file():
-            validate_deepseek_harness_transcript_v3(_json(transcript_path))
+            validate_deepseek_harness_transcript_v3(_json(transcript_path, maximum=32 * 1024**2))
             transcript_valid = True
         from verigym_deepseek_harness.config import API_KEY_ENV, BASE_URL_ENV
 
