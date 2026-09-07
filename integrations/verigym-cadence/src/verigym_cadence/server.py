@@ -47,7 +47,10 @@ def worker_call(profile: ServerProfile, operation: str, request: VerifyRequest |
                 CommandSpec(
                     argv=[profile.worker.path],
                     stdin=json.dumps(payload),
-                    timeout_s=profile.timeout_s + 10,
+                    timeout_s=(
+                        min(profile.timeout_s, 20) if operation == "probe" else profile.timeout_s
+                    )
+                    + 10,
                     # LocalRuntime deliberately strips ambient variables. The fixed site
                     # worker needs these two only; values never enter the JSON/profile/trace.
                     env={

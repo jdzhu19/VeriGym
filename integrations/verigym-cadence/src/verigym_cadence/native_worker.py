@@ -7,11 +7,13 @@ RTL requires a separately qualified isolation boundary, not removal of this chec
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import stat
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -90,10 +92,26 @@ def _execute(session: LocalRuntimeSession, argv: list[str], timeout: int) -> Com
     return session.execute(CommandSpec(argv=argv, timeout_s=timeout, env=environment))
 
 
+def _execute_until(
+    session: LocalRuntimeSession, argv: list[str], timeout: int, deadline: float
+) -> CompletedCommand:
+    """Share one wall-time budget; integer command limits may overrun by less than one second."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return CompletedCommand(argv=argv, cwd=".", exit_code=None, timed_out=True)
+    result = _execute(session, argv, min(timeout, math.ceil(remaining)))
+    if time.monotonic() >= deadline:
+        return result.model_copy(update={"timed_out": True})
+    return result
+
+
 def run(payload: Any) -> dict[str, Any]:
+    started = time.monotonic()
     if not isinstance(payload, dict) or set(payload) != {"operation", "profile", "request"}:
         raise ValueError("invalid worker envelope")
     profile = ServerProfile.model_validate(payload["profile"])
+    probe = payload["operation"] == "probe"
+    deadline = started + (min(profile.timeout_s, 20) if probe else profile.timeout_s)
     summary = profile.resolve()
     assets = {a.role: Path(a.path) for a in profile.assets}
     jg, yosys = assets["jaspergold"], assets["yosys"]
@@ -105,8 +123,12 @@ def run(payload: Any) -> dict[str, Any]:
                 max_output_bytes=1024 * 1024,
             )
         ) as session:
-            jg_version = _execute(session, [str(jg), "-version"], 20)
-            yosys_version = _execute(session, [str(yosys), "-V"], 20)
+            jg_version = _execute_until(session, [str(jg), "-version"], 20, deadline)
+            if jg_version.timed_out:
+                return {"status": "tool_unavailable" if probe else "timeout"}
+            yosys_version = _execute_until(session, [str(yosys), "-V"], 20, deadline)
+            if yosys_version.timed_out:
+                return {"status": "tool_unavailable" if probe else "timeout"}
             if any(
                 result.exit_code != 0 or result.timed_out or result.error or result.output_truncated
                 for result in (jg_version, yosys_version)
@@ -168,7 +190,7 @@ def run(payload: Any) -> dict[str, Any]:
                 ("reference", ref_sources, f"ref_{profile.top}", "a.v"),
                 ("candidate", imp_sources, profile.top, "b.v"),
             ]:
-                result = _execute(
+                result = _execute_until(
                     session,
                     [
                         str(yosys),
@@ -177,6 +199,7 @@ def run(payload: Any) -> dict[str, Any]:
                         f"synth -top {top}; write_verilog {netlist}",
                     ],
                     profile.timeout_s,
+                    deadline,
                 )
                 if result.timed_out:
                     return {"status": "timeout"}
@@ -196,7 +219,11 @@ def run(payload: Any) -> dict[str, Any]:
             )
             (session.root / "ref.f").write_text("a.v\n", encoding="ascii")
             (session.root / "top.f").write_text("b.v\n", encoding="ascii")
-            result = _execute(session, [str(jg), "-no_gui", "-sec", "test.tcl"], profile.timeout_s)
+            result = _execute_until(
+                session, [str(jg), "-no_gui", "-sec", "test.tcl"], profile.timeout_s, deadline
+            )
+            if result.timed_out:
+                return {"status": "timeout"}
             log = read_sec_log(session.root)
             return parse_sec(result, log).model_dump()
 

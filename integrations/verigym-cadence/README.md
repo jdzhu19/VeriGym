@@ -78,7 +78,15 @@ oversized logs fail closed. This tool-output exception does not relax candidate/
 path checks; it remains within the trusted-fixture boundary.
 
 There is at most one SEC invocation per server process and zero automatic retries. Every new
-attempt requires an explicit new invocation. Timeout handling kills the local worker process
+attempt requires an explicit new invocation. `ServerProfile.timeout_s` is one native invocation
+budget, including version probes, both synthesis steps and SEC. Each subprocess receives only the
+remaining budget (rounded up to integer seconds); no new phase starts after expiry, and late proof
+output cannot turn a timeout into success. Resolution probes share at most 20 seconds. The outer
+worker watchdog has 10 seconds of grace; the client's transport timeout is not a remote cancel RPC.
+
+The [lifecycle follow-up](../../docs/audits/2026-09-07-realbench-sec-lifecycle-report.md) used only
+synthetic tools to verify deadline exit after an observed active SSH invocation was interrupted.
+It did not rerun the seven frozen commercial invocations. Timeout handling kills the local worker process
 group; this does **not** prove remote scheduler cancellation. A production site wrapper must
 implement and qualify remote job termination before accepting generated candidates.
 

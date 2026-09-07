@@ -31,6 +31,15 @@ Escaping, dangling, cyclic, hard-linked, special and oversized log files fail cl
 output-collection exception only: candidate/site input symlink restrictions are unchanged, and
 it does not qualify the native worker to execute untrusted RTL. Log contents remain private.
 
+Native verification shares one monotonic profile deadline across version probes, both synthesis
+phases and SEC; it does not allocate a fresh full budget to each tool. No subsequent phase starts
+after expiry, and a late zero-exit proof is a timeout. Integer subprocess limits can add less than
+one second of rounding before ordinary cleanup; this is not a hard OS containment guarantee.
+Profile resolution probes share at most 20 seconds. The outer worker watchdog retains a 10-second
+grace. SSH disconnection does not cancel a remote invocation immediately: bounded synthetic
+fixtures have demonstrated eventual deadline exit only. Detached descendants, abnormal supervisor
+death and arbitrary generated RTL still require separately qualified site containment/cancellation.
+
 The draft `verigym-realbench` adapter requires an explicit external source lock and visibility
 audit. It never downloads, decrypts or executes upstream scripts. Only declared public specs,
 images, stubs and audited public dependencies are projected into the model workspace. It fails

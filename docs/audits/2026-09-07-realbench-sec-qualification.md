@@ -1,5 +1,8 @@
 # RealBench SEC 日志修复与三题控制资格检查
 
+后续无商业调用的[总时限与 SSH 生命周期检查](2026-09-07-realbench-sec-lifecycle-report.md)
+绑定新的 release；下文七次真实 SEC 仍保留原冻结身份，不改标成后续版本的执行结果。
+
 2026-09-06 至 09-07。**三题的 reference / function-negative 共六个 SEC 控制均符合预期。**
 这是固定候选、固定站点路径的正负控制证据，不是全量 RealBench 支持、模型成绩或任意 RTL
 执行的隔离资格。历史 [v3 结果收集失败](2026-09-06-realbench-sec-single-reference-v3.md)

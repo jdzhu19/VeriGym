@@ -31,7 +31,7 @@ from verigym.plugin_api import (
     content_hash,
     hash_bytes,
 )
-from verigym.runtimes.local import LocalRuntime
+from verigym.runtimes.local import LocalRuntime, LocalRuntimeSession
 from verigym.schemas.runtime import SessionSpec
 
 
@@ -362,6 +362,120 @@ def test_native_worker_runs_fixed_yosys_sec_flow_and_cleans_workspace(
     )
     assert result == {"status": "proven" if status == "proven" else "counterexample"}
     assert list(scratch.iterdir()) == []
+
+
+def test_native_worker_has_one_deadline_across_all_phases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    import verigym_cadence.native_worker as native
+
+    profile, _ = fixture(tmp_path, {"status": "proven"})
+    reference = tmp_path / "reference.sv"
+    reference.write_text("module ref_top; endmodule\n", encoding="ascii")
+    template = tmp_path / "sec.tcl"
+    template.write_text("# ###TOPMODULE###\n", encoding="ascii")
+    profile = profile.model_copy(
+        update={
+            "timeout_s": 2,
+            "assets": [
+                profile.worker.model_copy(update={"role": "jaspergold"}),
+                profile.worker.model_copy(update={"role": "yosys"}),
+                Asset(
+                    role="reference:ref.sv",
+                    path=str(reference),
+                    sha256=hash_bytes(reference.read_bytes()),
+                ),
+                Asset(
+                    role="sec_template",
+                    path=str(template),
+                    sha256=hash_bytes(template.read_bytes()),
+                ),
+            ],
+        }
+    )
+    request = request_for(profile)
+    phases: list[str] = []
+
+    def fake_execute(
+        session: LocalRuntimeSession, argv: list[str], timeout: int
+    ) -> CompletedCommand:
+        if argv[1:] == ["-version"]:
+            return CompletedCommand(argv=argv, cwd=".", exit_code=0, stdout="JasperGold 2022.12")
+        if argv[1:] == ["-V"]:
+            return CompletedCommand(argv=argv, cwd=".", exit_code=0, stdout="Yosys 0.55")
+        phase = "synthesis" if argv[1] == "-p" else "sec"
+        phases.append(phase)
+        delay = min(1.1, timeout)
+        time.sleep(delay)
+        if phase == "sec":
+            (session.root / "jgproject").mkdir()
+            (session.root / "jgproject/jg.log").write_text("JPW: proven\n", encoding="ascii")
+        return CompletedCommand(argv=argv, cwd=".", exit_code=0, timed_out=delay < 1.1)
+
+    monkeypatch.setattr(native, "_execute", fake_execute)
+    started = time.monotonic()
+    result = native.run(
+        {"operation": "verify", "profile": profile.model_dump(), "request": request.model_dump()}
+    )
+    assert result == {"status": "timeout"}
+    assert phases == ["synthesis", "synthesis"]  # Do not spend a third budget on SEC.
+    assert time.monotonic() - started < 3.2  # Integer command limits can overshoot by < 1 s.
+
+
+@pytest.mark.parametrize("elapsed", [0.0, 1.5, 2.0])
+def test_expired_native_deadline_never_launches_or_accepts_late_proof(
+    monkeypatch: pytest.MonkeyPatch, elapsed: float
+) -> None:
+    import verigym_cadence.native_worker as native
+
+    clock = [elapsed]
+    calls: list[int] = []
+    monkeypatch.setattr(native.time, "monotonic", lambda: clock[0])
+
+    def execute(session: Any, argv: list[str], timeout: int) -> CompletedCommand:
+        calls.append(timeout)
+        clock[0] = 2.1
+        return CompletedCommand(argv=argv, cwd=".", exit_code=0, stdout="JPW: proven")
+
+    monkeypatch.setattr(native, "_execute", execute)
+    result = native._execute_until(None, ["synthetic"], 20, 2.0)
+    assert result.timed_out
+    assert calls == ([] if elapsed == 2.0 else [2 if elapsed == 0.0 else 1])
+    assert native.parse_sec(result, "JPW: proven\n").status == "timeout"
+
+
+@pytest.mark.parametrize("operation", ["probe", "verify"])
+def test_version_timeout_stops_before_second_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    import verigym_cadence.native_worker as native
+
+    profile, _ = fixture(tmp_path, {"status": "proven"})
+    profile = profile.model_copy(
+        update={
+            "assets": [
+                profile.worker.model_copy(update={"role": role}) for role in ("jaspergold", "yosys")
+            ]
+        }
+    )
+    calls: list[list[str]] = []
+
+    def execute(session: Any, argv: list[str], timeout: int) -> CompletedCommand:
+        calls.append(argv)
+        return CompletedCommand(argv=argv, cwd=".", exit_code=None, timed_out=True)
+
+    monkeypatch.setattr(native, "_execute", execute)
+    result = native.run(
+        {
+            "operation": operation,
+            "profile": profile.model_dump(),
+            "request": request_for(profile).model_dump() if operation == "verify" else None,
+        }
+    )
+    assert result == {"status": "tool_unavailable" if operation == "probe" else "timeout"}
+    assert len(calls) == 1 and calls[0][1:] == ["-version"]
 
 
 @pytest.mark.parametrize(
