@@ -15,6 +15,7 @@ from verigym.core.repository_candidate import (
     apply_repository_patch,
     build_repository_patch,
     freeze_repository_candidate,
+    repository_workspace_contract,
     validate_repository_tree,
     verify_frozen_repository_candidate,
     verify_frozen_repository_candidate_offline,
@@ -76,6 +77,26 @@ def test_pipeline_reference_is_a_required_two_file_patch() -> None:
     assert "pipeline_stage.sv" in patch
     assert "pipeline_top.sv" in patch
     assert build_repository_patch(root / "repository", root / "reference" / "repository") == patch
+
+
+def test_frozen_workspace_contract_supports_generation_without_changing_repair_metadata() -> None:
+    suite = RepositoryRtlSuite()
+    task = suite.load_task(next(iter(suite.discover())))
+    before = task.model_dump_json()
+    contract = repository_workspace_contract(task)
+    assert task.model_dump_json() == before
+    generation = task.model_copy(deep=True)
+    generation.metadata = {
+        "repository_candidate_workspace_contract": contract.model_dump(mode="json")
+    }
+    assert repository_workspace_contract(generation) == contract
+    task.metadata["repository_candidate_workspace_contract"] = contract.model_dump(mode="json")
+    assert repository_workspace_contract(task) == contract
+    task.metadata["repository_candidate_workspace_contract"]["max_changed_files"] += 1
+    with pytest.raises(ValueError, match="conflicting"):
+        repository_workspace_contract(task)
+    with pytest.raises(ValueError, match="lacks"):
+        repository_workspace_contract(task.model_copy(update={"metadata": {}}))
 
 
 def test_protocol_conformance_set_has_one_and_two_file_reference_patches() -> None:

@@ -9,6 +9,60 @@ Protected assets include the host filesystem and home directory, SSH/cloud/model
 credentials, Docker credentials and socket, network access, hidden verifier assets, benchmark
 golden sources, and workspaces belonging to other runs.
 
+## Draft RealBench and JasperGold boundary
+
+The draft `verigym-cadence` integration is **trusted-fixture-only**: both the MCP service and
+native Yosys/JasperGold worker require an operator-approved candidate content hash. A fixed
+server profile owns every executable, reference, dependency and Tcl asset. No request can select
+commands, Tcl, environment variables or site paths. The final response permits a status enum
+and frozen identities only, never raw counterexamples or logs. Version resolution is not license
+or suite qualification. Local process-group termination does not establish remote scheduler
+cancellation; production generated-RTL execution requires a separately qualified site wrapper.
+
+The Cadence server explicitly forwards the operator's `CDS_LIC_FILE` and `LM_LICENSE_FILE`
+environment variables to its fixed worker, which uses the same allowlist for tool subprocesses.
+The request cannot supply environment values. Values are not included in profile identities,
+structured requests, traces or responses. Other ambient variables remain filtered by
+`LocalRuntime`, and its temporary `HOME` is not replaced with the operator's real home directory.
+
+After the trusted tool exits, the native worker may follow its fixed `jgproject/jg.log` entry
+only to a bounded, single-link regular file inside that invocation's non-symlinked project.
+Escaping, dangling, cyclic, hard-linked, special and oversized log files fail closed. This is an
+output-collection exception only: candidate/site input symlink restrictions are unchanged, and
+it does not qualify the native worker to execute untrusted RTL. Log contents remain private.
+
+Native verification shares one monotonic profile deadline across version probes, both synthesis
+phases and SEC; it does not allocate a fresh full budget to each tool. No subsequent phase starts
+after expiry, and a late zero-exit proof is a timeout. Integer subprocess limits can add less than
+one second of rounding before ordinary cleanup; this is not a hard OS containment guarantee.
+Profile resolution probes share at most 20 seconds. The outer worker watchdog retains a 10-second
+grace. SSH disconnection does not cancel a remote invocation immediately: bounded synthetic
+fixtures have demonstrated eventual deadline exit only. Detached descendants, abnormal supervisor
+death and arbitrary generated RTL still require separately qualified site containment/cancellation.
+
+The draft `verigym-realbench` adapter requires an explicit external source lock and visibility
+audit. It never downloads, decrypts or executes upstream scripts. Only declared public specs,
+images, stubs and audited public dependencies are projected into the model workspace. It fails
+preflight without the declared functional and SEC backends; it must not downgrade missing
+functional support to lint-only. Its synthetic tests do not qualify actual RealBench data.
+
+The separate `realbench.verilator.public.mcp` service now runs a fixed syntax/function flow in
+`DockerRuntime`, never in `LocalRuntime`. The host stdio wrapper is a hash-bound control-plane
+process only. A task-bound profile owns all verifier assets and the exact image ID, source order,
+public output names and resource limits. No request selects flags, commands, testbench bytes or
+paths. Each process handles one candidate without retry. Only a status, bounded phase/exit code,
+cleanup boolean and frozen identities return; private diagnostics, comparisons, logs and waveform
+content do not. The public-test controller projects fixed messages without those private assets.
+
+The current derived slice accepts one target module and prohibits simulation side effects,
+preprocessor interference, cross-module checker references and Verilator metacomments. This is
+an eligibility restriction, not an RTL sandbox or a claim of compatibility with all native tasks.
+Network-none, non-root, read-only-root and bounded Docker controls remain mandatory. The numeric
+container UID/GID must match the worker's non-root host user so generated build directories can
+be removed; only `.verigym_internal` is writable during compilation/simulation. A cleanup failure
+invalidates the result. A transport timeout does not establish worker cleanup and cannot count as
+a candidate rejection. Functional feedback is not final SEC proof or a benchmark score.
+
 ## DockerRuntime boundary
 
 `DockerRuntime` is an opt-in, Linux-first containment profile labeled `docker_standard`. For each

@@ -46,6 +46,37 @@ class Policy:
 
 
 _POLICIES = {
+    "cadence": Policy(
+        distribution="verigym-cadence",
+        version="0.1.0",
+        module="verigym_cadence",
+        entry_markers=(
+            "[console_scripts]",
+            "verigym-cadence-mcp-server = verigym_cadence.server:main",
+            "[verigym.tools]",
+            "cadence-jaspergold-sec-mcp = verigym_cadence.client:JasperGoldMcpTool",
+        ),
+        forbidden_member_suffixes=frozenset(
+            {".v", ".sv", ".tcl", ".log", ".vcd", ".fsdb", ".jdb", ".pem", ".jsonl"}
+        ),
+    ),
+    "realbench": Policy(
+        distribution="verigym-realbench",
+        version="0.1.0",
+        module="verigym_realbench",
+        entry_markers=(
+            "[verigym.suites]",
+            "realbench = verigym_realbench.adapter:RealBenchSuite",
+            "[verigym.tools]",
+            "realbench-verilator-public-mcp = verigym_realbench.public_client:RealBenchPublicTool",
+            "[console_scripts]",
+            "verigym-realbench-public-server = verigym_realbench.public_server:main",
+        ),
+        forbidden_member_names=frozenset({"verigym-realbench.lock.json", "benchmark_info.py"}),
+        forbidden_member_suffixes=frozenset(
+            {".v", ".sv", ".tcl", ".gpg", ".png", ".jpg", ".webp", ".jsonl", ".log"}
+        ),
+    ),
     "claude_cli": Policy(
         distribution="verigym-claude-cli",
         version="0.1.0",

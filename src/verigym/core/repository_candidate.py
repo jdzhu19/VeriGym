@@ -78,6 +78,23 @@ def repository_plan_identity(task: VeriTask) -> RepositoryPlanIdentity | None:
     )
 
 
+def repository_workspace_contract(task: VeriTask) -> RepositoryWorkspaceContract:
+    """Read a frozen candidate contract without inventing repair-only reference identities."""
+    repair = task.metadata.get("repository_repair")
+    candidate = task.metadata.get("repository_candidate_workspace_contract")
+    if repair is not None:
+        if not isinstance(repair, dict) or not isinstance(repair.get("workspace_contract"), dict):
+            raise ValueError("repository task snapshot lacks its workspace contract")
+        raw = repair["workspace_contract"]
+        if candidate is not None and candidate != raw:
+            raise ValueError("repository task snapshot has conflicting workspace contracts")
+    else:
+        raw = candidate
+    if not isinstance(raw, dict):
+        raise ValueError("repository task snapshot lacks its workspace contract")
+    return RepositoryWorkspaceContract.model_validate(raw)
+
+
 def freeze_repository_candidate(
     *,
     task_id: str,
